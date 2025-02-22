@@ -1,0 +1,82 @@
+---
+name: Code test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '0 12 * * 1' # Runs every Monday at 12:00 PM UTC
+
+jobs:
+  integration-test:
+    name: Integration test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Harden-Runner
+        uses: step-security/harden-runner@v2.10.2
+
+      - name: Set up environment
+        uses: ./.github/actions/setup/poetry
+        with:
+          os: ${{ job.os }}
+          python-version: '3.13.0'
+          poetry-install-options: "--with=test"
+          poetry-export-options: "--with=test"
+
+      - name: Run tests and generate coverage as test_integration.xml
+        run: |
+          poetry run pytest \
+            --cov-report term \
+            --cov-report xml:test_integration.xml \
+            --cov=tests/test_integration
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: test_integration
+          files: ./test_integration.xml
+          fail_ci_if_error: true
+          verbose: true
+
+  unit-test:
+    name: Unit test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Harden-Runner
+        uses: step-security/harden-runner@v2.10.2
+
+      - name: Set up environment
+        uses: ./.github/actions/setup/poetry
+        with:
+          os: ${{ job.os }}
+          python-version: '3.13.0'
+          poetry-install-options: "--with=test"
+          poetry-export-options: "--with=test"
+
+      - name: Run tests and generate coverage as test_unit.xml
+        run: |
+          poetry run pytest \
+            --cov-report term \
+            --cov-report xml:test_unit.xml \
+            --cov=tests/test_unit
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: test_unit
+          files: ./test_unit.xml
+          fail_ci_if_error: true
+          verbose: true
+...

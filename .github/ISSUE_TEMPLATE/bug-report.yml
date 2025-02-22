@@ -1,0 +1,50 @@
+---
+name: 🪲 Bug Report
+description: Report a bug
+title: "[Bug 🪲]: "
+labels: ["bug"]
+body:
+  - type: input
+    id: description
+    attributes:
+      label: Description
+      description: Small description of the bug
+      placeholder: "I have a problem with..."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Steps to reproduce the bug
+      value: |
+        1. Step 1
+        2. Step 2
+        3. Step 3
+    validations:
+      required: false
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Error Traceback
+      description: Full error traceback if applicable
+      render: python
+    validations:
+      required: false
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Output of `pip freeze`
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: environment
+      description: Output of `poetry env info`
+      render: text
+    validations:
+      required: false
+...

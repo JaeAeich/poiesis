@@ -1,0 +1,83 @@
+---
+name: PR evaluation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+    branches: ['main']
+
+jobs:
+  detect-unresolved-conflicts:
+    name: Detect unresolved merge conflicts
+    runs-on: ubuntu-latest
+    if: github.event.action != 'edited'
+    steps:
+      - uses: actions/checkout@v3
+      - name: List files with merge conflict markers
+        run: git --no-pager grep "<<<<<<<" ":(exclude).github/" || true
+      - name: Fail or succeed job if any files with merge conflict markers
+        run: exit $(git grep "<<<<<<<" ":(exclude).github/" | wc --lines)
+
+  pre-commit:
+    name: Pre-commit checks
+    runs-on: ubuntu-latest
+    if: github.event.action != 'edited'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Harden-Runner
+        uses: step-security/harden-runner@v2.10.2
+
+      - name: Set up environment
+        uses: ./.github/actions/setup/poetry
+        with:
+          os: ${{ job.os }}
+          python-version: '3.13.0'
+          poetry-install-options: "--only=misc --no-root"
+          poetry-export-options: "--only=misc"
+
+      - name: Check all the pre-commit hooks passed
+        run: pre-commit run --all-files
+
+  semantic-pr:
+    name: Semantic PR title
+    runs-on: ubuntu-latest
+    # yamllint disable rule:line-length
+    if: >
+      contains(['opened', 'reopened', 'ready_for_review'], github.event.action) ||
+      (github.event.action == 'edited' && github.event.changes.title != null)
+    # yamllint disable rule:line-length
+    steps:
+      - name: Check if the PR title is semantic
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            fix
+            feat
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          subjectPattern: ^(?![A-Z])(?=.{1,50}$).+$
+          subjectPatternError: |
+            The subject "{subject}" found in the pull request title "{title}"
+            didn't match the configured pattern. Please ensure that the subject
+            doesn't start with an uppercase character & not have more than 50
+            characters.
+
+      - name: Check length of PR title
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          if [ ${#PR_TITLE} -gt 50 ]; then
+            echo "The PR title is too long. Please keep it under 50 characters."
+            exit 1
+          fi
+...

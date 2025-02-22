@@ -1,0 +1,30 @@
+---
+name: 📦 Dependency Issue
+description: Report dependency conflicts or version issues
+title: "[Deps 📦]: "
+labels: ["dependencies"]
+body:
+  - type: textarea
+    id: conflict
+    attributes:
+      label: Conflict Description
+      description: Describe the dependency conflict
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Output of `pip freeze`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: environment
+      description: Output of `poetry env info`
+      render: text
+    validations:
+      required: true
+...

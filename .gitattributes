@@ -1,0 +1,30 @@
+# Auto detect text files and perform line-ending normalization
+* text=auto
+
+# Python files
+*.py text diff=python
+*.pyi text diff=python
+
+# Documentation
+*.md text diff=markdown
+*.rst text diff=rst
+*.bat text eol=crlf
+Makefile text eol=lf
+
+# Configuration files
+*.toml text diff=toml
+*.json text
+
+# SVG treated as binary to prevent merge conflicts
+*.svg binary
+
+# Declare files that should have specific line endings
+LICENSE text eol=lf
+
+# Exclude files from statistics
+images/* linguist-vendored
+docs/* linguist-documentation
+
+# Fix syntax highlighting on GitHub to allow comments
+.devcontainer.json linguist-language=JSON-with-Comments
+devcontainer.json linguist-language=JSON-with-Comments

@@ -1,0 +1,23 @@
+---
+name: ❓ Question
+description: Ask a question about this project
+title: "[Ques ❓]: "
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What would you like to know?
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: First Check
+      options:
+        - label: I have gone through the documentation
+          required: true
+        - label: This issue hasn't been reported before
+          required: true
+...

@@ -1,0 +1,21 @@
+---
+name: ⚡ Performance Issue
+description: Report performance problems
+title: "[Perf ⚡]: "
+labels: ["performance"]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Performance Scenario
+      description: Describe the performance issue
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Performance Metrics
+      description: Include relevant metrics/benchmarks
+    validations:
+      required: true
+...

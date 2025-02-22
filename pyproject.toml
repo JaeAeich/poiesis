@@ -1,0 +1,98 @@
+[build-system]
+build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core"]
+
+[tool.mypy]
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.poetry]
+authors = ["jaeaeich <jh4official@gmail.com>"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.13.0",
+]
+description = "TES on kubernetes"
+license = "Apache-2.0"
+maintainers = ["jaeaeich <jh4official@gmail.com>"]
+name = "poesis"
+readme = "README.md"
+repository = "https://github.com/jaeaeich/poesis"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = ">=3.13.0"
+
+[tool.poetry.group.code_quality]
+optional = true
+
+[tool.poetry.group.code_quality.dependencies]
+mypy = ">=1.10.0"
+ruff = ">=0.4.10"
+typos = ">=1.22.8"
+
+[tool.poetry.group.docs]
+optional = true
+
+[tool.poetry.group.docs.dependencies]
+added-value = ">=0.24.0"
+docutils = ">=0.20.1"
+furo = ">=2024.5.6"
+m2r2 = ">=0.3.3.post2"
+sphinx = ">=7.3.7"
+sphinx-autodoc-typehints = ">=2.1.0"
+tomli = ">=2.0.1"
+
+[tool.poetry.group.misc]
+optional = true
+
+[tool.poetry.group.misc.dependencies]
+cruft = ">=2.15.0"
+jello = ">=1.6.0"
+pre-commit = ">=3.7.1"
+
+[tool.poetry.group.test]
+optional = true
+
+[tool.poetry.group.test.dependencies]
+pytest = ">=8.2.2,<9.0.0"
+pytest-cov = ">=5.0.0,<=6.0.0"
+
+[tool.poetry.group.types]
+optional = true
+
+[tool.poetry.group.types.dependencies]
+
+[tool.poetry.group.vulnerability]
+optional = true
+
+[tool.poetry.group.vulnerability.dependencies]
+bandit = ">=1.7.8,<2.0.0"
+safety = ">=3.2.0,<4.0.0"
+
+[tool.ruff]
+indent-width = 4
+
+[tool.ruff.format]
+docstring-code-format = true
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"
+
+[tool.ruff.lint]
+select = [
+  "B", # flake8-bugbear
+  "C90", # mccabe
+  "D", # pydocstyle
+  "E", # pycodestyle
+  "F", # Pyflakes
+  "I", # isort
+  "PL", # pylint
+  "SIM", # flake8-simplify
+  "UP", # pyupgrade
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

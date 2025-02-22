@@ -1,0 +1,84 @@
+---
+name: Code quality
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        uses: ./.github/actions/setup/poetry
+        with:
+          os: ${{ job.os }}
+          python-version: '3.13.0'
+          poetry-install-options: "--only=code_quality --no-root"
+          poetry-export-options: "--only=code_quality"
+
+      - name: Check code style
+        run: poetry run ruff format --check
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        uses: ./.github/actions/setup/poetry
+        with:
+          os: ${{ job.os }}
+          python-version: '3.13.0'
+          poetry-install-options: "--only=code_quality --no-root"
+          poetry-export-options: "--only=code_quality"
+
+      - name: Check code quality
+        run: poetry run ruff check .
+
+  spell-check:
+    name: Spell check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        uses: ./.github/actions/setup/poetry
+        with:
+          os: ${{ job.os }}
+          python-version: '3.13.0'
+          poetry-install-options: "--only=code_quality --no-root"
+          poetry-export-options: "--only=code_quality"
+
+      - name: Check spellings
+        run: poetry run typos .
+
+  type-check:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        uses: ./.github/actions/setup/poetry
+        with:
+          os: ${{ job.os }}
+          python-version: '3.13.0'
+          poetry-install-options: "--with=code_quality --with=types --no-root"
+          poetry-export-options: "--with=code_quality --with=types"
+
+      - name: Check types
+        run: poetry run mypy poesis/
+...

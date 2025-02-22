@@ -1,0 +1,48 @@
+---
+name: Documentation check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-api-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        uses: ./.github/actions/setup/poetry
+        with:
+          os: ${{ job.os }}
+          python-version: '3.13.0'
+          poetry-install-options: "--with=docs --with=types --no-root"
+          poetry-export-options: "--with=docs --with=types"
+
+      - name: Generate API docs
+        run: |
+          poetry run sphinx-apidoc  \
+            -o /tmp/docs/source/pages \
+            poesis/
+
+      - name: Compare current docs with latest docs
+        id: check_docs_diff
+        run: |
+          shasum /tmp/docs/source/pages/* > /tmp/docs.sha
+          shasum docs/source/pages/* > docs/project_doc.sha
+          awk '{print $1}' /tmp/docs.sha > /tmp/docs_hashes.sha
+          awk '{print $1}' docs/project_doc.sha > docs/project_doc_hashes.sha
+          diff=$(diff /tmp/docs_hashes.sha docs/project_doc_hashes.sha) || true
+          if [[ -n "$diff" ]]; then
+            echo "::error::API documentation is out of date."
+            exit 1
+          else
+            echo "API documentation is up to date."
+          fi
+...

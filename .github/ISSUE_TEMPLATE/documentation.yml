@@ -1,0 +1,21 @@
+---
+name: 📚 Documentation Issue
+description: Report issues with documentation
+title: "[Docs 📚]: "
+labels: ["documentation"]
+body:
+  - type: input
+    id: page_url
+    attributes:
+      label: Documentation Page URL
+      description: Link to the documentation page
+    validations:
+      required: true
+  - type: textarea
+    id: issue_description
+    attributes:
+      label: Issue Description
+      description: Describe what needs to be updated
+    validations:
+      required: true
+...
