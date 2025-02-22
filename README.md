@@ -15,7 +15,6 @@ TES on kubernetes
   - [Environment reproducibility](#environment-reproducibility)
     - [Editor config](#editor-config)
     - [Setting environment variables (direnv)](#setting-environment-variables-direnv)
-- [Contributing](#contributing)
 - [Versioning](#versioning)
 - [License](#license)
 

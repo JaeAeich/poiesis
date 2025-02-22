@@ -23,6 +23,7 @@ repository = "https://github.com/jaeaeich/poesis"
 version = "0.1.0"
 
 [tool.poetry.dependencies]
+pydantic = "^2.10.6"
 python = ">=3.13.0"
 
 [tool.poetry.group.code_quality]
