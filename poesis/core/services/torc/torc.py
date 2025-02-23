@@ -1,6 +1,14 @@
 """Task orchestrator (Torc)."""
 
+import logging
 from typing import Optional
+
+from kubernetes.client import (
+    V1ObjectMeta,
+    V1PersistentVolumeClaim,
+    V1PersistentVolumeClaimSpec,
+    V1ResourceRequirements,
+)
 
 from poesis.api.tes.models import (
     TesExecutor,
@@ -9,9 +17,13 @@ from poesis.api.tes.models import (
     TesResources,
     TesTask,
 )
+from poesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
+from poesis.core.constants import PoesisCoreConstants
 from poesis.core.services.torc.torc_texam_execution import TorcTexamExecution
 from poesis.core.services.torc.torc_tif_execution import TorcTifExecution
 from poesis.core.services.torc.torc_tof_execution import TorcTofExecution
+
+logger = logging.getLogger(__name__)
 
 
 class Torc:
@@ -22,6 +34,8 @@ class Torc:
 
     Attributes:
         task: Task object from task request
+        kubernetes_client: Kubernetes client
+        pvc_name: Name of the PVC created
     """
 
     def __init__(self, task: TesTask) -> None:
@@ -32,8 +46,11 @@ class Torc:
 
         Attributes:
             task: Task object from task request
+            kubernetes_client: Kubernetes client
+            pvc_name: Name of the PVC created
         """
         self.task = task
+        self.kubernetes_client = KubernetesAdapter()
 
     async def execute(self) -> None:
         """Defines the template method, for each service namely Texam, Tif, Tof."""
@@ -53,11 +70,29 @@ class Torc:
     async def create_pvc(self, name: str, size: Optional[float]) -> None:
         """Create a PVC for the task.
 
+        Tif and Tof will use this PVC to read and write data, and
+        executor will the data from the PVC for its use.
+
         Args:
             name: Name of the PVC
             size: Size of the PVC
         """
-        pass
+        pvc_name = f"{PoesisCoreConstants.K8s.PVC_PREFIX}-{name}"
+        pvc = V1PersistentVolumeClaim(
+            api_version="v1",
+            kind="PersistentVolumeClaim",
+            metadata=V1ObjectMeta(name=pvc_name),
+            spec=V1PersistentVolumeClaimSpec(
+                access_modes=["ReadWriteMany"],
+                resources=V1ResourceRequirements(
+                    requests={"storage": f"{size}Gi"}
+                    if size
+                    else {"storage": PoesisCoreConstants.K8s.PVC_DEFAULT_DISK_SIZE}
+                ),
+            ),
+        )
+        self.pvc_name = await self.kubernetes_client.create_pvc(pvc)
+        logger.info(f"PVC created: {self.pvc_name}")
 
     async def tif_execution(
         self, name: str, inputs: Optional[list[TesInput]], volumes: Optional[list[str]]
