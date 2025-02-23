@@ -76,6 +76,11 @@ optional = true
 bandit = ">=1.7.8,<2.0.0"
 safety = ">=3.2.0,<4.0.0"
 
+[tool.poetry.scripts]
+tif = "poiesis.core.services.filer.tif:main"
+tof = "poiesis.core.services.filer.tof:main"
+torc = "poiesis.core.services.torc.main:main"
+
 [tool.ruff]
 indent-width = 4
 
