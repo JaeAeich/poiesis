@@ -70,12 +70,12 @@ security:
   - BasicAuth: []   # Alternatively, use Basic Authentication
 
 servers:
-- url: /ga4gh/tes/v1
+  - url: /ga4gh/tes/v1
 paths:
   /service-info:
     get:
       tags:
-      - TaskService
+        - TaskService
       summary: GetServiceInfo
       description: |-
         Provides information about the service, this structure is based on the
@@ -96,7 +96,7 @@ paths:
   /tasks:
     get:
       tags:
-      - TaskService
+        - TaskService
       summary: ListTasks
       description: |-
         List tasks tracked by the TES server. This includes queued, active and completed tasks.
@@ -104,81 +104,81 @@ paths:
         implementation.
       operationId: ListTasks
       parameters:
-      - name: name_prefix
-        in: query
-        description: |-
-          OPTIONAL. Filter the list to include tasks where the name matches this prefix.
-          If unspecified, no task name filtering is done.
-        schema:
-          type: string
-      - name: state
-        description: |-
-          OPTIONAL. Filter tasks by state. If unspecified,
-          no task state filtering is done.
-        in: query
-        required: false
-        schema:
-          $ref: '#/components/schemas/tesState'
-      - name: tag_key
-        description: |-
-          OPTIONAL. Provide key tag to filter. The field tag_key is an array
-          of key values, and will be zipped with an optional tag_value array.
-          So the query:
-          ```
-            ?tag_key=foo1&tag_value=bar1&tag_key=foo2&tag_value=bar2
-          ```
-          Should be constructed into the structure { "foo1" : "bar1", "foo2" : "bar2"}
-
-          ```
-            ?tag_key=foo1
-          ```
-          Should be constructed into the structure {"foo1" : ""}
-
-          If the tag_value is empty, it will be treated as matching any possible value.
-          If a tag value is provided, both the tag's key and value must be exact
-          matches for a task to be returned.
-          Filter                            Tags                          Match?
-          ----------------------------------------------------------------------
-          {"foo": "bar"}                    {"foo": "bar"}                Yes
-          {"foo": "bar"}                    {"foo": "bat"}                No
-          {"foo": ""}                       {"foo": ""}                   Yes
-          {"foo": "bar", "baz": "bat"}      {"foo": "bar", "baz": "bat"}  Yes
-          {"foo": "bar"}                    {"foo": "bar", "baz": "bat"}  Yes
-          {"foo": "bar", "baz": "bat"}      {"foo": "bar"}                No
-          {"foo": ""}                       {"foo": "bar"}                Yes
-          {"foo": ""}                       {}                            No
-        in: query
-        required: false
-        schema:
-          type: array
-          items:
+        - name: name_prefix
+          in: query
+          description: |-
+            OPTIONAL. Filter the list to include tasks where the name matches this prefix.
+            If unspecified, no task name filtering is done.
+          schema:
             type: string
-      - name: tag_value
-        description: |-
-          OPTIONAL. The companion value field for tag_key
-        in: query
-        required: false
-        schema:
-          type: array
-          items:
+        - name: state
+          description: |-
+            OPTIONAL. Filter tasks by state. If unspecified,
+            no task state filtering is done.
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/tesState'
+        - name: tag_key
+          description: |-
+            OPTIONAL. Provide key tag to filter. The field tag_key is an array
+            of key values, and will be zipped with an optional tag_value array.
+            So the query:
+            ```
+              ?tag_key=foo1&tag_value=bar1&tag_key=foo2&tag_value=bar2
+            ```
+            Should be constructed into the structure { "foo1" : "bar1", "foo2" : "bar2"}
+
+            ```
+              ?tag_key=foo1
+            ```
+            Should be constructed into the structure {"foo1" : ""}
+
+            If the tag_value is empty, it will be treated as matching any possible value.
+            If a tag value is provided, both the tag's key and value must be exact
+            matches for a task to be returned.
+            Filter                            Tags                          Match?
+            ----------------------------------------------------------------------
+            {"foo": "bar"}                    {"foo": "bar"}                Yes
+            {"foo": "bar"}                    {"foo": "bat"}                No
+            {"foo": ""}                       {"foo": ""}                   Yes
+            {"foo": "bar", "baz": "bat"}      {"foo": "bar", "baz": "bat"}  Yes
+            {"foo": "bar"}                    {"foo": "bar", "baz": "bat"}  Yes
+            {"foo": "bar", "baz": "bat"}      {"foo": "bar"}                No
+            {"foo": ""}                       {"foo": "bar"}                Yes
+            {"foo": ""}                       {}                            No
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: tag_value
+          description: |-
+            OPTIONAL. The companion value field for tag_key
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: page_size
+          in: query
+          description: |-
+            Optional number of tasks to return in one page.
+            Must be less than 2048. Defaults to 256.
+          schema:
+            type: integer
+            format: int32
+        - name: page_token
+          in: query
+          description: |-
+            OPTIONAL. Page token is used to retrieve the next page of results.
+            If unspecified, returns the first page of results. The value can be found
+            in the `next_page_token` field of the last returned result of ListTasks
+          schema:
             type: string
-      - name: page_size
-        in: query
-        description: |-
-          Optional number of tasks to return in one page.
-          Must be less than 2048. Defaults to 256.
-        schema:
-          type: integer
-          format: int32
-      - name: page_token
-        in: query
-        description: |-
-          OPTIONAL. Page token is used to retrieve the next page of results.
-          If unspecified, returns the first page of results. The value can be found
-          in the `next_page_token` field of the last returned result of ListTasks
-        schema:
-          type: string
-      - $ref: '#/components/parameters/view'
+        - $ref: '#/components/parameters/view'
 
       responses:
         200:
@@ -194,7 +194,7 @@ paths:
 
     post:
       tags:
-      - TaskService
+        - TaskService
       summary: CreateTask
       description: |-
         Create a new task. The user provides a Task document, which the server
@@ -220,19 +220,19 @@ paths:
   /tasks/{id}:
     get:
       tags:
-      - TaskService
+        - TaskService
       summary: GetTask
       description: |-
         Get a single task, based on providing the exact task ID string.
       operationId: GetTask
       parameters:
-      - name: id
-        in: path
-        required: true
-        description: ID of task to retrieve.
-        schema:
-          type: string
-      - $ref: '#/components/parameters/view'
+        - name: id
+          in: path
+          required: true
+          description: ID of task to retrieve.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/view'
       responses:
         200:
           description: ""
@@ -246,17 +246,17 @@ paths:
   /tasks/{id}:cancel:
     post:
       tags:
-      - TaskService
+        - TaskService
       summary: CancelTask
       description: Cancel a task based on providing an exact task ID.
       operationId: CancelTask
       parameters:
-      - name: id
-        in: path
-        description: ID of task to be canceled.
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          description: ID of task to be canceled.
+          required: true
+          schema:
+            type: string
       responses:
         200:
           description: ""
@@ -300,9 +300,9 @@ components:
         type: string
         default: MINIMAL
         enum:
-        - MINIMAL
-        - BASIC
-        - FULL
+          - MINIMAL
+          - BASIC
+          - FULL
 
   schemas:
     tesCancelTaskResponse:
@@ -310,7 +310,7 @@ components:
       description: CancelTaskResponse describes a response from the CancelTask endpoint.
     tesCreateTaskResponse:
       required:
-      - id
+        - id
       type: object
       properties:
         id:
@@ -321,8 +321,8 @@ components:
         will include the task ID that can be used to look up the status of the job.
     tesExecutor:
       required:
-      - command
-      - image
+        - command
+        - image
       type: object
       properties:
         image:
@@ -409,8 +409,8 @@ components:
             }
             ```
           example:
-            "BLASTDB" : "/data/GRC38"
-            "HMMERDB" : "/data/hmmer"
+            "BLASTDB": "/data/GRC38"
+            "HMMERDB": "/data/hmmer"
         ignore_error:
           type: boolean
           description: |-
@@ -421,7 +421,7 @@ components:
       description: Executor describes a command to be executed, and its environment.
     tesExecutorLog:
       required:
-      - exit_code
+        - exit_code
       type: object
       properties:
         start_time:
@@ -469,11 +469,11 @@ components:
         value once the information is available at run time.
       default: FILE
       enum:
-      - FILE
-      - DIRECTORY
+        - FILE
+        - DIRECTORY
     tesInput:
       required:
-      - path
+        - path
       type: object
       properties:
         name:
@@ -524,7 +524,7 @@ components:
       description: Input describes Task input files.
     tesListTasksResponse:
       required:
-      - tasks
+        - tasks
       type: object
       properties:
         tasks:
@@ -543,8 +543,8 @@ components:
       description: ListTasksResponse describes a response from the ListTasks endpoint.
     tesOutput:
       required:
-      - path
-      - url
+        - path
+        - url
       type: object
       properties:
         name:
@@ -583,9 +583,9 @@ components:
       description: Output describes Task output files.
     tesOutputFileLog:
       required:
-      - path
-      - size_bytes
-      - url
+        - path
+        - size_bytes
+        - url
       type: object
       properties:
         url:
@@ -644,76 +644,76 @@ components:
             type: string
           example: us-west-1
         backend_parameters:
-            type: object
-            additionalProperties:
-                type: string
-            description: |-
-                Key/value pairs for backend configuration.
-                ServiceInfo shall return a list of keys that a backend supports.
-                Keys are case insensitive.
-                It is expected that clients pass all runtime or hardware requirement key/values
-                that are not mapped to existing tesResources properties to backend_parameters.
-                Backends shall log system warnings if a key is passed that is unsupported.
-                Backends shall not store or return unsupported keys if included in a task.
-                If backend_parameters_strict equals true,
-                backends should fail the task if any key/values are unsupported, otherwise,
-                backends should attempt to run the task
-                Intended uses include VM size selection, coprocessor configuration, etc.
-                Example:
-                ```
-                {
-                  "backend_parameters" : {
-                    "VmSize" : "Standard_D64_v3"
-                  }
+          type: object
+          additionalProperties:
+            type: string
+          description: |-
+              Key/value pairs for backend configuration.
+              ServiceInfo shall return a list of keys that a backend supports.
+              Keys are case insensitive.
+              It is expected that clients pass all runtime or hardware requirement key/values
+              that are not mapped to existing tesResources properties to backend_parameters.
+              Backends shall log system warnings if a key is passed that is unsupported.
+              Backends shall not store or return unsupported keys if included in a task.
+              If backend_parameters_strict equals true,
+              backends should fail the task if any key/values are unsupported, otherwise,
+              backends should attempt to run the task
+              Intended uses include VM size selection, coprocessor configuration, etc.
+              Example:
+              ```
+              {
+                "backend_parameters" : {
+                  "VmSize" : "Standard_D64_v3"
                 }
-                ```
-            example:
-                "VmSize" : "Standard_D64_v3"
+              }
+              ```
+          example:
+            "VmSize": "Standard_D64_v3"
         backend_parameters_strict:
-            type: boolean
-            description: |-
-                If set to true, backends should fail the task if any backend_parameters
-                key/values are unsupported, otherwise, backends should attempt to run the task
-            format: boolean
-            default: false
-            example: false
+          type: boolean
+          description: |-
+              If set to true, backends should fail the task if any backend_parameters
+              key/values are unsupported, otherwise, backends should attempt to run the task
+          format: boolean
+          default: false
+          example: false
       description: Resources describes the resources requested by a task.
     tesServiceType:
       allOf:
-      - $ref: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/ServiceType'
-      - type: object
-        required:
-        - artifact
-        properties:
-          artifact:
-            type: string
-            enum: [tes]
-            example: tes
+        - $ref: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/ServiceType'
+        - type: object
+          required:
+            - artifact
+          properties:
+            artifact:
+              type: string
+              enum: [tes]
+              example: tes
     tesServiceInfo:
       allOf:
-      - $ref: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/Service'
-      - type: object
-        properties:
-          storage:
-            type: array
-            description: |-
-              Lists some, but not necessarily all, storage locations supported
-              by the service.
-            items:
-              type: string
-            example:
-               - file:///path/to/local/funnel-storage
-               - s3://ohsu-compbio-funnel/storage
-          tesResources_backend_parameters:
-            type: array
-            description: |-
-              Lists all tesResources.backend_parameters keys supported
-              by the service
-            items:
-              type: string
-            example: ["VmSize"]
-          type:
-            $ref: '#/components/schemas/tesServiceType'
+        - $ref: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/Service'
+        - type: object
+          properties:
+            storage:
+              type: array
+              description: |-
+                Lists some, but not necessarily all, storage locations supported
+                by the service.
+              items:
+                type: string
+              example:
+                - file:///path/to/local/funnel-storage
+                - s3://ohsu-compbio-funnel/storage
+            tesResources_backend_parameters:
+              type: array
+              description: |-
+                Lists all tesResources.backend_parameters keys supported
+                by the service
+              items:
+                type: string
+              example: ["VmSize"]
+            type:
+              $ref: '#/components/schemas/tesServiceType'
     tesState:
       type: string
       readOnly: True
@@ -749,20 +749,20 @@ components:
       default: UNKNOWN
       example: COMPLETE
       enum:
-      - UNKNOWN
-      - QUEUED
-      - INITIALIZING
-      - RUNNING
-      - PAUSED
-      - COMPLETE
-      - EXECUTOR_ERROR
-      - SYSTEM_ERROR
-      - CANCELED
-      - PREEMPTED
-      - CANCELING
+        - UNKNOWN
+        - QUEUED
+        - INITIALIZING
+        - RUNNING
+        - PAUSED
+        - COMPLETE
+        - EXECUTOR_ERROR
+        - SYSTEM_ERROR
+        - CANCELED
+        - PREEMPTED
+        - CANCELING
     tesTask:
       required:
-      - executors
+        - executors
       type: object
       properties:
         id:
@@ -788,7 +788,7 @@ components:
           items:
             $ref: '#/components/schemas/tesInput'
           example:
-            - { "url" : "s3://my-object-store/file1", "path" : "/data/file1" }
+            - {"url": "s3://my-object-store/file1", "path": "/data/file1"}
         outputs:
           type: array
           description: |-
@@ -797,7 +797,7 @@ components:
           items:
             $ref: '#/components/schemas/tesOutput'
           example:
-            - { "path" : "/data/outfile", "url" : "s3://my-object-store/outfile-1", type: "FILE" }
+            - {"path": "/data/outfile", "url": "s3://my-object-store/outfile-1", type: "FILE"}
         resources:
           $ref: '#/components/schemas/tesResources'
         executors:
@@ -833,8 +833,8 @@ components:
         tags:
           type: object
           example:
-            "WORKFLOW_ID" : "cwl-01234"
-            "PROJECT_GROUP" : "alice-lab"
+            "WORKFLOW_ID": "cwl-01234"
+            "PROJECT_GROUP": "alice-lab"
 
           additionalProperties:
             type: string
@@ -868,8 +868,8 @@ components:
       description: Task describes an instance of a task.
     tesTaskLog:
       required:
-      - logs
-      - outputs
+        - logs
+        - outputs
       type: object
       properties:
         logs:

@@ -5,9 +5,12 @@ extends: default
 rules:
   truthy:
     ignore:
-      .github/**/*.yaml
+      - .github/**/*.yaml
   document-start:
     level: error
   document-end:
     level: error
+  line-length:
+    ignore:
+      - poesis/api/tes/spec/**/*.yaml
 ...
