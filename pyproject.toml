@@ -17,7 +17,9 @@ classifiers = [
 description = "TES on kubernetes"
 license = "Apache-2.0"
 maintainers = ["jaeaeich <jh4official@gmail.com>"]
+name = "poiesis"
 readme = "README.md"
+repository = "https://github.com/jaeaeich/poiesis"
 version = "0.1.0"
 
 [tool.poetry.dependencies]
