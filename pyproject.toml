@@ -23,6 +23,7 @@ repository = "https://github.com/jaeaeich/poesis"
 version = "0.1.0"
 
 [tool.poetry.dependencies]
+kubernetes = "^32.0.1"
 pydantic = "^2.10.6"
 python = ">=3.13.0"
 redis = "^5.2.1"
@@ -61,6 +62,12 @@ optional = true
 [tool.poetry.group.test.dependencies]
 pytest = ">=8.2.2,<9.0.0"
 pytest-cov = ">=5.0.0,<=6.0.0"
+
+[tool.poetry.group.types]
+optional = true
+
+[tool.poetry.group.types.dependencies]
+kubernetes-stubs = "^22.6.0.post1"
 
 [tool.poetry.group.vulnerability]
 optional = true
