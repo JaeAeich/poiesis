@@ -14,31 +14,26 @@ class TorcTofExecution(TorcExecutionTemplate):
     Args:
         name: The name of the TES task will be modified for Tof Job.
         outputs: The list of outputs that Tof will create and monitor.
-        volumes: The list of volumes that need to be mounted to the outputs.
 
     Attributes:
         name: The name of the TES task will be modified for Tof Job.
         outputs: The list of outputs that Tof will create and monitor.
-        volumes: The list of volumes that need to be mounted to the outputs
     """
 
     def __init__(
         self,
         name: str,
         outputs: Optional[list[TesOutput]],
-        volumes: Optional[list[str]],
     ):
         """Initialize the Tif execution class.
 
         Args:
             name: The name of the TES task will be modified for Tof Job.
             outputs: The list of outputs that Tof will create and monitor.
-            volumes: The list of volumes that need to be mounted to the outputs.
 
         Attributes:
             name: The name of the TES task will be modified for Tof Job.
             outputs: The list of outputs that Tof will create and monitor.
-            volumes: The list of volumes that need to be mounted to the outputs
         """
         pass
 

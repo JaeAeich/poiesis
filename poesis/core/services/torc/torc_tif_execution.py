@@ -14,28 +14,22 @@ class TorcTifExecution(TorcExecutionTemplate):
     Args:
         name: The name of the TES task will be modified for Tif Job.
         inputs: The list of inputs that Tif will create and monitor.
-        volumes: The list of volumes that need to be mounted to the inputs.
 
     Attributes:
         name: The name of the TES task will be modified for Tif Job.
         inputs: The list of inputs that Tif will create and monitor.
-        volumes: The list of volumes that need to be mounted to the inputs.
     """
 
-    def __init__(
-        self, name: str, inputs: Optional[list[TesInput]], volumes: Optional[list[str]]
-    ):
+    def __init__(self, name: str, inputs: Optional[list[TesInput]]):
         """Initialize the Tif execution class.
 
         Args:
             name: The name of the TES task will be modified for Tif Job.
             inputs: The list of inputs that Tif will create and monitor.
-            volumes: The list of volumes that need to be mounted to the inputs.
 
         Attributes:
             name: The name of the TES task will be modified for Tif Job.
             inputs: The list of inputs that Tif will create and monitor.
-            volumes: The list of volumes that need to be mounted to the inputs.
         """
         pass
 

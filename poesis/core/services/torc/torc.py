@@ -61,11 +61,11 @@ class Torc:
         if self.task.resources is not None:
             disk_gb = self.task.resources.disk_gb
         await self.create_pvc(self.task.name, disk_gb)
-        await self.tif_execution(self.task.name, self.task.inputs, self.task.volumes)
+        await self.tif_execution(self.task.name, self.task.inputs)
         await self.texam_execution(
             self.task.name, self.task.executors, self.task.resources, self.task.volumes
         )
-        await self.tof_execution(self.task.name, self.task.outputs, self.task.volumes)
+        await self.tof_execution(self.task.name, self.task.outputs)
 
     async def create_pvc(self, name: str, size: Optional[float]) -> None:
         """Create a PVC for the task.
@@ -95,7 +95,7 @@ class Torc:
         logger.info(f"PVC created: {self.pvc_name}")
 
     async def tif_execution(
-        self, name: str, inputs: Optional[list[TesInput]], volumes: Optional[list[str]]
+        self, name: str, inputs: Optional[list[TesInput]]
     ) -> None:
         """Execute the Tif job.
 
@@ -104,7 +104,7 @@ class Torc:
             inputs: List of inputs given in the task.
             volumes: List of volumes given in the task.
         """
-        TorcTifExecution(name, inputs, volumes).execute()
+        TorcTifExecution(name, inputs).execute()
 
     async def texam_execution(
         self,
@@ -127,13 +127,11 @@ class Torc:
         self,
         name: str,
         outputs: Optional[list[TesOutput]],
-        volumes: Optional[list[str]],
     ) -> None:
         """Execute the Tof job.
 
         Args:
             name: Name of the task, will be modified to create Tof job name.
             outputs: List of outputs given in the task.
-            volumes: List of volumes given in the task.
         """
-        TorcTofExecution(name, outputs, volumes).execute()
+        TorcTofExecution(name, outputs).execute()
