@@ -8,7 +8,7 @@ from http import HTTPStatus
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
 
-from poesis.core.ports.kubernetes import KubernetesPort
+from poiesis.core.ports.kubernetes import KubernetesPort
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class KubernetesAdapter(KubernetesPort):
 
         self.core_api = client.CoreV1Api()
         self.batch_api = client.BatchV1Api()
-        self.namespace = os.getenv("K8S_NAMESPACE", "poesis")
+        self.namespace = os.getenv("K8S_NAMESPACE", "poiesis")
 
     async def create_job(self, job: client.V1Job) -> str:
         """Create a Kubernetes Job.

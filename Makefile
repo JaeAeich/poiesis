@@ -46,7 +46,7 @@ cv: clean-venv
 .PHONY: docs d
 docs:
 	@echo "\nGenerating project documentation ++++++++++++++++++++++++++++++++++++++++++++++\n"
-	@poetry run sphinx-apidoc -f -o docs/source/pages poesis
+	@poetry run sphinx-apidoc -f -o docs/source/pages poiesis
 	@cd docs && make html
 	@echo "\nSummary ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
 	@echo "Documentation generated successfully."
@@ -82,7 +82,7 @@ pc: precommit-check
 security:
 	@echo "\nRunning security scans using bandit and safety ++++++++++++++++++++++++++++++++\n"
 	@poetry run safety check --full-report
-	@poetry run bandit -c pyproject.toml -r poesis
+	@poetry run bandit -c pyproject.toml -r poiesis
 
 s: security
 
@@ -96,7 +96,7 @@ t: test
 .PHONY: type-check tc
 type-check:
 	@echo "\nPerforming type checking with mypy ++++++++++++++++++++++++++++++++++++++++++++\n"
-	@poetry run mypy poesis
+	@poetry run mypy poiesis
 
 tc: type-check
 

@@ -29,7 +29,7 @@ jobs:
         run: |
           poetry run sphinx-apidoc  \
             -o /tmp/docs/source/pages \
-            poesis/
+            poiesis/
 
       - name: Compare current docs with latest docs
         id: check_docs_diff

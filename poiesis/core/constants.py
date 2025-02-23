@@ -7,7 +7,7 @@ class PoesisCoreConstants:
     class K8s:
         """Constants used in Kubernetes."""
 
-        K8S_NAMESPACE = "poesis"
+        K8S_NAMESPACE = "poiesis"
         TORC_PREFIX = "torc"
         TIF_PREFIX = "tif"
         TE_PREFIX = "tif-executor"

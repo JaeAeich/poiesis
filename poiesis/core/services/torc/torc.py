@@ -10,18 +10,18 @@ from kubernetes.client import (
     V1ResourceRequirements,
 )
 
-from poesis.api.tes.models import (
+from poiesis.api.tes.models import (
     TesExecutor,
     TesInput,
     TesOutput,
     TesResources,
     TesTask,
 )
-from poesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
-from poesis.core.constants import PoesisCoreConstants
-from poesis.core.services.torc.torc_texam_execution import TorcTexamExecution
-from poesis.core.services.torc.torc_tif_execution import TorcTifExecution
-from poesis.core.services.torc.torc_tof_execution import TorcTofExecution
+from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
+from poiesis.core.constants import PoesisCoreConstants
+from poiesis.core.services.torc.torc_texam_execution import TorcTexamExecution
+from poiesis.core.services.torc.torc_tif_execution import TorcTifExecution
+from poiesis.core.services.torc.torc_tof_execution import TorcTofExecution
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +94,7 @@ class Torc:
         self.pvc_name = await self.kubernetes_client.create_pvc(pvc)
         logger.info(f"PVC created: {self.pvc_name}")
 
-    async def tif_execution(
-        self, name: str, inputs: Optional[list[TesInput]]
-    ) -> None:
+    async def tif_execution(self, name: str, inputs: Optional[list[TesInput]]) -> None:
         """Execute the Tif job.
 
         Args:

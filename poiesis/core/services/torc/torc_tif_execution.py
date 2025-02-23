@@ -2,8 +2,8 @@
 
 from typing import Optional
 
-from poesis.api.tes.models import TesInput
-from poesis.core.services.torc.torc_execution_template import TorcExecutionTemplate
+from poiesis.api.tes.models import TesInput
+from poiesis.core.services.torc.torc_execution_template import TorcExecutionTemplate
 
 
 class TorcTifExecution(TorcExecutionTemplate):

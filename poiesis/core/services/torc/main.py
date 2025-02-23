@@ -6,8 +6,8 @@ import json
 
 from pydantic import ValidationError
 
-from poesis.api.tes.models import TesTask
-from poesis.core.services.torc.torc import Torc
+from poiesis.api.tes.models import TesTask
+from poiesis.core.services.torc.torc import Torc
 
 
 async def async_main():

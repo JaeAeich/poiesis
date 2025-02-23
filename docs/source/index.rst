@@ -1,4 +1,4 @@
-Welcome to Poesis's documentation!
+Welcome to poiesis's documentation!
 ===========================================================
 
 .. toctree::

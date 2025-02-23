@@ -1,7 +1,7 @@
-poesis
+poiesis
 ===================
 
 .. toctree::
    :maxdepth: 4
 
-    poesis
+    poiesis

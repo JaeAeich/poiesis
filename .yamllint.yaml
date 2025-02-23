@@ -12,5 +12,5 @@ rules:
     level: error
   line-length:
     ignore:
-      - poesis/api/tes/spec/**/*.yaml
+      - poiesis/api/tes/spec/**/*.yaml
 ...

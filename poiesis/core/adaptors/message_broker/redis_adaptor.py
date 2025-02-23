@@ -5,7 +5,7 @@ from collections.abc import Iterator
 
 import redis
 
-from poesis.core.ports.message_broker import Message, MessageBroker
+from poiesis.core.ports.message_broker import Message, MessageBroker
 
 
 class RedisMessageBroker(MessageBroker):

@@ -80,5 +80,5 @@ jobs:
           poetry-export-options: "--with=code_quality --with=types"
 
       - name: Check types
-        run: poetry run mypy poesis/
+        run: poetry run mypy poiesis/
 ...
