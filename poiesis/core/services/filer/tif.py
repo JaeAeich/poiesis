@@ -12,14 +12,31 @@ from poiesis.core.services.filer.filer_strategy_factory import FilerStrategyFact
 
 
 class Tif(Filer):
-    """Task input filer."""
+    """Task input filer.
 
-    def __init__(self, inputs: list[TesInput]):
+    Args:
+        name: Name of the task.
+        inputs: List of task inputs.
+
+    Attributes:
+        name: Name of the task.
+        inputs: List of task inputs.
+        message_broker: Message broker.
+    """
+
+    def __init__(self, name: str, inputs: list[TesInput]):
         """Task input filer.
 
         Args:
+            name: Name of the task.
             inputs: List of task inputs.
+
+        Attributes:
+            name: Name of the task.
+            inputs: List of task inputs.
+            message_broker: Message broker.
         """
+        self.name = name
         self.inputs = input
 
     def file(self):
@@ -67,6 +84,7 @@ def main() -> None:
         ]'
     """
     parser = argparse.ArgumentParser(description="TIF service command line interface.")
+    parser.add_argument("--name", nargs="+", required=True, help="Name of the task.")
     parser.add_argument(
         "--inputs", nargs="+", required=True, help="List of task inputs."
     )
@@ -76,7 +94,7 @@ def main() -> None:
         input_str = " ".join(args.inputs)
         _inputs = json.loads(input_str)
         inputs = [TesInput(**input_) for input_ in _inputs]
-        Tif(inputs).execute()
+        Tif(args.name, inputs).execute()
     except json.JSONDecodeError as e:
         print(f"JSON parsing error: {e}")
         raise
