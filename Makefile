@@ -4,6 +4,20 @@
 ## Variables ##################################################################
 # NOTE: Define any variables here if needed in the future
 
+# Docker image configuration
+REGISTRY_NAMESPACE ?= jaeaeich
+NAME := poiesis
+VERSION := $(shell poetry version | awk '{print$$2}')
+BUILD_DATE := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
+GIT_REVISION := $(shell git rev-parse HEAD)
+PY_VERSION := $(shell poetry run python --version | awk '{print$$2}')
+DOCKERFILE := deployment/images/Dockerfile
+
+# Full image names
+IMAGE_NAME := ${REGISTRY_NAMESPACE}/${NAME}
+IMAGE_TAG_LATEST := ${IMAGE_NAME}:latest
+IMAGE_TAG_VERSION := ${IMAGE_NAME}:${VERSION}
+
 ## Documentation ##############################################################
 # NOTE: Keep all the targets in alphabetical order for better readability.
 
@@ -19,6 +33,10 @@ help:
 	@echo "  \033[1m\033[35mprecommit-check\033[0m \033[37m(pc)\033[0m: \033[36mRun all pre-commit checks.\033[0m"
 	@echo "  \033[1m\033[35msecurity\033[0m \033[37m(s)\033[0m: \033[36mRun security scans.\033[0m"
 	@echo "  \033[1m\033[35mtype-check\033[0m \033[37m(tc)\033[0m: \033[36mPerform type checking.\033[0m\n"
+
+	@echo "Deployment --------------------------------------------------------------------"
+	@echo "  \033[1m\033[35mbuild-image\033[0m \033[37m(bi)\033[0m: \033[36mBuild container image.\033[0m"
+	@echo "  \033[1m\033[35mclean-image\033[0m \033[37m(ci)\033[0m: \033[36mRemove container image.\033[0m\n"
 
 	@echo "Documentation -----------------------------------------------------------------"
 	@echo "  \033[1m\033[35mdocs\033[0m \033[37m(d)\033[0m: \033[36mGenerate project documentation.\033[0m\n"
@@ -114,3 +132,26 @@ v: venv
 ## Custom Targets #############################################################
 # NOTE: Keep all the targets in alphabetical order for better readability.
 # NOTE: Add any custom targets here if needed in the future.
+
+PHONY: build-docker-image bi
+build-docker-image:
+	@echo "\nBuilding Docker image +++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
+	@docker build \
+		--build-arg PY_VERSION="${PY_VERSION}" \
+		--build-arg BUILD_DATE="${BUILD_DATE}" \
+		--build-arg GIT_REVISION="${GIT_REVISION}" \
+		--build-arg VERSION="${VERSION}" \
+		-t ${IMAGE_TAG_VERSION} \
+		-t ${IMAGE_TAG_LATEST} \
+		-f ${DOCKERFILE} .
+	@echo "\nDocker image built successfully: jaeaeich/poiesis:latest\n"
+
+bi: build-docker-image
+
+.PHONY: clean-docker-image ci
+clean-docker-image:
+	@echo "\nRemoving Docker image +++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
+	@docker rmi ${IMAGE_TAG_LATEST} ${IMAGE_TAG_VERSION} 2>/dev/null || echo "Docker images not found."
+	@echo "\nDocker image removed successfully (if it existed).\n"
+
+ ci: clean-docker-image

@@ -1,0 +1,55 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+bin/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+venv/
+.venv/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+nosetests.xml
+.testmondata
+
+# Development tools
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+.env
+.env.*
+!.env.example
+.ruff_cache/
+
+# Project specific
+docs/
+tests/
+deployment/
+Dockerfile
+docker-compose*.yml
+CHANGELOG.md
+LICENSE
+*.log
+*.md
+!README.md
