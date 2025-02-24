@@ -5,39 +5,29 @@ from collections.abc import Iterator
 
 import redis
 
+from poiesis.core.constants import PoiesisCoreConstants
 from poiesis.core.ports.message_broker import Message, MessageBroker
 
 
 class RedisMessageBroker(MessageBroker):
     """Redis message broker.
 
-    Args:
-        host: The host of the Redis server
-        port: The port of the Redis server
-
     Attributes:
-        host: The host of the Redis server
-        port: The port of the Redis server
         redis: The Redis client
         pubsub: The Redis pubsub client
     """
 
-    def __init__(self, host: str = "localhost", port: int = 6379):
+    def __init__(self):
         """Initialise the Redis message broker.
 
-        Args:
-            host: The host of the Redis server
-            port: The port of the Redis server
-
         Attributes:
-            host: The host of the Redis server
-            port: The port of the Redis server
             redis: The Redis client
             pubsub: The Redis pubsub client
         """
-        self.host = host
-        self.port = port
-        self.redis = redis.Redis(host=host, port=port)
+        self.redis = redis.Redis(
+            host=PoiesisCoreConstants.MessageBroker.MESSAGE_BROKER_HOST,
+            port=PoiesisCoreConstants.MessageBroker.MESSAGE_BROKER_PORT,
+        )
         self.pubsub = self.redis.pubsub()
 
     def publish(self, channel: str, message: Message) -> None:

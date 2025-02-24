@@ -1,3 +1,7 @@
 # Poetry
 export POETRY_VIRTUALENVS_CREATE=true
 export POETRY_VIRTUALENVS_IN_PROJECT=true
+# Poiesis
+export K8S_NAMESPACE=poiesis
+export MESSAGE_BROKER_HOST=localhost
+export MESSAGE_BROKER_PORT=6379
