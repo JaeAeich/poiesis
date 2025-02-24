@@ -3,15 +3,29 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.ports.message_broker import Message
 
 
 class TorcExecutionTemplate(ABC):
-    """TorcTemplate is a template class for the Torc service."""
+    """TorcTemplate is a template class for the Torc service.
+
+    Attributes:
+        kubernetes_client: Kubernetes client.
+        message_broker: Message broker.
+        message: Message for the message broker, which would be sent to TOrc.
+    """
 
     def __init__(self) -> None:
-        """TorcTemplate initialization."""
+        """TorcTemplate initialization.
+
+        Attributes:
+            kubernetes_client: Kubernetes client.
+            message_broker: Message broker.
+            message: Message for the message broker, which would be sent to TOrc.
+        """
+        self.kubernetes_client = KubernetesAdapter()
         self.message_broker = RedisMessageBroker()
         self.message: Optional[Message] = None
 

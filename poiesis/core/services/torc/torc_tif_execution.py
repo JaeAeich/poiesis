@@ -18,7 +18,6 @@ from kubernetes.client import (
 from kubernetes.client.exceptions import ApiException
 
 from poiesis.api.tes.models import TesInput
-from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.constants import PoiesisCoreConstants
 from poiesis.core.services.torc.torc_execution_template import TorcExecutionTemplate
 
@@ -37,6 +36,9 @@ class TorcTifExecution(TorcExecutionTemplate):
     Attributes:
         name: The name of the TES task will be modified for Tif Job.
         inputs: The list of inputs that Tif will create and monitor.
+        message_broker: Message broker client.
+        message: Message for the message broker which would to sent to TOrc.
+        kubernetes_client: Kubernetes client.
     """
 
     def __init__(self, name: str, inputs: Optional[list[TesInput]]):
@@ -49,11 +51,13 @@ class TorcTifExecution(TorcExecutionTemplate):
         Attributes:
             name: The name of the TES task will be modified for Tif Job.
             inputs: The list of inputs that Tif will create and monitor.
+            message_broker: Message broker client.
+            message: Message for the message broker which would to sent to TOrc.
+            kubernetes_client: Kubernetes client.
         """
         super().__init__()
         self.name = name
         self.inputs = inputs
-        self.kubernetes_client = KubernetesAdapter()
 
     async def start_job(self):
         """Create the K8s job for Tif."""
