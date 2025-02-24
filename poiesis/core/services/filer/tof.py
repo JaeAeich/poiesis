@@ -54,6 +54,7 @@ def main() -> None:
     """Entry point for the TOF service.
 
     Command Line Arguments:
+        --name: The name of the task.
         --outputs: A JSON string containing list of outputs from the TES task request.
 
     Returns:
@@ -66,14 +67,17 @@ def main() -> None:
 
     Example:
         Command line usage:
-        $ tof --outputs '[{
+        ```bash
+        $ tof --name md5sum --outputs '[{
             "path": "/data/outfile",
             "url": "s3://my-object-store/outfile-1",
             "type": "FILE"
         }]'
+        ```
 
         Multiple outputs:
-        $ tof --outputs '[
+        ```bash
+        $ tof --name image-processor --outputs '[
             {
                 "path": "/data/outfile1",
                 "url": "s3://my-object-store/outfile-1",
@@ -85,6 +89,7 @@ def main() -> None:
                 "type": "FILE"
             }
         ]'
+        ```
     """
     parser = argparse.ArgumentParser(description="TIF service command line interface.")
     parser.add_argument("--name", nargs="+", required=True, help="Name of the task.")

@@ -54,6 +54,7 @@ def main() -> None:
     """Entry point for the TIF service.
 
     Command Line Arguments:
+        --name: The name of the task
         --inputs: A JSON string containing list of inputs from the TES task request.
 
     Returns:
@@ -66,13 +67,16 @@ def main() -> None:
 
     Example:
         Command line usage:
-        $ tif --inputs '[{
+        ```bash
+        $ tif --name md5sum --inputs '[{
             "url": "s3://my-object-store/file1",
             "path": "/data/file1"
         }]'
+        ```
 
         Multiple inputs:
-        $ tif --inputs '[
+        ```bash
+        $ tif --name image-processor --inputs '[
             {
                 "url": "s3://my-object-store/file1",
                 "path": "/data/file1"
@@ -82,6 +86,7 @@ def main() -> None:
                 "path": "/data/file2"
             }
         ]'
+        ```
     """
     parser = argparse.ArgumentParser(description="TIF service command line interface.")
     parser.add_argument("--name", nargs="+", required=True, help="Name of the task.")
