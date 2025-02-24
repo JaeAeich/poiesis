@@ -1,9 +1,13 @@
 """Content filer strategy module."""
 
+import logging
 import os
 
 from poiesis.api.tes.models import TesInput, TesOutput
+from poiesis.core.constants import PoiesisCoreConstants
 from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
+
+logger = logging.getLogger(__name__)
 
 
 class ContentFilerStrategy(FilerStrategy):
@@ -18,13 +22,22 @@ class ContentFilerStrategy(FilerStrategy):
 
         Just check if the directory exists. No need for authorization checks.
         """
-        os.makedirs(os.path.dirname(input.path), exist_ok=True)
+        pass
 
-    def download_input(self, input: TesInput) -> None:
+    def download_input(self, _input: TesInput) -> None:
         """Get the content from request and mount to PVC."""
-        content = input.content.encode("utf-8")
-        with open(input.path, "wb") as f:
+        assert _input.content is not None
+
+        container_path = os.path.join(
+            PoiesisCoreConstants.K8s.FILER_PVC_PATH, _input.path.lstrip("/")
+        )
+        os.makedirs(os.path.dirname(container_path), exist_ok=True)
+
+        content = _input.content.encode("utf-8")
+        with open(container_path, "wb") as f:
             f.write(content)
+
+        logger.info(f"Created file with content at {container_path}")
 
     def upload_output(self, output: TesOutput) -> None:
         """Mount the content to PVC."""
