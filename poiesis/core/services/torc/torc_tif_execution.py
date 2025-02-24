@@ -12,6 +12,7 @@ from kubernetes.client import (
     V1PersistentVolumeClaimVolumeSource,
     V1PodSpec,
     V1PodTemplateSpec,
+    V1SecretVolumeSource,
     V1Volume,
     V1VolumeMount,
 )
@@ -92,7 +93,12 @@ class TorcTifExecution(TorcExecutionTemplate):
                                     V1VolumeMount(
                                         name=PoiesisCoreConstants.K8s.COMMON_PVC_VOLUME_NAME,
                                         mount_path=PoiesisCoreConstants.K8s.FILER_PVC_PATH,
-                                    )
+                                    ),
+                                    V1VolumeMount(
+                                        name=PoiesisCoreConstants.K8s.S3_VOLUME_NAME,
+                                        mount_path=PoiesisCoreConstants.K8s.S3_MOUNT_PATH,
+                                        read_only=True,
+                                    ),
                                 ],
                             )
                         ],
@@ -102,7 +108,13 @@ class TorcTifExecution(TorcExecutionTemplate):
                                 persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
                                     claim_name=f"{PoiesisCoreConstants.K8s.PVC_PREFIX}-{self.name}"
                                 ),
-                            )
+                            ),
+                            V1Volume(
+                                name=PoiesisCoreConstants.K8s.S3_VOLUME_NAME,
+                                secret=V1SecretVolumeSource(
+                                    secret_name=PoiesisCoreConstants.K8s.S3_SECRET_NAME
+                                ),
+                            ),
                         ],
                         restart_policy="Never",
                     ),

@@ -20,6 +20,9 @@ class PoiesisCoreConstants:
         POIESIS_IMAGE = "docker.io/jaeaeich/poiesis:latest"
         COMMON_PVC_VOLUME_NAME = "task-pvc-volume"
         FILER_PVC_PATH = "/transfer"
+        S3_VOLUME_NAME = "s3-volume"
+        S3_MOUNT_PATH = "/aws"
+        S3_SECRET_NAME = "s3-secret"
 
     class MessageBroker:
         """Constants used in message broker."""
