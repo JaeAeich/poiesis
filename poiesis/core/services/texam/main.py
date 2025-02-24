@@ -2,12 +2,15 @@
 
 import argparse
 import json
+import logging
 from typing import Optional
 
 from pydantic import ValidationError
 
 from poiesis.api.tes.models import TesExecutor, TesResources
 from poiesis.core.services.texam.texam import Texam
+
+logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
@@ -84,11 +87,11 @@ async def main() -> None:
         )
         await Texam(name, executors, resources, volumes).execute()
     except json.JSONDecodeError as e:
-        print(f"JSON parsing error: {e}")
+        logger.error(f"JSON parsing error: {e}")
         raise
     except ValidationError as e:
-        print(f"Validation error: {e}")
+        logger.error(f"Validation error: {e}")
         raise
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error: {e}")
         raise

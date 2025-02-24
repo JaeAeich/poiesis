@@ -1,11 +1,14 @@
 """Torc's template for each service."""
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Optional
 
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.ports.message_broker import Message
+
+logger = logging.getLogger(__name__)
 
 
 class TorcExecutionTemplate(ABC):
@@ -60,4 +63,4 @@ class TorcExecutionTemplate(ABC):
     def log(self) -> None:
         """Log the job status in TaskDB."""
         # TODO: Implement the logging logic.
-        print("Logging the job status in TaskDB.")
+        logger.info("Logging the job status in TaskDB.")

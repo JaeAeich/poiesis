@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import logging
 
 from pydantic import ValidationError
 
@@ -9,6 +10,8 @@ from poiesis.api.tes.models import TesInput
 from poiesis.core.ports.message_broker import Message
 from poiesis.core.services.filer.filer import Filer
 from poiesis.core.services.filer.filer_strategy_factory import FilerStrategyFactory
+
+logger = logging.getLogger(__name__)
 
 
 class Tif(Filer):
@@ -24,7 +27,7 @@ class Tif(Filer):
         message_broker: Message broker.
     """
 
-    def __init__(self, name: str, inputs: list[TesInput]):
+    def __init__(self, name: str, inputs: list[TesInput]) -> None:
         """Task input filer.
 
         Args:
@@ -37,9 +40,9 @@ class Tif(Filer):
             message_broker: Message broker.
         """
         self.name = name
-        self.inputs = input
+        self.inputs = inputs
 
-    def file(self):
+    def file(self) -> None:
         """Filing logic, download."""
         for input in self.inputs:
             filer_strategy = FilerStrategyFactory.create_strategy(input.url)
@@ -101,11 +104,11 @@ def main() -> None:
         inputs = [TesInput(**input_) for input_ in _inputs]
         Tif(args.name, inputs).execute()
     except json.JSONDecodeError as e:
-        print(f"JSON parsing error: {e}")
+        logger.error(f"JSON parsing error: {e}")
         raise
     except ValidationError as e:
-        print(f"Validation error: {e}")
+        logger.error(f"Validation error: {e}")
         raise
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error: {e}")
         raise

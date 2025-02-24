@@ -3,11 +3,14 @@
 import argparse
 import asyncio
 import json
+import logging
 
 from pydantic import ValidationError
 
 from poiesis.api.tes.models import TesTask
 from poiesis.core.services.torc.torc import Torc
+
+logger = logging.getLogger(__name__)
 
 
 async def async_main():
@@ -23,7 +26,7 @@ async def async_main():
         data = json.loads(args.task)
         task = TesTask(**data)
     except ValidationError as e:
-        print(f"Validation error: {e}")
+        logger.error(f"Validation error: {e}")
         raise
 
     torc = Torc(task)
