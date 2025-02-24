@@ -1,19 +1,28 @@
 """Torc's template for each service."""
 
 from abc import ABC, abstractmethod
+from typing import Optional
+
+from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
+from poiesis.core.ports.message_broker import Message
 
 
 class TorcExecutionTemplate(ABC):
     """TorcTemplate is a template class for the Torc service."""
 
-    def execute(self) -> None:
+    def __init__(self) -> None:
+        """TorcTemplate initialization."""
+        self.message_broker = RedisMessageBroker()
+        self.message: Optional[Message] = None
+
+    async def execute(self) -> None:
         """Defines the template method, for each service namely Texam, Tif, Tof."""
-        self.start_job()
+        await self.start_job()
         self.wait()
         self.log()
 
     @abstractmethod
-    def start_job(self) -> None:
+    async def start_job(self) -> None:
         """Create the K8s job.
 
         It could be a Tif, Tof or Texam job.
@@ -26,8 +35,13 @@ class TorcExecutionTemplate(ABC):
         Uses message broker with task name as channel name
         and waits on that channel for the message.
         """
-        # TODO: Implement the wait logic.
-        print("Waiting for the job to finish.")
+        if not hasattr(self, "name"):
+            raise AttributeError("The name attribute is not set.")
+        message = None
+        for message in self.message_broker.subscribe(self.name):
+            if message:
+                self.message = message
+                break
 
     def log(self) -> None:
         """Log the job status in TaskDB."""

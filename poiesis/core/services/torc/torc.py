@@ -102,7 +102,7 @@ class Torc:
             inputs: List of inputs given in the task.
             volumes: List of volumes given in the task.
         """
-        TorcTifExecution(name, inputs).execute()
+        await TorcTifExecution(name, inputs).execute()
 
     async def texam_execution(
         self,
@@ -119,7 +119,7 @@ class Torc:
             resources: Resources given in the task.
             volumes: List of volumes given in the task.
         """
-        TorcTexamExecution(name, executors, resources, volumes).execute()
+        await TorcTexamExecution(name, executors, resources, volumes).execute()
 
     async def tof_execution(
         self,
@@ -132,4 +132,4 @@ class Torc:
             name: Name of the task, will be modified to create Tof job name.
             outputs: List of outputs given in the task.
         """
-        TorcTofExecution(name, outputs).execute()
+        await TorcTofExecution(name, outputs).execute()
