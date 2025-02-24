@@ -1,5 +1,8 @@
 """Content filer strategy module."""
 
+import os
+
+from poiesis.api.tes.models import TesInput, TesOutput
 from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
 
 
@@ -13,14 +16,18 @@ class ContentFilerStrategy(FilerStrategy):
     def check_permissions(self):
         """Authentication is enough for content.
 
-        No need for authorization checks.
+        Just check if the directory exists. No need for authorization checks.
         """
-        pass
+        os.makedirs(os.path.dirname(input.path), exist_ok=True)
 
-    def download_input(self):
+    def download_input(self, input: TesInput) -> None:
         """Get the content from request and mount to PVC."""
-        pass
+        content = input.content.encode("utf-8")
+        with open(input.path, "wb") as f:
+            f.write(content)
 
-    def upload_output(self):
+    def upload_output(self, output: TesOutput) -> None:
         """Mount the content to PVC."""
-        pass
+        raise NotImplementedError(
+            "Content filer does not support uploads according to TES spec."
+        )
