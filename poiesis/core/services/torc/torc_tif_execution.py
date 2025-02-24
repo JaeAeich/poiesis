@@ -41,7 +41,7 @@ class TorcTifExecution(TorcExecutionTemplate):
         kubernetes_client: Kubernetes client.
     """
 
-    def __init__(self, name: str, inputs: Optional[list[TesInput]]):
+    def __init__(self, name: str, inputs: Optional[list[TesInput]]) -> None:
         """Initialize the Tif execution class.
 
         Args:
@@ -59,15 +59,26 @@ class TorcTifExecution(TorcExecutionTemplate):
         self.name = name
         self.inputs = inputs
 
-    async def start_job(self):
+    async def start_job(self) -> None:
         """Create the K8s job for Tif."""
         tif_job_name = PoiesisCoreConstants.K8s.TIF_PREFIX + self.name
-        inputs = json.dumps([input.model_dump_json() for input in self.inputs])
+        inputs = (
+            json.dumps([input.model_dump_json() for input in self.inputs])
+            if self.inputs
+            else "[]"
+        )
 
         job = V1Job(
             api_version="batch/v1",
             kind="Job",
-            metadata=V1ObjectMeta(name=tif_job_name),
+            metadata=V1ObjectMeta(
+                name=tif_job_name,
+                labels={
+                    "service": PoiesisCoreConstants.K8s.TIF_PREFIX,
+                    "name": tif_job_name,
+                    "parent": f"{PoiesisCoreConstants.K8s.TORC_PREFIX}-{self.name}",
+                },
+            ),
             spec=V1JobSpec(
                 template=V1PodTemplateSpec(
                     spec=V1PodSpec(
@@ -75,7 +86,8 @@ class TorcTifExecution(TorcExecutionTemplate):
                             V1Container(
                                 name=PoiesisCoreConstants.K8s.TIF_PREFIX,
                                 image=PoiesisCoreConstants.K8s.POIESIS_IMAGE,
-                                args=["--name", self.name, "--input", inputs],
+                                command=["tif"],
+                                args=["--name", self.name, "--inputs", inputs],
                                 volume_mounts=[
                                     V1VolumeMount(
                                         name=PoiesisCoreConstants.K8s.COMMON_PVC_VOLUME_NAME,

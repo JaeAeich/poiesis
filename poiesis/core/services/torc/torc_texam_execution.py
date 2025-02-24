@@ -76,7 +76,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
         """Create the K8s job for Texam."""
         texam_name = f"{PoiesisCoreConstants.K8s.TEXAM_PREFIX}-{self.name}"
         executors = json.dumps(
-            [self.executors.model_dump_json() for executor in self.executors]
+            [executor.model_dump_json() for executor in self.executors]
         )
         resources = (
             json.dumps(self.resources.model_dump_json()) if self.resources else "{}"
