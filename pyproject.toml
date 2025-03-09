@@ -29,6 +29,8 @@ kubernetes = "^32.0.1"
 pydantic = "^2.10.6"
 python = ">=3.13.0"
 redis = "^5.2.1"
+rich-click = "^1.8.7"
+tomli = "^2.2.1"
 
 [tool.poetry.group.code_quality]
 optional = true
@@ -81,10 +83,12 @@ bandit = ">=1.7.8,<2.0.0"
 safety = ">=3.2.0,<4.0.0"
 
 [tool.poetry.scripts]
-texam = "poiesis.core.services.texam.main:main"
-tif = "poiesis.core.services.filer.tif:main"
-tof = "poiesis.core.services.filer.tof:main"
-torc = "poiesis.core.services.torc.main:main"
+# poiesis = "poiesis.main:main"
+# texam = "poiesis.core.services.texam.main:main"
+# tif = "poiesis.core.services.filer.tif:main"
+# tof = "poiesis.core.services.filer.tof:main"
+# torc = "poiesis.core.services.torc.main:main"
+poiesis = "poiesis.cli.main:main"
 
 [tool.ruff]
 indent-width = 4

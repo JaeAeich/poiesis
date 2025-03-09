@@ -101,7 +101,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
                             V1Container(
                                 name=core_constants.K8s.TIF_PREFIX,
                                 image=core_constants.K8s.POIESIS_IMAGE,
-                                command=["texam"],
+                                command=["poiesis", "run", "texam"],
                                 args=[
                                     "--name",
                                     self.name,

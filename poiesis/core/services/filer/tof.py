@@ -1,10 +1,6 @@
 """Entry point for the TOF service."""
 
-import argparse
-import json
 import logging
-
-from pydantic import ValidationError
 
 from poiesis.api.tes.models import TesOutput
 from poiesis.core.ports.message_broker import Message
@@ -39,6 +35,7 @@ class Tof(Filer):
             outputs: List of task outputs.
             message_broker: Message broker
         """
+        super().__init__()
         self.name = name
         self.outputs = outputs
 
@@ -51,67 +48,3 @@ class Tof(Filer):
             except Exception as e:
                 self.message(Message(f"TOF failed: {e}"))
                 raise
-
-
-def main() -> None:
-    """Entry point for the TOF service.
-
-    Command Line Arguments:
-        --name: The name of the task.
-        --outputs: A JSON string containing list of outputs from the TES task request.
-
-    Returns:
-        None
-
-    Raises:
-        JSONDecodeError: If the provided input cannot be parsed as valid JSON
-        ValidationError: If the output data doesn't match the TesOutput schema
-        Exception: For any other unexpected errors
-
-    Example:
-        Command line usage:
-        ```bash
-        $ tof --name md5sum --outputs '[{
-            "path": "/data/outfile",
-            "url": "s3://my-object-store/outfile-1",
-            "type": "FILE"
-        }]'
-        ```
-
-        Multiple outputs:
-        ```bash
-        $ tof --name image-processor --outputs '[
-            {
-                "path": "/data/outfile1",
-                "url": "s3://my-object-store/outfile-1",
-                "type": "FILE"
-            },
-            {
-                "path": "/data/outfile2",
-                "url": "file:///data/outfile-2",
-                "type": "FILE"
-            }
-        ]'
-        ```
-    """
-    parser = argparse.ArgumentParser(description="TIF service command line interface.")
-    parser.add_argument("--name", nargs="+", required=True, help="Name of the task.")
-    parser.add_argument(
-        "--outputs", nargs="+", required=True, help="List of task outputs."
-    )
-    args = parser.parse_args()
-
-    try:
-        output_str = " ".join(args.outputs)
-        _outputs = json.loads(output_str)
-        outputs = [TesOutput(**output) for output in _outputs]
-        Tof(args.name, outputs).execute()
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON parsing error: {e}")
-        raise
-    except ValidationError as e:
-        logger.error(f"Validation error: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        raise

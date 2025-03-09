@@ -89,7 +89,7 @@ class TorcTifExecution(TorcExecutionTemplate):
                             V1Container(
                                 name=core_constants.K8s.TIF_PREFIX,
                                 image=core_constants.K8s.POIESIS_IMAGE,
-                                command=["tif"],
+                                command=["poiesis", "run", "tif"],
                                 args=["--name", self.name, "--inputs", inputs],
                                 volume_mounts=[
                                     V1VolumeMount(
