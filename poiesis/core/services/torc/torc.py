@@ -18,12 +18,14 @@ from poiesis.api.tes.models import (
     TesTask,
 )
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
-from poiesis.core.constants import PoiesisCoreConstants
+from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.services.torc.torc_texam_execution import TorcTexamExecution
 from poiesis.core.services.torc.torc_tif_execution import TorcTifExecution
 from poiesis.core.services.torc.torc_tof_execution import TorcTofExecution
 
 logger = logging.getLogger(__name__)
+
+core_constants = get_poiesis_core_constants()
 
 
 class Torc:
@@ -77,7 +79,7 @@ class Torc:
             name: Name of the PVC
             size: Size of the PVC
         """
-        pvc_name = f"{PoiesisCoreConstants.K8s.PVC_PREFIX}-{name}"
+        pvc_name = f"{core_constants.K8s.PVC_PREFIX}-{name}"
         pvc = V1PersistentVolumeClaim(
             api_version="v1",
             kind="PersistentVolumeClaim",
@@ -87,7 +89,7 @@ class Torc:
                 resources=V1ResourceRequirements(
                     requests={"storage": f"{size}Gi"}
                     if size
-                    else {"storage": PoiesisCoreConstants.K8s.PVC_DEFAULT_DISK_SIZE}
+                    else {"storage": core_constants.K8s.PVC_DEFAULT_DISK_SIZE}
                 ),
             ),
         )

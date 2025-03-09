@@ -4,9 +4,10 @@ import logging
 import os
 
 from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.constants import PoiesisCoreConstants
+from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
 
+core_constants = get_poiesis_core_constants()
 logger = logging.getLogger(__name__)
 
 
@@ -29,7 +30,7 @@ class ContentFilerStrategy(FilerStrategy):
         assert _input.content is not None
 
         container_path = os.path.join(
-            PoiesisCoreConstants.K8s.FILER_PVC_PATH, _input.path.lstrip("/")
+            core_constants.K8s.FILER_PVC_PATH, _input.path.lstrip("/")
         )
         os.makedirs(os.path.dirname(container_path), exist_ok=True)
 

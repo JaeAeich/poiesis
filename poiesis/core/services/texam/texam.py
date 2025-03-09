@@ -23,8 +23,10 @@ from kubernetes.client import (
 from poiesis.api.tes.models import TesExecutor, TesResources
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
-from poiesis.core.constants import PoiesisCoreConstants
+from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.ports.message_broker import Message
+
+core_constants = get_poiesis_core_constants()
 
 logger = logging.getLogger(__name__)
 
@@ -139,11 +141,11 @@ class Texam:
             we are launching executors sequentially.
         """
         for idx, executor in enumerate(self.executors):
-            executor_name = f"{PoiesisCoreConstants.K8s.TE_PREFIX}-{self.name}-{idx}"
+            executor_name = f"{core_constants.K8s.TE_PREFIX}-{self.name}-{idx}"
 
             async def create_pod_with_backoff(pod_manifest, executor_name):
                 backoff_time = 1
-                while backoff_time <= PoiesisCoreConstants.Texam.BACKOFF_LIMIT:
+                while backoff_time <= core_constants.Texam.BACKOFF_LIMIT:
                     try:
                         pod_name = await self.kubernetes_client.create_pod(pod_manifest)
                         self.task_pool.append((pod_name, datetime.now()))
@@ -152,7 +154,7 @@ class Texam:
                         logger.error(f"Failed to create pod {executor_name}: {e}")
                         await asyncio.sleep(backoff_time)
                         backoff_time = min(
-                            backoff_time * 2, PoiesisCoreConstants.Texam.BACKOFF_LIMIT
+                            backoff_time * 2, core_constants.Texam.BACKOFF_LIMIT
                         )
                 else:
                     logger.error(f"Failed to create pod {executor_name}")
@@ -178,7 +180,7 @@ class Texam:
                 else {}
             )
 
-            _parent = f"{PoiesisCoreConstants.K8s.TEXAM_PREFIX}-{self.name}"
+            _parent = f"{core_constants.K8s.TEXAM_PREFIX}-{self.name}"
 
             pod_manifest = V1Pod(
                 api_version="v1",
@@ -186,7 +188,7 @@ class Texam:
                 metadata=V1ObjectMeta(
                     name=executor_name,
                     labels={
-                        "service": PoiesisCoreConstants.K8s.TE_PREFIX,
+                        "service": core_constants.K8s.TE_PREFIX,
                         "parent": _parent,
                         "name": executor_name,
                     },
@@ -210,7 +212,7 @@ class Texam:
                             ),
                             volume_mounts=[
                                 V1VolumeMount(
-                                    name=PoiesisCoreConstants.K8s.COMMON_PVC_VOLUME_NAME,
+                                    name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
                                     mount_path=volume,
                                 )
                                 for volume in self.volumes or []
@@ -219,9 +221,9 @@ class Texam:
                     ],
                     volumes=[
                         V1Volume(
-                            name=PoiesisCoreConstants.K8s.COMMON_PVC_VOLUME_NAME,
+                            name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
                             persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
-                                claim_name=f"{PoiesisCoreConstants.K8s.PVC_PREFIX}-{self.name}"
+                                claim_name=f"{core_constants.K8s.PVC_PREFIX}-{self.name}"
                             ),
                         )
                         for volume in self.volumes or []
@@ -256,7 +258,7 @@ class Texam:
         api_instance = self.kubernetes_client.core_api
 
         # Create a label selector for our pods
-        label_selector = f"texam={PoiesisCoreConstants.K8s.TEXAM_PREFIX}-{self.name}"
+        label_selector = f"texam={core_constants.K8s.TEXAM_PREFIX}-{self.name}"
 
         try:
             # Run the watch in a separate thread to avoid blocking the event loop
@@ -334,7 +336,7 @@ class Texam:
 
             # If we still have pods to monitor, wait before next poll
             if pod_names:
-                await asyncio.sleep(PoiesisCoreConstants.Texam.POLL_INTERVAL)
+                await asyncio.sleep(core_constants.Texam.POLL_INTERVAL)
 
     async def update_executor_record_in_db(
         self, pod_name: str, pod_phase: str, logs: str

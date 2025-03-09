@@ -1,13 +1,41 @@
 """Constants used in core services."""
 
 import os
+from dataclasses import dataclass
+from functools import lru_cache
 
 
+@dataclass(frozen=True)
 class PoiesisCoreConstants:
-    """Constants used in core services."""
+    """Constants used in core services.
 
+    Attributes:
+        K8s: Constants used in Kubernetes.
+        MessageBroker: Constants used in message broker.
+        Texam: Constants used in Texam.
+    """
+
+    @dataclass(frozen=True)
     class K8s:
-        """Constants used in Kubernetes."""
+        """Constants used in Kubernetes.
+
+        Attributes:
+            K8S_NAMESPACE: The namespace in Kubernetes.
+            TORC_PREFIX: The prefix for the Task Orchestrator job name.
+            TIF_PREFIX: The prefix for the Task Input Filer job name.
+            TE_PREFIX: The prefix for the Task Executor pod name.
+            TOF_PREFIX: The prefix for the Task Output Filer job name.
+            PVC_PREFIX: The prefix for the Persistent Volume Claim name.
+            TEXAM_PREFIX: The prefix for the Texam job name.
+            PVC_DEFAULT_DISK_SIZE: The default disk size for the Persistent Volume
+                Claim.
+            POIESIS_IMAGE: The Poiesis image.
+            COMMON_PVC_VOLUME_NAME: The common PVC volume name.
+            FILER_PVC_PATH: The path in the PVC for the filer.
+            S3_VOLUME_NAME: The S3 volume name.
+            S3_MOUNT_PATH: The S3 mount path.
+            S3_SECRET_NAME: The S3 secret name.
+        """
 
         K8S_NAMESPACE = "poiesis"
         TORC_PREFIX = "torc"
@@ -24,12 +52,19 @@ class PoiesisCoreConstants:
         S3_MOUNT_PATH = "/aws"
         S3_SECRET_NAME = "s3-secret"
 
+    @dataclass(frozen=True)
     class MessageBroker:
-        """Constants used in message broker."""
+        """Constants used in message broker.
+
+        Attributes:
+            MESSAGE_BROKER_HOST: The host of the message broker.
+            MESSAGE_BROKER_PORT: The port of the message
+        """
 
         MESSAGE_BROKER_HOST = os.getenv("MESSAGE_BROKER_HOST", "localhost")
         MESSAGE_BROKER_PORT = os.getenv("MESSAGE_BROKER_PORT", "6379")
 
+    @dataclass(frozen=True)
     class Texam:
         """Constants used in Texam.
 
@@ -42,3 +77,13 @@ class PoiesisCoreConstants:
 
         BACKOFF_LIMIT = 60
         POLL_INTERVAL = 10
+
+
+@lru_cache
+def get_poiesis_core_constants() -> PoiesisCoreConstants:
+    """Get the Poiesis core constants.
+
+    Returns:
+        PoesisCoreConstants: The Poiesis core constants.
+    """
+    return PoiesisCoreConstants()

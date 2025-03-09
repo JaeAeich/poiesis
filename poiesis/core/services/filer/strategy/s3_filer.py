@@ -8,10 +8,12 @@ import boto3
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 
 from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.constants import PoiesisCoreConstants
+from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
 
 logger = logging.getLogger(__name__)
+
+core_constants = get_poiesis_core_constants()
 
 
 class S3FilerStrategy(FilerStrategy):
@@ -51,7 +53,7 @@ class S3FilerStrategy(FilerStrategy):
         key = "/".join(tes_input.url.split("/")[3:])
         download_path = tes_input.path
         container_path = os.path.join(
-            PoiesisCoreConstants.K8s.FILER_PVC_PATH, tes_input.path.lstrip("/")
+            core_constants.K8s.FILER_PVC_PATH, tes_input.path.lstrip("/")
         )
 
         os.makedirs(os.path.dirname(container_path), exist_ok=True)
@@ -75,7 +77,7 @@ class S3FilerStrategy(FilerStrategy):
         key = "/".join(tes_output.url.split("/")[3:])
 
         container_path = os.path.join(
-            PoiesisCoreConstants.K8s.FILER_PVC_PATH, tes_output.path.lstrip("/")
+            core_constants.K8s.FILER_PVC_PATH, tes_output.path.lstrip("/")
         )
 
         try:

@@ -19,8 +19,10 @@ from kubernetes.client import (
 from kubernetes.client.exceptions import ApiException
 
 from poiesis.api.tes.models import TesInput
-from poiesis.core.constants import PoiesisCoreConstants
+from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.services.torc.torc_execution_template import TorcExecutionTemplate
+
+core_constants = get_poiesis_core_constants()
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +64,7 @@ class TorcTifExecution(TorcExecutionTemplate):
 
     async def start_job(self) -> None:
         """Create the K8s job for Tif."""
-        tif_job_name = PoiesisCoreConstants.K8s.TIF_PREFIX + self.name
+        tif_job_name = core_constants.K8s.TIF_PREFIX + self.name
         inputs = (
             json.dumps([input.model_dump_json() for input in self.inputs])
             if self.inputs
@@ -75,9 +77,9 @@ class TorcTifExecution(TorcExecutionTemplate):
             metadata=V1ObjectMeta(
                 name=tif_job_name,
                 labels={
-                    "service": PoiesisCoreConstants.K8s.TIF_PREFIX,
+                    "service": core_constants.K8s.TIF_PREFIX,
                     "name": tif_job_name,
-                    "parent": f"{PoiesisCoreConstants.K8s.TORC_PREFIX}-{self.name}",
+                    "parent": f"{core_constants.K8s.TORC_PREFIX}-{self.name}",
                 },
             ),
             spec=V1JobSpec(
@@ -85,18 +87,18 @@ class TorcTifExecution(TorcExecutionTemplate):
                     spec=V1PodSpec(
                         containers=[
                             V1Container(
-                                name=PoiesisCoreConstants.K8s.TIF_PREFIX,
-                                image=PoiesisCoreConstants.K8s.POIESIS_IMAGE,
+                                name=core_constants.K8s.TIF_PREFIX,
+                                image=core_constants.K8s.POIESIS_IMAGE,
                                 command=["tif"],
                                 args=["--name", self.name, "--inputs", inputs],
                                 volume_mounts=[
                                     V1VolumeMount(
-                                        name=PoiesisCoreConstants.K8s.COMMON_PVC_VOLUME_NAME,
-                                        mount_path=PoiesisCoreConstants.K8s.FILER_PVC_PATH,
+                                        name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                                        mount_path=core_constants.K8s.FILER_PVC_PATH,
                                     ),
                                     V1VolumeMount(
-                                        name=PoiesisCoreConstants.K8s.S3_VOLUME_NAME,
-                                        mount_path=PoiesisCoreConstants.K8s.S3_MOUNT_PATH,
+                                        name=core_constants.K8s.S3_VOLUME_NAME,
+                                        mount_path=core_constants.K8s.S3_MOUNT_PATH,
                                         read_only=True,
                                     ),
                                 ],
@@ -104,15 +106,15 @@ class TorcTifExecution(TorcExecutionTemplate):
                         ],
                         volumes=[
                             V1Volume(
-                                name=PoiesisCoreConstants.K8s.COMMON_PVC_VOLUME_NAME,
+                                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
                                 persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
-                                    claim_name=f"{PoiesisCoreConstants.K8s.PVC_PREFIX}-{self.name}"
+                                    claim_name=f"{core_constants.K8s.PVC_PREFIX}-{self.name}"
                                 ),
                             ),
                             V1Volume(
-                                name=PoiesisCoreConstants.K8s.S3_VOLUME_NAME,
+                                name=core_constants.K8s.S3_VOLUME_NAME,
                                 secret=V1SecretVolumeSource(
-                                    secret_name=PoiesisCoreConstants.K8s.S3_SECRET_NAME
+                                    secret_name=core_constants.K8s.S3_SECRET_NAME
                                 ),
                             ),
                         ],

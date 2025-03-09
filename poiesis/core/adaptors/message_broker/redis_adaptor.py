@@ -5,8 +5,10 @@ from collections.abc import Iterator
 
 import redis
 
-from poiesis.core.constants import PoiesisCoreConstants
+from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.ports.message_broker import Message, MessageBroker
+
+core_constants = get_poiesis_core_constants()
 
 
 class RedisMessageBroker(MessageBroker):
@@ -25,8 +27,8 @@ class RedisMessageBroker(MessageBroker):
             pubsub: The Redis pubsub client
         """
         self.redis = redis.Redis(
-            host=PoiesisCoreConstants.MessageBroker.MESSAGE_BROKER_HOST,
-            port=PoiesisCoreConstants.MessageBroker.MESSAGE_BROKER_PORT,
+            host=core_constants.MessageBroker.MESSAGE_BROKER_HOST,
+            port=core_constants.MessageBroker.MESSAGE_BROKER_PORT,
         )
         self.pubsub = self.redis.pubsub()
 

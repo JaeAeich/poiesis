@@ -6,10 +6,12 @@ import shutil
 from urllib.parse import urlparse
 
 from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.constants import PoiesisCoreConstants
+from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
 
 logger = logging.getLogger(__name__)
+
+core_constants = get_poiesis_core_constants()
 
 
 class LocalFilerStrategy(FilerStrategy):
@@ -36,7 +38,7 @@ class LocalFilerStrategy(FilerStrategy):
 
         source_path = urlparse(_input.url).path
         container_path = os.path.join(
-            PoiesisCoreConstants.K8s.FILER_PVC_PATH, _input.path.lstrip("/")
+            core_constants.K8s.FILER_PVC_PATH, _input.path.lstrip("/")
         )
 
         if not os.path.exists(source_path):
@@ -55,7 +57,7 @@ class LocalFilerStrategy(FilerStrategy):
         assert output.url is not None, "Output URL is required for local filer."
 
         container_path = os.path.join(
-            PoiesisCoreConstants.K8s.FILER_PVC_PATH, output.path.lstrip("/")
+            core_constants.K8s.FILER_PVC_PATH, output.path.lstrip("/")
         )
         destination_path = urlparse(output.url).path
 

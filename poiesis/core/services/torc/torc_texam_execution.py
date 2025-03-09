@@ -15,9 +15,10 @@ from kubernetes.client import (
 from kubernetes.client.exceptions import ApiException
 
 from poiesis.api.tes.models import TesExecutor, TesResources
-from poiesis.core.constants import PoiesisCoreConstants
+from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.services.torc.torc_execution_template import TorcExecutionTemplate
 
+core_constants = get_poiesis_core_constants()
 logger = logging.getLogger(__name__)
 
 
@@ -74,7 +75,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
 
     async def start_job(self) -> None:
         """Create the K8s job for Texam."""
-        texam_name = f"{PoiesisCoreConstants.K8s.TEXAM_PREFIX}-{self.name}"
+        texam_name = f"{core_constants.K8s.TEXAM_PREFIX}-{self.name}"
         executors = json.dumps(
             [executor.model_dump_json() for executor in self.executors]
         )
@@ -88,8 +89,8 @@ class TorcTexamExecution(TorcExecutionTemplate):
             metadata=V1ObjectMeta(
                 name=texam_name,
                 labels={
-                    "service": PoiesisCoreConstants.K8s.TEXAM_PREFIX,
-                    "parent": f"{PoiesisCoreConstants.K8s.TORC_PREFIX}-{self.name}",
+                    "service": core_constants.K8s.TEXAM_PREFIX,
+                    "parent": f"{core_constants.K8s.TORC_PREFIX}-{self.name}",
                     "name": texam_name,
                 },
             ),
@@ -98,8 +99,8 @@ class TorcTexamExecution(TorcExecutionTemplate):
                     spec=V1PodSpec(
                         containers=[
                             V1Container(
-                                name=PoiesisCoreConstants.K8s.TIF_PREFIX,
-                                image=PoiesisCoreConstants.K8s.POIESIS_IMAGE,
+                                name=core_constants.K8s.TIF_PREFIX,
+                                image=core_constants.K8s.POIESIS_IMAGE,
                                 command=["texam"],
                                 args=[
                                     "--name",
