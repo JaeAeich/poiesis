@@ -75,8 +75,9 @@ info:
     This API specification have been copied verbatim from the GA4GH TES API specification, certain changes without changing the GA4GH specs have been made.
     Please refer the openAPI specification that this implementation points to for more reference.
 
-security:
-  - BearerAuth: []  # Apply globally if authentication is required
+# TODO: Implement security, commenting for dev purposes
+# security:
+#   - BearerAuth: []  # Apply globally if authentication is required
 
 servers:
   - url: /ga4gh/tes/v1
@@ -99,8 +100,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/tesServiceInfo'
-      security:
-        - BearerAuth: []  # Endpoint secured with Bearer token
   /tasks:
     get:
       tags:
@@ -196,9 +195,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/tesListTasksResponse'
 
-      security:
-        - BearerAuth: []  # Endpoint secured with Bearer token
-
     post:
       tags:
         - TaskService
@@ -221,8 +217,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/tesCreateTaskResponse'
       x-codegen-request-body-name: body
-      security:
-        - BearerAuth: []  # Endpoint secured with Bearer token
   /tasks/{id}:
     get:
       tags:
@@ -246,8 +240,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/tesTask'
-      security:
-        - BearerAuth: []  # Endpoint secured with Bearer token
+
   /tasks/{id}:cancel:
     post:
       tags:
@@ -269,15 +262,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/tesCancelTaskResponse'
-      security:
-        - BearerAuth: []  # Endpoint secured with Bearer token
+
 components:
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT  # optional, can specify format if using JWT tokens
-      x-bearerInfoFunc: poiesis.api.security.validate_bearer_token
+  # securitySchemes:
+  #   BearerAuth:
+  #     type: http
+  #     scheme: bearer
+  #     bearerFormat: JWT  # optional, can specify format if using JWT tokens
+  #     x-bearerInfoFunc: poiesis.api.security.validate_bearer_token
 
   parameters:
     view:
