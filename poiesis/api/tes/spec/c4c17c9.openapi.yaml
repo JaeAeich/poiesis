@@ -919,4 +919,19 @@ components:
           items:
             type: string
       description: TaskLog describes logging information related to a Task.
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code identifying the type of error
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          description: Additional error details when available
 ...

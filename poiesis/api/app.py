@@ -9,6 +9,11 @@ from connexion import AsyncApp
 from connexion.resolver import RelativeResolver
 
 from poiesis.api.constants import get_poiesis_api_constants
+from poiesis.api.exceptions import (
+    APIException,
+    handle_api_exception,
+    handle_unexpected_exception,
+)
 
 constants = get_poiesis_api_constants()
 
@@ -30,6 +35,8 @@ def create_app() -> AsyncApp:
         resolver=RelativeResolver("poiesis.api.controllers"),
         validate_responses=True,
     )
+    app.add_error_handler(Exception, handle_unexpected_exception)
+    app.add_error_handler(APIException, handle_api_exception)
 
     return app
 
