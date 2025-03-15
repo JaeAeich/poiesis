@@ -32,7 +32,7 @@ def create_app() -> AsyncApp:
 
     app.add_api(
         f"{constants.SPEC_GIT_HASH}.openapi.yaml",
-        resolver=RelativeResolver("poiesis.api.controllers"),
+        resolver=RelativeResolver("poiesis.api.api_handlers"),
         validate_responses=True,
     )
     app.add_error_handler(Exception, handle_unexpected_exception)

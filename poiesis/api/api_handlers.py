@@ -1,7 +1,10 @@
 """Controllers for the API."""
 
-from pydantic import AnyUrl
+from typing import Any
 
+from pydantic import AnyUrl, ValidationError
+
+from poiesis.api.exceptions import BadRequestException
 from poiesis.api.tes.models import (
     Organization,
     TesCancelTaskResponse,
@@ -46,12 +49,20 @@ def ListTasks() -> TesListTasksResponse:
 
 
 @pydantic_to_dict_response
-def CreateTask() -> TesCreateTaskResponse:
+def CreateTask(body: dict[str, Any]) -> TesCreateTaskResponse:
     """Create a task.
 
     Returns:
         Created task.
     """
+    try:
+        task = TesTask.model_validate(body)
+    except ValidationError as e:
+        raise BadRequestException(
+            message="Invalid request body",
+            details=e.errors(),
+        ) from e
+
     return TesCreateTaskResponse(id="123")
 
 
