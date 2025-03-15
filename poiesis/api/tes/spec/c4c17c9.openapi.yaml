@@ -1,4 +1,10 @@
 ---
+# The TES specification is not verbatim, it has been modified and formatted
+# WITHOUT changing the GA4GH specs. Certain parts of the specs that are
+# implementers choice have been chosen or removed. Below are the changes made:
+# - Removed the `BasicAuth`, the API is secured with Bearer token
+# - Added `x-bearerInfoFunc` to the BearerAuth security scheme
+# - Formatted the file with yamllint
 openapi: 3.0.1
 info:
   title: Task Execution Service
@@ -64,10 +70,13 @@ info:
     If TES API implementation is to be used by another website or domain it must implement Cross Origin Resource Sharing (CORS).
     Please refer to https://w3id.org/ga4gh/product-approval-support/cors for more information about GA4GH’s recommendations and how to implement CORS.
 
+    ### Comments
+
+    This API specification have been copied verbatim from the GA4GH TES API specification, certain changes without changing the GA4GH specs have been made.
+    Please refer the openAPI specification that this implementation points to for more reference.
+
 security:
-  # Optionally, this section can be removed or adjusted by implementers based on their needs.
   - BearerAuth: []  # Apply globally if authentication is required
-  - BasicAuth: []   # Alternatively, use Basic Authentication
 
 servers:
   - url: /ga4gh/tes/v1
@@ -92,7 +101,6 @@ paths:
                 $ref: '#/components/schemas/tesServiceInfo'
       security:
         - BearerAuth: []  # Endpoint secured with Bearer token
-        - BasicAuth: []    # Alternatively, secured with Basic Auth
   /tasks:
     get:
       tags:
@@ -190,7 +198,6 @@ paths:
 
       security:
         - BearerAuth: []  # Endpoint secured with Bearer token
-        - BasicAuth: []    # Alternatively, secured with Basic Auth
 
     post:
       tags:
@@ -216,7 +223,6 @@ paths:
       x-codegen-request-body-name: body
       security:
         - BearerAuth: []  # Endpoint secured with Bearer token
-        - BasicAuth: []    # Alternatively, secured with Basic Auth
   /tasks/{id}:
     get:
       tags:
@@ -242,7 +248,6 @@ paths:
                 $ref: '#/components/schemas/tesTask'
       security:
         - BearerAuth: []  # Endpoint secured with Bearer token
-        - BasicAuth: []    # Alternatively, secured with Basic Auth
   /tasks/{id}:cancel:
     post:
       tags:
@@ -266,17 +271,13 @@ paths:
                 $ref: '#/components/schemas/tesCancelTaskResponse'
       security:
         - BearerAuth: []  # Endpoint secured with Bearer token
-        - BasicAuth: []    # Alternatively, secured with Basic Auth
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT  # optional, can specify format if using JWT tokens
-
-    BasicAuth:
-      type: http
-      scheme: basic
+      x-bearerInfoFunc: poiesis.api.security.validate_bearer_token
 
   parameters:
     view:
@@ -642,7 +643,8 @@ components:
             priority queue to which the job is assigned.
           items:
             type: string
-          example: us-west-1
+          example:
+            - us-west-1
         backend_parameters:
           type: object
           additionalProperties:

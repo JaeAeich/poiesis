@@ -17,10 +17,13 @@ class TesCreateTaskResponse(BaseModel):
     """CreateTaskResponse describes a response from the CreateTask endpoint.
 
     It will include the task ID that can be used to look up the status of the job.
+
+    Args:
+        id: Task identifier assigned by the server.
+            Example: "job-0012345"
     """
 
     id: str
-    """Task identifier assigned by the server."""
 
 
 class TesExecutor(BaseModel):
@@ -529,7 +532,7 @@ class TesTask(BaseModel):
     creation_time: Optional[str] = None
 
 
-class TeslistTasksResponse(BaseModel):
+class TesListTasksResponse(BaseModel):
     """listTasksResponse describes a response from the listTasks endpoint.
 
     Args:

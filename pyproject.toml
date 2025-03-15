@@ -6,6 +6,13 @@ requires = ["poetry-core"]
 warn_return_any = true
 warn_unused_configs = true
 
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = [
+  "connexion.*",
+  "gunicorn.*",
+]
+
 [tool.poetry]
 authors = ["jaeaeich <jh4official@gmail.com>"]
 classifiers = [
@@ -25,9 +32,11 @@ version = "0.1.0"
 [tool.poetry.dependencies]
 boto3 = "^1.36.26"
 botocore = "^1.36.26"
+connexion = {extras = ["swagger-ui", "uvicorn"], version = "^3.2.0"}
+gunicorn = "^23.0.0"
 kubernetes = "^32.0.1"
 pydantic = "^2.10.6"
-python = ">=3.13.0"
+python = ">=3.13.0,<4.0.0"
 redis = "^5.2.1"
 rich-click = "^1.8.7"
 tomli = "^2.2.1"

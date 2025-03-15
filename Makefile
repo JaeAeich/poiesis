@@ -38,6 +38,9 @@ help:
 	@echo "  \033[1m\033[35mbuild-image\033[0m \033[37m(bi)\033[0m: \033[36mBuild container image.\033[0m"
 	@echo "  \033[1m\033[35mclean-image\033[0m \033[37m(ci)\033[0m: \033[36mRemove container image.\033[0m\n"
 
+	@echo "Development -------------------------------------------------------------------"
+	@echo "  \033[1m\033[35mdev\033[0m \033[37m(d)\033[0m: \033[36mStart Poiesis development server.\033[0m\n"
+
 	@echo "Documentation -----------------------------------------------------------------"
 	@echo "  \033[1m\033[35mdocs\033[0m \033[37m(d)\033[0m: \033[36mGenerate project documentation.\033[0m\n"
 
@@ -155,3 +158,8 @@ clean-docker-image:
 	@echo "\nDocker image removed successfully (if it existed).\n"
 
  ci: clean-docker-image
+.PHONY: dev
+dev:
+	@echo "\nStarting Poiesis development server ++++++++++++++++++++++++++++++++++++++++++++\n"
+	@echo "Starting server on http://localhost:8089/ga4gh/tes/v1/ui"
+	@poetry run uvicorn poiesis.api.app:app --reload --host localhost --port 8089
