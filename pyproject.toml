@@ -35,6 +35,7 @@ botocore = "^1.36.26"
 connexion = {extras = ["swagger-ui", "uvicorn"], version = "^3.2.0"}
 gunicorn = "^23.0.0"
 kubernetes = "^32.0.1"
+motor = "^3.7.0"
 pydantic = "^2.10.6"
 python = ">=3.13.0,<4.0.0"
 redis = "^5.2.1"

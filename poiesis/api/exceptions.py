@@ -61,3 +61,10 @@ def handle_unexpected_exception(
         status_code=500, body=json.dumps(error_response), mimetype="application/json"
     )
 
+
+
+class DBException(APIException):
+    """An error occurred with the database."""
+
+    status_code = 500
+    error_code = "db_error"
