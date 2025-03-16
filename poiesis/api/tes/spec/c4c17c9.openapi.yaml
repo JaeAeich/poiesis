@@ -216,7 +216,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/tesCreateTaskResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        500:
+          $ref: '#/components/responses/InternalServerError'
       x-codegen-request-body-name: body
+
   /tasks/{id}:
     get:
       tags:
@@ -270,6 +275,27 @@ components:
   #     scheme: bearer
   #     bearerFormat: JWT  # optional, can specify format if using JWT tokens
   #     x-bearerInfoFunc: poiesis.api.security.validate_bearer_token
+
+  responses:
+    BadRequest:
+      description: |-
+        Bad Request
+
+        The request was invalid or cannot be served. This typically indicates a client-side error such as malformed request syntax, invalid parameters, or missing required fields.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalServerError:
+      description: |-
+        Internal Server Error
+
+        An unexpected condition was encountered on the server. This indicates that something went wrong on the server side that prevented it from fulfilling the request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
 
   parameters:
     view:

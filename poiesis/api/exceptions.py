@@ -62,6 +62,19 @@ def handle_unexpected_exception(
     )
 
 
+class BadRequestException(APIException):
+    """The request was invalid or cannot be served."""
+
+    status_code = 400
+    error_code = "bad_request"
+
+
+class InternalServerException(APIException):
+    """An unexpected condition was encountered."""
+
+    status_code = 500
+    error_code = "internal_error"
+
 
 class DBException(APIException):
     """An error occurred with the database."""
