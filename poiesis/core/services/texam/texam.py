@@ -25,6 +25,7 @@ from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.ports.message_broker import Message
+from poiesis.repository.mongo import MongoDBClient
 
 core_constants = get_poiesis_core_constants()
 
@@ -91,6 +92,7 @@ class Texam:
         self.task_pool: list[tuple[str, datetime]] = []
         self.kubernetes_client = KubernetesAdapter()
         self.message_broker = RedisMessageBroker()
+        self.db = MongoDBClient()
 
     async def execute(self) -> None:
         """Complete TExAM job."""
@@ -148,6 +150,7 @@ class Texam:
                 while backoff_time <= core_constants.Texam.BACKOFF_LIMIT:
                     try:
                         pod_name = await self.kubernetes_client.create_pod(pod_manifest)
+                        await self.db.add_task_executor_log(self.name)
                         self.task_pool.append((pod_name, datetime.now()))
                         break
                     except Exception as e:
@@ -194,6 +197,7 @@ class Texam:
                     },
                 ),
                 spec=V1PodSpec(
+                    service_account_name="pod-creator",
                     containers=[
                         V1Container(
                             name=executor_name,
@@ -257,9 +261,8 @@ class Texam:
         w = watch.Watch()
         api_instance = self.kubernetes_client.core_api
 
-        # Create a label selector for our pods
-        label_selector = f"texam={core_constants.K8s.TEXAM_PREFIX}-{self.name}"
-
+        # Create a label selector for our task executor pods
+        label_selector = f"service={core_constants.K8s.TE_PREFIX},parent={core_constants.K8s.TEXAM_PREFIX}-{self.name}"  # noqa: E501
         try:
             # Run the watch in a separate thread to avoid blocking the event loop
             stream_func = api_instance.list_namespaced_pod
@@ -276,11 +279,11 @@ class Texam:
 
                 if pod_name not in pod_names:
                     continue
-
                 if pod_phase in [PodPhase.SUCCEEDED.value, PodPhase.FAILED.value]:
                     pod_entry = next(
                         ((p, t) for p, t in self.task_pool if p == pod_name), None
                     )
+
                     if pod_entry:
                         logs = await self.kubernetes_client.get_pod_log(pod_name)
 
@@ -299,8 +302,7 @@ class Texam:
             logger.error(f"Error in watch stream: {e}")
 
             # If watch fails, fall back to polling as a backup strategy
-            remaining_pods = {pod_name for pod_name, _ in self.task_pool}
-            if remaining_pods:
+            if remaining_pods := {pod_name for pod_name, _ in self.task_pool}:
                 logger.warning("Falling back to polling for remaining pods")
                 await self._poll_remaining_pods(remaining_pods)
 
@@ -317,7 +319,6 @@ class Texam:
                     pod_phase = pod.status.phase if pod.status else None
 
                     if pod_phase in [PodPhase.SUCCEEDED.value, PodPhase.FAILED.value]:
-                        # Find corresponding entry in task pool
                         pod_entry = next(
                             ((p, t) for p, t in self.task_pool if p == pod_name), None
                         )

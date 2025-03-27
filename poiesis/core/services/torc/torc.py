@@ -1,5 +1,6 @@
 """Task orchestrator (Torc)."""
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -15,6 +16,7 @@ from poiesis.api.tes.models import (
     TesInput,
     TesOutput,
     TesResources,
+    TesState,
     TesTask,
 )
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
@@ -22,6 +24,7 @@ from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.services.torc.torc_texam_execution import TorcTexamExecution
 from poiesis.core.services.torc.torc_tif_execution import TorcTifExecution
 from poiesis.core.services.torc.torc_tof_execution import TorcTofExecution
+from poiesis.repository.mongo import MongoDBClient
 
 logger = logging.getLogger(__name__)
 
@@ -53,21 +56,48 @@ class Torc:
         """
         self.task = task
         self.kubernetes_client = KubernetesAdapter()
+        self.db = MongoDBClient()
 
     async def execute(self) -> None:
         """Defines the template method, for each service namely Texam, Tif, Tof."""
-        assert self.task.name is not None, (
-            "The API should have validated the task name."
-        )
+        assert self.task.id is not None, "The API should have validated the task name."
         disk_gb = None
         if self.task.resources is not None:
             disk_gb = self.task.resources.disk_gb
-        await self.create_pvc(self.task.name, disk_gb)
-        await self.tif_execution(self.task.name, self.task.inputs)
-        await self.texam_execution(
-            self.task.name, self.task.executors, self.task.resources, self.task.volumes
-        )
-        await self.tof_execution(self.task.name, self.task.outputs)
+
+        max_retries = 3  # TODO: Make this configurable
+        base_delay = 1  # TODO: Make this configurable
+
+        assert self.task.id is not None  # Already checked in execute()
+
+        for attempt in range(max_retries):
+            try:
+                # Create PVC
+                await self.create_pvc(self.task.id, disk_gb)
+
+                # Update task state
+                await self.db.update_task_state(self.task.id, TesState.RUNNING)
+                await self.db.add_task_log(self.task.id)
+
+                # Execute pipeline stages
+                await self.tif_execution(self.task.id, self.task.inputs)
+                await self.texam_execution(
+                    self.task.id,
+                    self.task.executors,
+                    self.task.resources,
+                    self.task.volumes,
+                )
+                await self.tof_execution(self.task.id, self.task.outputs)
+
+                # If we get here, everything succeeded
+                break
+            except Exception:
+                if attempt == max_retries - 1:
+                    # On final attempt, let the error propagate
+                    raise
+                # Otherwise backoff and retry
+                delay = base_delay * (2**attempt)  # exponential backoff
+                await asyncio.sleep(delay)
 
     async def create_pvc(self, name: str, size: Optional[float]) -> None:
         """Create a PVC for the task.
@@ -78,6 +108,9 @@ class Torc:
         Args:
             name: Name of the PVC
             size: Size of the PVC
+
+        Raises:
+            Exception: If the PVC creation fails.
         """
         pvc_name = f"{core_constants.K8s.PVC_PREFIX}-{name}"
         pvc = V1PersistentVolumeClaim(
@@ -93,8 +126,14 @@ class Torc:
                 ),
             ),
         )
-        self.pvc_name = await self.kubernetes_client.create_pvc(pvc)
-        logger.info(f"PVC created: {self.pvc_name}")
+        try:
+            self.pvc_name = await self.kubernetes_client.create_pvc(pvc)
+            logger.info(f"PVC created: {self.pvc_name}")
+        except Exception as e:
+            logger.error(f"Failed to create PVC: {e.__dict__}")
+            _id = str(self.task.id)  # This will be str as we are using uuid4
+            await self.db.update_task_state(_id, TesState.SYSTEM_ERROR)
+            raise
 
     async def tif_execution(self, name: str, inputs: Optional[list[TesInput]]) -> None:
         """Execute the Tif job.
@@ -103,8 +142,17 @@ class Torc:
             name: Name of the task, will be modified to create Tif job name.
             inputs: List of inputs given in the task.
             volumes: List of volumes given in the task.
+
+        Raises:
+            Exception: If the Tif job fails.
         """
-        await TorcTifExecution(name, inputs).execute()
+        try:
+            await TorcTifExecution(name, inputs).execute()
+        except Exception as e:
+            logger.error(f"Failed to execute Tif: {e.__dict__}")
+            _id = str(self.task.id)  # This will be str as we are using uuid4
+            await self.db.update_task_state(_id, TesState.SYSTEM_ERROR)
+            raise
 
     async def texam_execution(
         self,
@@ -120,8 +168,17 @@ class Torc:
             executors: List of executors given in the task.
             resources: Resources given in the task.
             volumes: List of volumes given in the task.
+
+        Raises:
+            Exception: If the Texam job fails.
         """
-        await TorcTexamExecution(name, executors, resources, volumes).execute()
+        try:
+            await TorcTexamExecution(name, executors, resources, volumes).execute()
+        except Exception as e:
+            logger.error(f"Failed to execute Texam: {e.__dict__}")
+            _id = str(self.task.id)  # This will be str as we are using uuid4
+            await self.db.update_task_state(_id, TesState.SYSTEM_ERROR)
+            raise
 
     async def tof_execution(
         self,
@@ -133,5 +190,14 @@ class Torc:
         Args:
             name: Name of the task, will be modified to create Tof job name.
             outputs: List of outputs given in the task.
+
+        Raises:
+            Exception: If the Tof job fails.
         """
-        await TorcTofExecution(name, outputs).execute()
+        try:
+            await TorcTofExecution(name, outputs).execute()
+        except Exception as e:
+            logger.error(f"Failed to execute Tof: {e.__dict__}")
+            _id = str(self.task.id)  # This will be str as we are using uuid4
+            await self.db.update_task_state(_id, TesState.SYSTEM_ERROR)
+            raise
