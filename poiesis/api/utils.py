@@ -40,8 +40,8 @@ def pydantic_to_dict_response(func: Callable[..., Any]) -> Callable[..., Any]:
     """
 
     @wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        result = func(*args, **kwargs)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        result = await func(*args, **kwargs)
         if isinstance(result, BaseModel):
             return result.model_dump()
         return result

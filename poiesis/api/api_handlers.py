@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import AnyUrl, ValidationError
 
+from poiesis.api.controllers.create_task import CreateTaskController
 from poiesis.api.exceptions import BadRequestException
 from poiesis.api.tes.models import (
     Organization,
@@ -15,6 +16,9 @@ from poiesis.api.tes.models import (
 )
 from poiesis.api.utils import pydantic_to_dict_response
 from poiesis.cli.utils import get_version
+from poiesis.repository.mongo import MongoDBClient
+
+db = MongoDBClient()
 
 
 @pydantic_to_dict_response
@@ -49,21 +53,21 @@ def ListTasks() -> TesListTasksResponse:
 
 
 @pydantic_to_dict_response
-def CreateTask(body: dict[str, Any]) -> TesCreateTaskResponse:
+async def CreateTask(body: dict[str, Any]) -> TesCreateTaskResponse:
     """Create a task.
 
     Returns:
         Created task.
     """
     try:
-        task = TesTask.model_validate(body)
+        task = TesTask(**body)
     except ValidationError as e:
         raise BadRequestException(
             message="Invalid request body",
             details=e.errors(),
         ) from e
-
-    return TesCreateTaskResponse(id="123")
+    controller = CreateTaskController(db=db, task=task)
+    return await controller.execute()
 
 
 @pydantic_to_dict_response
