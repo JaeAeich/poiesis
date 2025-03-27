@@ -1,10 +1,10 @@
 """Models for TES API."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from pydantic import AnyUrl, BaseModel, Field
+from pydantic import AnyUrl, BaseModel, Field, field_serializer
 
 
 class TesCancelTaskResponse(BaseModel):
@@ -182,6 +182,11 @@ class TesInput(BaseModel):
     content: Optional[str] = None
     streamable: Optional[bool] = None
 
+    @field_serializer("type")
+    def serialize_type(self, v: TesFileType) -> str:
+        """Serialize the type to a string."""
+        return v.value
+
 
 class TesOutput(BaseModel):
     """Output describes Task output files.
@@ -216,6 +221,11 @@ class TesOutput(BaseModel):
     path: str
     path_prefix: Optional[str] = None
     type: Optional[TesFileType] = TesFileType.FILE
+
+    @field_serializer("type")
+    def serialize_type(self, v: TesFileType) -> str:
+        """Serialize the type to a string."""
+        return v.value
 
 
 class TesOutputFileLog(BaseModel):
@@ -428,7 +438,11 @@ class TesTaskLog(BaseModel):
 
     logs: list[TesExecutorLog]
     metadata: Optional[dict[str, str]] = None
-    start_time: Optional[str] = None
+    start_time: Optional[str] = Field(
+        default_factory=lambda: datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S%z"
+        )
+    )
     end_time: Optional[str] = None
     outputs: list[TesOutputFileLog]
     system_logs: Optional[list[str]] = None
@@ -529,7 +543,17 @@ class TesTask(BaseModel):
     volumes: Optional[list[str]] = None
     tags: Optional[dict[str, str]] = None
     logs: Optional[list[TesTaskLog]] = None
-    creation_time: Optional[str] = None
+    creation_time: Optional[str] = Field(
+        default_factory=lambda: datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S%z"
+        ),
+        frozen=True,
+    )
+
+    @field_serializer("state")
+    def serialize_state(self, v: TesState) -> str:
+        """Serialize the state to a string."""
+        return v.value
 
 
 class TesListTasksResponse(BaseModel):
