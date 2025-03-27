@@ -46,7 +46,8 @@ class PoesisConstants:
             TASK_COLLECTION: str = "tasks"
             SERVICE_COLLECTION: str = "services"
             CONNECTION_STRING: str = os.environ.get(
-                "MONGODB_CONNECTION_STRING", "mongodb://localhost:27017"
+                "MONGODB_CONNECTION_STRING",
+                "mongodb://root:password@mongo:27017",
             )
             DATABASE: str = os.environ.get("MONGODB_DATABASE", "poiesis")
             MAX_POOL_SIZE: int = int(os.environ.get("MONGODB_MAX_POOL_SIZE", "10"))

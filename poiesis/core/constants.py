@@ -35,6 +35,7 @@ class PoiesisCoreConstants:
             S3_VOLUME_NAME: The S3 volume name.
             S3_MOUNT_PATH: The S3 mount path.
             S3_SECRET_NAME: The S3 secret name.
+            BACKOFF_LIMIT: The backoff limit for Job.
         """
 
         K8S_NAMESPACE = "poiesis"
@@ -45,12 +46,13 @@ class PoiesisCoreConstants:
         PVC_PREFIX = "pvc"
         TEXAM_PREFIX = "texam"
         PVC_DEFAULT_DISK_SIZE = "1Gi"
-        POIESIS_IMAGE = "docker.io/jaeaeich/poiesis:latest"
+        POIESIS_IMAGE = os.getenv("POIESIS_IMAGE", "docker.io/jaeaeich/poiesis:latest")
         COMMON_PVC_VOLUME_NAME = "task-pvc-volume"
         FILER_PVC_PATH = "/transfer"
         S3_VOLUME_NAME = "s3-volume"
         S3_MOUNT_PATH = "/aws"
         S3_SECRET_NAME = "s3-secret"
+        BACKOFF_LIMIT = os.getenv("BACKOFF_LIMIT", "1")
 
     @dataclass(frozen=True)
     class MessageBroker:
@@ -61,7 +63,7 @@ class PoiesisCoreConstants:
             MESSAGE_BROKER_PORT: The port of the message
         """
 
-        MESSAGE_BROKER_HOST = os.getenv("MESSAGE_BROKER_HOST", "localhost")
+        MESSAGE_BROKER_HOST = os.getenv("MESSAGE_BROKER_HOST", "redis")
         MESSAGE_BROKER_PORT = os.getenv("MESSAGE_BROKER_PORT", "6379")
 
     @dataclass(frozen=True)
