@@ -33,7 +33,7 @@ class FilerStrategy(ABC):
         pass
 
     @abstractmethod
-    def download_input(self, input: TesInput):
+    async def download_input(self, input: TesInput):
         """Download file from storage and mount to PVC.
 
         Args:
@@ -42,7 +42,7 @@ class FilerStrategy(ABC):
         pass
 
     @abstractmethod
-    def upload_output(self, output: TesOutput):
+    async def upload_output(self, output: TesOutput):
         """Upload file to storage created by executors, mounted to PVC.
 
         Args:
@@ -50,7 +50,7 @@ class FilerStrategy(ABC):
         """
         pass
 
-    def download(self, input: TesInput):
+    async def download(self, input: TesInput):
         """Download file from storage and mount to PVC.
 
         Get the appropriate secrets, check permissions and download the file.
@@ -60,9 +60,9 @@ class FilerStrategy(ABC):
         """
         self.get_secrets(input.url, input.path)
         self.check_permissions(input.url, input.path)
-        self.download_input(input)
+        await self.download_input(input)
 
-    def upload(self, output: TesOutput):
+    async def upload(self, output: TesOutput):
         """Upload file to storage created by executors, mounted to PVC.
 
         Get the appropriate secrets, check permissions and upload the file.
@@ -72,4 +72,4 @@ class FilerStrategy(ABC):
         """
         self.get_secrets(output.url, output.path)
         self.check_permissions(output.url, output.path)
-        self.upload_output(output)
+        await self.upload_output(output)

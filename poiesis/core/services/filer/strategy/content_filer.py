@@ -2,6 +2,7 @@
 
 import logging
 import os
+from typing import Optional
 
 from poiesis.api.tes.models import TesInput, TesOutput
 from poiesis.core.constants import get_poiesis_core_constants
@@ -14,18 +15,18 @@ logger = logging.getLogger(__name__)
 class ContentFilerStrategy(FilerStrategy):
     """Content filer, if the content is given in the request."""
 
-    def get_secrets(self):
+    def get_secrets(self, uri: Optional[str], path: str):
         """No need for secrets for content."""
         pass
 
-    def check_permissions(self):
+    def check_permissions(self, uri: Optional[str], path: str):
         """Authentication is enough for content.
 
         Just check if the directory exists. No need for authorization checks.
         """
         pass
 
-    def download_input(self, _input: TesInput) -> None:
+    async def download_input(self, _input: TesInput) -> None:
         """Get the content from request and mount to PVC."""
         assert _input.content is not None
 
@@ -40,7 +41,7 @@ class ContentFilerStrategy(FilerStrategy):
 
         logger.info(f"Created file with content at {container_path}")
 
-    def upload_output(self, output: TesOutput) -> None:
+    async def upload_output(self, output: TesOutput) -> None:
         """Mount the content to PVC."""
         raise NotImplementedError(
             "Content filer does not support uploads according to TES spec."
