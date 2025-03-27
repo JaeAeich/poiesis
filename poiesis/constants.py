@@ -16,6 +16,7 @@ class PoesisConstants:
 
     Attributes:
         ENVIRONMENT: The environment in which the application is running.
+        DATABASE: The database in which the application is running.
     """
 
     ENVIRONMENT: Literal["dev", "prod"] = cast(
@@ -27,7 +28,7 @@ class PoesisConstants:
         """Constants for the database.
 
         Attributes:
-            ENVIRONMENT: The environment in which the application is running.
+            MONGO_DB: The MongoDB database.
         """
 
         @dataclass(frozen=True)
@@ -35,11 +36,15 @@ class PoesisConstants:
             """Constants for the MongoDB database.
 
             Attributes:
+                TASK_COLLECTION: The name of the tasks collection.
+                SERVICE_COLLECTION: The name of the services collection.
                 CONNECTION_STRING: The connection string for the MongoDB database.
                 DATABASE: The name of the database to use.
                 MAX_POOL_SIZE: The maximum number of connections to the database.
             """
 
+            TASK_COLLECTION: str = "tasks"
+            SERVICE_COLLECTION: str = "services"
             CONNECTION_STRING: str = os.environ.get(
                 "MONGODB_CONNECTION_STRING", "mongodb://localhost:27017"
             )

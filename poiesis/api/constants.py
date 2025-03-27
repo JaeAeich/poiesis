@@ -27,6 +27,12 @@ class PoiesisApiConstants:
     BASE_PATH = "ga4gh/tes/v1"
 
     @dataclass(frozen=True)
+    class Task:
+        """Constants used in the Task."""
+
+        NAME = os.getenv("POIESIS_DEFAULT_TASK_NAME", "poiesis-tes-task")
+
+    @dataclass(frozen=True)
     class Gunicorn:
         """Constants used in the Gunicorn server.
 

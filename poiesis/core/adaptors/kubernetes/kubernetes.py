@@ -30,8 +30,18 @@ class KubernetesAdapter(KubernetesPort):
             batch_api: The Kubernetes Batch API
             namespace: The Kubernetes
         """
-        config.load_kube_config()
-
+        try:
+            # Try to load in-cluster configuration first
+            config.load_incluster_config()
+        except config.ConfigException:
+            # Fall back to kubeconfig file if not in cluster
+            try:
+                config.load_kube_config()
+            except config.ConfigException as e:
+                raise config.ConfigException(
+                    "Could not configure Kubernetes client. "
+                    "Neither in-cluster config nor kube config file is available."
+                ) from e
         self.core_api = client.CoreV1Api()
         self.batch_api = client.BatchV1Api()
         self.namespace = os.getenv("K8S_NAMESPACE", "poiesis")
