@@ -31,15 +31,12 @@ class TorcCommand(BaseCommand):
         """
 
         @group.command(name="run", help="Execute a Torc task")
-        @click.argument("task")
+        @click.option("--task", required=True, help="Task JSON string")
         def run(task: str):
             """Execute a Torc task with the provided task JSON.
 
-            If the file option is provided, the task JSON is read from the file.
-
             Args:
                 task: Task JSON string
-                file: Task JSON file
             """
             try:
                 task_json = json.loads(task)

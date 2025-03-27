@@ -53,8 +53,6 @@ class ApiCommand(BaseCommand):
         """
         info = super().get_info()
 
-        print(info)
-
         host = api_constants.Gunicorn.HOST
         port = api_constants.Gunicorn.PORT
         base_path = api_constants.BASE_PATH
