@@ -6,6 +6,7 @@ from typing import Optional
 
 from kubernetes.client import (
     V1Container,
+    V1EnvVar,
     V1Job,
     V1JobSpec,
     V1ObjectMeta,
@@ -68,9 +69,9 @@ class TorcTofExecution(TorcExecutionTemplate):
 
     async def start_job(self) -> None:
         """Create the K8s job for Tof."""
-        tof_job_name = core_constants.K8s.TOF_PREFIX + self.name
+        tof_job_name = core_constants.K8s.TOF_PREFIX + "-" + self.name
         outputs = (
-            json.dumps([output.model_dump_json() for output in self.outputs])
+            json.dumps([output.model_dump() for output in self.outputs])
             if self.outputs
             else "[]"
         )
@@ -93,7 +94,7 @@ class TorcTofExecution(TorcExecutionTemplate):
                             V1Container(
                                 name=core_constants.K8s.TIF_PREFIX,
                                 image=core_constants.K8s.POIESIS_IMAGE,
-                                command=["poiesis", "run", "tof"],
+                                command=["poiesis", "tof", "run"],
                                 args=["--name", self.name, "--outputs", outputs],
                                 volume_mounts=[
                                     V1VolumeMount(
@@ -106,6 +107,17 @@ class TorcTofExecution(TorcExecutionTemplate):
                                         read_only=True,
                                     ),
                                 ],
+                                env=[
+                                    V1EnvVar(
+                                        name="MESSAGE_BROKER_HOST",
+                                        value=core_constants.MessageBroker.MESSAGE_BROKER_HOST,
+                                    ),
+                                    V1EnvVar(
+                                        name="MESSAGE_BROKER_PORT",
+                                        value=core_constants.MessageBroker.MESSAGE_BROKER_PORT,
+                                    ),
+                                ],
+                                image_pull_policy="Never",  # TODO: Remove this
                             )
                         ],
                         volumes=[

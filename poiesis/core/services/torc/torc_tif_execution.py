@@ -6,6 +6,7 @@ from typing import Optional
 
 from kubernetes.client import (
     V1Container,
+    V1EnvVar,
     V1Job,
     V1JobSpec,
     V1ObjectMeta,
@@ -64,9 +65,9 @@ class TorcTifExecution(TorcExecutionTemplate):
 
     async def start_job(self) -> None:
         """Create the K8s job for Tif."""
-        tif_job_name = core_constants.K8s.TIF_PREFIX + self.name
+        tif_job_name = core_constants.K8s.TIF_PREFIX + "-" + self.name
         inputs = (
-            json.dumps([input.model_dump_json() for input in self.inputs])
+            json.dumps([input.model_dump() for input in self.inputs])
             if self.inputs
             else "[]"
         )
@@ -83,14 +84,25 @@ class TorcTifExecution(TorcExecutionTemplate):
                 },
             ),
             spec=V1JobSpec(
+                backoff_limit=int(core_constants.K8s.BACKOFF_LIMIT),
                 template=V1PodTemplateSpec(
                     spec=V1PodSpec(
                         containers=[
                             V1Container(
                                 name=core_constants.K8s.TIF_PREFIX,
                                 image=core_constants.K8s.POIESIS_IMAGE,
-                                command=["poiesis", "run", "tif"],
+                                command=["poiesis", "tif", "run"],
                                 args=["--name", self.name, "--inputs", inputs],
+                                env=[
+                                    V1EnvVar(
+                                        name="MESSAGE_BROKER_HOST",
+                                        value=core_constants.MessageBroker.MESSAGE_BROKER_HOST,
+                                    ),
+                                    V1EnvVar(
+                                        name="MESSAGE_BROKER_PORT",
+                                        value=core_constants.MessageBroker.MESSAGE_BROKER_PORT,
+                                    ),
+                                ],
                                 volume_mounts=[
                                     V1VolumeMount(
                                         name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
@@ -102,7 +114,8 @@ class TorcTifExecution(TorcExecutionTemplate):
                                         read_only=True,
                                     ),
                                 ],
-                            )
+                                image_pull_policy="Never",  # TODO: Remove this
+                            ),
                         ],
                         volumes=[
                             V1Volume(
@@ -120,7 +133,7 @@ class TorcTifExecution(TorcExecutionTemplate):
                         ],
                         restart_policy="Never",
                     ),
-                )
+                ),
             ),
         )
 

@@ -76,12 +76,8 @@ class TorcTexamExecution(TorcExecutionTemplate):
     async def start_job(self) -> None:
         """Create the K8s job for Texam."""
         texam_name = f"{core_constants.K8s.TEXAM_PREFIX}-{self.name}"
-        executors = json.dumps(
-            [executor.model_dump_json() for executor in self.executors]
-        )
-        resources = (
-            json.dumps(self.resources.model_dump_json()) if self.resources else "{}"
-        )
+        executors = json.dumps([executor.model_dump() for executor in self.executors])
+        resources = json.dumps(self.resources.model_dump()) if self.resources else "{}"
         volumes = json.dumps(self.volumes) if self.volumes else "[]"
         job = V1Job(
             api_version="batch/v1",
@@ -97,11 +93,12 @@ class TorcTexamExecution(TorcExecutionTemplate):
             spec=V1JobSpec(
                 template=V1PodTemplateSpec(
                     spec=V1PodSpec(
+                        service_account_name="pod-creator",
                         containers=[
                             V1Container(
                                 name=core_constants.K8s.TIF_PREFIX,
                                 image=core_constants.K8s.POIESIS_IMAGE,
-                                command=["poiesis", "run", "texam"],
+                                command=["poiesis", "texam", "run"],
                                 args=[
                                     "--name",
                                     self.name,
@@ -112,9 +109,10 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                     "--volumes",
                                     volumes,
                                 ],
+                                image_pull_policy="Never",
                             )
                         ],
-                        restart_policy="Never",
+                        restart_policy="Never",  # TODO: Remove this
                     )
                 )
             ),
