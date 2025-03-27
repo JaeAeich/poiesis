@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any, Callable, Optional
 
 from bson import ObjectId
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 from pydantic_core import core_schema
 
 from poiesis.api.constants import PoiesisApiConstants
@@ -91,7 +91,11 @@ class TaskSchema(BaseModel):
 
         populate_by_name = True
         arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str, TesState: lambda x: x.value}
+
+    @field_serializer("state")
+    def serialize_state(self, v: TesState) -> str:
+        """Serialize the state to a string."""
+        return v.value
 
 
 class ServiceSchema(BaseModel):
@@ -129,4 +133,3 @@ class ServiceSchema(BaseModel):
 
         populate_by_name = True
         arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
