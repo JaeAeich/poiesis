@@ -25,21 +25,12 @@ from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.ports.message_broker import Message
+from poiesis.core.services.models import PodPhase
 from poiesis.repository.mongo import MongoDBClient
 
 core_constants = get_poiesis_core_constants()
 
 logger = logging.getLogger(__name__)
-
-
-class PodPhase(Enum):
-    """Pod phase enumeration."""
-
-    PENDING = "Pending"
-    RUNNING = "Running"
-    SUCCEEDED = "Succeeded"
-    FAILED = "Failed"
-    UNKNOWN = "Unknown"
 
 
 class Texam:
@@ -300,56 +291,7 @@ class Texam:
                             break
         except Exception as e:
             logger.error(f"Error in watch stream: {e}")
-
-            # If watch fails, fall back to polling as a backup strategy
-            if remaining_pods := {pod_name for pod_name, _ in self.task_pool}:
-                logger.warning("Falling back to polling for remaining pods")
-                await self._poll_remaining_pods(remaining_pods)
-
-    async def _poll_remaining_pods(self, pod_names) -> None:
-        """Poll for pod status as a fallback mechanism.
-
-        Args:
-            pod_names: Set of pod names to poll
-        """
-        while self.task_pool and pod_names:
-            for pod_name in list(pod_names):
-                try:
-                    pod = await self.kubernetes_client.get_pod(pod_name)
-                    pod_phase = pod.status.phase if pod.status else None
-
-                    if pod_phase in [PodPhase.SUCCEEDED.value, PodPhase.FAILED.value]:
-                        pod_entry = next(
-                            ((p, t) for p, t in self.task_pool if p == pod_name), None
-                        )
-                        if pod_entry:
-                            logs = await self.kubernetes_client.get_pod_log(pod_name)
-                            await self.update_executor_record_in_db(
-                                pod_name, pod_phase, logs
-                            )
-                            self.task_pool.remove(pod_entry)
-                            pod_names.remove(pod_name)
-                            logger.info(
-                                f"Pod {pod_name} completed with status: {pod_phase}"
-                            )
-                except Exception as e:
-                    logger.error(f"Error polling pod {pod_name}: {e}")
-
-            # If we still have pods to monitor, wait before next poll
-            if pod_names:
-                await asyncio.sleep(core_constants.Texam.POLL_INTERVAL)
-
-    async def update_executor_record_in_db(
-        self, pod_name: str, pod_phase: str, logs: str
-    ) -> None:
-        """Update the executor record in TaskDB.
-
-        Args:
-            pod_name: Name of the pod.
-            pod_phase: Phase of the pod.
-            logs: Logs of the pod.
-        """
-        pass
+            raise e
 
     async def message(self) -> None:
         """Send message to TORC."""
