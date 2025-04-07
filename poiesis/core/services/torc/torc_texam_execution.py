@@ -2,10 +2,12 @@
 
 import json
 import logging
-from typing import Optional
 
 from kubernetes.client import (
+    V1ConfigMapKeySelector,
     V1Container,
+    V1EnvVar,
+    V1EnvVarSource,
     V1Job,
     V1JobSpec,
     V1ObjectMeta,
@@ -14,7 +16,7 @@ from kubernetes.client import (
 )
 from kubernetes.client.exceptions import ApiException
 
-from poiesis.api.tes.models import TesExecutor, TesResources
+from poiesis.api.tes.models import TesTask
 from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.services.torc.torc_execution_template import TorcExecutionTemplate
 
@@ -28,16 +30,11 @@ class TorcTexamExecution(TorcExecutionTemplate):
     This class is responsible for creating the Texam Job and monitoring it.
 
     Args:
-        name: The name of the TES task will be modified for Texam Job.
-        executors: The list of executors that Texam will create and monitor.
-        resources: The resources that need to be allocated for the executors.
-        volumes: The list of volumes that need to be mounted to the executors.
+        task: The TES task that needs to be executed.
 
     Attributes:
-        name: The name of the TES task will be modified for Texam Job.
-        executors: The list of executors that Texam will create and monitor.
-        resources: The resources that need to be allocated for the executors.
-        volumes: The list of volumes that need to be mounted to the executors.
+        id: The id of the TES task.
+        task: The TES task that needs to be executed.
         kubernetes_client: Kubernetes
         message_broker: Message broker.
         message: Message for the message broker.
@@ -45,40 +42,28 @@ class TorcTexamExecution(TorcExecutionTemplate):
 
     def __init__(
         self,
-        name: str,
-        executors: list[TesExecutor],
-        resources: Optional[TesResources],
-        volumes: Optional[list[str]],
+        task: TesTask,
     ) -> None:
         """Initialize the Tif execution class.
 
         Args:
-            name: The name of the TES task will be modified for Texam Job.
-            executors: The list of executors that Texam will create and monitor.
-            resources: The resources that need to be allocated for the executors.
-            volumes: The list of volumes that need to be mounted to the executors.
+            task: The TES task that needs to be executed.
 
         Attributes:
-            name: The name of the TES task will be modified for Texam Job.
-            executors: The list of executors that Texam will create and monitor.
-            resources: The resources that need to be allocated for the executors.
-            volumes: The list of volumes that need to be mounted to the executors.
+            id: The id of the TES task.
+            task: The TES task that needs to be executed.
             kubernetes_client: Kubernetes
             message_broker: Message broker.
             message: Message for the message broker.
         """
         super().__init__()
-        self.name = name
-        self.executors = executors
-        self.resources = resources
-        self.volumes = volumes
+        self.id = task.id
+        self.task = task
 
     async def start_job(self) -> None:
         """Create the K8s job for Texam."""
-        texam_name = f"{core_constants.K8s.TEXAM_PREFIX}-{self.name}"
-        executors = json.dumps([executor.model_dump() for executor in self.executors])
-        resources = json.dumps(self.resources.model_dump()) if self.resources else "{}"
-        volumes = json.dumps(self.volumes) if self.volumes else "[]"
+        texam_name = f"{core_constants.K8s.TEXAM_PREFIX}-{self.id}"
+        task = json.dumps(self.task.model_dump())
         job = V1Job(
             api_version="batch/v1",
             kind="Job",
@@ -86,7 +71,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
                 name=texam_name,
                 labels={
                     "service": core_constants.K8s.TEXAM_PREFIX,
-                    "parent": f"{core_constants.K8s.TORC_PREFIX}-{self.name}",
+                    "parent": f"{core_constants.K8s.TORC_PREFIX}-{self.id}",
                     "name": texam_name,
                 },
             ),
@@ -100,18 +85,20 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                 image=core_constants.K8s.POIESIS_IMAGE,
                                 command=["poiesis", "texam", "run"],
                                 args=[
-                                    "--name",
-                                    self.name,
-                                    "--executors",
-                                    executors,
-                                    "--resources",
-                                    resources,
-                                    "--volumes",
-                                    volumes,
+                                    "--task",
+                                    task,
                                 ],
                                 image_pull_policy="Never",
                                 env=[
                                     V1EnvVar(
+                                        name="LOG_LEVEL",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="LOG_LEVEL",
+                                            )
+                                        ),
+                                    ),
                                     V1EnvVar(
                                         name="MONITOR_TIMEOUT_SECONDS",
                                         value_from=V1EnvVarSource(

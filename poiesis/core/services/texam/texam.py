@@ -5,8 +5,6 @@ import logging
 import os
 import shlex
 from datetime import datetime
-from enum import Enum
-from typing import Optional
 
 from kubernetes import watch  # type: ignore
 from kubernetes.client import (
@@ -21,12 +19,13 @@ from kubernetes.client import (
     V1VolumeMount,
 )
 
-from poiesis.api.tes.models import TesExecutor, TesResources
+from poiesis.api.tes.models import TesExecutor, TesTask
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.ports.message_broker import Message
 from poiesis.core.services.models import PodPhase
+from poiesis.core.services.utils import split_path_for_mounting
 from poiesis.repository.mongo import MongoDBClient
 
 core_constants = get_poiesis_core_constants()
@@ -55,20 +54,15 @@ class Texam:
 
     def __init__(
         self,
-        name: str,
-        executors: list[TesExecutor],
-        resources: Optional[TesResources],
-        volumes: Optional[list[str]],
+        task: TesTask,
     ) -> None:
         """TExAM service.
 
         Args:
-            name: Name of the task.
-            executors: List of executors.
-            resources: Resources for the executors.
-            volumes: List of volumes to be mounted to the executors.
+            task: TesTask object.
 
         Attributes:
+            task: TesTask object.
             name: Name of the task.
             executors: List of executors.
             resources: Resources for the executors.
@@ -77,10 +71,8 @@ class Texam:
             kubernetes_client: Kubernetes client.
             message_broker: Message broker.
         """
-        self.name = name
-        self.executors = executors
-        self.resources = resources
-        self.volumes = volumes
+        self.task = task
+        self.task_id = task.id
         self.task_pool: list[tuple[str, datetime]] = []
         self.kubernetes_client = KubernetesAdapter()
         self.message_broker = RedisMessageBroker()
@@ -102,9 +94,9 @@ class Texam:
             executor: Executor object.
         """
         command_str = " ".join(shlex.quote(arg) for arg in executor.command)
-
+        # Handle stdin redirection from a file
         if executor.stdin:
-            command_str = f"echo {shlex.quote(executor.stdin)} | {command_str}"
+            command_str = f"{command_str} < {shlex.quote(executor.stdin)}"
 
         # Handle stdout and stderr redirection
         if executor.stdout and executor.stderr:
@@ -134,18 +126,20 @@ class Texam:
             limit on number of request per second and in the interest of scalability
             we are launching executors sequentially.
         """
-        for idx, executor in enumerate(self.executors):
-            executor_name = f"{core_constants.K8s.TE_PREFIX}-{self.name}-{idx}"
+        for idx, executor in enumerate(self.task.executors):
+            executor_name = f"{core_constants.K8s.TE_PREFIX}-{self.task_id}-{idx}"
 
             async def create_pod_with_backoff(pod_manifest, executor_name):
                 backoff_time = 1
                 while backoff_time <= core_constants.Texam.BACKOFF_LIMIT:
                     try:
                         pod_name = await self.kubernetes_client.create_pod(pod_manifest)
-                        await self.db.add_task_executor_log(self.name)
+                        await self.db.add_task_executor_log(self.task_id)
                         self.task_pool.append((pod_name, datetime.now()))
                         break
                     except Exception as e:
+                        # TODO: clean the previous pod else we will get a conflict with
+                        #   the same pod name
                         logger.error(f"Failed to create pod {executor_name}: {e}")
                         await asyncio.sleep(backoff_time)
                         backoff_time = min(
@@ -155,18 +149,16 @@ class Texam:
                     logger.error(f"Failed to create pod {executor_name}")
                     # TODO: Log the failed executor in TaskDB
 
-            command = self._build_command_string(executor)
-
             _resource = (
                 {
-                    "cpu": str(self.resources.cpu_cores)
-                    if self.resources.cpu_cores
+                    "cpu": str(self.task.resources.cpu_cores)
+                    if self.task.resources.cpu_cores
                     else None,
-                    "memory": f"{self.resources.ram_gb}Gi"
-                    if self.resources.ram_gb
+                    "memory": f"{self.task.resources.ram_gb}Gi"
+                    if self.task.resources.ram_gb
                     else None,
                 }
-                if self.resources
+                if self.task.resources
                 else {}
             )
             resource = (
@@ -175,7 +167,8 @@ class Texam:
                 else {}
             )
 
-            _parent = f"{core_constants.K8s.TEXAM_PREFIX}-{self.name}"
+            _parent = f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"
+
             # Note: Here we create mount paths for each input, since the PVC
             #   all the data in downloaded in PVC at
             #   `/transfer/{split_path_for_mounting(input.path)[1]}` directory.
@@ -213,7 +206,8 @@ class Texam:
                         V1Container(
                             name=executor_name,
                             image=executor.image,
-                            command=shlex.split(command),
+                            command=["/bin/sh", "-c"],
+                            args=[self._build_command_string(executor)],
                             working_dir=executor.workdir,
                             env=[
                                 V1EnvVar(name=key, value=value)
@@ -239,10 +233,10 @@ class Texam:
                         V1Volume(
                             name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
                             persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
-                                claim_name=f"{core_constants.K8s.PVC_PREFIX}-{self.name}"
+                                claim_name=f"{core_constants.K8s.PVC_PREFIX}-{self.task_id}"
                             ),
                         )
-                        for volume in self.volumes or []
+                        for volume in self.task.volumes or []
                     ],
                     restart_policy="Never",
                 ),
@@ -270,14 +264,14 @@ class Texam:
         Args:
             pod_names: Set of pod names to monitor
         """
-        w = watch.Watch()
-        api_instance = self.kubernetes_client.core_api
-
-        # Create a label selector for our task executor pods
-        label_selector = f"service={core_constants.K8s.TE_PREFIX},parent={core_constants.K8s.TEXAM_PREFIX}-{self.name}"  # noqa: E501
         try:
+            w = watch.Watch()
+
+            # Create a label selector for our task executor pods
+            label_selector = f"service={core_constants.K8s.TE_PREFIX},parent={core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"  # noqa: E501
+
             # Run the watch in a separate thread to avoid blocking the event loop
-            stream_func = api_instance.list_namespaced_pod
+            stream_func = self.kubernetes_client.core_api.list_namespaced_pod
             stream_args = {
                 "namespace": self.kubernetes_client.namespace,
                 "label_selector": label_selector,
@@ -294,6 +288,7 @@ class Texam:
 
                 if pod_name not in pod_names:
                     continue
+                # TODO: Handle unknown phase
                 if pod_phase in [PodPhase.SUCCEEDED.value, PodPhase.FAILED.value]:
                     pod_entry = next(
                         ((p, t) for p, t in self.task_pool if p == pod_name), None
@@ -302,9 +297,7 @@ class Texam:
                     if pod_entry:
                         logs = await self.kubernetes_client.get_pod_log(pod_name)
 
-                        await self.update_executor_record_in_db(
-                            pod_name, pod_phase, logs
-                        )
+                        await self.db.update_executor_log(pod_name, pod_phase, logs)
                         self.task_pool.remove(pod_entry)
                         logger.info(
                             f"Pod {pod_name} completed with status: {pod_phase}"
@@ -319,6 +312,7 @@ class Texam:
 
     async def message(self) -> None:
         """Send message to TORC."""
+        assert self.task_id is not None
         self.message_broker.publish(
-            self.name, Message(f"Texam job for {self.name} has been completed.")
+            self.task_id, Message(f"Texam job for {self.task_id} has been completed.")
         )
