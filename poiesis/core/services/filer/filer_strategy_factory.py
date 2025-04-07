@@ -3,6 +3,7 @@
 Get the correct strategy based on the URI scheme.
 """
 
+import logging
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -12,6 +13,8 @@ from poiesis.core.services.filer.strategy.local_filer import (
     LocalFilerStrategy,
 )
 from poiesis.core.services.filer.strategy.s3_filer import S3FilerStrategy
+
+logger = logging.getLogger(__name__)
 
 
 class FilerStrategyFactory:
@@ -57,5 +60,8 @@ class FilerStrategyFactory:
             if scheme is None
             else cls.STRATEGY_MAP.get(scheme, LocalFilerStrategy)
         )
-
-        return strategy_class()
+        try:
+            return strategy_class()
+        except Exception as e:
+            logger.error("Error creating strategy: %s", e)
+            raise

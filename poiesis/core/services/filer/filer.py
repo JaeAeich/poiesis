@@ -1,9 +1,13 @@
 """Interface for TIF and TOF."""
 
+import logging
+import sys
 from abc import ABC, abstractmethod
 
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
-from poiesis.core.ports.message_broker import Message
+from poiesis.core.ports.message_broker import Message, MessageStatus
+
+logger = logging.getLogger(__name__)
 
 
 class Filer(ABC):
@@ -21,17 +25,26 @@ class Filer(ABC):
         """
         self.message_broker = RedisMessageBroker()
 
-    def execute(self):
+    async def execute(self):
         """Execute the filer.
 
         This will file the file and send a message to TORC via the message
         broker.
         """
-        self.file()
-        self.message(Message("TIF completed."))
+        try:
+            logger.info("Starting file operation")
+            await self.file()
+        except Exception as e:
+            logger.error(f"File operation failed: {e}")
+            self.message(
+                Message(status=MessageStatus.ERROR, message=f"Filer failed: {e}")
+            )
+            sys.exit(1)  # TODO: We should update the task status, tell torc
+        logger.info("File operation completed successfully")
+        self.message(Message("Filer completed."))
 
     @abstractmethod
-    def file(self):
+    async def file(self):
         """Filing logic, upload or download.
 
         If TIF encounters any error, it will send a message to TORC
@@ -41,6 +54,9 @@ class Filer(ABC):
 
     def message(self, message: Message):
         """Message logic, send a message to TORC."""
+        # TODO: Change this to id, it shouldn't be name
         if not hasattr(self, "name"):
+            logger.error("The name attribute is not set")
             raise AttributeError("The name attribute is not set.")
+        logger.info(f"Sending message to TORC: {message}")
         self.message_broker.publish(self.name, message)

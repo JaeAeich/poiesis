@@ -3,6 +3,7 @@
 import logging
 import os
 import shutil
+from typing import Optional
 from urllib.parse import urlparse
 
 from poiesis.api.tes.models import TesInput, TesOutput
@@ -17,53 +18,54 @@ core_constants = get_poiesis_core_constants()
 class LocalFilerStrategy(FilerStrategy):
     """Local filer strategy."""
 
-    def get_secrets(self):
+    def get_secrets(self, url: Optional[str], path: str):
         """No need for secrets for local files."""
-        pass
+        logger.info(f"No secrets needed for local filer with path: {path}")
 
-    def check_permissions(self):
+    def check_permissions(self, url: Optional[str], path: str):
         """Authentication is enough for local files.
 
         No need for authorization checks.
         """
-        pass
+        logger.info(f"No permissions check needed for local filer with path: {path}")
 
-    def download_input(self, _input: TesInput):
+    async def download_input(self, _input: TesInput, container_path: str):
         """Download file from storage and mount to PVC.
 
         Args:
             _input: The input file to be downloaded
+            container_path: The path inside the container where the file needs to be
+                downloaded to.
         """
+        logger.info(f"Starting local file download to {container_path}")
         assert _input.url is not None, "Input URL is required for local filer."
 
         source_path = urlparse(_input.url).path
-        container_path = os.path.join(
-            core_constants.K8s.FILER_PVC_PATH, _input.path.lstrip("/")
-        )
 
         if not os.path.exists(source_path):
+            logger.error(f"File {source_path} not found")
             raise FileNotFoundError(f"File {source_path} not found.")
 
-        os.makedirs(os.path.dirname(container_path), exist_ok=True)
         shutil.copy2(source_path, container_path)
         logger.info(f"Copied {source_path} to {container_path}")
 
-    def upload_output(self, output: TesOutput):
-        """Upload file to storage created by executors, mounted to PVC.
+    async def upload_output(self, output: TesOutput, container_path: str):
+        """Dummy upload output.
+
+        Local filer strategy does not need to upload anything as the file is already
+        present in the container.
 
         Args:
             output: The output file to be uploaded.
+            container_path: The path inside the container from where the file needs to
+                be uploaded from.
         """
-        assert output.url is not None, "Output URL is required for local filer."
+        logger.info(f"Starting local file upload from {container_path}")
+        source_path = urlparse(output.url).path
 
-        container_path = os.path.join(
-            core_constants.K8s.FILER_PVC_PATH, output.path.lstrip("/")
-        )
-        destination_path = urlparse(output.url).path
+        if not os.path.exists(source_path):
+            logger.error(f"File {source_path} not found")
+            raise FileNotFoundError(f"File {source_path} not found.")
 
-        if not os.path.exists(container_path):
-            raise FileNotFoundError(f"File {container_path} not found.")
-
-        os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-        shutil.copy2(container_path, destination_path)
-        logger.info(f"Copied {container_path} to {destination_path}")
+        shutil.copy2(source_path, container_path)
+        logger.info(f"Copied {source_path} to {container_path}")

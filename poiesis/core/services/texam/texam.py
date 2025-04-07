@@ -176,6 +176,25 @@ class Texam:
             )
 
             _parent = f"{core_constants.K8s.TEXAM_PREFIX}-{self.name}"
+            # Note: Here we create mount paths for each input, since the PVC
+            #   all the data in downloaded in PVC at
+            #   `/transfer/{split_path_for_mounting(input.path)[1]}` directory.
+            #   So we need to mount the PVC at
+            #   `/transfer/{split_path_for_mounting(input.path)[0]}` directory.
+            #   This way the executor can access the data from PVC at the correct
+            #   location, that will be `{split_path_for_mounting(input.path)[1]}/
+            #   {split_path_for_mounting(input.path)[2]}` directory.
+            _volume_pvc_mount = []
+            for input in self.task.inputs or []:
+                _mount_path = split_path_for_mounting(input.path)[0].rstrip("/")
+                _volume_mount = V1VolumeMount(
+                    name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                    mount_path=_mount_path,
+                )
+                # Check if the volume mount is already in the list else
+                #   K8s won't process and throw 422 error.
+                if input.path and _volume_mount not in _volume_pvc_mount:
+                    _volume_pvc_mount.append(_volume_mount)
 
             pod_manifest = V1Pod(
                 api_version="v1",
@@ -211,8 +230,9 @@ class Texam:
                                     name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
                                     mount_path=volume,
                                 )
-                                for volume in self.volumes or []
-                            ],
+                                for volume in self.task.volumes or []
+                            ]
+                            + _volume_pvc_mount,
                         )
                     ],
                     volumes=[

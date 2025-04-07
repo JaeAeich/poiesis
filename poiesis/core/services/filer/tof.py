@@ -39,12 +39,18 @@ class Tof(Filer):
         self.name = name
         self.outputs = outputs
 
-    def file(self) -> None:
-        """Filing logic, upload."""
+    async def file(self) -> None:
+        """Filing logic, upload.
+
+        Raises:
+            Exception: If the file cannot be uploaded.
+        """
         for output in self.outputs:
             filer_strategy = FilerStrategyFactory.create_strategy(output.url)
             try:
-                filer_strategy.upload(output)
+                logger.error(f"Uploading output: {output}")
+                await filer_strategy.upload(output)
             except Exception as e:
+                logger.error(f"TOF failed: {e}")
                 self.message(Message(f"TOF failed: {e}"))
                 raise
