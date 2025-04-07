@@ -1,6 +1,7 @@
 """Redis message broker adaptor."""
 
 import json
+import os
 from collections.abc import Iterator
 
 import redis
@@ -27,8 +28,8 @@ class RedisMessageBroker(MessageBroker):
             pubsub: The Redis pubsub client
         """
         self.redis = redis.Redis(
-            host=core_constants.MessageBroker.MESSAGE_BROKER_HOST,
-            port=core_constants.MessageBroker.MESSAGE_BROKER_PORT,
+            host=os.getenv("MESSAGE_BROKER_HOST", "redis"),
+            port=int(os.getenv("MESSAGE_BROKER_PORT", "6379")),
         )
         self.pubsub = self.redis.pubsub()
 
