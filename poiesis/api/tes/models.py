@@ -123,7 +123,11 @@ class TesExecutorLog(BaseModel):
         exit_code: Exit code.
     """
 
-    start_time: Optional[str] = None
+    start_time: Optional[str] = Field(
+        default_factory=lambda: datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S%z"
+        )
+    )
     end_time: Optional[str] = None
     stdout: Optional[str] = None
     stderr: Optional[str] = None
