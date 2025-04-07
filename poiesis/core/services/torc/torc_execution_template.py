@@ -1,12 +1,33 @@
 """Torc's template for each service."""
 
 import logging
+import sys
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from kubernetes.client import (
+    V1ConfigMapKeySelector,
+    V1Container,
+    V1EnvVar,
+    V1EnvVarSource,
+    V1Job,
+    V1JobSpec,
+    V1ObjectMeta,
+    V1PersistentVolumeClaimVolumeSource,
+    V1PodSpec,
+    V1PodTemplateSpec,
+    V1SecretKeySelector,
+    V1Volume,
+    V1VolumeMount,
+)
+from kubernetes.client.exceptions import ApiException
+
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
-from poiesis.core.ports.message_broker import Message
+from poiesis.core.constants import get_poiesis_core_constants
+from poiesis.core.ports.message_broker import Message, MessageStatus
+
+core_constants = get_poiesis_core_constants()
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +59,127 @@ class TorcExecutionTemplate(ABC):
         self.wait()
         self.log()
 
+    async def create_job(
+        self,
+        task_id: str,
+        job_name: str,
+        commands: list[str],
+        args: list[str],
+        metadata: V1ObjectMeta,
+    ) -> None:
+        """Create the K8s filer job.
+
+        TIF and TOF jobs are created using this method.
+
+        Args:
+            task_id: The id of the task.
+            job_name: The name of the job, either TIF or TOF.
+            commands: The filer commands to run.
+            args: The arguments to pass to the filer commands.
+            metadata: The metadata for the job to be used in K8s manifest.
+        """
+        job = V1Job(
+            api_version="batch/v1",
+            kind="Job",
+            metadata=metadata,
+            spec=V1JobSpec(
+                backoff_limit=int(core_constants.K8s.BACKOFF_LIMIT),
+                template=V1PodTemplateSpec(
+                    spec=V1PodSpec(
+                        containers=[
+                            V1Container(
+                                name=job_name,
+                                image=core_constants.K8s.POIESIS_IMAGE,
+                                command=commands,
+                                args=args,
+                                env=[
+                                    V1EnvVar(
+                                        name="MESSAGE_BROKER_HOST",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="MESSAGE_BROKER_HOST",
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="MESSAGE_BROKER_PORT",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="MESSAGE_BROKER_PORT",
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="S3_URL",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="S3_URL",
+                                                optional=True,
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="AWS_ACCESS_KEY_ID",
+                                        value_from=V1EnvVarSource(
+                                            secret_key_ref=V1SecretKeySelector(
+                                                name=core_constants.K8s.S3_SECRET_NAME,
+                                                key="AWS_ACCESS_KEY_ID",
+                                                optional=True,
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="AWS_SECRET_ACCESS_KEY",
+                                        value_from=V1EnvVarSource(
+                                            secret_key_ref=V1SecretKeySelector(
+                                                name=core_constants.K8s.S3_SECRET_NAME,
+                                                key="AWS_SECRET_ACCESS_KEY",
+                                                optional=True,
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="LOG_LEVEL",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="LOG_LEVEL",
+                                            )
+                                        ),
+                                    ),
+                                ],
+                                volume_mounts=[
+                                    V1VolumeMount(
+                                        name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                                        mount_path=core_constants.K8s.FILER_PVC_PATH,
+                                    )
+                                ],
+                                image_pull_policy="Never",  # TODO: Remove this
+                            ),
+                        ],
+                        volumes=[
+                            V1Volume(
+                                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                                persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
+                                    claim_name=f"{core_constants.K8s.PVC_PREFIX}-{task_id}"
+                                ),
+                            )
+                        ],
+                        restart_policy="Never",
+                    ),
+                ),
+            ),
+        )
+
+        try:
+            await self.kubernetes_client.create_job(job)
+        except ApiException as e:
+            logger.error(e)
+            raise
+
     @abstractmethod
     async def start_job(self) -> None:
         """Create the K8s job.
@@ -52,11 +194,14 @@ class TorcExecutionTemplate(ABC):
         Uses message broker with task name as channel name
         and waits on that channel for the message.
         """
-        if not hasattr(self, "name"):
-            raise AttributeError("The name attribute is not set.")
         message = None
-        for message in self.message_broker.subscribe(self.name):
+        if not hasattr(self, "id"):
+            raise AttributeError("The id of the task is not set.")
+        for message in self.message_broker.subscribe(self.id):
             if message:
+                if message.status == MessageStatus.ERROR:
+                    sys.exit(1)
+                    raise Exception(message.message)  # TODO: raise better exception
                 self.message = message
                 break
 
