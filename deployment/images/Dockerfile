@@ -23,18 +23,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -s /opt/poetry/bin/poetry /usr/local/bin/poetry
 
 ###################################################
-# Stage 2: Build dependencies                     #
+# Stage 2: Install dependencies                   #
 ###################################################
-FROM poetry AS builder
+FROM poetry AS dependencies
 
 WORKDIR /app
 
+# Copy only files needed for dependency installation
+COPY pyproject.toml poetry.lock* ./
+COPY README.md ./
+
+# Install dependencies
+RUN poetry install --no-root --no-cache --no-interaction
+
+###################################################
+# Stage 3: Install tini                           #
+###################################################
+FROM python:${PY_VERSION}-${PY_IMAGE} AS tini-installer
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
+###################################################
+# Stage 4: Build application                      #
+###################################################
+FROM dependencies AS builder
+
+# Copy the rest of the application code
 COPY . .
 
+# Build the package
 RUN poetry build
 
 ###################################################
-# Stage 3: Final runtime image                    #
+# Stage 5: Final runtime image                    #
 ###################################################
 FROM python:${PY_VERSION}-${PY_IMAGE} AS runtime
 
@@ -65,9 +88,8 @@ RUN groupadd -r poises && useradd -r -g poises -d /home/poises -m poises \
     && mkdir -p /app /home/poises/.cache \
     && chown -R poises:poises /app /home/poises/.cache
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tini \
-    && rm -rf /var/lib/apt/lists/*
+# Copy tini from the tini-installer stage
+COPY --from=tini-installer /usr/bin/tini /usr/bin/tini
 
 COPY --from=builder /app/dist/*.whl /tmp/
 RUN pip install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
