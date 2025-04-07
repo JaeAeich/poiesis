@@ -110,6 +110,19 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                     volumes,
                                 ],
                                 image_pull_policy="Never",
+                                env=[
+                                    V1EnvVar(
+                                    V1EnvVar(
+                                        name="MONITOR_TIMEOUT_SECONDS",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="MONITOR_TIMEOUT_SECONDS",
+                                                optional=True,
+                                            )
+                                        ),
+                                    ),
+                                ],
                             )
                         ],
                         restart_policy="Never",  # TODO: Remove this

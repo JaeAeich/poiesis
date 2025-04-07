@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import shlex
 from datetime import datetime
 from enum import Enum
@@ -260,7 +261,10 @@ class Texam:
             stream_args = {
                 "namespace": self.kubernetes_client.namespace,
                 "label_selector": label_selector,
-                "timeout_seconds": 3600,
+                "timeout_seconds": os.getenv(
+                    "MONITOR_TIMEOUT_SECONDS",
+                    core_constants.Texam.MONITOR_TIMEOUT_SECONDS,
+                ),
             }
 
             for event in await asyncio.to_thread(w.stream, stream_func, **stream_args):

@@ -61,10 +61,14 @@ class PoiesisCoreConstants:
                 starting from 1 second for a failing executor pod.
             POLL_INTERVAL: The interval in seconds to poll the executor pod status as
                 a fallback strategy if watch is not available.
+            MONITOR_TIMEOUT_SECONDS: The timeout in seconds to monitor the executor pod
+                status.
+                Default to 0, which means infinity.
         """
 
         BACKOFF_LIMIT = 60
         POLL_INTERVAL = 10
+        MONITOR_TIMEOUT_SECONDS = 0
 
 
 @lru_cache
