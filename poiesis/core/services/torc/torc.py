@@ -102,6 +102,7 @@ class Torc:
 
                 # If we get here, everything succeeded
                 logger.info(f"Task {self.id}: Execution completed successfully")
+                await self.db.update_task_state(self.id, TesState.COMPLETE)
                 break
             except Exception as e:
                 logger.error(

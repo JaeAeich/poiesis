@@ -56,7 +56,11 @@ class S3FilerStrategy(FilerStrategy):
     def check_permissions(self, uri: Optional[str], path: str):
         """Check if the user has the necessary permissions for S3 bucket."""
         try:
-            self.client.list_objects_v2(Bucket="data")
+            if uri is None:
+                raise ValueError("URI is required")
+            bucket, _ = self._get_bucket_key(uri)
+            logger.info("Checking permissions for bucket: %s", bucket)
+            self.client.list_objects_v2(Bucket=bucket)
         except Exception as e:
             logger.error("Listing error: %s", e)
             raise

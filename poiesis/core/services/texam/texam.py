@@ -236,7 +236,6 @@ class Texam:
                                 claim_name=f"{core_constants.K8s.PVC_PREFIX}-{self.task_id}"
                             ),
                         )
-                        for volume in self.task.volumes or []
                     ],
                     restart_policy="Never",
                 ),
