@@ -37,7 +37,9 @@ gunicorn = "^23.0.0"
 kubernetes = "^32.0.1"
 motor = "^3.7.0"
 pydantic = "^2.10.6"
+pyjwt = "^2.10.1"
 python = ">=3.13.0,<4.0.0"
+python-keycloak = "^5.5.0"
 redis = "^5.2.1"
 rich-click = "^1.8.7"
 tomli = "^2.2.1"
@@ -84,6 +86,7 @@ optional = true
 boto3-stubs = "^1.36.26"
 kubernetes-stubs = "^22.6.0.post1"
 types-botocore = "^1.0.2"
+types-requests = "^2.32.0.20250328"
 
 [tool.poetry.group.vulnerability]
 optional = true

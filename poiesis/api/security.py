@@ -5,17 +5,25 @@ Entrypoint of token validations.
 
 from typing import Any
 
+from poiesis.api.auth.auth_factory import get_auth_provider
+from poiesis.api.exceptions import UnauthorizedException
 
-def validate_bearer_token(*args, **kwargs) -> dict[str, Any]:
+
+def validate_bearer_token(token: str) -> dict[str, Any]:
     """Validate bearer token.
 
+    This function validates a bearer token and returns the token info. This info is then
+    added to the context for use in the API handlers.
+
     Args:
-        args: The arguments.
-        kwargs: The keyword arguments.
+        token: The bearer token.
 
     Returns:
-        The user info and permissions.
+        dict[str, Any]: The token info.
     """
-    # TODO: Implement real token validation, this should return
-    # user info and permissions.
-    return {"valid": True}
+    auth_provider = get_auth_provider()
+    try:
+        token_info = auth_provider.validate_token(token)
+    except Exception as e:
+        raise UnauthorizedException("Invalid or expired token") from e
+    return token_info

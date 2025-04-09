@@ -36,7 +36,8 @@ help:
 
 	@echo "Deployment --------------------------------------------------------------------"
 	@echo "  \033[1m\033[35mbuild-image\033[0m \033[37m(bi)\033[0m: \033[36mBuild container image.\033[0m"
-	@echo "  \033[1m\033[35mclean-image\033[0m \033[37m(ci)\033[0m: \033[36mRemove container image.\033[0m\n"
+	@echo "  \033[1m\033[35mclean-image\033[0m \033[37m(ci)\033[0m: \033[36mRemove container image.\033[0m"
+	@echo "  \033[1m\033[35mget-token-for-alice\033[0m \033[37m(gta)\033[0m: \033[36mGet token for Alice (user from Keycloak).\033[0m\n"
 
 	@echo "Development -------------------------------------------------------------------"
 	@echo "  \033[1m\033[35mdev\033[0m \033[37m(d)\033[0m: \033[36mStart Poiesis development server.\033[0m\n"
@@ -163,3 +164,32 @@ dev:
 	@echo "\nStarting Poiesis development server ++++++++++++++++++++++++++++++++++++++++++++\n"
 	@echo "Starting server on http://localhost:8089/ga4gh/tes/v1/ui"
 	@poetry run uvicorn poiesis.api.app:app --reload --host localhost --port 8089
+
+.PHONY: get-token-for-alice gta
+get-token-for-alice:
+	@echo "\nGetting a token for Alice ++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
+	@bash -c 'response=$$(curl -s -X POST "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+		-H "Content-Type: application/x-www-form-urlencoded" \
+		-d "client_id=${KEYCLOAK_CLIENT_ID}" \
+		-d "client_secret=${KEYCLOAK_CLIENT_SECRET}" \
+		-d "username=alice" \
+		-d "password=password" \
+		-d "grant_type=password"); \
+		if command -v jq >/dev/null 2>&1 && command -v pbcopy >/dev/null 2>&1; then \
+			echo "$$response" | jq -r .access_token | pbcopy; \
+			echo "Token copied to clipboard using jq and pbcopy (macOS)"; \
+		elif command -v jq >/dev/null 2>&1 && command -v xsel >/dev/null 2>&1; then \
+			echo "$$response" | jq -r .access_token | xsel -ib; \
+			echo "Token copied to clipboard using jq and xsel (Linux)"; \
+		elif command -v jq >/dev/null 2>&1 && command -v xclip >/dev/null 2>&1; then \
+			echo "$$response" | jq -r .access_token | xclip -selection clipboard; \
+			echo "Token copied to clipboard using jq and xclip (Linux)"; \
+		elif command -v grep >/dev/null 2>&1 && command -v sed >/dev/null 2>&1; then \
+			token=$$(echo "$$response" | grep -o "\"access_token\":\"[^\"]*\"" | sed "s/\"access_token\":\"//;s/\"//"); \
+			echo "Token: $$token"; \
+		else \
+			echo "Unable to parse token. Raw response:"; \
+			echo "$$response"; \
+		fi'
+
+gta: get-token-for-alice

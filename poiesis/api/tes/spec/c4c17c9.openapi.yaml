@@ -75,9 +75,8 @@ info:
     This API specification have been copied verbatim from the GA4GH TES API specification, certain changes without changing the GA4GH specs have been made.
     Please refer the openAPI specification that this implementation points to for more reference.
 
-# TODO: Implement security, commenting for dev purposes
-# security:
-#   - BearerAuth: []  # Apply globally if authentication is required
+security:
+  - BearerAuth: []  # Apply globally if authentication is required
 
 servers:
   - url: /ga4gh/tes/v1
@@ -93,6 +92,7 @@ paths:
         will also provide information about customized storage endpoints offered
         by the TES server.
       operationId: GetServiceInfo
+      security: []  # Override global security
       responses:
         200:
           description: ""
@@ -269,12 +269,13 @@ paths:
                 $ref: '#/components/schemas/tesCancelTaskResponse'
 
 components:
-  # securitySchemes:
-  #   BearerAuth:
-  #     type: http
-  #     scheme: bearer
-  #     bearerFormat: JWT  # optional, can specify format if using JWT tokens
-  #     x-bearerInfoFunc: poiesis.api.security.validate_bearer_token
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      x-bearerInfoFunc: poiesis.api.security.validate_bearer_token
+
 
   responses:
     BadRequest:

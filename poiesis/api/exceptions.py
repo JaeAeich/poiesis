@@ -69,6 +69,13 @@ class BadRequestException(APIException):
     error_code = "bad_request"
 
 
+class UnauthorizedException(APIException):
+    """The request is unauthorized."""
+
+    status_code = 401
+    error_code = "unauthorized"
+
+
 class InternalServerException(APIException):
     """An unexpected condition was encountered."""
 

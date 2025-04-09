@@ -3,6 +3,7 @@
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Literal, cast
 
 from poiesis.constants import get_poiesis_constants
 
@@ -47,6 +48,34 @@ class PoiesisApiConstants:
         PORT = os.getenv("POIESIS_API_PORT", "8000")
         WORKERS = os.getenv("POIESIS_UVICORN_WORKERS")
         TIMEOUT = os.getenv("POIESIS_UVICORN_TIMEOUT", "120")
+
+    @dataclass(frozen=True)
+    class Auth:
+        """Constants used in the authentication.
+
+        Attributes:
+            AUTH: The authentication method.
+        """
+
+        AUTH: Literal["keycloak", "none"] = cast(
+            Literal["keycloak", "none"], os.getenv("AUTH", "none")
+        )
+
+        @dataclass(frozen=True)
+        class Keycloak:
+            """Constants used in the Keycloak.
+
+            Attributes:
+                URL: The URL of the Keycloak server.
+                REALM: The realm of the Keycloak server.
+                CLIENT_ID: The client id of the Keycloak server.
+                ALGORITHM: The algorithm of the Keycloak server.
+            """
+
+            URL = os.getenv("KEYCLOAK_URL", "")
+            REALM = os.getenv("KEYCLOAK_REALM", "poiesis")
+            CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "poiesis")
+            ALGORITHM = os.getenv("KEYCLOAK_ALGORITHM", "RS256")
 
 
 @lru_cache
