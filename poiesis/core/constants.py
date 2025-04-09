@@ -49,6 +49,7 @@ class PoiesisCoreConstants:
         COMMON_PVC_VOLUME_NAME = "task-pvc-volume"
         FILER_PVC_PATH = "/transfer"
         S3_SECRET_NAME = "poiesis-s3-secret"
+        MONGODB_SECRET_NAME = "poiesis-mongo-secret"
         BACKOFF_LIMIT = os.getenv("BACKOFF_LIMIT", "1")
         CONFIGMAP_NAME = "poiesis-core-configmap"
 

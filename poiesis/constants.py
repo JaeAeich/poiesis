@@ -38,17 +38,12 @@ class PoesisConstants:
             Attributes:
                 TASK_COLLECTION: The name of the tasks collection.
                 SERVICE_COLLECTION: The name of the services collection.
-                CONNECTION_STRING: The connection string for the MongoDB database.
                 DATABASE: The name of the database to use.
                 MAX_POOL_SIZE: The maximum number of connections to the database.
             """
 
             TASK_COLLECTION: str = "tasks"
             SERVICE_COLLECTION: str = "services"
-            CONNECTION_STRING: str = os.environ.get(
-                "MONGODB_CONNECTION_STRING",
-                "mongodb://root:password@mongo:27017",
-            )
             DATABASE: str = os.environ.get("MONGODB_DATABASE", "poiesis")
             MAX_POOL_SIZE: int = int(os.environ.get("MONGODB_MAX_POOL_SIZE", "10"))
 

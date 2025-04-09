@@ -1,6 +1,7 @@
 """MongoDB adaptor for NoSQL database operations."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -31,7 +32,12 @@ class MongoDBClient:
             database: Default database name
             max_pool_size: Maximum number of connections in the pool
         """
-        self.connection_string = poiesis_constants.Database.MongoDB.CONNECTION_STRING
+        self.connection_string = os.environ.get("MONGODB_CONNECTION_STRING")
+        if not self.connection_string:
+            logger.error("Environment variable MONGODB_CONNECTION_STRING is not set")
+            raise DBException(
+                "Environment variable MONGODB_CONNECTION_STRING is not set"
+            )
         self.database = poiesis_constants.Database.MongoDB.DATABASE
         self.max_pool_size = poiesis_constants.Database.MongoDB.MAX_POOL_SIZE
         self.client: motor.motor_asyncio.AsyncIOMotorClient = (
@@ -195,7 +201,62 @@ class MongoDBClient:
         Args:
             task_id: ID of the task
         """
-        pass
+        try:
+            task = await self.get_task(task_id)
+            assert task.data.logs is not None
+
+            # Define job prefixes to look for
+            job_prefixes = [
+                f"{poiesis_core_constants.K8s.TEXAM_PREFIX}-{task_id}",
+                f"{poiesis_core_constants.K8s.TOF_PREFIX}-{task_id}",
+                f"{poiesis_core_constants.K8s.TIF_PREFIX}-{task_id}",
+            ]
+
+            system_logs = []
+
+            # Collect logs from all related pods
+            for prefix in job_prefixes:
+                try:
+                    pods = await self.kubernetes_client.get_pods(
+                        label_selector=f"job-name={prefix}"
+                    )
+                    for pod in pods:
+                        assert pod.metadata is not None
+                        assert pod.metadata.name is not None
+                        pod_logs = await self.kubernetes_client.get_pod_log(
+                            pod.metadata.name
+                        )
+                        if pod_logs:
+                            assert pod.metadata is not None
+                            system_logs.append(
+                                f"Logs from {pod.metadata.name}: {pod_logs}"
+                            )
+                except Exception as e:
+                    system_logs.append(f"Error getting logs for {prefix}: {str(e)}")
+
+            # Add system logs to the task
+            task.data.logs[-1].system_logs = system_logs
+
+            # Update the task in the database
+            await self.db[
+                poiesis_constants.Database.MongoDB.TASK_COLLECTION
+            ].update_one(
+                {"task_id": task_id},
+                {
+                    "$set": {
+                        "data.logs": [log.model_dump() for log in task.data.logs],
+                    }
+                },
+            )
+        except Exception as e:
+            logger.error(
+                "Error adding system logs in collection "
+                f"{poiesis_constants.Database.MongoDB.TASK_COLLECTION}: {str(e)}"
+            )
+            raise DBException(
+                "Error adding system logs in collection "
+                f"{poiesis_constants.Database.MongoDB.TASK_COLLECTION}: {e}",
+            ) from e
 
     async def add_task_executor_log(self, task_id: str) -> None:
         """Append a log for a task in the database.
@@ -252,19 +313,24 @@ class MongoDBClient:
         """
         try:
             # Note: The executor name is of the form <te_prefix>-<UUID>-<idx>.
-            pod_name_without_prefix = "".join(
-                f"{pod_name.split(poiesis_core_constants.K8s.TE_PREFIX)}-"
-            )
+            pod_name_without_prefix = pod_name.split(
+                f"{poiesis_core_constants.K8s.TE_PREFIX}-"
+            )[-1]
             parts = pod_name_without_prefix.split("-")
             idx = int(parts[-1])
-            task_id = "-".join(parts[1:6])
+
+            # UUID has 6 parts, hence we take the first 5
+            task_id = "-".join(parts[:5])
 
             task = await self.get_task(task_id)
             assert task.data.logs is not None
+
             exec_log = task.data.logs[-1].logs[idx]
+
             exec_log.end_time = datetime.now(timezone.utc).strftime(
                 "%Y-%m-%dT%H:%M:%S%z"
             )
+
             exec_log.stdout = await self.kubernetes_client.get_pod_log(pod_name)
             exec_log.exit_code = 0 if pod_phase == PodPhase.SUCCEEDED.value else 1
             await self.db[

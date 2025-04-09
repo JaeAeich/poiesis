@@ -13,6 +13,7 @@ from kubernetes.client import (
     V1ObjectMeta,
     V1PodSpec,
     V1PodTemplateSpec,
+    V1SecretKeySelector,
 )
 from kubernetes.client.exceptions import ApiException
 
@@ -90,6 +91,15 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                 ],
                                 image_pull_policy="Never",
                                 env=[
+                                    V1EnvVar(
+                                        name="MONGODB_CONNECTION_STRING",
+                                        value_from=V1EnvVarSource(
+                                            secret_key_ref=V1SecretKeySelector(
+                                                name=core_constants.K8s.MONGODB_SECRET_NAME,
+                                                key="MONGODB_CONNECTION_STRING",
+                                            )
+                                        ),
+                                    ),
                                     V1EnvVar(
                                         name="LOG_LEVEL",
                                         value_from=V1EnvVarSource(

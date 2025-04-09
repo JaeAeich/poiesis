@@ -15,6 +15,7 @@ from kubernetes.client.models import (
     V1ObjectMeta,
     V1PodSpec,
     V1PodTemplateSpec,
+    V1SecretKeySelector,
 )
 
 from poiesis.api.constants import get_poiesis_api_constants
@@ -107,6 +108,15 @@ class CreateTaskController(InterfaceController):
                                             config_map_key_ref=V1ConfigMapKeySelector(
                                                 name=core_constants.K8s.CONFIGMAP_NAME,
                                                 key="MESSAGE_BROKER_PORT",
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="MONGODB_CONNECTION_STRING",
+                                        value_from=V1EnvVarSource(
+                                            secret_key_ref=V1SecretKeySelector(
+                                                name=core_constants.K8s.MONGODB_SECRET_NAME,
+                                                key="MONGODB_CONNECTION_STRING",
                                             )
                                         ),
                                     ),
