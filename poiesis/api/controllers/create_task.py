@@ -43,16 +43,18 @@ logger = logging.getLogger(__name__)
 class CreateTaskController(InterfaceController):
     """Controller for creating a task."""
 
-    def __init__(self, db: MongoDBClient, task: TesTask):
+    def __init__(self, db: MongoDBClient, task: TesTask, user_id: str):
         """Initialize the controller.
 
         Args:
             db: The database client.
-            task: The task to create.
+            task: The task to create
+            user_id: User unique identifier
         """
         self.db = db
         self.task = task
         self.torc = Torc(task)
+        self.user_id = user_id
         self.kubernetes_client = KubernetesAdapter()
 
     async def execute(self) -> TesCreateTaskResponse:
@@ -157,7 +159,7 @@ class CreateTaskController(InterfaceController):
             state=TesState.INITIALIZING,
             tags=task.tags,
             task_id=str(_task_id),
-            user_id="-1",  # TODO: Add user id after authentication is implemented
+            user_id=self.user_id,
             service_hash="-1",  # TODO: Add service hash when service is implemented
             data=task,
         )

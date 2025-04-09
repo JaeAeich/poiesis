@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from connexion import context
 from pydantic import AnyUrl, ValidationError
 
 from poiesis.api.controllers.create_task import CreateTaskController
@@ -60,13 +61,14 @@ async def CreateTask(body: dict[str, Any]) -> TesCreateTaskResponse:
         Created task.
     """
     try:
+        user_id = context.context.get("user")
         task = TesTask(**body)
     except ValidationError as e:
         raise BadRequestException(
             message="Invalid request body",
             details=e.errors(),
         ) from e
-    controller = CreateTaskController(db=db, task=task)
+    controller = CreateTaskController(db=db, task=task, user_id=user_id)
     return await controller.execute()
 
 
