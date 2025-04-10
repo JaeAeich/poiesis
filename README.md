@@ -4,7 +4,14 @@
 
 # poiesis
 
-TES on kubernetes
+<div align="center">
+  <img src="./docs/app/public/logo/logo.png" alt="Poiesis Logo" width="300" />
+  <br>
+  <em>TES (Task Execution Service) on kubernetes!!!</em>
+</div>
+
+A [TES] compliant task execution service built on kubernetes with `security`,
+`scalability`, and `ease of use` in mind.
 
 ## Table of Contents
 
@@ -168,3 +175,4 @@ copy of which is also available in [`LICENSE`][license].
 [editor-config]: https://editorconfig.org/
 [license]: LICENSE
 [semver]: https://semver.org/
+[tes]: https://github.com/ga4gh/task-execution-schemas
