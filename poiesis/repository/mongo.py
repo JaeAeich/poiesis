@@ -4,11 +4,13 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Any, Optional
 
 import motor.motor_asyncio
+from bson.objectid import ObjectId
 
 from poiesis.api.exceptions import DBException
-from poiesis.api.tes.models import TesExecutorLog, TesState, TesTaskLog
+from poiesis.api.tes.models import TesExecutorLog, TesState, TesTask, TesTaskLog
 from poiesis.constants import get_poiesis_constants
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.constants import get_poiesis_core_constants
@@ -348,6 +350,51 @@ class MongoDBClient:
                 "Error updating executor log in collection"
                 f" {poiesis_constants.Database.MongoDB.TASK_COLLECTION}: {str(e)}"
             )
+
+    async def list_tasks(
+        self,
+        query: dict[str, Any],
+        page_size: Optional[int] = None,
+        next_page_token: Optional[str] = None,
+    ) -> tuple[list[TesTask], Optional[str]]:
+        """List tasks from the database with pagination.
+
+        Args:
+            query: Query to filter tasks
+            page_size: Number of tasks to return
+            next_page_token: Token for returning the next page of results
+
+        Returns:
+            tuple[list[TesTask], Optional[str]]: list of tasks matching the query,
+                and next page token
+        """
+        db_query = query.copy()
+
+        # If there's a next page token, filter documents after that ID
+        if next_page_token:
+            try:
+                db_query["_id"] = {"$gt": ObjectId(next_page_token)}
+            except Exception as e:
+                raise ValueError("Invalid next_page_token") from e
+
+        cursor = (
+            self.db[poiesis_constants.Database.MongoDB.TASK_COLLECTION]
+            .find(db_query)
+            .sort("_id", 1)
+        )
+
+        if page_size is not None:
+            cursor = cursor.limit(page_size + 1)
+
+        docs = await cursor.to_list(None)
+
+        tasks = [TesTask(**doc["data"]) for doc in docs[:page_size]]
+
+        next_token = None
+        if page_size is not None and len(docs) > page_size:
+            next_token = str(docs[page_size]["_id"])
+
+        return tasks, next_token
 
     @asynccontextmanager
     async def connection(self):

@@ -76,6 +76,13 @@ class UnauthorizedException(APIException):
     error_code = "unauthorized"
 
 
+class NotFoundException(APIException):
+    """The requested resource was not found."""
+
+    status_code = 404
+    error_code = "not_found"
+
+
 class InternalServerException(APIException):
     """An unexpected condition was encountered."""
 

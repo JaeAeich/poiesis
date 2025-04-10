@@ -1,12 +1,15 @@
 """Controllers for the API."""
 
 from typing import Any
+from typing import Any, Optional
 
 from connexion import context
 from pydantic import AnyUrl, ValidationError
 
 from poiesis.api.controllers.create_task import CreateTaskController
+from poiesis.api.controllers.list_tasks import ListTasksController
 from poiesis.api.exceptions import BadRequestException
+from poiesis.api.models import TesListTasksFilter, TesView
 from poiesis.api.tes.models import (
     Organization,
     TesCancelTaskResponse,
@@ -43,14 +46,49 @@ def GetServiceInfo() -> TesServiceInfo:
 
 
 @pydantic_to_dict_response
-def ListTasks() -> TesListTasksResponse:
+async def ListTasks(  # noqa: PLR0913
+    name_prefix: Optional[str] = None,
+    state: Optional[str] = TesState.UNKNOWN.value,
+    tag_key: Optional[list[str]] = None,
+    tag_value: Optional[list[str]] = None,
+    page_size: Optional[int] = None,
+    page_token: Optional[str] = None,
+    view: Optional[str] = TesView.MINIMAL.value,
+) -> TesListTasksResponse:
     """List tasks.
+
+    Args:
+        name_prefix: Optional prefix for task names.
+        state: Optional state for filtering tasks.
+        tag_key: Optional tag key for filtering tasks.
+        tag_value: Optional tag value for filtering tasks.
+        page_size: Optional number of tasks per page.
+        page_token: Optional token for pagination.
+        view: Optional view for filtering tasks.
 
     Returns:
         List of tasks.
     """
-    # TODO: Remove Dummy implementation, and implement real list tasks
-    return TesListTasksResponse(tasks=[])
+    try:
+        query_filter = TesListTasksFilter(
+            name_prefix=name_prefix,
+            state=state,
+            tag_key=tag_key,
+            tag_value=tag_value,
+            view=TesView(view),
+        )
+    except ValidationError as e:
+        raise BadRequestException(
+            message="Invalid request body",
+            details=e.errors(),
+        ) from e
+    return await ListTasksController(
+        db=db,
+        user_id=context.context.get("user"),
+        query_filter=query_filter,
+        page_size=page_size,
+        page_token=page_token,
+    ).execute()
 
 
 @pydantic_to_dict_response
