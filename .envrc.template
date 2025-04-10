@@ -1,7 +1,7 @@
-# Poetry
-export POETRY_VIRTUALENVS_CREATE=true
-export POETRY_VIRTUALENVS_IN_PROJECT=true
-# Poiesis
-export K8S_NAMESPACE=poiesis
-export MESSAGE_BROKER_HOST=localhost
-export MESSAGE_BROKER_PORT=6379
+export MONGODB_CONNECTION_STRING=<url>
+export KEYCLOAK_CLIENT_SECRET=<secret>
+export KEYCLOAK_ALGORITHM=RS256
+export AUTH=keycloak
+export KEYCLOAK_URL=<ulr>
+export KEYCLOAK_REALM=poiesis
+export KEYCLOAK_CLIENT_ID=poiesis
