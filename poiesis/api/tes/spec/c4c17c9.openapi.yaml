@@ -194,6 +194,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/tesListTasksResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        500:
+          $ref: '#/components/responses/InternalServerError'
 
     post:
       tags:
@@ -218,6 +224,8 @@ paths:
                 $ref: '#/components/schemas/tesCreateTaskResponse'
         400:
           $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
         500:
           $ref: '#/components/responses/InternalServerError'
       x-codegen-request-body-name: body
@@ -245,7 +253,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/tesTask'
-
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
   /tasks/{id}:cancel:
     post:
       tags:
@@ -267,6 +282,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/tesCancelTaskResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
 
 components:
   securitySchemes:
@@ -283,6 +306,26 @@ components:
         Bad Request
 
         The request was invalid or cannot be served. This typically indicates a client-side error such as malformed request syntax, invalid parameters, or missing required fields.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: |-
+        Unauthorized
+
+        The request was unauthorized. This typically indicates a client-side error such as a missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: |-
+        Not Found
+
+        The requested resource was not found. This typically indicates a client-side error such as a missing or invalid task ID.
       content:
         application/json:
           schema:
