@@ -61,6 +61,7 @@ runs:
       run: |
         pipx install poetry \
         --python "${{ steps.setup-python.outputs.python-path }}"
+        pipx inject poetry poetry-plugin-export
 
     - name: Read poetry cache location
       id: poetry-cache-location
