@@ -30,6 +30,7 @@ repos:
           - mdformat-black
           - mdformat-frontmatter
         args: [--wrap=80]
+        exclude: docs/app/docs/.*
   - repo: https://github.com/adrienverge/yamllint.git
     rev: v1.35.1
     hooks:
