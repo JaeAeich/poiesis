@@ -345,6 +345,11 @@ class Organization(BaseModel):
     name: str
     url: AnyUrl
 
+    @field_serializer("url")
+    def serialize_url(self, v: AnyUrl) -> str:
+        """Serialize the URL to a string."""
+        return str(v)
+
 
 class Service(BaseModel):
     """GA4GH service.
@@ -392,10 +397,19 @@ class Service(BaseModel):
     organization: Organization
     contactUrl: Optional[str] = None
     documentationUrl: Optional[AnyUrl] = None
-    createdAt: Optional[datetime] = None
-    updatedAt: Optional[datetime] = None
+    createdAt: Optional[datetime] = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updatedAt: Optional[datetime] = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
     environment: Optional[str] = None
     version: str
+
+    @field_serializer("documentationUrl")
+    def serialize_documentationUrl(self, v: AnyUrl) -> str:
+        """Serialize the documentation URL to a string."""
+        return str(v)
 
 
 class TesState(Enum):
@@ -456,6 +470,11 @@ class TesServiceType(ServiceType):
     """Type of a TES service."""
 
     artifact: Artifact  # type: ignore
+
+    @field_serializer("artifact")
+    def serialize_artifact(self, v: Artifact) -> str:
+        """Serialize the artifact to a string."""
+        return v.value
 
 
 class TesServiceInfo(Service):

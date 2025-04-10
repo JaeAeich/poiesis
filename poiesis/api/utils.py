@@ -43,7 +43,7 @@ def pydantic_to_dict_response(func: Callable[..., Any]) -> Callable[..., Any]:
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         result = await func(*args, **kwargs)
         if isinstance(result, BaseModel):
-            return result.model_dump()
+            return result.model_dump(mode="json", exclude_unset=True, exclude_none=True)
         return result
 
     return cast(Callable[..., Any], wrapper)
