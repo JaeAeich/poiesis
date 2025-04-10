@@ -1,33 +1,41 @@
 """Controllers for the API."""
 
-from typing import Any
+import uuid
 from typing import Any, Optional
 
 from connexion import context
 from pydantic import AnyUrl, ValidationError
 
+from poiesis.api.controllers.cancel_task import CancelTaskController
 from poiesis.api.controllers.create_task import CreateTaskController
+from poiesis.api.controllers.get_task import GetTaskController
 from poiesis.api.controllers.list_tasks import ListTasksController
 from poiesis.api.exceptions import BadRequestException
 from poiesis.api.models import TesListTasksFilter, TesView
 from poiesis.api.tes.models import (
+    Artifact,
     Organization,
     TesCancelTaskResponse,
     TesCreateTaskResponse,
     TesListTasksResponse,
     TesServiceInfo,
+    TesServiceType,
+    TesState,
     TesTask,
 )
 from poiesis.api.utils import pydantic_to_dict_response
 from poiesis.cli.utils import get_version
+from poiesis.constants import PoesisConstants
 from poiesis.repository.mongo import MongoDBClient
+
+constants = PoesisConstants()
 
 db = MongoDBClient()
 
 
 @pydantic_to_dict_response
-def GetServiceInfo() -> TesServiceInfo:
-    """Ger service information.
+async def GetServiceInfo() -> TesServiceInfo:
+    """Get service information.
 
     Returns:
         Service information.
@@ -37,6 +45,14 @@ def GetServiceInfo() -> TesServiceInfo:
         id="poiesis-tes",
         name="Poiesis TES API",
         description="Task Execution Service API implementation",
+        type=TesServiceType(
+            group="org.ga4gh",
+            artifact=Artifact.tes,
+            version=get_version(),
+        ),
+        contactUrl="mailto:jh4official@gmail.com",
+        documentationUrl=AnyUrl(url="https://poiesis.readthedocs.io/en/latest/"),
+        environment=constants.ENVIRONMENT,
         organization=Organization(
             name="Poiesis",
             url=AnyUrl(url="http://www.example.com"),
@@ -111,22 +127,28 @@ async def CreateTask(body: dict[str, Any]) -> TesCreateTaskResponse:
 
 
 @pydantic_to_dict_response
-def GetTask() -> TesTask:
+async def GetTask(id: str, view: Optional[str] = TesView.MINIMAL.value) -> TesTask:
     """Get a task.
 
     Returns:
         Task.
     """
-    # TODO: Remove Dummy implementation, and implement real get task
-    return TesTask(id="123", executors=[])
+    user_id = context.context.get("user")
+    _id = uuid.UUID(id)
+    if id.lower() != str(_id):
+        raise BadRequestException(
+            message="Invalid task ID",
+            details=f"Task ID {id} is not a valid UUID",
+        )
+    return await GetTaskController(db=db, id=id, user_id=user_id, view=view).execute()
 
 
 @pydantic_to_dict_response
-def CancelTask() -> TesCancelTaskResponse:
+async def CancelTask(id: str) -> TesCancelTaskResponse:
     """Cancel a task.
 
     Returns:
         Canceled task.
     """
-    # TODO: Remove Dummy implementation, and implement real cancel task
-    return TesCancelTaskResponse()
+    user_id = context.context.get("user")
+    return await CancelTaskController(db=db, task_id=id, user_id=user_id).execute()
