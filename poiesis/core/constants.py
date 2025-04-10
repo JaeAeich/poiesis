@@ -48,8 +48,8 @@ class PoiesisCoreConstants:
         POIESIS_IMAGE = os.getenv("POIESIS_IMAGE", "docker.io/jaeaeich/poiesis:latest")
         COMMON_PVC_VOLUME_NAME = "task-pvc-volume"
         FILER_PVC_PATH = "/transfer"
-        S3_SECRET_NAME = "poiesis-s3-secret"
-        MONGODB_SECRET_NAME = "poiesis-mongo-secret"
+        S3_SECRET_NAME = "poiesis-s3-secret"  # nosec B105
+        MONGODB_SECRET_NAME = "poiesis-mongo-secret"  # nosec B105
         BACKOFF_LIMIT = os.getenv("BACKOFF_LIMIT", "1")
         CONFIGMAP_NAME = "poiesis-core-configmap"
 

@@ -2,6 +2,9 @@
 build-backend = "poetry.core.masonry.api"
 requires = ["poetry-core"]
 
+[tool.bandit]
+skips = ["B101"]
+
 [tool.mypy]
 warn_return_any = true
 warn_unused_configs = true
