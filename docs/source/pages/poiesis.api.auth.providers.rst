@@ -12,18 +12,18 @@ poiesis.api.auth.providers.auth module
    :show-inheritance:
    :undoc-members:
 
-poiesis.api.auth.providers.keycloak module
-------------------------------------------
+poiesis.api.auth.providers.dummy module
+---------------------------------------
 
-.. automodule:: poiesis.api.auth.providers.keycloak
+.. automodule:: poiesis.api.auth.providers.dummy
    :members:
    :show-inheritance:
    :undoc-members:
 
-poiesis.api.auth.providers.none module
---------------------------------------
+poiesis.api.auth.providers.keycloak module
+------------------------------------------
 
-.. automodule:: poiesis.api.auth.providers.none
+.. automodule:: poiesis.api.auth.providers.keycloak
    :members:
    :show-inheritance:
    :undoc-members:

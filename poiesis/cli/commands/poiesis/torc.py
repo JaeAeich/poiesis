@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from poiesis.api.tes.models import TesTask
-from poiesis.cli.base import BaseCommand
+from poiesis.cli.commands.poiesis.base import BaseCommand
 from poiesis.core.services.torc.torc import Torc
 
 console = Console()
@@ -78,4 +78,6 @@ class TorcCommand(BaseCommand):
                 "description": "Task Orchestrator service for orchestrating TES tasks",
             }
         )
-        return info
+        return dict(
+            sorted({k.replace("_", " ").title(): v for k, v in info.items()}.items())
+        )

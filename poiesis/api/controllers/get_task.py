@@ -6,6 +6,7 @@ from poiesis.api.controllers.interface import InterfaceController
 from poiesis.api.exceptions import NotFoundException
 from poiesis.api.models import TesView
 from poiesis.api.tes.models import TesTask
+from poiesis.api.utils import task_to_basic_task
 from poiesis.repository.mongo import MongoDBClient
 
 
@@ -39,7 +40,7 @@ class GetTaskController(InterfaceController):
         self.db = db
         self.id = id
         self.user_id = user_id
-        self.view = view
+        self.view = TesView(view) if view else TesView.MINIMAL
 
     async def execute(self) -> TesTask:
         """Execute the controller to get a task.
@@ -57,13 +58,13 @@ class GetTaskController(InterfaceController):
         if task.user_id != self.user_id:
             raise NotFoundException(f"Task with ID {self.id} not found")
 
-        if self.view == TesView.MINIMAL.value:
+        if self.view == TesView.MINIMAL:
             return TesTask(
                 id=str(task.data.id),
                 state=task.data.state,
                 executors=task.data.executors,
             )
-        elif self.view == TesView.BASIC.value:
-            return task.data
+        elif self.view == TesView.BASIC:
+            return task_to_basic_task(task.data)
         else:
             return task.data

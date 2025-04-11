@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from rich.console import Console
 
 from poiesis.api.tes.models import TesTask
-from poiesis.cli.base import BaseCommand
+from poiesis.cli.commands.poiesis.base import BaseCommand
 
 console = Console()
 
@@ -58,4 +58,6 @@ class TexamCommand(BaseCommand):
                 "execution",
             }
         )
-        return info
+        return dict(
+            sorted({k.replace("_", " ").title(): v for k, v in info.items()}.items())
+        )

@@ -88,7 +88,7 @@ async def ListTasks(  # noqa: PLR0913
     try:
         query_filter = TesListTasksFilter(
             name_prefix=name_prefix,
-            state=state,
+            state=TesState(state) if state else None,
             tag_key=tag_key,
             tag_value=tag_value,
             view=TesView(view),

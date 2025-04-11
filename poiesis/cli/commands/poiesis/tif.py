@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from poiesis.api.tes.models import TesInput
-from poiesis.cli.base import BaseCommand
+from poiesis.cli.commands.poiesis.base import BaseCommand
 from poiesis.core.services.filer.filer_strategy_factory import FilerStrategyFactory
 from poiesis.core.services.filer.tif import Tif
 

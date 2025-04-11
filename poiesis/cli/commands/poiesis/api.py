@@ -8,7 +8,7 @@ from rich.console import Console
 
 from poiesis.api.asgi import run as api_run
 from poiesis.api.constants import get_poiesis_api_constants
-from poiesis.cli.base import BaseCommand
+from poiesis.cli.commands.poiesis.base import BaseCommand
 from poiesis.constants import get_poiesis_constants
 
 api_constants = get_poiesis_api_constants()

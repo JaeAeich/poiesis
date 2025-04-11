@@ -61,7 +61,7 @@ class ListTasksController(InterfaceController):
 
         # State
         if self.query_filter.state:
-            query["state"] = self.query_filter.state
+            query["state"] = self.query_filter.state.value
 
         # Tags
         if self.query_filter.tag_key:

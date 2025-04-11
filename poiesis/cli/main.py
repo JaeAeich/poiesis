@@ -6,11 +6,12 @@ from rich.panel import Panel
 from rich.table import Table
 
 from poiesis.api.constants import get_poiesis_api_constants
-from poiesis.cli.commands.api import ApiCommand
-from poiesis.cli.commands.texam import TexamCommand
-from poiesis.cli.commands.tif import TifCommand
-from poiesis.cli.commands.tof import TofCommand
-from poiesis.cli.commands.torc import TorcCommand
+from poiesis.cli.commands.poiesis.api import ApiCommand
+from poiesis.cli.commands.poiesis.texam import TexamCommand
+from poiesis.cli.commands.poiesis.tif import TifCommand
+from poiesis.cli.commands.poiesis.tof import TofCommand
+from poiesis.cli.commands.poiesis.torc import TorcCommand
+from poiesis.cli.commands.tes.task import TaskCommand
 from poiesis.cli.styling import STYLE_INFO
 from poiesis.cli.utils import get_basic_info, get_version
 from poiesis.constants import get_poiesis_constants
@@ -42,6 +43,10 @@ def info():
         }
     )
 
+    info = dict(
+        sorted({k.replace("_", " ").title(): v for k, v in info.items()}.items())
+    )
+
     for key, value in sorted(info.items()):
         table.add_row(str(key), str(value))
 
@@ -56,10 +61,14 @@ def info():
 
 def main():
     """Main entry point for the CLI."""
+    # Poiesis services
     ApiCommand.register(cli)
     TexamCommand.register(cli)
     TifCommand.register(cli)
     TofCommand.register(cli)
     TorcCommand.register(cli)
+
+    # TES commands
+    TaskCommand.register(cli)
 
     cli()

@@ -89,6 +89,7 @@ optional = true
 boto3-stubs = "^1.36.26"
 kubernetes-stubs = "^22.6.0.post1"
 types-botocore = "^1.0.2"
+types-pyyaml = "^6.0.12.20250402"
 types-requests = "^2.32.0.20250328"
 
 [tool.poetry.group.vulnerability]

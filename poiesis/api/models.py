@@ -8,6 +8,8 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from poiesis.api.tes.models import TesState
+
 
 class TesView(Enum):
     """View of the task."""
@@ -28,7 +30,7 @@ class TesListTasksFilter(BaseModel):
     """Filter for listing tasks."""
 
     name_prefix: Optional[str] = None
-    state: Optional[str] = None
+    state: Optional[TesState] = None
     tag_key: Optional[list[str]] = None
     tag_value: Optional[list[str]] = None
     view: TesView = TesView.MINIMAL

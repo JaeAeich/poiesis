@@ -12,14 +12,6 @@ Subpackages
 Submodules
 ----------
 
-poiesis.cli.base module
------------------------
-
-.. automodule:: poiesis.cli.base
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 poiesis.cli.main module
 -----------------------
 
