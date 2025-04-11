@@ -57,8 +57,8 @@ class PoiesisApiConstants:
             AUTH: The authentication method.
         """
 
-        AUTH: Literal["keycloak", "none"] = cast(
-            Literal["keycloak", "none"], os.getenv("AUTH", "none")
+        AUTH: Literal["keycloak", "dummy"] = cast(
+            Literal["keycloak", "dummy"], os.getenv("AUTH", "dummy")
         )
 
         @dataclass(frozen=True)
