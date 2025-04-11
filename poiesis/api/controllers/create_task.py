@@ -29,7 +29,6 @@ from poiesis.api.tes.models import (
 from poiesis.constants import get_poiesis_constants
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.constants import get_poiesis_core_constants
-from poiesis.core.services.torc.torc import Torc
 from poiesis.repository.mongo import MongoDBClient
 from poiesis.repository.schemas import TaskSchema
 
@@ -53,7 +52,6 @@ class CreateTaskController(InterfaceController):
         """
         self.db = db
         self.task = task
-        self.torc = Torc(task)
         self.user_id = user_id
         self.kubernetes_client = KubernetesAdapter()
 
@@ -68,7 +66,7 @@ class CreateTaskController(InterfaceController):
                 "Failed to create task",
             ) from e
         asyncio.create_task(self._create_torc_job())
-        return TesCreateTaskResponse(id=str(_task.id))
+        return TesCreateTaskResponse(id=str(_task.task_id))
 
     async def _create_torc_job(self) -> None:
         torc_job_name = f"{core_constants.K8s.TORC_PREFIX}-{self.task.id}"

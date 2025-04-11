@@ -111,6 +111,7 @@ class Torc:
                 )
                 await self.db.add_tes_task_system_logs(self.id)
                 await self.db.add_tes_task_log_end_time(self.id)
+                await self.kubernetes_client.delete_pvc(self.pvc_name)
                 if attempt == max_retries - 1:
                     # On final attempt, let the error propagate
                     logger.error(
@@ -144,7 +145,14 @@ class Torc:
         pvc = V1PersistentVolumeClaim(
             api_version="v1",
             kind="PersistentVolumeClaim",
-            metadata=V1ObjectMeta(name=pvc_name),
+            metadata=V1ObjectMeta(
+                name=pvc_name,
+                labels={
+                    "service": core_constants.K8s.PVC_PREFIX,
+                    "name": pvc_name,
+                    "parent": core_constants.K8s.TORC_PREFIX,
+                },
+            ),
             spec=V1PersistentVolumeClaimSpec(
                 access_modes=["ReadWriteMany"],
                 resources=V1ResourceRequirements(
