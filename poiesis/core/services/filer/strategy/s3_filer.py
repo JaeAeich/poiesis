@@ -99,10 +99,10 @@ class S3FilerStrategy(FilerStrategy):
     def _set_host_bucket_key(self, url: str):
         """Get the bucket name and key from the URL."""
         stripped_url = url.split("s3://")[1].split("/")
-        if len(stripped_url) == 3:  # noqa: PLR2004
+        if len(stripped_url) >= 3:  # noqa: PLR2004
             self.s3_host = stripped_url[0]
             self.bucket = stripped_url[1]
-            self.key = stripped_url[2]
+            self.key = "/".join(stripped_url[2:])
         elif len(stripped_url) == 2:  # noqa: PLR2004
             self.s3_host = os.getenv("S3_URL")
             self.bucket = stripped_url[0]
