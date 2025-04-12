@@ -12,7 +12,7 @@ from rich.panel import Panel
 
 from poiesis.api.tes.models import TesInput
 from poiesis.cli.commands.poiesis.base import BaseCommand
-from poiesis.core.services.filer.filer_strategy_factory import FilerStrategyFactory
+from poiesis.core.services.filer.filer_strategy_factory import STRATEGY_MAP
 from poiesis.core.services.filer.tif import Tif
 
 console = Console()
@@ -99,9 +99,6 @@ class TifCommand(BaseCommand):
     def get_info(self) -> dict[str, Any]:
         """Get TIF service information.
 
-        Args:
-            extra: Whether to include extra information
-
         Returns:
             Dictionary with TIF service information
         """
@@ -111,7 +108,11 @@ class TifCommand(BaseCommand):
             {
                 "description": "Task Input Filer service for handling task input files",
                 "supported_protocols": ", ".join(
-                    [v for k, v in enumerate(FilerStrategyFactory.STRATEGY_MAP)]
+                    [
+                        v.name if v.input else ""
+                        for v in STRATEGY_MAP.values()
+                        if v.input
+                    ]
                 ),
             }
         )

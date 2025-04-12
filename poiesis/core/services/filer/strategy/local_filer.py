@@ -3,7 +3,7 @@
 import logging
 import os
 import shutil
-from typing import Optional
+from typing import Union
 from urllib.parse import urlparse
 
 from poiesis.api.tes.models import TesInput, TesOutput
@@ -18,18 +18,29 @@ core_constants = get_poiesis_core_constants()
 class LocalFilerStrategy(FilerStrategy):
     """Local filer strategy."""
 
-    def get_secrets(self, url: Optional[str], path: str):
-        """No need for secrets for local files."""
-        logger.info(f"No secrets needed for local filer with path: {path}")
+    def __init__(self, payload: Union[TesInput, TesOutput]):
+        """Initialize the local filer strategy.
 
-    def check_permissions(self, url: Optional[str], path: str):
+        Args:
+            payload: The payload to instantiate the strategy
+                implementation.
+        """
+        super().__init__(payload)
+        self.input = self.payload if isinstance(self.payload, TesInput) else None
+        self.output = self.payload if isinstance(self.payload, TesOutput) else None
+
+    def get_secrets(self):
+        """No need for secrets for local files."""
+        logger.info("No secrets needed for local filer.")
+
+    def check_permissions(self):
         """Authentication is enough for local files.
 
         No need for authorization checks.
         """
-        logger.info(f"No permissions check needed for local filer with path: {path}")
+        logger.info("No permissions check needed for local filer.")
 
-    async def download_input(self, _input: TesInput, container_path: str):
+    async def download_input(self, container_path: str):
         """Download file from storage and mount to PVC.
 
         Args:
@@ -38,9 +49,10 @@ class LocalFilerStrategy(FilerStrategy):
                 downloaded to.
         """
         logger.info(f"Starting local file download to {container_path}")
-        assert _input.url is not None, "Input URL is required for local filer."
+        assert self.input is not None
+        assert self.input.url is not None
 
-        source_path = urlparse(_input.url).path
+        source_path = urlparse(self.input.url).path
 
         if not os.path.exists(source_path):
             logger.error(f"File {source_path} not found")
@@ -49,7 +61,7 @@ class LocalFilerStrategy(FilerStrategy):
         shutil.copy2(source_path, container_path)
         logger.info(f"Copied {source_path} to {container_path}")
 
-    async def upload_output(self, output: TesOutput, container_path: str):
+    async def upload_output(self, container_path: str):
         """Dummy upload output.
 
         Local filer strategy does not need to upload anything as the file is already
@@ -61,7 +73,10 @@ class LocalFilerStrategy(FilerStrategy):
                 be uploaded from.
         """
         logger.info(f"Starting local file upload from {container_path}")
-        source_path = urlparse(output.url).path
+        assert self.output is not None
+        assert self.output.url is not None
+
+        source_path = urlparse(self.output.url).path
 
         if not os.path.exists(source_path):
             logger.error(f"File {source_path} not found")

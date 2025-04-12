@@ -46,10 +46,10 @@ class Tof(Filer):
             Exception: If the file cannot be uploaded.
         """
         for output in self.outputs:
-            filer_strategy = FilerStrategyFactory.create_strategy(output.url)
+            filer_strategy = FilerStrategyFactory.create_strategy(output.url, output)
             try:
                 logger.error(f"Uploading output: {output}")
-                await filer_strategy.upload(output)
+                await filer_strategy.upload()
             except Exception as e:
                 logger.error(f"TOF failed: {e}")
                 self.message(Message(f"TOF failed: {e}"))

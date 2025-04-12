@@ -12,7 +12,7 @@ from rich.panel import Panel
 
 from poiesis.api.tes.models import TesOutput
 from poiesis.cli.commands.poiesis.base import BaseCommand
-from poiesis.core.services.filer.filer_strategy_factory import FilerStrategyFactory
+from poiesis.core.services.filer.filer_strategy_factory import STRATEGY_MAP
 from poiesis.core.services.filer.tof import Tof
 
 console = Console()
@@ -99,9 +99,6 @@ class TofCommand(BaseCommand):
     def get_info(self) -> dict[str, Any]:
         """Get TOF service information.
 
-        Args:
-            extra: Whether to include extra information
-
         Returns:
             Dictionary with TOF service information
         """
@@ -112,7 +109,11 @@ class TofCommand(BaseCommand):
                 "description": "Task Output Filer service for handling task output "
                 "files",
                 "supported_protocols": ", ".join(
-                    [v for _, v in enumerate(FilerStrategyFactory.STRATEGY_MAP)]
+                    [
+                        v.name if v.output else ""
+                        for v in STRATEGY_MAP.values()
+                        if v.output
+                    ]
                 ),
             }
         )

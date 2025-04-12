@@ -46,11 +46,11 @@ class Tif(Filer):
             Exception: If the file cannot be downloaded.
         """
         for input in self.inputs:
-            logger.info(f"Downloading (TIF) {input.url} to {input.path}")
-            filer_strategy = FilerStrategyFactory.create_strategy(input.url)
+            logger.info(f"Downloading {input.url} to {input.path}")
+            filer_strategy = FilerStrategyFactory.create_strategy(input.url, input)
             logger.debug(f"Filer strategy: {filer_strategy.__class__.__name__}")
             try:
-                await filer_strategy.download(input)
+                await filer_strategy.download()
             except Exception as e:
                 logger.error(f"Error downloading {input.url}: {str(e)}")
                 self.message(
