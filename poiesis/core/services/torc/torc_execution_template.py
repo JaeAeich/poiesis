@@ -1,7 +1,6 @@
 """Torc's template for each service."""
 
 import logging
-import sys
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -26,6 +25,7 @@ from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.ports.message_broker import Message, MessageStatus
+from poiesis.repository.mongo import MongoDBClient
 
 core_constants = get_poiesis_core_constants()
 
@@ -39,6 +39,7 @@ class TorcExecutionTemplate(ABC):
         kubernetes_client: Kubernetes client.
         message_broker: Message broker.
         message: Message for the message broker, which would be sent to TOrc.
+        db: Database client.
     """
 
     def __init__(self) -> None:
@@ -48,16 +49,18 @@ class TorcExecutionTemplate(ABC):
             kubernetes_client: Kubernetes client.
             message_broker: Message broker.
             message: Message for the message broker, which would be sent to TOrc.
+            db: Database client.
         """
         self.kubernetes_client = KubernetesAdapter()
         self.message_broker = RedisMessageBroker()
         self.message: Optional[Message] = None
+        self.db = MongoDBClient()
 
     async def execute(self) -> None:
         """Defines the template method, for each service namely Texam, Tif, Tof."""
         await self.start_job()
         self.wait()
-        self.log()
+        await self.log()
 
     async def create_job(
         self,
@@ -150,6 +153,15 @@ class TorcExecutionTemplate(ABC):
                                             )
                                         ),
                                     ),
+                                    V1EnvVar(
+                                        name="MONGODB_CONNECTION_STRING",
+                                        value_from=V1EnvVarSource(
+                                            secret_key_ref=V1SecretKeySelector(
+                                                name=core_constants.K8s.MONGODB_SECRET_NAME,
+                                                key="MONGODB_CONNECTION_STRING",
+                                            )
+                                        ),
+                                    ),
                                 ],
                                 volume_mounts=[
                                     V1VolumeMount(
@@ -200,12 +212,17 @@ class TorcExecutionTemplate(ABC):
         for message in self.message_broker.subscribe(self.id):
             if message:
                 if message.status == MessageStatus.ERROR:
-                    sys.exit(1)
-                    raise Exception(message.message)  # TODO: raise better exception
+                    logger.error(message.message)
                 self.message = message
                 break
 
-    def log(self) -> None:
+    async def log(self) -> None:
         """Log the job status in TaskDB."""
-        # TODO: Implement the logging logic.
-        logger.info("Logging the job status in TaskDB.")
+        if not hasattr(self, "id"):
+            raise AttributeError("The id of the task is not set.")
+        if self.message:
+            if self.message.status == MessageStatus.ERROR:
+                await self.db.add_tes_task_system_logs(self.id, [self.message.message])
+                await self.db.add_tes_task_log_end_time(self.id)
+            else:
+                logger.info(self.message.message)

@@ -197,11 +197,14 @@ class MongoDBClient:
                 f"{poiesis_constants.Database.MongoDB.TASK_COLLECTION}: {e}",
             ) from e
 
-    async def add_tes_task_system_logs(self, task_id: str) -> None:
+    async def add_tes_task_system_logs(
+        self, task_id: str, system_logs: Optional[list[str]] = None
+    ) -> None:
         """Add system logs for a task in the database.
 
         Args:
             task_id: ID of the task
+            system_logs: System logs to add, custom logs apart from the pod logs.
         """
         try:
             task = await self.get_task(task_id)
@@ -214,7 +217,7 @@ class MongoDBClient:
                 f"{poiesis_core_constants.K8s.TIF_PREFIX}-{task_id}",
             ]
 
-            system_logs = []
+            system_logs = system_logs or []
 
             # Collect logs from all related pods
             for prefix in job_prefixes:
@@ -301,17 +304,26 @@ class MongoDBClient:
             ) from e
 
     async def update_executor_log(
-        self, pod_name: str, pod_phase: str, logs: str
+        self,
+        pod_name: str,
+        pod_phase: str,
+        stdout: Optional[str] = None,
+        stderr: Optional[str] = None,
     ) -> None:
         """Update the executor log in the database.
 
         Get the index of the executor from executor name and then updates the idx log
         of executor of the last log of the task.
 
+        Note: If the pods fails to start, we can't call the get_pod_log method. If the
+            stdout and stderr are provided, we use them instead of the pod log, else
+            try to call the get_pod_log method, if that fails, we use empty strings.
+
         Args:
             pod_name: Name of the pod
             pod_phase: Phase of the pod
-            logs: Logs of the pod
+            stdout: Standard output of the pod
+            stderr: Standard error of the pod
         """
         try:
             # Note: The executor name is of the form <te_prefix>-<UUID>-<idx>.
@@ -333,7 +345,16 @@ class MongoDBClient:
                 "%Y-%m-%dT%H:%M:%S%z"
             )
 
-            exec_log.stdout = await self.kubernetes_client.get_pod_log(pod_name)
+            exec_log.stderr = stderr or ""
+
+            try:
+                exec_log.stdout = await self.kubernetes_client.get_pod_log(pod_name)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to get pod log for {pod_name} via kubernetes client: {e}"
+                )
+                exec_log.stdout = stdout or ""
+
             exec_log.exit_code = 0 if pod_phase == PodPhase.SUCCEEDED.value else 1
             await self.db[
                 poiesis_constants.Database.MongoDB.TASK_COLLECTION

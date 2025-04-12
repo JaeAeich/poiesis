@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 import shlex
-from datetime import datetime
+import time
 
 from kubernetes import watch  # type: ignore
 from kubernetes.client import (
@@ -31,6 +31,16 @@ from poiesis.repository.mongo import MongoDBClient
 core_constants = get_poiesis_core_constants()
 
 logger = logging.getLogger(__name__)
+
+
+# Note: In future, add any other reasons consider fatal startup errors
+CRITICAL_WAITING_REASONS = {
+    "ImagePullBackOff",
+    "ErrImagePull",
+    "CrashLoopBackOff",
+    "InvalidImageName",
+    "ImageInspectError",
+}
 
 
 class Texam:
@@ -73,7 +83,7 @@ class Texam:
         """
         self.task = task
         self.task_id = task.id
-        self.task_pool: list[tuple[str, datetime]] = []
+        self.task_pool: list[str] = []
         self.kubernetes_client = KubernetesAdapter()
         self.message_broker = RedisMessageBroker()
         self.db = MongoDBClient()
@@ -133,21 +143,38 @@ class Texam:
                 backoff_time = 1
                 while backoff_time <= core_constants.Texam.BACKOFF_LIMIT:
                     try:
-                        pod_name = await self.kubernetes_client.create_pod(pod_manifest)
                         await self.db.add_task_executor_log(self.task_id)
-                        self.task_pool.append((pod_name, datetime.now()))
+
+                        pod_name = await self.kubernetes_client.create_pod(pod_manifest)
+                        self.task_pool.append(pod_name)
                         break
                     except Exception as e:
-                        # TODO: clean the previous pod else we will get a conflict with
-                        #   the same pod name
+                        # Cleans the previous pod if it exists, this is to avoid
+                        #   the conflict with the same pod name, so we can try again
+                        #   with the same pod name. Trying to keep the idx same so logs
+                        #   can be associated with the same executor.
                         logger.error(f"Failed to create pod {executor_name}: {e}")
+                        logger.info(f"Deleting pod {executor_name}")
+                        await self.kubernetes_client.delete_pod(executor_name)
+                        logger.info(f"Retrying in {backoff_time} seconds")
                         await asyncio.sleep(backoff_time)
                         backoff_time = min(
                             backoff_time * 2, core_constants.Texam.BACKOFF_LIMIT
                         )
                 else:
-                    logger.error(f"Failed to create pod {executor_name}")
-                    # TODO: Log the failed executor in TaskDB
+                    # After all retries failed, add the executor to task_pool with a
+                    # special status This ensures it will be monitored and properly
+                    # logged
+                    self.task_pool.append(executor_name)
+                    self.db.update_executor_log(
+                        executor_name,
+                        PodPhase.FAILED.value,
+                        stdout=None,
+                        stderr="Failed to create executor pod after multiple retries.",
+                    )
+                    logger.error(
+                        f"Pod {executor_name} failed to be created after all retries"
+                    )
 
             _resource = (
                 {
@@ -243,71 +270,200 @@ class Texam:
             await create_pod_with_backoff(pod_manifest, executor_name)
 
     async def monitor_executors(self) -> None:
-        """Monitor the executors and log details in TaskDB.
-
-        Create a watch on the pods in the task pool, if the pod is in
-        Succeeded or Failed state, log the details in TaskDB and remove
-        the pod from the task pool.
-        """
+        """Monitor the executors and log details in TaskDB."""
         if not self.task_pool:
             return
 
-        pod_names = {pod_name for pod_name, _ in self.task_pool}
+        pod_names_to_monitor = set(self.task_pool)
+        active_pod_names = set(pod_names_to_monitor)
 
-        # Use asyncio to run the watch in a separate thread
-        await self._watch_pods(pod_names)
+        if not active_pod_names:
+            logger.info("No pods provided to monitor.")
+            return
 
-    async def _watch_pods(self, pod_names) -> None:
-        """Watch pods and process status changes.
+        label_selector = f"service={core_constants.K8s.TE_PREFIX},parent={core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"  # noqa: E501
+        timeout = int(
+            os.getenv(
+                "MONITOR_TIMEOUT_SECONDS", core_constants.Texam.MONITOR_TIMEOUT_SECONDS
+            )
+        )
+        stream_args = {
+            "namespace": self.kubernetes_client.namespace,
+            "label_selector": label_selector,
+            "timeout_seconds": timeout,
+        }
 
-        Args:
-            pod_names: Set of pod names to monitor
-        """
         try:
             w = watch.Watch()
+            start_time = time.time()
+            logger.info(
+                f"Starting watch for pods with label selector: {label_selector}"
+            )
 
-            # Create a label selector for our task executor pods
-            label_selector = f"service={core_constants.K8s.TE_PREFIX},parent={core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"  # noqa: E501
-
-            # Run the watch in a separate thread to avoid blocking the event loop
             stream_func = self.kubernetes_client.core_api.list_namespaced_pod
-            stream_args = {
-                "namespace": self.kubernetes_client.namespace,
-                "label_selector": label_selector,
-                "timeout_seconds": os.getenv(
-                    "MONITOR_TIMEOUT_SECONDS",
-                    core_constants.Texam.MONITOR_TIMEOUT_SECONDS,
-                ),
-            }
-
             for event in await asyncio.to_thread(w.stream, stream_func, **stream_args):
+                event_type = event["type"]
                 pod = event["object"]
-                pod_name = pod.metadata.name
-                pod_phase = pod.status.phase if pod.status else None
+                pod_name = str(pod.metadata.name)
 
-                if pod_name not in pod_names:
+                if pod_name not in active_pod_names:
                     continue
-                # TODO: Handle unknown phase
-                if pod_phase in [PodPhase.SUCCEEDED.value, PodPhase.FAILED.value]:
-                    pod_entry = next(
-                        ((p, t) for p, t in self.task_pool if p == pod_name), None
+
+                logger.debug(
+                    f"Event: {event_type}, Pod: {pod_name}, Phase: {pod.status.phase}"
+                )
+                await self._process_pod_event(pod, active_pod_names)
+
+                if not active_pod_names:
+                    w.stop()
+                    logger.info(
+                        "All monitored pods processed in "
+                        f"{time.time() - start_time:.2f} seconds"
                     )
+                    break
 
-                    if pod_entry:
-                        logs = await self.kubernetes_client.get_pod_log(pod_name)
+            await self._handle_unresolved_pods(active_pod_names, timeout, start_time)
 
-                        await self.db.update_executor_log(pod_name, pod_phase, logs)
-                        self.task_pool.remove(pod_entry)
-                        logger.info(
-                            f"Pod {pod_name} completed with status: {pod_phase}"
-                        )
-
-                        if not self.task_pool:
-                            w.stop()
-                            break
+        except asyncio.CancelledError:
+            logger.info(
+                f"Pod watch task cancelled in {time.time() - start_time:.2f} seconds"
+            )
         except Exception as e:
-            logger.error(f"Error in watch stream: {e}")
-            raise e
+            logger.exception(f"Error in watch stream: {e}")
+            raise
+
+    async def _process_pod_event(self, pod: V1Pod, active_pod_names: set) -> None:
+        """Processes a single pod event."""
+        # Poiesis adds these fields, so we can safely assert them
+        assert pod.metadata is not None
+        assert pod.status is not None
+
+        pod_name = str(pod.metadata.name)
+        pod_phase = pod.status.phase if pod.status else None
+
+        if failure_reason := self._check_container_failure(pod):
+            await self._handle_pod_failure(pod_name, failure_reason)
+            self._remove_pod_from_pool(pod_name, active_pod_names)
+            return
+
+        if pod_phase in (PodPhase.SUCCEEDED.value, PodPhase.FAILED.value):
+            logs_stdout, logs_stderr = await self._get_pod_logs(pod_name, pod_phase)
+            await self.db.update_executor_log(
+                pod_name,
+                pod_phase,
+                logs_stdout,
+                logs_stderr if pod_phase == PodPhase.FAILED.value else None,
+            )
+            logger.info(
+                f"Pod {pod_name} completed with status: {pod_phase}. Logs captured "
+                "(if available)."
+            )
+            self._remove_pod_from_pool(pod_name, active_pod_names)
+
+        elif pod_phase == PodPhase.UNKNOWN.value:
+            logger.warning(f"Pod {pod_name} is in an Unknown state.")
+
+    def _check_container_failure(self, pod: V1Pod) -> str | None:
+        """Checks for container failures and returns the reason if found.
+
+        Executor pod might be in pending state, if the pod is in pending state, it
+        means that the pod might fail to start, that is why we need to check for
+        container failures.
+        """
+        pod_phase = pod.status.phase if pod.status else None
+
+        # If container is failing to start, it will be in the init_container_statuses
+        # or container_statuses list
+        if pod.status is None:
+            return None
+
+        all_container_statuses = (pod.status.init_container_statuses or []) + (
+            pod.status.container_statuses or []
+        )
+
+        assert pod.metadata is not None
+
+        if pod_phase == PodPhase.PENDING.value or (
+            pod.status and all_container_statuses
+        ):
+            for status in all_container_statuses:
+                if status.state and status.state.waiting:
+                    logger.info(
+                        f"Pending pod {pod.metadata.name} has container {status.name} "
+                        f"in waiting state with reason: {status.state.waiting.reason}"
+                    )
+                    if status.state.waiting.reason in CRITICAL_WAITING_REASONS:
+                        return status.state.waiting.reason
+        return None
+
+    async def _handle_pod_failure(self, pod_name: str, failure_reason: str) -> None:
+        """Handles pod failure and updates the database."""
+        error_log_message = f"Pod failed due to container error: {failure_reason}"
+        try:
+            await self.db.update_executor_log(
+                pod_name, PodPhase.FAILED.value, stdout=None, stderr=error_log_message
+            )
+            logger.info(
+                f"Pod {pod_name} marked as Failed in DB due to container error: "
+                f"{failure_reason}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to update DB for failed pod {pod_name}: {e}")
+
+    async def _get_pod_logs(
+        self, pod_name: str, pod_phase: str
+    ) -> tuple[str | None, str]:
+        """Retrieves pod logs, handling potential errors.
+
+        Logs are retrieved from the pod, if the pod is in failed state, we retrieve
+        the logs from the pod, if the pod is in succeeded state, we don't retrieve
+        the logs from the pod. This help in case the pod is in pending state or couldn't
+        start due to some reason.
+        """
+        logs_stdout = None
+        logs_stderr = f"Pod phase reported as {pod_phase} by Kubernetes."
+        try:
+            logs_stdout = await self.kubernetes_client.get_pod_log(pod_name)
+        except Exception as e:
+            logger.warning(
+                f"Could not get logs for pod {pod_name} in phase {pod_phase}: {e}"
+            )
+            logs_stderr += f" Log retrieval failed: {str(e)}"
+        return logs_stdout, logs_stderr
+
+    def _remove_pod_from_pool(self, pod_name: str, active_pod_names: set) -> None:
+        """Removes a pod from the active pool and task pool."""
+        active_pod_names.discard(pod_name)
+        if pod_entry := next((p for p in self.task_pool if p == pod_name), None):
+            self.task_pool.remove(pod_entry)
+
+    async def _handle_unresolved_pods(
+        self, active_pod_names: set, timeout: int, start_time: float
+    ) -> None:
+        """Handles unresolved pods after the watch ends."""
+        if active_pod_names:
+            logger.warning(
+                f"Watch ended with {len(active_pod_names)} unresolved pods: "
+                f"{active_pod_names}, Time taken: {time.time() - start_time:.2f} "
+                "seconds"
+            )
+            for pod_name in active_pod_names:
+                logger.error(
+                    f"Pod {pod_name} did not reach a terminal state before watch "
+                    "timeout."
+                )
+                try:
+                    await self.db.update_executor_log(
+                        pod_name,
+                        PodPhase.FAILED.value,
+                        stdout=None,
+                        stderr=f"Pod monitoring timed out after {timeout} seconds.",
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to update DB for timed-out pod {pod_name}: {e}"
+                    )
+                self._remove_pod_from_pool(pod_name, active_pod_names)
 
     async def message(self) -> None:
         """Send message to TORC."""
