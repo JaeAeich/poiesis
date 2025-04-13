@@ -182,3 +182,4 @@ SquareX Safe File Viewer
 ######### End of auto-generated ignore patterns for Python projects.  #########
 .vscode/
 docs/app/.vitepress/cache/
+docs/app/public/openapi.yaml

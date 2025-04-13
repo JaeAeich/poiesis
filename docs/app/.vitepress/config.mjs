@@ -7,7 +7,11 @@ export default defineConfig({
     themeConfig: {
         // https://vitepress.dev/reference/default-theme-config
         logo: "/logo/logo.png",
-        nav: [{ text: "Home", link: "/" }],
+        nav: [
+            { text: "Home", link: "/" },
+            { text: "Team", link: "/team" },
+            { text: "Swagger UI", link: '/docs/intro/api-reference' }
+        ],
         sidebar: [
             {
                 text: "Introduction",
@@ -15,6 +19,9 @@ export default defineConfig({
                     { text: "TES", link: "/docs/intro/tes" },
                     { text: "Glossary", link: "/docs/intro/glossary" },
                     { text: "Poiesis", link: "/docs/intro/poiesis" },
+                    { text: "API", link: "/docs/intro/api" },
+                    { text: "CLI", link: "/docs/intro/cli" },
+                    { text: "Authentication", link: "/docs/intro/auth" },
                 ],
             },
             {
@@ -44,7 +51,9 @@ export default defineConfig({
                 ],
             },
         ],
-
+        search: {
+            provider: "local",
+        },
         socialLinks: [
             { icon: "github", link: "https://github.com/jaeaeich/poiesis" },
         ],
@@ -56,6 +65,19 @@ export default defineConfig({
             level: "deep",
             label: "On this page",
         },
+        lastUpdated: {
+            text: "Last updated",
+            formatOptions: {
+                dateStyle: "full",
+                timeStyle: "medium",
+            },
+        },
+        editLink: {
+            pattern:
+                "https://github.com/jaeaeich/poiesis/edit/main/docs/app/:path",
+            text: "Edit this page on GitHub",
+        },
+        docLayout: "doc",
     },
     markdown: {
         theme: {

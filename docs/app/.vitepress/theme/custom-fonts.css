@@ -1,0 +1,8 @@
+@import '@ibm/plex/css/ibm-plex.css';
+@import '@ibm/plex/css/ibm-plex.css';
+
+/* Optional: Customize font families in VitePress */
+:root {
+  --vp-font-family-base: 'IBM Plex Sans', sans-serif;
+  --vp-font-family-mono: 'IBM Plex Mono', monospace;
+}

@@ -1,11 +1,14 @@
 {
   "scripts": {
-    "docs:dev": "vitepress dev",
-    "docs:build": "vitepress build",
-    "docs:preview": "vitepress preview"
+    "docs:dev": "npm run copy-spec && vitepress dev",
+    "docs:build": "npm run copy-spec && vitepress build .",
+    "docs:preview": "npm run copy-spec && vitepress preview",
+    "copy-spec": "cp ../../poiesis/api/tes/spec/*.openapi.yaml public/openapi.yaml"
   },
   "dependencies": {
     "@catppuccin/vitepress": "^0.1.0",
+    "@ibm/plex": "^6.4.1",
+    "swagger-ui": "^5.20.8",
     "vitepress-openapi": "^0.0.3-alpha.72"
   }
 }

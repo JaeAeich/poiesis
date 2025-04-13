@@ -1,0 +1,415 @@
+.dark .swagger-ui {
+    /* Base Colors */
+    --swagger-ui-text-color: var(--vp-c-text-1, #cad3f5);
+    /* Default text */
+    --swagger-ui-muted-text-color: var(--vp-c-text-2, #b8c0e0);
+    /* Secondary text */
+    --swagger-ui-link-color: var(--vp-c-brand-1, #8aadf4);
+    /* Link color */
+    --swagger-ui-bg-color: var(--vp-c-bg, #24273a);
+    /* Base background */
+    --swagger-ui-section-bg-color: var(--vp-c-bg-soft, #1e2030);
+    /* Section background */
+    --swagger-ui-input-bg-color: var(--vp-c-bg-elv, #181926);
+    /* Input/Elevated background */
+    --swagger-ui-border-color: var(--vp-c-border, #363a4f);
+    /* Borders */
+    --swagger-ui-code-bg-color: var(--ctp-macchiato-mantle, #1e2030);
+    /* Code block background */
+    --swagger-ui-code-text-color: var(--vp-c-text-1, #C6D0F5);
+    /* Code block text */
+}
+
+/* General container */
+.dark .swagger-ui {
+    color: var(--swagger-ui-text-color);
+    background-color: var(--swagger-ui-bg-color);
+}
+
+/* Info section (title, description, links) */
+.dark .swagger-ui .information-container,
+.dark .swagger-ui .scheme-container {
+    background: var(--swagger-ui-section-bg-color);
+    border-bottom: 1px solid var(--swagger-ui-border-color);
+}
+
+.dark .swagger-ui .info .title,
+.dark .swagger-ui .info .title span,
+/* Handle potential spans inside title */
+.dark .swagger-ui .info .base-url {
+    color: var(--swagger-ui-text-color);
+}
+
+.dark .swagger-ui .info p {
+    color: var(--swagger-ui-muted-text-color);
+}
+
+.dark .swagger-ui .info a {
+    color: var(--swagger-ui-link-color);
+}
+
+/* Operation blocks */
+.dark .swagger-ui .opblock,
+.dark .swagger-ui .opblock-tag-section,
+.dark .swagger-ui .opblock-tag {
+    background: var(--swagger-ui-section-bg-color);
+    border: 1px solid var(--swagger-ui-border-color);
+    box-shadow: none;
+    /* Remove default shadows if any */
+}
+
+.dark .swagger-ui .opblock-tag {
+    color: var(--swagger-ui-text-color);
+    border-bottom: 1px solid var(--swagger-ui-border-color);
+}
+
+.dark .swagger-ui .opblock .opblock-summary,
+.dark .swagger-ui .opblock .opblock-summary-description {
+    color: var(--swagger-ui-muted-text-color);
+}
+
+.dark .swagger-ui .opblock .opblock-summary-path,
+.dark .swagger-ui .opblock .opblock-summary-path__deprecated {
+    color: var(--swagger-ui-text-color);
+}
+
+/* Method Colors */
+.dark .swagger-ui .opblock .opblock-summary-method {
+    /* Using Catppuccin Macchiato Accents */
+    color: var(--vp-c-bg, #24273a);
+    /* High contrast text on colored background */
+    text-shadow: none;
+}
+
+.dark .swagger-ui .opblock.opblock-get .opblock-summary-method {
+    background: var(--ctp-macchiato-blue, #8aadf4);
+}
+
+.dark .swagger-ui .opblock.opblock-post .opblock-summary-method {
+    background: var(--ctp-macchiato-green, #a6da95);
+}
+
+.dark .swagger-ui .opblock.opblock-put .opblock-summary-method {
+    background: var(--ctp-macchiato-yellow, #eed49f);
+}
+
+.dark .swagger-ui .opblock.opblock-delete .opblock-summary-method {
+    background: var(--ctp-macchiato-red, #ed8796);
+}
+
+.dark .swagger-ui .opblock.opblock-patch .opblock-summary-method {
+    background: var(--ctp-macchiato-peach, #f5a97f);
+}
+
+.dark .swagger-ui .opblock.opblock-options .opblock-summary-method {
+    background: var(--ctp-macchiato-mauve, #c6a0f6);
+}
+
+.dark .swagger-ui .opblock.opblock-head .opblock-summary-method {
+    background: var(--ctp-macchiato-lavender, #b7bdf8);
+}
+
+.dark .swagger-ui .opblock.opblock-trace .opblock-summary-method {
+    background: var(--ctp-macchiato-teal, #8bd5ca);
+}
+
+/* Parameters */
+.dark .swagger-ui table thead th {
+    color: var(--swagger-ui-text-color);
+    border-bottom: 1px solid var(--swagger-ui-border-color);
+}
+
+.dark .swagger-ui .parameters-col_description p {
+    color: var(--swagger-ui-muted-text-color);
+}
+
+.dark .swagger-ui .parameter__name,
+.dark .swagger-ui .parameter__type,
+.dark .swagger-ui .parameter__in {
+    color: var(--swagger-ui-text-color);
+}
+
+.dark .swagger-ui .parameter__name.required:after {
+    color: var(--ctp-macchiato-red, #ed8796);
+    /* Required indicator */
+}
+
+/* Inputs and Textareas */
+.dark .swagger-ui input[type=text],
+.dark .swagger-ui input[type=password],
+.dark .swagger-ui input[type=search],
+.dark .swagger-ui select,
+.dark .swagger-ui textarea {
+    background: var(--swagger-ui-input-bg-color);
+    border: 1px solid var(--swagger-ui-border-color);
+    color: var(--swagger-ui-text-color);
+}
+
+.dark .swagger-ui .opblock-section-header {
+    background: var(--swagger-ui-section-bg-color);
+    border-bottom: 1px solid var(--swagger-ui-border-color);
+    box-shadow: none;
+}
+
+.dark .swagger-ui .opblock-section-header h4 {
+    color: var(--swagger-ui-text-color);
+}
+
+
+/* Buttons */
+.dark .swagger-ui .btn {
+    border: 1px solid var(--swagger-ui-border-color);
+    color: var(--swagger-ui-text-color);
+    background: var(--swagger-ui-section-bg-color);
+}
+
+.dark .swagger-ui .btn:hover {
+    border-color: var(--vp-c-brand-1, #8aadf4);
+    color: var(--vp-c-brand-1, #8aadf4);
+    filter: brightness(1.1);
+}
+
+.dark .swagger-ui .btn.authorize,
+.dark .swagger-ui .btn.execute {
+    color: var(--vp-c-white, #cad3f5);
+    /* Use white/light text for colored buttons */
+    border: none;
+}
+
+.dark .swagger-ui .btn.authorize {
+    background-color: var(--ctp-macchiato-green, #a6da95);
+}
+
+.dark .swagger-ui .btn.execute {
+    background-color: var(--vp-c-brand-1, #8aadf4);
+}
+
+/* Responses */
+.dark .swagger-ui .response-col_status,
+.dark .swagger-ui .response-col_links {
+    color: var(--swagger-ui-text-color);
+}
+
+.dark .swagger-ui .response-col_description__inner p {
+    color: var(--swagger-ui-muted-text-color);
+}
+
+.dark .swagger-ui .responses-table {
+    border-color: var(--swagger-ui-border-color);
+}
+
+.dark .swagger-ui .responses-inner>div>div>table>thead>tr>th {
+    border-color: var(--swagger-ui-border-color);
+}
+
+/* Modals */
+.dark .swagger-ui .dialog-ux .modal-ux-content {
+    background: var(--vp-c-bg-elv, #181926);
+    color: var(--swagger-ui-text-color);
+}
+
+.dark .swagger-ui .dialog-ux .modal-ux-header {
+    border-bottom: 1px solid var(--swagger-ui-border-color);
+}
+
+.dark .swagger-ui .dialog-ux .modal-ux-header h3 {
+    color: var(--swagger-ui-text-color);
+}
+
+/* Code / Models / Schema */
+.dark .swagger-ui .model-box,
+.dark .swagger-ui .model-box-control,
+.dark .swagger-ui .model-title,
+.dark .swagger-ui .model-toggle,
+.dark .swagger-ui .model-jump-to-path {
+    background: var(--swagger-ui-section-bg-color);
+    color: var(--swagger-ui-muted-text-color);
+    fill: var(--swagger-ui-muted-text-color);
+    /* For SVG arrows */
+    border-color: var(--swagger-ui-border-color);
+}
+
+.dark .swagger-ui .model-title__text {
+    color: var(--swagger-ui-text-color);
+}
+
+.dark .swagger-ui .model,
+.dark .swagger-ui .model-example {
+    background: var(--swagger-ui-code-bg-color);
+    border: 1px solid var(--swagger-ui-border-color);
+}
+
+.dark .swagger-ui .model .property.primitive {
+    color: var(--swagger-ui-code-text-color);
+}
+
+.dark .swagger-ui .highlight-code .microlight,
+.dark .swagger-ui .responses-inner .highlight-code pre {
+    background: var(--swagger-ui-code-bg-color) !important;
+    color: var(--swagger-ui-code-text-color) !important;
+}
+
+.dark .swagger-ui .model .property-row .prop-name {
+    color: var(--ctp-macchiato-mauve, #c6a0f6);
+    /* Highlight property names */
+}
+
+.dark .swagger-ui .model .property-row .prop-type {
+    color: var(--ctp-macchiato-teal, #8bd5ca);
+    /* Highlight property types */
+}
+
+.dark .swagger-ui .model .property-row .prop-format {
+    color: var(--ctp-macchiato-sky, #91d7e3);
+    /* Highlight property format */
+}
+
+/* Reset potentially inherited syntax highlighting colors */
+.dark .swagger-ui .model span,
+.dark .swagger-ui .highlight-code span {
+    color: inherit;
+}
+
+.dark .swagger-ui {
+    /* --- Ensure Base Color Variables are Set --- */
+    --swagger-ui-text-color: var(--vp-c-text-1, #cad3f5);
+    /* Primary light text */
+    /* --swagger-ui-muted-text-color: var(--vp-c-text-2, #b8c0e0); /* We will override usage of this */
+    */ --swagger-ui-link-color: var(--vp-c-brand-1, #8aadf4);
+    --swagger-ui-bg-color: var(--ctp-macchiato-surface0, #363a4f);
+    --swagger-ui-border-color: var(--ctp-macchiato-surface1, #494d64);
+    /* ... other variables ... */
+}
+
+/* --- General Text Color --- */
+.dark .swagger-ui,
+.dark .swagger-ui p,
+/* Target paragraphs directly */
+.dark .swagger-ui div,
+/* Target divs */
+.dark .swagger-ui span,
+/* Target spans */
+.dark .swagger-ui td,
+/* Target table data cells */
+.dark .swagger-ui th,
+/* Target table header cells */
+.dark .swagger-ui li
+
+/* Target list items */
+    {
+    color: var(--swagger-ui-text-color);
+    /* Apply primary text color broadly */
+}
+
+/* --- Specific Element Overrides (Ensure Primary Text Color) --- */
+
+/* Info section text */
+.dark .swagger-ui .info .title,
+.dark .swagger-ui .info .title span,
+.dark .swagger-ui .info .base-url,
+.dark .swagger-ui .info p
+
+/* Ensure paragraphs here use primary color */
+    {
+    color: var(--swagger-ui-text-color) !important;
+    /* Use !important only if necessary */
+}
+
+/* Links */
+.dark .swagger-ui a,
+.dark .swagger-ui a:visited,
+.dark .swagger-ui a:hover {
+    color: var(--swagger-ui-link-color);
+    /* Keep links distinct */
+}
+
+/* Operation Block text */
+.dark .swagger-ui .opblock-tag {
+    color: var(--swagger-ui-text-color);
+}
+
+/* Ensure descriptions use primary text color */
+.dark .swagger-ui .opblock .opblock-summary-description,
+.dark .swagger-ui .opblock .opblock-summary-path,
+.dark .swagger-ui .opblock .opblock-summary-path__deprecated {
+    color: var(--swagger-ui-text-color) !important;
+    /* Use !important only if necessary */
+}
+
+.dark .swagger-ui .opblock-section-header h4 {
+    color: var(--swagger-ui-text-color);
+}
+
+/* Parameters & Tables */
+.dark .swagger-ui .parameters-col_description p,
+/* Ensure parameter descriptions use primary color */
+.dark .swagger-ui .parameter__name,
+.dark .swagger-ui .parameter__type,
+.dark .swagger-ui .parameter__in {
+    color: var(--swagger-ui-text-color) !important;
+    /* Use !important only if necessary */
+}
+
+/* Keep required indicator distinct */
+.dark .swagger-ui .parameter__name.required:after {
+    color: var(--swagger-required-color, #ed8796);
+}
+
+/* Inputs & Selects */
+.dark .swagger-ui input,
+.dark .swagger-ui select,
+.dark .swagger-ui textarea {
+    color: var(--swagger-ui-text-color);
+}
+
+/* Buttons */
+.dark .swagger-ui .btn {
+    color: var(--swagger-ui-text-color);
+    /* Default button text */
+}
+
+/* Keep text on colored buttons contrasting */
+.dark .swagger-ui .btn.authorize,
+.dark .swagger-ui .btn.execute {
+    color: var(--swagger-button-text-color, #181926);
+}
+
+/* Responses */
+.dark .swagger-ui .response-col_status,
+.dark .swagger-ui .response-col_links,
+.dark .swagger-ui .response-col_description__inner p
+
+/* Ensure response descriptions use primary color */
+    {
+    color: var(--swagger-ui-text-color) !important;
+    /* Use !important only if necessary */
+}
+
+/* Modals */
+.dark .swagger-ui .dialog-ux .modal-ux-content,
+.dark .swagger-ui .dialog-ux .modal-ux-header h3,
+.dark .swagger-ui .dialog-ux button {
+    /* Apply to default modal button text */
+    color: var(--swagger-ui-text-color);
+}
+
+.dark .swagger-ui .dialog-ux button.btn-primary,
+.dark .swagger-ui .dialog-ux button.btn-secondary {
+    color: var(--swagger-button-text-color, #181926);
+    /* Text on colored modal buttons */
+}
+
+
+/* Code / Models / Schema */
+.dark .swagger-ui .model-box,
+.dark .swagger-ui .model-title__text,
+.dark .swagger-ui .model .property.primitive,
+.dark .swagger-ui .model span,
+/* Reset spans inside models */
+.dark .swagger-ui .highlight-code span
+
+/* Reset spans inside code blocks */
+    {
+    color: var(--swagger-ui-text-color) !important;
+    /* Use !important only if necessary */
+}

@@ -13,7 +13,7 @@ Cloud Work Stream, the [Task Execution Service (TES)](https://github.com/ga4gh/t
 provides a standard mechanism for orchestrating these complex analyses across
 different compute environments.
 
-:::info
+:::info Cite
 
-The above description is taken from the [here](https://www.ga4gh.org/product/task-execution-service-tes/).
+The above description is taken from the [GA4GH TES page](https://www.ga4gh.org/product/task-execution-service-tes/).
 :::
