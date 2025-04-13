@@ -6,6 +6,9 @@ hero:
   name: Poiesis
   text: TES on Kubernetes
   tagline: Scalable, secure task execution for computational workflows
+  image:
+    src: /public/logo/logo.png
+    alt: Poiesis Logo
   actions:
     - theme: brand
       text: Get Started

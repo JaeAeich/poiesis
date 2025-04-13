@@ -16,7 +16,10 @@ const members = [
     title: 'Author',
     org: 'Poiesis',
     orgLink: 'https://github.com/jaeaeich/poiesis',
-    desc: 'Look Ma! I did a thing!',
+    desc: `
+      Started as an '<i>Oh, I can build that in a weekend</i>' project...
+      and here we are, months later.
+    `,
     links: [
       { icon: 'github', link: 'https://github.com/jaeaeich' },
       { icon: 'twitter', link: 'https://twitter.com/jaeaeich' },
