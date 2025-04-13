@@ -271,14 +271,11 @@
 }
 
 .dark .swagger-ui {
-    /* --- Ensure Base Color Variables are Set --- */
     --swagger-ui-text-color: var(--vp-c-text-1, #cad3f5);
-    /* Primary light text */
-    /* --swagger-ui-muted-text-color: var(--vp-c-text-2, #b8c0e0); /* We will override usage of this */
-    */ --swagger-ui-link-color: var(--vp-c-brand-1, #8aadf4);
+    --swagger-ui-muted-text-color: var(--vp-c-text-2, #b8c0e0);
+    --swagger-ui-link-color: var(--vp-c-brand-1, #8aadf4);
     --swagger-ui-bg-color: var(--ctp-macchiato-surface0, #363a4f);
     --swagger-ui-border-color: var(--ctp-macchiato-surface1, #494d64);
-    /* ... other variables ... */
 }
 
 /* --- General Text Color --- */
