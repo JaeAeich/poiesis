@@ -38,7 +38,7 @@ class HttpFilerStrategy(FilerStrategy):
         if self.input.url is None:
             raise ValueError("URL is required")
 
-        response = requests.get(self.input.url, stream=True)
+        response = requests.get(self.input.url, stream=True, timeout=30)
 
         with open(container_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):

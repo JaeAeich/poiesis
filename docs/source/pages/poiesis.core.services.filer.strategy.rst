@@ -20,6 +20,14 @@ poiesis.core.services.filer.strategy.filer\_strategy module
    :show-inheritance:
    :undoc-members:
 
+poiesis.core.services.filer.strategy.http\_filer module
+-------------------------------------------------------
+
+.. automodule:: poiesis.core.services.filer.strategy.http_filer
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 poiesis.core.services.filer.strategy.local\_filer module
 --------------------------------------------------------
 
