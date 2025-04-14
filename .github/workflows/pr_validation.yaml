@@ -36,7 +36,7 @@ jobs:
           uv-sync-args: "--only-group misc"
 
       - name: Check all the pre-commit hooks passed
-        run: pre-commit run --all-files
+        run: uv run pre-commit run --all-files
 
   semantic-pr:
     name: Semantic PR title

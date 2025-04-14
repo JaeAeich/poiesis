@@ -25,7 +25,7 @@ jobs:
 
       - name: Generate API docs
         run: |
-          sphinx-apidoc  \
+          uv run sphinx-apidoc  \
             -o /tmp/docs/source/pages \
             poiesis/
 
