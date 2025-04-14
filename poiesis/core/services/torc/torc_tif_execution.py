@@ -2,7 +2,6 @@
 
 import json
 import logging
-from typing import Optional
 
 from kubernetes.client import (
     V1ObjectMeta,
@@ -34,7 +33,7 @@ class TorcTifExecution(TorcExecutionTemplate):
         kubernetes_client: Kubernetes client.
     """
 
-    def __init__(self, id: str, inputs: Optional[list[TesInput]]) -> None:
+    def __init__(self, id: str, inputs: list[TesInput] | None) -> None:
         """Initialize the Tif execution class.
 
         Args:

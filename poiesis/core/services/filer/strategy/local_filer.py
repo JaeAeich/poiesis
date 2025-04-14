@@ -3,7 +3,6 @@
 import logging
 import os
 import shutil
-from typing import Union
 from urllib.parse import urlparse
 
 from poiesis.api.tes.models import TesInput, TesOutput
@@ -18,7 +17,7 @@ core_constants = get_poiesis_core_constants()
 class LocalFilerStrategy(FilerStrategy):
     """Local filer strategy."""
 
-    def __init__(self, payload: Union[TesInput, TesOutput]):
+    def __init__(self, payload: TesInput | TesOutput):
         """Initialize the local filer strategy.
 
         Args:

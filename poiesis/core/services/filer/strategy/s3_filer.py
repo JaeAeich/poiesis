@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Union
+from typing import Any
 
 import boto3
 from botocore.config import Config
@@ -19,7 +19,7 @@ core_constants = get_poiesis_core_constants()
 class S3FilerStrategy(FilerStrategy):
     """S3 filer strategy."""
 
-    def __init__(self, payload: Union[TesInput, TesOutput]):
+    def __init__(self, payload: TesInput | TesOutput):
         """Initialize S3 filer strategy.
 
         Args:

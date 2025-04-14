@@ -1,7 +1,7 @@
 """Controllers for the API."""
 
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from connexion import context
 from pydantic import AnyUrl, ValidationError
@@ -63,13 +63,13 @@ async def GetServiceInfo() -> TesServiceInfo:
 
 @pydantic_to_dict_response
 async def ListTasks(  # noqa: PLR0913
-    name_prefix: Optional[str] = None,
-    state: Optional[str] = TesState.UNKNOWN.value,
-    tag_key: Optional[list[str]] = None,
-    tag_value: Optional[list[str]] = None,
-    page_size: Optional[int] = None,
-    page_token: Optional[str] = None,
-    view: Optional[str] = TesView.MINIMAL.value,
+    name_prefix: str | None = None,
+    state: str | None = TesState.UNKNOWN.value,
+    tag_key: list[str] | None = None,
+    tag_value: list[str] | None = None,
+    page_size: int | None = None,
+    page_token: str | None = None,
+    view: str | None = TesView.MINIMAL.value,
 ) -> TesListTasksResponse:
     """List tasks.
 
@@ -127,7 +127,7 @@ async def CreateTask(body: dict[str, Any]) -> TesCreateTaskResponse:
 
 
 @pydantic_to_dict_response
-async def GetTask(id: str, view: Optional[str] = TesView.MINIMAL.value) -> TesTask:
+async def GetTask(id: str, view: str | None = TesView.MINIMAL.value) -> TesTask:
     """Get a task.
 
     Returns:

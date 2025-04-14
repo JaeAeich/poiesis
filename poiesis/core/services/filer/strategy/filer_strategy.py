@@ -2,7 +2,6 @@
 
 import os
 from abc import ABC, abstractmethod
-from typing import Union
 
 from poiesis.api.tes.models import TesInput, TesOutput
 from poiesis.core.constants import get_poiesis_core_constants
@@ -14,7 +13,7 @@ core_constants = get_poiesis_core_constants()
 class FilerStrategy(ABC):
     """Filer strategy interface."""
 
-    def __init__(self, payload: Union[TesInput, TesOutput]):
+    def __init__(self, payload: TesInput | TesOutput):
         """Initialize the filer strategy.
 
         Args:

@@ -1,8 +1,7 @@
 """Models for TES API."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import AnyUrl, BaseModel, Field, field_serializer
 
@@ -88,12 +87,12 @@ class TesExecutor(BaseModel):
 
     image: str
     command: list[str]
-    workdir: Optional[str] = None
-    stdin: Optional[str] = None
-    stdout: Optional[str] = None
-    stderr: Optional[str] = None
-    env: Optional[dict[str, str]] = None
-    ignore_error: Optional[bool] = None
+    workdir: str | None = None
+    stdin: str | None = None
+    stdout: str | None = None
+    stderr: str | None = None
+    env: dict[str, str] | None = None
+    ignore_error: bool | None = None
 
 
 class TesExecutorLog(BaseModel):
@@ -123,14 +122,12 @@ class TesExecutorLog(BaseModel):
         exit_code: Exit code.
     """
 
-    start_time: Optional[str] = Field(
-        default_factory=lambda: datetime.now(timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%S%z"
-        )
+    start_time: str | None = Field(
+        default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S%z")
     )
-    end_time: Optional[str] = None
-    stdout: Optional[str] = None
-    stderr: Optional[str] = None
+    end_time: str | None = None
+    stdout: str | None = None
+    stderr: str | None = None
     exit_code: int
 
 
@@ -178,13 +175,13 @@ class TesInput(BaseModel):
             performance of the underlying program.
     """
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    url: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    url: str | None = None
     path: str
-    type: Optional[TesFileType] = TesFileType.FILE
-    content: Optional[str] = None
-    streamable: Optional[bool] = None
+    type: TesFileType | None = TesFileType.FILE
+    content: str | None = None
+    streamable: bool | None = None
 
     @field_serializer("type")
     def serialize_type(self, v: TesFileType) -> str:
@@ -219,12 +216,12 @@ class TesOutput(BaseModel):
         type: File type (file or directory)
     """
 
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
     url: str
     path: str
-    path_prefix: Optional[str] = None
-    type: Optional[TesFileType] = TesFileType.FILE
+    path_prefix: str | None = None
+    type: TesFileType | None = TesFileType.FILE
 
     @field_serializer("type")
     def serialize_type(self, v: TesFileType) -> str:
@@ -293,13 +290,13 @@ class TesResources(BaseModel):
             Example: False
     """
 
-    cpu_cores: Optional[int] = None
-    preemptible: Optional[bool] = None
-    ram_gb: Optional[float] = None
-    disk_gb: Optional[float] = None
-    zones: Optional[list[str]] = None
-    backend_parameters: Optional[dict[str, str]] = None
-    backend_parameters_strict: Optional[bool] = Field(False)
+    cpu_cores: int | None = None
+    preemptible: bool | None = None
+    ram_gb: float | None = None
+    disk_gb: float | None = None
+    zones: list[str] | None = None
+    backend_parameters: dict[str, str] | None = None
+    backend_parameters_strict: bool | None = Field(False)
 
 
 class Artifact(Enum):
@@ -393,17 +390,13 @@ class Service(BaseModel):
     id: str
     name: str
     type: ServiceType
-    description: Optional[str] = None
+    description: str | None = None
     organization: Organization
-    contactUrl: Optional[str] = None
-    documentationUrl: Optional[AnyUrl] = None
-    createdAt: Optional[datetime] = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
-    updatedAt: Optional[datetime] = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
-    environment: Optional[str] = None
+    contactUrl: str | None = None
+    documentationUrl: AnyUrl | None = None
+    createdAt: datetime | None = Field(default_factory=lambda: datetime.now(UTC))
+    updatedAt: datetime | None = Field(default_factory=lambda: datetime.now(UTC))
+    environment: str | None = None
     version: str
 
     @field_serializer("documentationUrl")
@@ -455,15 +448,13 @@ class TesTaskLog(BaseModel):
     """
 
     logs: list[TesExecutorLog]
-    metadata: Optional[dict[str, str]] = None
-    start_time: Optional[str] = Field(
-        default_factory=lambda: datetime.now(timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%S%z"
-        )
+    metadata: dict[str, str] | None = None
+    start_time: str | None = Field(
+        default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S%z")
     )
-    end_time: Optional[str] = None
+    end_time: str | None = None
     outputs: list[TesOutputFileLog]
-    system_logs: Optional[list[str]] = None
+    system_logs: list[str] | None = None
 
 
 class TesServiceType(ServiceType):
@@ -493,9 +484,9 @@ class TesServiceInfo(Service):
         type: Type of service
     """
 
-    storage: Optional[list[str]] = None
-    tesResources_backend_parameters: Optional[list[str]] = None
-    type: Optional[TesServiceType] = None  # type: ignore
+    storage: list[str] | None = None
+    tesResources_backend_parameters: list[str] | None = None
+    type: TesServiceType | None = None  # type: ignore
 
 
 class TesTask(BaseModel):
@@ -555,21 +546,19 @@ class TesTask(BaseModel):
             Example: "2020-10-02T10:00:00-05:00"
     """
 
-    id: Optional[str] = None
-    state: Optional[TesState] = TesState.UNKNOWN
-    name: Optional[str] = None
-    description: Optional[str] = None
-    inputs: Optional[list[TesInput]] = None
-    outputs: Optional[list[TesOutput]] = None
-    resources: Optional[TesResources] = None
+    id: str | None = None
+    state: TesState | None = TesState.UNKNOWN
+    name: str | None = None
+    description: str | None = None
+    inputs: list[TesInput] | None = None
+    outputs: list[TesOutput] | None = None
+    resources: TesResources | None = None
     executors: list[TesExecutor]
-    volumes: Optional[list[str]] = None
-    tags: Optional[dict[str, str]] = None
-    logs: Optional[list[TesTaskLog]] = None
-    creation_time: Optional[str] = Field(
-        default_factory=lambda: datetime.now(timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%S%z"
-        ),
+    volumes: list[str] | None = None
+    tags: dict[str, str] | None = None
+    logs: list[TesTaskLog] | None = None
+    creation_time: str | None = Field(
+        default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S%z"),
         frozen=True,
     )
 
@@ -591,4 +580,4 @@ class TesListTasksResponse(BaseModel):
     """
 
     tasks: list[TesTask]
-    next_page_token: Optional[str] = None
+    next_page_token: str | None = None

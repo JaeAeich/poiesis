@@ -1,7 +1,6 @@
 """Content filer strategy module."""
 
 import logging
-from typing import Union
 
 from poiesis.api.tes.models import TesInput, TesOutput
 from poiesis.core.constants import get_poiesis_core_constants
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 class ContentFilerStrategy(FilerStrategy):
     """Content filer, if the content is given in the request."""
 
-    def __init__(self, payload: Union[TesInput, TesOutput]):
+    def __init__(self, payload: TesInput | TesOutput):
         """Initialize the content filer strategy.
 
         Args:
