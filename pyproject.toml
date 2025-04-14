@@ -59,7 +59,7 @@ dependencies = [
   "tomli>=2.2.1,<3",
 ]
 description = "TES on kubernetes"
-keywords = ["automation", "cloud", "devops", "infrastructure", "kubernetes", "tes", "ga4gh"]
+keywords = ["automation", "cloud", "devops", "ga4gh", "infrastructure", "kubernetes", "tes"]
 license = "Apache-2.0"
 maintainers = [{email = "jh4official@gmail.com", name = "Javed Habib"}]
 name = "poiesis"
@@ -108,7 +108,7 @@ select = [
   "I", # isort
   "PL", # pylint
   "SIM", # flake8-simplify
-  "UP", # pyupgrade
+#   "UP", # pyupgrade
 ]
 
 [tool.ruff.lint.pydocstyle]

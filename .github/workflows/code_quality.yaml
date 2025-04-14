@@ -24,7 +24,7 @@ jobs:
           uv-sync-args: "--only-group code_quality"
 
       - name: Check code style
-        run: ruff format --check
+        run: uv run ruff format --check
 
   lint:
     name: Lint

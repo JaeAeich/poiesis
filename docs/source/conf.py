@@ -29,7 +29,7 @@ pkg_meta = _get_project_meta()
 current_year = datetime.datetime.now().year
 project = pkg_meta["project"]["name"]
 project_copyright = f"{current_year}, {pkg_meta['project']['authors'][0]['name']}"
-author = pkg_meta['project']['authors'][0]['name']
+author = pkg_meta["project"]["authors"][0]["name"]
 
 version = pkg_meta["project"]["version"]
 release = version
