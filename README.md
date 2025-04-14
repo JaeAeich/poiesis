@@ -63,7 +63,7 @@ make i
 > or types for the dependencies, you **must** use the following command:
 >
 > ```sh
-> poetry add types-foo --group types
+> uv add types-foo --group types
 > ```
 >
 > Replace `types-foo` with the name of the package for the types. All runtime
@@ -71,8 +71,8 @@ make i
 > `requests` and its type stubs, run:
 >
 > ```sh
-> poetry add requests
-> poetry add types-requests --group types
+> uv add requests
+> uv add types-requests --group types
 > ```
 >
 > This ensures that the type checker functions correctly.
@@ -112,12 +112,6 @@ make tc
 
 ```sh
 make pc
-```
-
-- Update the cookiecutter template
-
-```sh
-make u
 ```
 
 > **Note**: This is not the complete list of commands, run `make` to find out if

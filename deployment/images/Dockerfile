@@ -1,63 +1,32 @@
 # Global ARGs
 ARG PY_VERSION=3.13.0
-ARG PY_IMAGE=slim
+ARG PY_IMAGE=alpine
 
 ###################################################
-# Stage 1: Get poetry                             #
+# Stage 1: Build application                      #
 ###################################################
-FROM python:${PY_VERSION}-${PY_IMAGE} AS poetry
-
-ARG PY_VERSION
-ARG PY_IMAGE
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    POETRY_HOME="/opt/poetry" \
-    POETRY_NO_INTERACTION=1 \
-    POETRY_VIRTUALENVS_CREATE=false
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl -sSL https://install.python-poetry.org | python3 - \
-    && ln -s /opt/poetry/bin/poetry /usr/local/bin/poetry
-
-###################################################
-# Stage 2: Install dependencies                   #
-###################################################
-FROM poetry AS dependencies
+FROM python:${PY_VERSION}-${PY_IMAGE} AS builder
 
 WORKDIR /app
 
+# Copy `uv` for package management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 # Copy only files needed for dependency installation
-COPY pyproject.toml poetry.lock* ./
-COPY README.md ./
+COPY . .
 
 # Install dependencies
-RUN poetry install --no-root --no-cache --no-interaction
+RUN uv build
 
 ###################################################
-# Stage 3: Install tini                           #
+# Stage 2: Install tini                           #
 ###################################################
 FROM python:${PY_VERSION}-${PY_IMAGE} AS tini-installer
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tini \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache tini
 
 ###################################################
-# Stage 4: Build application                      #
-###################################################
-FROM dependencies AS builder
-
-# Copy the rest of the application code
-COPY . .
-
-# Build the package
-RUN poetry build
-
-###################################################
-# Stage 5: Final runtime image                    #
+# Stage 3: Final runtime image                    #
 ###################################################
 FROM python:${PY_VERSION}-${PY_IMAGE} AS runtime
 
@@ -67,7 +36,7 @@ ARG BUILD_DATE
 ARG GIT_REVISION
 ARG VERSION
 
-LABEL Author="Javed Habib <javed@example.com>"
+LABEL Author="Javed Habib <jh4official@gmail.com>"
 
 LABEL org.opencontainers.image.title="poiesis" \
     org.opencontainers.image.description="TES (Task Execution Service) implementation on Kubernetes" \
@@ -84,17 +53,18 @@ LABEL org.opencontainers.image.title="poiesis" \
     org.opencontainers.image.source="https://github.com/jaeaeich/poiesis" \
     org.opencontainers.image.base.name="python:${PY_VERSION}-${PY_IMAGE}"
 
-RUN groupadd -r poises && useradd -r -g poises -d /home/poises -m poises \
-    && mkdir -p /app /home/poises/.cache \
-    && chown -R poises:poises /app /home/poises/.cache
+RUN addgroup -S poiesis && adduser -S -G poiesis -h /home/poiesis -s /bin/sh poiesis \
+    && mkdir -p /app /home/poiesis/.cache \
+    && chown -R poiesis:poiesis /app /home/poiesis/.cache
 
-# Copy tini from the tini-installer stage
-COPY --from=tini-installer /usr/bin/tini /usr/bin/tini
-
+# Copy tini, uv, and the built package
+COPY --from=tini-installer /sbin/tini /sbin/tini
 COPY --from=builder /app/dist/*.whl /tmp/
-RUN pip install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+RUN uv pip install --system --no-cache /tmp/*.whl && rm /tmp/*.whl
 
 WORKDIR /app
-USER poises
+USER poiesis
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/sbin/tini", "--"]

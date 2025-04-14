@@ -7,10 +7,10 @@
 # Docker image configuration
 REGISTRY_NAMESPACE ?= jaeaeich
 NAME := poiesis
-VERSION := $(shell poetry version | awk '{print$$2}')
+VERSION := $(shell uv tree | grep ${NAME} | awk '{print $$2}' | sed 's/^v//')
 BUILD_DATE := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 GIT_REVISION := $(shell git rev-parse HEAD)
-PY_VERSION := $(shell poetry run python --version | awk '{print$$2}')
+PY_VERSION := $(shell uvx python --version | awk '{print$$2}')
 DOCKERFILE := deployment/images/Dockerfile
 
 # Full image names
@@ -68,7 +68,7 @@ cv: clean-venv
 .PHONY: docs d
 docs:
 	@echo "\nGenerating project documentation ++++++++++++++++++++++++++++++++++++++++++++++\n"
-	@poetry run sphinx-apidoc -f -o docs/source/pages poiesis
+	@sphinx-apidoc -f -o docs/source/pages poiesis
 	@cd docs && make html
 	@echo "\nSummary ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
 	@echo "Documentation generated successfully."
@@ -81,7 +81,7 @@ d: docs
 .PHONY: format-lint fl
 format-lint:
 	@echo "\nRunning linter and formatter using ruff and typos +++++++++++++++++++++++++++++\n"
-	@poetry run ruff format && poetry run ruff check --fix
+	@ruff format && ruff check --fix
 	@typos .
 
 fl: format-lint
@@ -89,47 +89,43 @@ fl: format-lint
 .PHONY: install i
 install:
 	@echo "\nInstalling this package its dependencies +++++++++++++++++++++++++++++++++\n"
-	@poetry install --with=code_quality,docs,misc,test,types,vulnerability
+	@uv sync --all-extras --all-groups
 
 i: install
 
 .PHONY: precommit-check pc
 precommit-check:
 	@echo "\nRunning pre-commit checks +++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
-	@poetry run pre-commit run --all-files
+	@pre-commit run --all-files
 
 pc: precommit-check
 
 .PHONY: security s
 security:
 	@echo "\nRunning security scans using bandit and safety ++++++++++++++++++++++++++++++++\n"
-	@poetry run safety check --full-report
-	@poetry run bandit -c pyproject.toml -r poiesis
+	@uvx safety check --full-report
+	@bandit -c pyproject.toml -r poiesis
 
 s: security
 
 .PHONY: test t
 test:
 	@echo "\nRunning tests using pytest ++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
-	@poetry run pytest tests/
+	@pytest tests/
 
 t: test
 
 .PHONY: type-check tc
 type-check:
 	@echo "\nPerforming type checking with mypy ++++++++++++++++++++++++++++++++++++++++++++\n"
-	@poetry run mypy poiesis
+	@mypy --cache-fine-grained poiesis
 
 tc: type-check
 
 .PHONY: venv v
 venv:
 	@echo "\nCreating a virtual environment ++++++++++++++++++++++++++++++++++++++++++++++++\n"
-	@python -m venv .venv
-	@echo "\nSummary +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
-	@echo "Virtual environment created successfully."
-	@echo "To activate the environment for this shell session, run:"
-	@echo "source .venv/bin/activate"
+	@uv venv
 
 v: venv
 
@@ -163,7 +159,7 @@ clean-docker-image:
 dev:
 	@echo "\nStarting Poiesis development server ++++++++++++++++++++++++++++++++++++++++++++\n"
 	@echo "Starting server on http://localhost:8089/ga4gh/tes/v1/ui"
-	@poetry run uvicorn poiesis.api.app:app --reload --host localhost --port 8089
+	@uvicorn poiesis.api.app:app --reload --host localhost --port 8089
 
 .PHONY: get-token-for-alice gta
 get-token-for-alice:

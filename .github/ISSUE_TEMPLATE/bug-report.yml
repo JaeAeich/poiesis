@@ -35,15 +35,7 @@ body:
     id: dependencies
     attributes:
       label: Dependencies
-      description: Output of `pip freeze`
-      render: text
-    validations:
-      required: false
-  - type: textarea
-    id: environment
-    attributes:
-      label: environment
-      description: Output of `poetry env info`
+      description: Output of `uv tree` or `pip freeze`
       render: text
     validations:
       required: false

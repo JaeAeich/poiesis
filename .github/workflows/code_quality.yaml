@@ -18,15 +18,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up environment
-        uses: ./.github/actions/setup/poetry
+        uses: ./.github/actions/setup/uv
         with:
           os: ${{ job.os }}
-          python-version: '3.13.0'
-          poetry-install-options: "--only=code_quality --no-root"
-          poetry-export-options: "--only=code_quality"
+          uv-sync-args: "--only-group code_quality"
 
       - name: Check code style
-        run: poetry run ruff format --check
+        run: ruff format --check
 
   lint:
     name: Lint
@@ -36,15 +34,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up environment
-        uses: ./.github/actions/setup/poetry
+        uses: ./.github/actions/setup/uv
         with:
           os: ${{ job.os }}
-          python-version: '3.13.0'
-          poetry-install-options: "--only=code_quality --no-root"
-          poetry-export-options: "--only=code_quality"
+          uv-sync-args: "--only-group code_quality"
 
       - name: Check code quality
-        run: poetry run ruff check .
+        run: ruff check .
 
   spell-check:
     name: Spell check
@@ -54,15 +50,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up environment
-        uses: ./.github/actions/setup/poetry
+        uses: ./.github/actions/setup/uv
         with:
           os: ${{ job.os }}
-          python-version: '3.13.0'
-          poetry-install-options: "--only=code_quality --no-root"
-          poetry-export-options: "--only=code_quality"
+          uv-sync-args: "--only-group code_quality"
 
       - name: Check spellings
-        run: poetry run typos .
+        run: typos .
 
   type-check:
     name: Type check
@@ -72,13 +66,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up environment
-        uses: ./.github/actions/setup/poetry
+        uses: ./.github/actions/setup/uv
         with:
           os: ${{ job.os }}
-          python-version: '3.13.0'
-          poetry-install-options: "--with=code_quality --with=types --no-root"
-          poetry-export-options: "--with=code_quality --with=types"
+          uv-sync-args: "--with=code_quality --with=types"
 
       - name: Check types
-        run: poetry run mypy poiesis/
+        run: mypy poiesis/
 ...
