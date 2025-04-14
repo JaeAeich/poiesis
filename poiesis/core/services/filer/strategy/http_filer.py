@@ -1,7 +1,5 @@
 """HTTP filer strategy module."""
 
-from typing import Union
-
 import requests
 
 from poiesis.api.tes.models import TesInput, TesOutput
@@ -11,7 +9,7 @@ from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
 class HttpFilerStrategy(FilerStrategy):
     """Filer strategy for HTTP and HTTPS."""
 
-    def __init__(self, payload: Union[TesInput, TesOutput]):
+    def __init__(self, payload: TesInput | TesOutput):
         """Initialize the HTTP filer strategy.
 
         Args:

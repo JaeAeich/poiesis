@@ -1,7 +1,8 @@
 """Schemas for the NoSQL database."""
 
-from datetime import datetime, timezone
-from typing import Annotated, Any, Callable, Optional
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Annotated, Any
 
 from bson import ObjectId
 from pydantic import BaseModel, Field, field_serializer
@@ -70,7 +71,7 @@ class TaskSchema(BaseModel):
         data: Task data
     """
 
-    id: Optional[PydanticObjectId] = Field(
+    id: PydanticObjectId | None = Field(
         default_factory=PydanticObjectId, alias="_id", frozen=True
     )
     name: str = Field(default=constants.Task.NAME, frozen=True)
@@ -80,10 +81,8 @@ class TaskSchema(BaseModel):
     service_hash: str = Field(frozen=True)
     tes_version: str = Field(default_factory=lambda: get_version(), frozen=True)
     state: TesState = Field(default=TesState.INITIALIZING)
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc), frozen=True
-    )
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), frozen=True)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     data: TesTask
 
     class Config:
@@ -117,15 +116,13 @@ class ServiceSchema(BaseModel):
         data: Service data
     """
 
-    id: Optional[PydanticObjectId] = Field(
+    id: PydanticObjectId | None = Field(
         default_factory=ObjectId, alias="_id", frozen=True
     )
     service_hash: str = Field(frozen=True)
     update_by: str = Field(frozen=True)
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc), frozen=True
-    )
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), frozen=True)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     data: Service = Field(frozen=True)
 
     class Config:

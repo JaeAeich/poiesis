@@ -3,8 +3,8 @@
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import motor.motor_asyncio
 from bson.objectid import ObjectId
@@ -113,7 +113,7 @@ class MongoDBClient:
                     {
                         "$set": {
                             "state": state.value,
-                            "updated_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(UTC),
                             "data.state": state.value,
                         }
                     },
@@ -172,7 +172,7 @@ class MongoDBClient:
         try:
             task = await self.get_task(task_id)
             assert task.data.logs is not None
-            task.data.logs[-1].end_time = datetime.now(timezone.utc).strftime(
+            task.data.logs[-1].end_time = datetime.now(UTC).strftime(
                 "%Y-%m-%dT%H:%M:%S%z"
             )
             await self.db[
@@ -198,7 +198,7 @@ class MongoDBClient:
             ) from e
 
     async def add_tes_task_system_logs(
-        self, task_id: str, system_logs: Optional[list[str]] = None
+        self, task_id: str, system_logs: list[str] | None = None
     ) -> None:
         """Add system logs for a task in the database.
 
@@ -307,8 +307,8 @@ class MongoDBClient:
         self,
         pod_name: str,
         pod_phase: str,
-        stdout: Optional[str] = None,
-        stderr: Optional[str] = None,
+        stdout: str | None = None,
+        stderr: str | None = None,
     ) -> None:
         """Update the executor log in the database.
 
@@ -341,9 +341,7 @@ class MongoDBClient:
 
             exec_log = task.data.logs[-1].logs[idx]
 
-            exec_log.end_time = datetime.now(timezone.utc).strftime(
-                "%Y-%m-%dT%H:%M:%S%z"
-            )
+            exec_log.end_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S%z")
 
             exec_log.stderr = stderr or ""
 
@@ -375,9 +373,9 @@ class MongoDBClient:
     async def list_tasks(
         self,
         query: dict[str, Any],
-        page_size: Optional[int] = None,
-        next_page_token: Optional[str] = None,
-    ) -> tuple[list[TesTask], Optional[str]]:
+        page_size: int | None = None,
+        next_page_token: str | None = None,
+    ) -> tuple[list[TesTask], str | None]:
         """List tasks from the database with pagination.
 
         Args:

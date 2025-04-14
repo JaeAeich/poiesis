@@ -1,7 +1,5 @@
 """Controller for getting a task."""
 
-from typing import Optional
-
 from poiesis.api.controllers.interface import InterfaceController
 from poiesis.api.exceptions import NotFoundException
 from poiesis.api.models import TesView
@@ -27,7 +25,7 @@ class GetTaskController(InterfaceController):
         db: MongoDBClient,
         id: str,
         user_id: str,
-        view: Optional[str] = TesView.MINIMAL.value,
+        view: str | None = TesView.MINIMAL.value,
     ) -> None:
         """Initialize the controller.
 

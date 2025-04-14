@@ -2,7 +2,6 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from kubernetes.client import (
     V1ConfigMapKeySelector,
@@ -53,7 +52,7 @@ class TorcExecutionTemplate(ABC):
         """
         self.kubernetes_client = KubernetesAdapter()
         self.message_broker = RedisMessageBroker()
-        self.message: Optional[Message] = None
+        self.message: Message | None = None
         self.db = MongoDBClient()
 
     async def execute(self) -> None:

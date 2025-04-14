@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from typing import Optional
 
 from kubernetes.client import (
     V1ObjectMeta,
@@ -123,7 +122,7 @@ class Torc:
                 logger.info(f"Task {self.id}: Retrying in {delay} seconds")
                 await asyncio.sleep(delay)
 
-    async def create_pvc(self, name: str, size: Optional[float]) -> None:
+    async def create_pvc(self, name: str, size: float | None) -> None:
         """Create a PVC for the task.
 
         Tif and Tof will use this PVC to read and write data, and
@@ -174,7 +173,7 @@ class Torc:
             await self.db.update_task_state(_id, TesState.SYSTEM_ERROR)
             raise
 
-    async def tif_execution(self, name: str, inputs: Optional[list[TesInput]]) -> None:
+    async def tif_execution(self, name: str, inputs: list[TesInput] | None) -> None:
         """Execute the Tif job.
 
         Args:
@@ -230,7 +229,7 @@ class Torc:
     async def tof_execution(
         self,
         name: str,
-        outputs: Optional[list[TesOutput]],
+        outputs: list[TesOutput] | None,
     ) -> None:
         """Execute the Tof job.
 

@@ -3,7 +3,7 @@
 import asyncio
 import json
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 import rich_click as click
 import yaml
@@ -66,9 +66,7 @@ class TaskCommand(BaseCommand):
             required=False,
             help="Output format",
         )
-        def create(
-            task: str, token: str, format: Optional[str] = OutputFormat.YAML.value
-        ):
+        def create(task: str, token: str, format: str | None = OutputFormat.YAML.value):
             """Create a task.
 
             Args:
@@ -126,8 +124,8 @@ class TaskCommand(BaseCommand):
         def get(
             id: str,
             token: str,
-            view: Optional[str] = TesView.MINIMAL.value,
-            format: Optional[str] = OutputFormat.YAML.value,
+            view: str | None = TesView.MINIMAL.value,
+            format: str | None = OutputFormat.YAML.value,
         ):
             """Get a task.
 
@@ -171,9 +169,7 @@ class TaskCommand(BaseCommand):
             required=False,
             help="Output format",
         )
-        def cancel(
-            id: str, token: str, format: Optional[str] = OutputFormat.YAML.value
-        ):
+        def cancel(id: str, token: str, format: str | None = OutputFormat.YAML.value):
             """Cancel a task."""
             try:
                 user_id = self._get_user_id(token)
@@ -236,14 +232,14 @@ class TaskCommand(BaseCommand):
         )
         def list(  # noqa: PLR0913
             token: str,
-            format: Optional[str] = OutputFormat.YAML.value,
-            page_size: Optional[int] = None,
-            page_token: Optional[str] = None,
-            name_prefix: Optional[str] = None,
-            state: Optional[str] = None,
-            tag_key: Optional[str] = None,
-            tag_value: Optional[str] = None,
-            view: Optional[str] = TesView.MINIMAL.value,
+            format: str | None = OutputFormat.YAML.value,
+            page_size: int | None = None,
+            page_token: str | None = None,
+            name_prefix: str | None = None,
+            state: str | None = None,
+            tag_key: str | None = None,
+            tag_value: str | None = None,
+            view: str | None = TesView.MINIMAL.value,
         ):
             """List tasks.
 

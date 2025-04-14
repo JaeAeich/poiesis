@@ -2,7 +2,6 @@
 
 import json
 import logging
-from typing import Optional
 
 from kubernetes.client import (
     V1ObjectMeta,
@@ -37,7 +36,7 @@ class TorcTofExecution(TorcExecutionTemplate):
     def __init__(
         self,
         id: str,
-        outputs: Optional[list[TesOutput]],
+        outputs: list[TesOutput] | None,
     ) -> None:
         """Initialize the TOF execution class.
 

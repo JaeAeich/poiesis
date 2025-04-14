@@ -3,7 +3,6 @@
 import logging
 import os
 import sys
-from typing import Optional
 
 # ANSI escape codes for colors
 LOG_COLORS = {
@@ -51,7 +50,7 @@ class ColorFormatter(logging.Formatter):
         return formatted_message
 
 
-def setup_logging(level: Optional[str] = None) -> None:
+def setup_logging(level: str | None = None) -> None:
     """Set up colorful logging configuration for the core module.
 
     Args:

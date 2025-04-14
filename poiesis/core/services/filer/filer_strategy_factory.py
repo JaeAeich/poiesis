@@ -4,7 +4,6 @@ Get the correct strategy based on the URI scheme.
 """
 
 import logging
-from typing import Optional, Union
 from urllib.parse import urlparse
 
 from pydantic import BaseModel
@@ -77,7 +76,7 @@ class FilerStrategyFactory:
 
     @classmethod
     def create_strategy(
-        cls, uri: Optional[str], payload: Union[TesInput, TesOutput]
+        cls, uri: str | None, payload: TesInput | TesOutput
     ) -> FilerStrategy:
         """Create appropriate strategy based on URI scheme.
 

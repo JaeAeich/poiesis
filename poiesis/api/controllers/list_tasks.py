@@ -1,7 +1,7 @@
 """Controller for listing tasks."""
 
 import re
-from typing import Any, Optional
+from typing import Any
 
 from poiesis.api.controllers.interface import InterfaceController
 from poiesis.api.models import TesListTasksFilter, TesView
@@ -28,8 +28,8 @@ class ListTasksController(InterfaceController):
         db: MongoDBClient,
         user_id: str,
         query_filter: TesListTasksFilter,
-        page_size: Optional[int] = None,
-        page_token: Optional[str] = None,
+        page_size: int | None = None,
+        page_token: str | None = None,
     ) -> None:
         """Initialize the controller.
 

@@ -4,7 +4,6 @@ These are extensions of the models defined in the TES API specification.
 """
 
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -29,8 +28,8 @@ class MinimalTesTask(BaseModel):
 class TesListTasksFilter(BaseModel):
     """Filter for listing tasks."""
 
-    name_prefix: Optional[str] = None
-    state: Optional[TesState] = None
-    tag_key: Optional[list[str]] = None
-    tag_value: Optional[list[str]] = None
+    name_prefix: str | None = None
+    state: TesState | None = None
+    tag_key: list[str] | None = None
+    tag_value: list[str] | None = None
     view: TesView = TesView.MINIMAL
