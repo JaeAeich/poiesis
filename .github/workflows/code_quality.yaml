@@ -69,7 +69,7 @@ jobs:
         uses: ./.github/actions/setup/uv
         with:
           os: ${{ job.os }}
-          uv-sync-args: "--with=code_quality --with=types"
+          uv-sync-args: "--group code_quality --group types"
 
       - name: Check types
         run: uv run mypy poiesis/
