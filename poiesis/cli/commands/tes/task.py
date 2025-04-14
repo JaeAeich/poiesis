@@ -27,7 +27,6 @@ constants = get_poiesis_constants()
 
 
 console = Console()
-db = MongoDBClient()
 
 
 class OutputFormat(Enum):
@@ -74,6 +73,7 @@ class TaskCommand(BaseCommand):
                 token: User auth token
                 format: Output format
             """
+            db = MongoDBClient()
             try:
                 user_id = self._get_user_id(token)
                 _format = OutputFormat(format) if format else OutputFormat.YAML
@@ -135,6 +135,8 @@ class TaskCommand(BaseCommand):
                 view: Task view
                 format: Output format
             """
+            db = MongoDBClient()
+
             try:
                 view = TesView(view).value if view else TesView.MINIMAL.value
                 _format = OutputFormat(format) if format else OutputFormat.YAML
@@ -171,6 +173,8 @@ class TaskCommand(BaseCommand):
         )
         def cancel(id: str, token: str, format: str | None = OutputFormat.YAML.value):
             """Cancel a task."""
+            db = MongoDBClient()
+
             try:
                 user_id = self._get_user_id(token)
                 controller = CancelTaskController(db=db, task_id=id, user_id=user_id)
@@ -254,6 +258,8 @@ class TaskCommand(BaseCommand):
                 tag_value: Tag value
                 view: View of the task
             """
+            db = MongoDBClient()
+
             try:
                 user_id = self._get_user_id(token)
                 _view = TesView(view) if view else TesView.MINIMAL
