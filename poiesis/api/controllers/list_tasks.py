@@ -66,7 +66,9 @@ class ListTasksController(InterfaceController):
         # Tags
         if self.query_filter.tag_key:
             for key, val in zip(
-                self.query_filter.tag_key, self.query_filter.tag_value or []
+                self.query_filter.tag_key,
+                self.query_filter.tag_value or [],
+                strict=False,
             ):
                 if val == "":
                     tag_filter.append({f"tags.{key}": {"$exists": True}})

@@ -22,16 +22,16 @@ sys.path.insert(0, os.path.abspath("../.."))
 def _get_project_meta():
     _pyproject_path = Path(__file__).parents[2] / "pyproject.toml"
     with open(_pyproject_path, mode="rb") as pyproject:
-        return tomli.load(pyproject)["tool"]["poetry"]
+        return tomli.load(pyproject)
 
 
 pkg_meta = _get_project_meta()
 current_year = datetime.datetime.now().year
-project = str(pkg_meta["name"])
-project_copyright = f"{current_year}, {str(pkg_meta['authors'][0])}"
-author = str(pkg_meta["authors"][0])
+project = pkg_meta["project"]["name"]
+project_copyright = f"{current_year}, {pkg_meta['project']['authors'][0]['name']}"
+author = pkg_meta["project"]["authors"][0]["name"]
 
-version = str(pkg_meta["version"])
+version = pkg_meta["project"]["version"]
 release = version
 
 # -- General configuration ---------------------------------------------------

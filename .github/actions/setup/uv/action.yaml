@@ -1,0 +1,32 @@
+---
+name: Setup Python and uv Action
+description: Configure system, Python, uv and deps and cache management.
+
+inputs:
+  os:
+    default: ubuntu-latest
+    description: The operating system to use
+  uv-version:
+    default: '0.6.14'
+    description: The version of uv to install
+  uv-sync-args:
+    default: '--all-extras --all-groups'
+    description: Additional options to pass to uv sync
+
+runs:
+  using: composite
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+
+    - name: "Set up Python"
+      uses: actions/setup-python@v5
+      with:
+        python-version-file: "pyproject.toml"
+
+    - name: uv sync
+      shell: bash
+      run: uv sync ${{ inputs.uv-sync-args }}
+...

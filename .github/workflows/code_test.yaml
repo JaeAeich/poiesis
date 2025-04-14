@@ -23,16 +23,14 @@ jobs:
         uses: step-security/harden-runner@v2.10.2
 
       - name: Set up environment
-        uses: ./.github/actions/setup/poetry
+        uses: ./.github/actions/setup/uv
         with:
           os: ${{ job.os }}
-          python-version: '3.13.0'
-          poetry-install-options: "--with=test"
-          poetry-export-options: "--with=test"
+          uv-sync-args: "--group test"
 
       - name: Run tests and generate coverage as test_integration.xml
         run: |
-          poetry run pytest \
+          uv run pytest \
             --cov-report term \
             --cov-report xml:test_integration.xml \
             --cov=tests/test_integration
@@ -48,16 +46,14 @@ jobs:
         uses: step-security/harden-runner@v2.10.2
 
       - name: Set up environment
-        uses: ./.github/actions/setup/poetry
+        uses: ./.github/actions/setup/uv
         with:
           os: ${{ job.os }}
-          python-version: '3.13.0'
-          poetry-install-options: "--with=test"
-          poetry-export-options: "--with=test"
+          uv-sync-args: "--group test"
 
       - name: Run tests and generate coverage as test_unit.xml
         run: |
-          poetry run pytest \
+          uv run pytest \
             --cov-report term \
             --cov-report xml:test_unit.xml \
             --cov=tests/test_unit

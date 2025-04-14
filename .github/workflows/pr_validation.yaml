@@ -30,15 +30,13 @@ jobs:
         uses: step-security/harden-runner@v2.10.2
 
       - name: Set up environment
-        uses: ./.github/actions/setup/poetry
+        uses: ./.github/actions/setup/uv
         with:
           os: ${{ job.os }}
-          python-version: '3.13.0'
-          poetry-install-options: "--only=misc --no-root"
-          poetry-export-options: "--only=misc"
+          uv-sync-args: "--only-group misc"
 
       - name: Check all the pre-commit hooks passed
-        run: pre-commit run --all-files
+        run: uv run pre-commit run --all-files
 
   semantic-pr:
     name: Semantic PR title
