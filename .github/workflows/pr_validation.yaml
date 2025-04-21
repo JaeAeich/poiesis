@@ -75,10 +75,12 @@ jobs:
             characters.
 
       - name: Check length of PR title
+        shell: bash
         run: |
-          set -euo pipefail
-          PR_TITLE="${{ github.event.pull_request.title }}"
+          set -euxo pipefail
+          PR_TITLE="{{ github.event.pull_request.title }}"
           TITLE_LENGTH=$(echo "$PR_TITLE" | wc -m)
+
           if [ "$TITLE_LENGTH" -gt 50 ]; then
             echo "The PR title is too long. Please keep it under 50 characters."
             echo "Current length: $TITLE_LENGTH"
