@@ -46,7 +46,9 @@ jobs:
   semantic-pr:
     name: Semantic PR title
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false && startsWith(github.head_ref, 'main') == false
+    if: >
+      github.event.pull_request.draft == false &&
+      startsWith(github.head_ref, 'main') == false
     steps:
       - name: Check if the PR title is semantic
         uses: amannn/action-semantic-pull-request@v5
