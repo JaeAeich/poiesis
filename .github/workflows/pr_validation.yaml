@@ -4,7 +4,7 @@ name: PR evaluation
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, edited]
-    branches: ['main']
+    branches: "*"
 
 jobs:
   detect-unresolved-conflicts:
@@ -43,7 +43,8 @@ jobs:
     runs-on: ubuntu-latest
     # yamllint disable rule:line-length
     if: >
-      contains(['opened', 'reopened', 'ready_for_review'], github.event.action) ||
+      (github.event.pull_request.draft == false &&
+       contains(fromJSON('["opened", "reopened", "ready_for_review", "synchronize"]'), github.event.action)) ||
       (github.event.action == 'edited' && github.event.changes.title != null)
     # yamllint disable rule:line-length
     steps:
