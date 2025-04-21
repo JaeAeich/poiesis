@@ -915,7 +915,6 @@ docs = [
     { name = "m2r2" },
     { name = "sphinx" },
     { name = "sphinx-autodoc-typehints" },
-    { name = "tomli" },
 ]
 misc = [
     { name = "pre-commit" },
@@ -965,7 +964,6 @@ docs = [
     { name = "m2r2", specifier = ">=0.3.3.post2" },
     { name = "sphinx", specifier = ">=7.3.7" },
     { name = "sphinx-autodoc-typehints", specifier = ">=2.1.0" },
-    { name = "tomli", specifier = ">=2.0.1" },
 ]
 misc = [{ name = "pre-commit", specifier = ">=3.7.1" }]
 test = [
