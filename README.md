@@ -1,6 +1,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Python 3.13.0](https://img.shields.io/badge/python-3.13.0-blue.svg)](https://www.python.org/)
-[![Read The Docs](https://readthedocs.org/projects/poiesis/badge/?version=latest)](https://poiesis.readthedocs.io/en/latest/)
+[![Vercel](https://vercelbadge.vercel.app/api/button?app=poiesis)](https://poiesis.vercel.app)
+[![Read The Docs](https://readthedocs.org/projects/poiesis/badge/?version=latest)](https://poiesis.readthedocs.io/en/docs/)
 [![GitHub contributors](https://img.shields.io/github/contributors/jaeaeich/poiesis)](https://github.com/jaeaeich/poiesis/graphs/contributors)
 
 # poiesis
