@@ -3,8 +3,13 @@ name: PR evaluation
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, edited]
-    branches: ['main']
+    types:
+      - opened
+      - edited
+      - ready_for_review
+      - synchronize
+      - reopened
+    branches: "**"
 
 jobs:
   detect-unresolved-conflicts:
@@ -42,10 +47,8 @@ jobs:
     name: Semantic PR title
     runs-on: ubuntu-latest
     # yamllint disable rule:line-length
-    if: >
-      contains(['opened', 'reopened', 'ready_for_review'], github.event.action) ||
-      (github.event.action == 'edited' && github.event.changes.title != null)
-    # yamllint disable rule:line-length
+    if: github.event.pull_request.draft != true && github.event.action != 'synchronize' && !startsWith(github.head_ref, 'main')
+    # yamllint enable rule:line-length
     steps:
       - name: Check if the PR title is semantic
         uses: amannn/action-semantic-pull-request@v5
@@ -72,10 +75,15 @@ jobs:
             characters.
 
       - name: Check length of PR title
+        shell: bash
         run: |
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          if [ ${#PR_TITLE} -gt 50 ]; then
+          set -euxo pipefail
+          PR_TITLE="{{ github.event.pull_request.title }}"
+          TITLE_LENGTH=$(echo "$PR_TITLE" | wc -m)
+
+          if [ "$TITLE_LENGTH" -gt 50 ]; then
             echo "The PR title is too long. Please keep it under 50 characters."
+            echo "Current length: $TITLE_LENGTH"
             exit 1
           fi
 ...
