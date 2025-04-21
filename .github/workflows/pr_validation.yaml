@@ -46,9 +46,9 @@ jobs:
   semantic-pr:
     name: Semantic PR title
     runs-on: ubuntu-latest
-    if: >
-      github.event.pull_request.draft == false &&
-      startsWith(github.head_ref, 'main') == false
+    # yamllint disable rule:line-length
+    if: github.event.pull_request.draft == false && github.event.action == 'synchronize' && !startsWith(github.head_ref, 'main')
+    # yamllint enable rule:line-length
     steps:
       - name: Check if the PR title is semantic
         uses: amannn/action-semantic-pull-request@v5
