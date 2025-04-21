@@ -8,6 +8,7 @@
   "dependencies": {
     "@catppuccin/vitepress": "^0.1.0",
     "@ibm/plex": "^6.4.1",
+    "@vercel/analytics": "^1.5.0",
     "swagger-ui": "^5.20.8",
     "vitepress-openapi": "^0.0.3-alpha.72"
   }
