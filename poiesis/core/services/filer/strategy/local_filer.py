@@ -21,65 +21,77 @@ class LocalFilerStrategy(FilerStrategy):
         """Initialize the local filer strategy.
 
         Args:
-            payload: The payload to instantiate the strategy
-                implementation.
+            payload: The payload to instantiate the strategy implementation.
         """
         super().__init__(payload)
         self.input = self.payload if isinstance(self.payload, TesInput) else None
         self.output = self.payload if isinstance(self.payload, TesOutput) else None
 
-    def get_secrets(self):
-        """No need for secrets for local files."""
-        logger.info("No secrets needed for local filer.")
-
-    def check_permissions(self):
-        """Authentication is enough for local files.
-
-        No need for authorization checks.
-        """
-        logger.info("No permissions check needed for local filer.")
-
-    async def download_input(self, container_path: str):
-        """Download file from storage and mount to PVC.
-
-        Args:
-            _input: The input file to be downloaded
-            container_path: The path inside the container where the file needs to be
-                downloaded to.
-        """
+    async def download_input_file(self, container_path: str):
+        """Download file from storage and mount to PVC."""
         logger.info(f"Starting local file download to {container_path}")
-        assert self.input is not None
-        assert self.input.url is not None
-
+        assert self.input and self.input.url
         source_path = urlparse(self.input.url).path
+        self._copy_file(source_path, container_path)
 
-        if not os.path.exists(source_path):
-            logger.error(f"File {source_path} not found")
-            raise FileNotFoundError(f"File {source_path} not found.")
+    async def download_input_directory(self, container_path: str):
+        """Download input directory from a local path."""
+        logger.info(f"Starting local directory download to {container_path}")
+        assert self.input and self.input.url
+        source_path = urlparse(self.input.url).path
+        self._copy_directory(source_path, container_path)
 
-        shutil.copy2(source_path, container_path)
-        logger.info(f"Copied {source_path} to {container_path}")
+    async def upload_output_file(self, container_path: str):
+        """Dummy upload output (local)."""
+        logger.info(f"Starting local file upload from {container_path}")
+        assert self.output and self.output.url
+        destination_path = urlparse(self.output.url).path
+        self._copy_file(container_path, destination_path)
 
-    async def upload_output(self, container_path: str):
-        """Dummy upload output.
+    async def upload_output_directory(self, container_path: str):
+        """Upload output directory to a local path."""
+        logger.info(f"Starting local directory upload from {container_path}")
+        assert self.output and self.output.url
+        destination_path = urlparse(self.output.url).path
+        self._copy_directory(container_path, destination_path)
 
-        Local filer strategy does not need to upload anything as the file is already
-        present in the container.
+    async def upload_glob(self, glob_files: list[tuple[str, str]]):
+        """Upload file using wildcard pattern.
 
         Args:
-            output: The output file to be uploaded.
-            container_path: The path inside the container from where the file needs to
-                be uploaded from.
+            glob_files: List of tuple of file path of and its prefix removed
+                path that needs to be appended to url.
         """
-        logger.info(f"Starting local file upload from {container_path}")
         assert self.output is not None
-        assert self.output.url is not None
 
-        source_path = urlparse(self.output.url).path
+        for file_path, relative_path in glob_files:
+            destination_base = urlparse(self.output.url).path
+            destination_path = os.path.join(destination_base, relative_path)
 
-        if not os.path.exists(source_path):
-            logger.error(f"File {source_path} not found")
-            raise FileNotFoundError(f"File {source_path} not found.")
+            # Ensure the destination directory exists
+            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
 
-        shutil.copy2(source_path, container_path)
-        logger.info(f"Copied {source_path} to {container_path}")
+            logger.info(f"Uploading file {file_path} to {destination_path}")
+            self._copy_file(file_path, destination_path)
+
+    def _copy_file(self, src: str, dst: str):
+        """Copy a file from src to dst with validation."""
+        if not os.path.exists(src):
+            logger.error(f"File {src} not found")
+            raise FileNotFoundError(f"File {src} not found.")
+        if not os.path.isfile(src):
+            logger.error(f"Source path {src} is not a file")
+            raise IsADirectoryError(f"Source path {src} is not a file.")
+        shutil.copy2(src, dst)
+        logger.info(f"Copied file from {src} to {dst}")
+
+    def _copy_directory(self, src: str, dst: str):
+        """Copy a directory from src to dst with validation."""
+        if not os.path.exists(src):
+            logger.error(f"Directory {src} not found")
+            raise FileNotFoundError(f"Directory {src} not found.")
+        if not os.path.isdir(src):
+            logger.error(f"Source path {src} is not a directory")
+            raise NotADirectoryError(f"Source path {src} is not a directory.")
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+        logger.info(f"Copied directory from {src} to {dst}")

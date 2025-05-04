@@ -48,7 +48,7 @@ class Tof(Filer):
         for output in self.outputs:
             filer_strategy = FilerStrategyFactory.create_strategy(output.url, output)
             try:
-                logger.error(f"Uploading output: {output}")
+                logger.info(f"Uploading output: {output}")
                 await filer_strategy.upload()
             except Exception as e:
                 logger.error(f"TOF failed: {e}")
