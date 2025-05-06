@@ -1,7 +1,6 @@
 """Torc's template for each service."""
 
 import logging
-import sys
 from abc import ABC, abstractmethod
 
 from kubernetes.client import (
@@ -225,6 +224,8 @@ class TorcExecutionTemplate(ABC):
                 logger.error(self.message.message)
                 await self.db.add_tes_task_system_logs(self.id, [self.message.message])
                 await self.db.add_tes_task_log_end_time(self.id)
-                sys.exit(1)
+                raise RuntimeError(
+                    "Exiting due to error condition in asynchronous function."
+                )
             else:
                 logger.info(self.message.message)
