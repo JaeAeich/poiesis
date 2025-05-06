@@ -19,15 +19,7 @@ class HttpFilerStrategy(FilerStrategy):
         super().__init__(payload)
         self.input = self.payload
 
-    def get_secrets(self):
-        """Get secrets if needed for the protocol."""
-        pass
-
-    def check_permissions(self):
-        """Check if the user has the necessary permissions."""
-        pass
-
-    async def download_input(self, container_path: str):
+    async def download_input_file(self, container_path: str):
         """Download the input file from the HTTP or HTTPS URI.
 
         Args:
@@ -43,11 +35,34 @@ class HttpFilerStrategy(FilerStrategy):
                 if chunk:
                     f.write(chunk)
 
-    async def upload_output(self, container_path: str):
+    async def download_input_directory(self, container_path: str):
+        """Download the input directory from the HTTP or HTTPS URI.
+
+        Args:
+            container_path: The path to download the file to.
+        """
+        raise NotImplementedError(
+            "Downloading directory over HTTP or HTTPS is not supported"
+        )
+
+    async def upload_output_file(self, container_path: str):
         """Upload the output file to the HTTP or HTTPS URI.
 
         Args:
             output: The output file to upload.
             container_path: The path to upload the file from.
         """
+        raise NotImplementedError("Uploading to HTTP or HTTPS is not supported")
+
+    async def upload_output_directory(self, container_path: str):
+        """Upload the output directory to the HTTP or HTTPS URI.
+
+        Args:
+            output: The output file to upload.
+            container_path: The path to upload the file from.
+        """
+        raise NotImplementedError("Uploading to HTTP or HTTPS is not supported")
+
+    async def upload_glob(self, glob_files: list[tuple[str, str]]):
+        """Upload files using glob patterns."""
         raise NotImplementedError("Uploading to HTTP or HTTPS is not supported")

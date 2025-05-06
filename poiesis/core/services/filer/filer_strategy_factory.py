@@ -32,7 +32,7 @@ class StrategyInfoDict(BaseModel):
 STRATEGY_MAP: dict[str, StrategyInfoDict] = {
     "": StrategyInfoDict(
         name="content",
-        strategy=LocalFilerStrategy,  # Empty scheme for local paths
+        strategy=ContentFilerStrategy,  # Empty scheme for local paths
         input=True,
         output=False,
     ),

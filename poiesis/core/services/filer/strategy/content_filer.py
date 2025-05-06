@@ -24,18 +24,7 @@ class ContentFilerStrategy(FilerStrategy):
         self.input = self.payload if isinstance(self.payload, TesInput) else None
         self.output = self.payload if isinstance(self.payload, TesOutput) else None
 
-    def get_secrets(self):
-        """No need for secrets for content."""
-        logger.info("No secrets needed for content filer.")
-
-    def check_permissions(self):
-        """Authentication is enough for content.
-
-        Just check if the directory exists. No need for authorization checks.
-        """
-        logger.info("Permissions check not needed for content filer.")
-
-    async def download_input(self, container_path: str) -> None:
+    async def download_input_file(self, container_path: str) -> None:
         """Get the content from request and mount to PVC.
 
         Args:
@@ -54,7 +43,18 @@ class ContentFilerStrategy(FilerStrategy):
 
         logger.info(f"Created file with content at {container_path}.")
 
-    async def upload_output(self, container_path: str) -> None:
+    async def download_input_directory(self, container_path: str):
+        """Download input directory.
+
+        Raises:
+            NotImplementedError: Content filer doesn't support downloading
+                directories.
+        """
+        raise NotImplementedError(
+            "Content filer doesn't support downloading directories."
+        )
+
+    async def upload_output_file(self, container_path: str) -> None:
         """Mount the content to PVC.
 
         Content filer does not support uploads according to TES spec.
@@ -66,6 +66,26 @@ class ContentFilerStrategy(FilerStrategy):
         logger.error(
             f"Attempted to upload content from {container_path} which is not supported"
         )
+        raise NotImplementedError(
+            "Content filer does not support uploads according to TES spec."
+        )
+
+    async def upload_output_directory(self, container_path: str):
+        """Upload output dir.
+
+        Raises:
+            NotImplementedError: Content filer doesn't support uploading directories.
+        """
+        raise NotImplementedError(
+            "Content filer does not support uploads according to TES spec."
+        )
+
+    async def upload_glob(self, glob_files: list[tuple[str, str]]):
+        """Upload output dir.
+
+        Raises:
+            NotImplementedError: Content filer doesn't support uploading directories.
+        """
         raise NotImplementedError(
             "Content filer does not support uploads according to TES spec."
         )
