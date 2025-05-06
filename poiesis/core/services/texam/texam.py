@@ -1,6 +1,7 @@
 """TExAM (Task Executor and Monitor) service."""
 
 import asyncio
+import contextlib
 import logging
 import os
 import shlex
@@ -23,7 +24,7 @@ from poiesis.api.tes.models import TesExecutor, TesTask
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.constants import get_poiesis_core_constants
-from poiesis.core.ports.message_broker import Message
+from poiesis.core.ports.message_broker import Message, MessageStatus
 from poiesis.core.services.models import PodPhase
 from poiesis.core.services.utils import split_path_for_mounting
 from poiesis.repository.mongo import MongoDBClient
@@ -60,6 +61,7 @@ class Texam:
         task_pool: List of executors.
         kubernetes_client: Kubernetes client.
         message_broker: Message broker.
+        failed: Flag defining if TE failed.
     """
 
     def __init__(
@@ -80,12 +82,14 @@ class Texam:
             task_pool: List of executors pod name and then they were created.
             kubernetes_client: Kubernetes client.
             message_broker: Message broker.
+            failed: Flag defining if TE failed.
         """
         self.task = task
         self.task_id = task.id
         self.task_pool: list[str] = []
         self.kubernetes_client = KubernetesAdapter()
         self.message_broker = RedisMessageBroker()
+        self.failed = False
         self.db = MongoDBClient()
 
     async def execute(self) -> None:
@@ -166,7 +170,7 @@ class Texam:
                     # special status This ensures it will be monitored and properly
                     # logged
                     self.task_pool.append(executor_name)
-                    self.db.update_executor_log(
+                    await self.db.update_executor_log(
                         executor_name,
                         PodPhase.FAILED.value,
                         stdout=None,
@@ -435,7 +439,8 @@ class Texam:
         """Removes a pod from the active pool and task pool."""
         active_pod_names.discard(pod_name)
         if pod_entry := next((p for p in self.task_pool if p == pod_name), None):
-            self.task_pool.remove(pod_entry)
+            with contextlib.suppress(ValueError):
+                self.task_pool.remove(pod_entry)
 
     async def _handle_unresolved_pods(
         self, active_pod_names: set, timeout: int, start_time: float
@@ -447,12 +452,13 @@ class Texam:
                 f"{active_pod_names}, Time taken: {time.time() - start_time:.2f} "
                 "seconds"
             )
-            for pod_name in active_pod_names:
+            for pod_name in active_pod_names.copy():
                 logger.error(
                     f"Pod {pod_name} did not reach a terminal state before watch "
                     "timeout."
                 )
                 try:
+                    await self.kubernetes_client.delete_pod(pod_name)
                     await self.db.update_executor_log(
                         pod_name,
                         PodPhase.FAILED.value,
@@ -464,10 +470,21 @@ class Texam:
                         f"Failed to update DB for timed-out pod {pod_name}: {e}"
                     )
                 self._remove_pod_from_pool(pod_name, active_pod_names)
+                self.failed = True
 
     async def message(self) -> None:
         """Send message to TORC."""
         assert self.task_id is not None
-        self.message_broker.publish(
-            self.task_id, Message(f"Texam job for {self.task_id} has been completed.")
-        )
+        if not self.failed:
+            self.message_broker.publish(
+                self.task_id,
+                Message(f"TExAM job for {self.task_id} has been completed."),
+            )
+        else:
+            self.message_broker.publish(
+                self.task_id,
+                Message(
+                    message="TExAM job failed to run all jobs successfully.",
+                    status=MessageStatus.ERROR,
+                ),
+            )
