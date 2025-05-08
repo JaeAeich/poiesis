@@ -220,8 +220,12 @@ class TorcExecutionTemplate(ABC):
         if not hasattr(self, "id"):
             raise AttributeError("The id of the task is not set.")
         if self.message:
-            if self.message.status == MessageStatus.ERROR:
+            if MessageStatus(self.message.status) == MessageStatus.ERROR:
+                logger.error(self.message.message)
                 await self.db.add_tes_task_system_logs(self.id, [self.message.message])
                 await self.db.add_tes_task_log_end_time(self.id)
+                raise RuntimeError(
+                    "Exiting due to error condition in asynchronous function."
+                )
             else:
                 logger.info(self.message.message)
