@@ -22,9 +22,9 @@ class KeycloakAuthProvider(AuthProvider):
 
     def __init__(
         self,
-        server_url: str = constants.Auth.Keycloak.URL,
-        realm_name: str = constants.Auth.Keycloak.REALM,
-        client_id: str = constants.Auth.Keycloak.CLIENT_ID,
+        server_url: str | None = constants.Auth.Keycloak.URL,
+        realm_name: str | None = constants.Auth.Keycloak.REALM,
+        client_id: str | None = constants.Auth.Keycloak.CLIENT_ID,
     ):
         """Initialize the Keycloak provider.
 
@@ -33,18 +33,21 @@ class KeycloakAuthProvider(AuthProvider):
             realm_name: The Keycloak realm name
             client_id: The Keycloak client ID
         """
-        self.server_url = server_url
-        if not self.server_url:
-            raise InternalServerException("Keycloak server URL not found")
-        self.realm_name = realm_name
-        self.client_id = client_id
+        if not all(
+            isinstance(val, str) and val for val in [server_url, realm_name, client_id]
+        ):
+            raise InternalServerException("Keycloak not configured.")
+
+        self.server_url = str(server_url)
+        self.realm_name = str(realm_name)
+        self.client_id = str(client_id)
         self.client_secret = os.getenv("KEYCLOAK_CLIENT_SECRET")
         if not self.client_secret:
             raise InternalServerException("Keycloak client secret not found")
         self.keycloak_openid = KeycloakOpenID(
-            server_url=server_url,
-            client_id=client_id,
-            realm_name=realm_name,
+            server_url=self.server_url,
+            client_id=self.client_id,
+            realm_name=self.realm_name,
             client_secret_key=self.client_secret,
         )
         self._public_key: str | None = None
