@@ -31,7 +31,7 @@ class PoiesisApiConstants:
     class Task:
         """Constants used in the Task."""
 
-        NAME = os.getenv("POIESIS_DEFAULT_TASK_NAME", "poiesis-tes-task")
+        NAME = "poiesis-tes-task"
 
     @dataclass(frozen=True)
     class Gunicorn:
@@ -45,7 +45,7 @@ class PoiesisApiConstants:
         """
 
         HOST = "0.0.0.0" if constants.ENVIRONMENT == "prod" else "127.0.0.1"  # nosec B104
-        PORT = os.getenv("POIESIS_API_PORT", "8000")
+        PORT = os.getenv("POIESIS_API_SERVER_PORT", "8000")
         WORKERS = os.getenv("POIESIS_UVICORN_WORKERS")
         TIMEOUT = os.getenv("POIESIS_UVICORN_TIMEOUT", "120")
 
@@ -72,9 +72,9 @@ class PoiesisApiConstants:
                 ALGORITHM: The algorithm of the Keycloak server.
             """
 
-            URL = os.getenv("KEYCLOAK_URL", "")
-            REALM = os.getenv("KEYCLOAK_REALM", "poiesis")
-            CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "poiesis")
+            URL = os.getenv("KEYCLOAK_URL")
+            REALM = os.getenv("KEYCLOAK_REALM")
+            CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID")
             ALGORITHM = os.getenv("KEYCLOAK_ALGORITHM", "RS256")
 
 

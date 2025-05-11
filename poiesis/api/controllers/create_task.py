@@ -15,7 +15,6 @@ from kubernetes.client.models import (
     V1ObjectMeta,
     V1PodSpec,
     V1PodTemplateSpec,
-    V1SecretKeySelector,
 )
 
 from poiesis.api.constants import get_poiesis_api_constants
@@ -28,7 +27,13 @@ from poiesis.api.tes.models import (
 )
 from poiesis.constants import get_poiesis_constants
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
-from poiesis.core.constants import get_poiesis_core_constants
+from poiesis.core.constants import (
+    get_configmap_names,
+    get_message_broker_envs,
+    get_mongo_envs,
+    get_poiesis_core_constants,
+    get_secret_names,
+)
 from poiesis.repository.mongo import MongoDBClient
 from poiesis.repository.schemas import TaskSchema
 
@@ -85,47 +90,42 @@ class CreateTaskController(InterfaceController):
                 backoff_limit=int(core_constants.K8s.BACKOFF_LIMIT),
                 template=V1PodTemplateSpec(
                     spec=V1PodSpec(
-                        service_account_name="pod-creator",  # TODO: Change this
+                        service_account_name=core_constants.K8s.SERVICE_ACCOUNT_NAME,
                         containers=[
                             V1Container(
                                 name=core_constants.K8s.TORC_PREFIX,
                                 image=core_constants.K8s.POIESIS_IMAGE,
                                 command=["poiesis", "torc", "run"],
                                 args=["--task", json.dumps(self.task.model_dump())],
-                                env=[
-                                    V1EnvVar(
-                                        name="MESSAGE_BROKER_HOST",
-                                        value_from=V1EnvVarSource(
-                                            config_map_key_ref=V1ConfigMapKeySelector(
-                                                name=core_constants.K8s.CONFIGMAP_NAME,
-                                                key="MESSAGE_BROKER_HOST",
-                                            )
-                                        ),
-                                    ),
-                                    V1EnvVar(
-                                        name="MESSAGE_BROKER_PORT",
-                                        value_from=V1EnvVarSource(
-                                            config_map_key_ref=V1ConfigMapKeySelector(
-                                                name=core_constants.K8s.CONFIGMAP_NAME,
-                                                key="MESSAGE_BROKER_PORT",
-                                            )
-                                        ),
-                                    ),
-                                    V1EnvVar(
-                                        name="MONGODB_CONNECTION_STRING",
-                                        value_from=V1EnvVarSource(
-                                            secret_key_ref=V1SecretKeySelector(
-                                                name=core_constants.K8s.MONGODB_SECRET_NAME,
-                                                key="MONGODB_CONNECTION_STRING",
-                                            )
-                                        ),
-                                    ),
+                                env=get_message_broker_envs()
+                                + get_mongo_envs()
+                                + get_secret_names()
+                                + get_configmap_names()
+                                + [
                                     V1EnvVar(
                                         name="LOG_LEVEL",
                                         value_from=V1EnvVarSource(
                                             config_map_key_ref=V1ConfigMapKeySelector(
                                                 name=core_constants.K8s.CONFIGMAP_NAME,
                                                 key="LOG_LEVEL",
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="POIESIS_K8S_NAMESPACE",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="POIESIS_K8S_NAMESPACE",
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="POIESIS_SERVICE_ACCOUNT_NAME",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="POIESIS_SERVICE_ACCOUNT_NAME",
                                             )
                                         ),
                                     ),

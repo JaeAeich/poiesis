@@ -232,7 +232,6 @@ class Texam:
                     },
                 ),
                 spec=V1PodSpec(
-                    service_account_name="pod-creator",
                     containers=[
                         V1Container(
                             name=executor_name,

@@ -40,10 +40,14 @@ class PoesisConstants:
                 SERVICE_COLLECTION: The name of the services collection.
                 DATABASE: The name of the database to use.
                 MAX_POOL_SIZE: The maximum number of connections to the database.
+                HOST: Host for the mango instance.
+                PORT: Port for the mongo instance.
             """
 
             TASK_COLLECTION: str = "tasks"
             SERVICE_COLLECTION: str = "services"
+            HOST: str = os.getenv("MONGODB_HOST", "")
+            PORT: str = os.getenv("MONGODB_PORT", "")
             DATABASE: str = os.environ.get("MONGODB_DATABASE", "poiesis")
             MAX_POOL_SIZE: int = int(os.environ.get("MONGODB_MAX_POOL_SIZE", "10"))
 
