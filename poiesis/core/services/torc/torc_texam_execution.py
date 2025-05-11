@@ -95,10 +95,10 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                     task,
                                 ],
                                 image_pull_policy="Never",
-                                env=get_mongo_envs()
-                                + get_message_broker_envs()
-                                + get_secret_names()
-                                + get_configmap_names()
+                                env=list(get_mongo_envs())
+                                + list(get_message_broker_envs())
+                                + list(get_secret_names())
+                                + list(get_configmap_names())
                                 + [
                                     V1EnvVar(
                                         name="LOG_LEVEL",

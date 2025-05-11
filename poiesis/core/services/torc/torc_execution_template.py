@@ -100,11 +100,11 @@ class TorcExecutionTemplate(ABC):
                                 image=core_constants.K8s.POIESIS_IMAGE,
                                 command=commands,
                                 args=args,
-                                env=get_message_broker_envs()
-                                + get_mongo_envs()
-                                + get_s3_envs()
-                                + get_secret_names()
-                                + get_configmap_names()
+                                env=list(get_message_broker_envs())
+                                + list(get_mongo_envs())
+                                + list(get_s3_envs())
+                                + list(get_secret_names())
+                                + list(get_configmap_names())
                                 + [
                                     V1EnvVar(
                                         name="LOG_LEVEL",

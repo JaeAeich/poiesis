@@ -97,10 +97,10 @@ class CreateTaskController(InterfaceController):
                                 image=core_constants.K8s.POIESIS_IMAGE,
                                 command=["poiesis", "torc", "run"],
                                 args=["--task", json.dumps(self.task.model_dump())],
-                                env=get_message_broker_envs()
-                                + get_mongo_envs()
-                                + get_secret_names()
-                                + get_configmap_names()
+                                env=list(get_message_broker_envs())
+                                + list(get_mongo_envs())
+                                + list(get_secret_names())
+                                + list(get_configmap_names())
                                 + [
                                     V1EnvVar(
                                         name="LOG_LEVEL",

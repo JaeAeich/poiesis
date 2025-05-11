@@ -99,12 +99,12 @@ core_constants = get_poiesis_core_constants()
 
 
 @lru_cache
-def get_message_broker_envs() -> list[V1EnvVar]:
+def get_message_broker_envs() -> tuple[V1EnvVar, ...]:
     """Get the env vars for redis.
 
     Used in k8s manifest for `tif`, `torc` etc.
     """
-    return [
+    return (
         V1EnvVar(
             name="MESSAGE_BROKER_HOST",
             value_from=V1EnvVarSource(
@@ -133,16 +133,16 @@ def get_message_broker_envs() -> list[V1EnvVar]:
                 )
             ),
         ),
-    ]
+    )
 
 
 @lru_cache
-def get_mongo_envs() -> list[V1EnvVar]:
+def get_mongo_envs() -> tuple[V1EnvVar, ...]:
     """Get the env vars for mongo.
 
     Used in k8s manifest for `tif`, `torc` etc.
     """
-    return [
+    return (
         V1EnvVar(
             name="MONGODB_USER",
             value_from=V1EnvVarSource(
@@ -179,16 +179,16 @@ def get_mongo_envs() -> list[V1EnvVar]:
                 )
             ),
         ),
-    ]
+    )
 
 
 @lru_cache
-def get_s3_envs() -> list[V1EnvVar]:
+def get_s3_envs() -> tuple[V1EnvVar, ...]:
     """Get the env vars for s3.
 
     Used in k8s manifest for `tif`, `tof`.
     """
-    return [
+    return (
         V1EnvVar(
             name="S3_URL",
             value_from=V1EnvVarSource(
@@ -219,13 +219,13 @@ def get_s3_envs() -> list[V1EnvVar]:
                 )
             ),
         ),
-    ]
+    )
 
 
 @lru_cache
-def get_secret_names() -> list[V1EnvVar]:
+def get_secret_names() -> tuple[V1EnvVar, ...]:
     """Returns name of the secrets as env."""
-    return [
+    return (
         V1EnvVar(
             name="POIESIS_S3_SECRET_NAME",
             value_from=V1EnvVarSource(
@@ -255,14 +255,14 @@ def get_secret_names() -> list[V1EnvVar]:
                 ),
             ),
         ),
-    ]
+    )
 
 
 @lru_cache
-def get_configmap_names() -> list[V1EnvVar]:
+def get_configmap_names() -> tuple[V1EnvVar, ...]:
     """Get names of the configmap."""
-    return [
+    return (
         V1EnvVar(
             name="POIESIS_CORE_CONFIGMAP_NAME", value=core_constants.K8s.CONFIGMAP_NAME
         ),
-    ]
+    )
