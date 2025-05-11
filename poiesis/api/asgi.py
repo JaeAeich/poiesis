@@ -15,11 +15,7 @@ constants = get_poiesis_constants()
 api_constants = get_poiesis_api_constants()
 
 BIND = f"{api_constants.Gunicorn.HOST}:{api_constants.Gunicorn.PORT}"
-WORKERS = (
-    api_constants.Gunicorn.WORKERS
-    if api_constants.Gunicorn.WORKERS
-    else (multiprocessing.cpu_count() * 2) + 1
-)
+WORKERS = api_constants.Gunicorn.WORKERS or (multiprocessing.cpu_count() * 2) + 1
 TIMEOUT = api_constants.Gunicorn.TIMEOUT
 WORKER_CLASS = "uvicorn.workers.UvicornWorker"
 

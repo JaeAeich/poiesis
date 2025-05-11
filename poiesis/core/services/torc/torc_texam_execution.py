@@ -13,12 +13,17 @@ from kubernetes.client import (
     V1ObjectMeta,
     V1PodSpec,
     V1PodTemplateSpec,
-    V1SecretKeySelector,
 )
 from kubernetes.client.exceptions import ApiException
 
 from poiesis.api.tes.models import TesTask
-from poiesis.core.constants import get_poiesis_core_constants
+from poiesis.core.constants import (
+    get_configmap_names,
+    get_message_broker_envs,
+    get_mongo_envs,
+    get_poiesis_core_constants,
+    get_secret_names,
+)
 from poiesis.core.services.torc.torc_execution_template import TorcExecutionTemplate
 
 core_constants = get_poiesis_core_constants()
@@ -79,7 +84,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
             spec=V1JobSpec(
                 template=V1PodTemplateSpec(
                     spec=V1PodSpec(
-                        service_account_name="pod-creator",
+                        service_account_name=core_constants.K8s.SERVICE_ACCOUNT_NAME,
                         containers=[
                             V1Container(
                                 name=core_constants.K8s.TIF_PREFIX,
@@ -90,16 +95,11 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                     task,
                                 ],
                                 image_pull_policy="Never",
-                                env=[
-                                    V1EnvVar(
-                                        name="MONGODB_CONNECTION_STRING",
-                                        value_from=V1EnvVarSource(
-                                            secret_key_ref=V1SecretKeySelector(
-                                                name=core_constants.K8s.MONGODB_SECRET_NAME,
-                                                key="MONGODB_CONNECTION_STRING",
-                                            )
-                                        ),
-                                    ),
+                                env=list(get_mongo_envs())
+                                + list(get_message_broker_envs())
+                                + list(get_secret_names())
+                                + list(get_configmap_names())
+                                + [
                                     V1EnvVar(
                                         name="LOG_LEVEL",
                                         value_from=V1EnvVarSource(
@@ -115,6 +115,26 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                             config_map_key_ref=V1ConfigMapKeySelector(
                                                 name=core_constants.K8s.CONFIGMAP_NAME,
                                                 key="MONITOR_TIMEOUT_SECONDS",
+                                                optional=True,
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="POIESIS_K8S_NAMESPACE",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="POIESIS_K8S_NAMESPACE",
+                                                optional=True,
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="POIESIS_SERVICE_ACCOUNT_NAME",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="POIESIS_SERVICE_ACCOUNT_NAME",
                                                 optional=True,
                                             )
                                         ),

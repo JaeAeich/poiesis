@@ -14,7 +14,6 @@ from kubernetes.client import (
     V1PersistentVolumeClaimVolumeSource,
     V1PodSpec,
     V1PodTemplateSpec,
-    V1SecretKeySelector,
     V1Volume,
     V1VolumeMount,
 )
@@ -22,7 +21,14 @@ from kubernetes.client.exceptions import ApiException
 
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
-from poiesis.core.constants import get_poiesis_core_constants
+from poiesis.core.constants import (
+    get_configmap_names,
+    get_message_broker_envs,
+    get_mongo_envs,
+    get_poiesis_core_constants,
+    get_s3_envs,
+    get_secret_names,
+)
 from poiesis.core.ports.message_broker import Message, MessageStatus
 from poiesis.repository.mongo import MongoDBClient
 
@@ -94,55 +100,12 @@ class TorcExecutionTemplate(ABC):
                                 image=core_constants.K8s.POIESIS_IMAGE,
                                 command=commands,
                                 args=args,
-                                env=[
-                                    V1EnvVar(
-                                        name="MESSAGE_BROKER_HOST",
-                                        value_from=V1EnvVarSource(
-                                            config_map_key_ref=V1ConfigMapKeySelector(
-                                                name=core_constants.K8s.CONFIGMAP_NAME,
-                                                key="MESSAGE_BROKER_HOST",
-                                            )
-                                        ),
-                                    ),
-                                    V1EnvVar(
-                                        name="MESSAGE_BROKER_PORT",
-                                        value_from=V1EnvVarSource(
-                                            config_map_key_ref=V1ConfigMapKeySelector(
-                                                name=core_constants.K8s.CONFIGMAP_NAME,
-                                                key="MESSAGE_BROKER_PORT",
-                                            )
-                                        ),
-                                    ),
-                                    V1EnvVar(
-                                        name="S3_URL",
-                                        value_from=V1EnvVarSource(
-                                            config_map_key_ref=V1ConfigMapKeySelector(
-                                                name=core_constants.K8s.CONFIGMAP_NAME,
-                                                key="S3_URL",
-                                                optional=True,
-                                            )
-                                        ),
-                                    ),
-                                    V1EnvVar(
-                                        name="AWS_ACCESS_KEY_ID",
-                                        value_from=V1EnvVarSource(
-                                            secret_key_ref=V1SecretKeySelector(
-                                                name=core_constants.K8s.S3_SECRET_NAME,
-                                                key="AWS_ACCESS_KEY_ID",
-                                                optional=True,
-                                            )
-                                        ),
-                                    ),
-                                    V1EnvVar(
-                                        name="AWS_SECRET_ACCESS_KEY",
-                                        value_from=V1EnvVarSource(
-                                            secret_key_ref=V1SecretKeySelector(
-                                                name=core_constants.K8s.S3_SECRET_NAME,
-                                                key="AWS_SECRET_ACCESS_KEY",
-                                                optional=True,
-                                            )
-                                        ),
-                                    ),
+                                env=list(get_message_broker_envs())
+                                + list(get_mongo_envs())
+                                + list(get_s3_envs())
+                                + list(get_secret_names())
+                                + list(get_configmap_names())
+                                + [
                                     V1EnvVar(
                                         name="LOG_LEVEL",
                                         value_from=V1EnvVarSource(
@@ -151,16 +114,7 @@ class TorcExecutionTemplate(ABC):
                                                 key="LOG_LEVEL",
                                             )
                                         ),
-                                    ),
-                                    V1EnvVar(
-                                        name="MONGODB_CONNECTION_STRING",
-                                        value_from=V1EnvVarSource(
-                                            secret_key_ref=V1SecretKeySelector(
-                                                name=core_constants.K8s.MONGODB_SECRET_NAME,
-                                                key="MONGODB_CONNECTION_STRING",
-                                            )
-                                        ),
-                                    ),
+                                    )
                                 ],
                                 volume_mounts=[
                                     V1VolumeMount(

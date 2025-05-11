@@ -27,10 +27,26 @@ class RedisMessageBroker(MessageBroker):
             redis: The Redis client
             pubsub: The Redis pubsub client
         """
-        self.redis = redis.Redis(
-            host=os.getenv("MESSAGE_BROKER_HOST", "redis"),
-            port=int(os.getenv("MESSAGE_BROKER_PORT", "6379")),
-        )
+        host = os.getenv("MESSAGE_BROKER_HOST")
+        port = os.getenv("MESSAGE_BROKER_PORT")
+
+        if not host or not port:
+            raise RuntimeError(
+                "Redis configuration is incomplete: both MESSAGE_BROKER_HOST"
+                " and MESSAGE_BROKER_PORT are required."
+            )
+
+        password = os.getenv("MESSAGE_BROKER_PASSWORD")
+
+        redis_args = {
+            "host": host,
+            "port": int(port),
+        }
+
+        if password:
+            redis_args["password"] = password
+
+        self.redis = redis.Redis(**redis_args)
         self.pubsub = self.redis.pubsub()
 
     def publish(self, channel: str, message: Message) -> None:
