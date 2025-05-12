@@ -1,0 +1,15 @@
+dependencies:
+- name: minio
+  repository: https://charts.bitnami.com/bitnami
+  version: 16.0.10
+- name: redis
+  repository: https://charts.bitnami.com/bitnami
+  version: 21.0.2
+- name: keycloak
+  repository: https://charts.bitnami.com/bitnami
+  version: 24.6.6
+- name: mongodb
+  repository: https://charts.bitnami.com/bitnami
+  version: 16.5.6
+digest: sha256:d118972524b58cbce1dfbd50ba3e59e1d179d922b20947e940c0e8ef423a6b81
+generated: "2025-05-12T13:59:33.777017+05:30"

@@ -137,13 +137,14 @@ PHONY: build-docker-image bi
 build-docker-image:
 	@echo "\nBuilding Docker image +++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
 	@docker build \
+		--platform linux/amd64,linux/arm64 \
 		--build-arg PY_VERSION="${PY_VERSION}" \
 		--build-arg BUILD_DATE="${BUILD_DATE}" \
 		--build-arg GIT_REVISION="${GIT_REVISION}" \
 		--build-arg VERSION="${VERSION}" \
-		-t ${IMAGE_TAG_VERSION} \
-		-t ${IMAGE_TAG_LATEST} \
-		-f ${DOCKERFILE} .
+		-t jaeaeich/poiesis:alpha02 \
+		-f ${DOCKERFILE} \
+		--push .
 	@echo "\nDocker image built successfully: jaeaeich/poiesis:latest\n"
 
 bi: build-docker-image

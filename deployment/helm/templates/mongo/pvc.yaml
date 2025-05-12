@@ -1,0 +1,31 @@
+{{- if and .Values.customMongo.enabled .Values.customMongo.persistence.enabled (not .Values.customMongo.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "poiesis.customMongo.pvcName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "poiesis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mongo
+  {{- with .Values.customMongo.persistence.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.customMongo.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.customMongo.persistence.size }}
+  {{- if .Values.customMongo.persistence.storageClass }}
+  {{- if (eq "-" .Values.customMongo.persistence.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.customMongo.persistence.storageClass }}
+  {{- end }}
+  {{- end }}
+  {{- with .Values.customMongo.persistence.selector }}
+  selector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

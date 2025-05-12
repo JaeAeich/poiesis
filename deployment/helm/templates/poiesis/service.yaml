@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "poiesis.api.componentName" . }}
+  labels:
+    {{- include "poiesis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.poiesis.service.type }}
+  ports:
+    - port: {{ .Values.poiesis.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "poiesis.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
