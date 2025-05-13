@@ -46,16 +46,16 @@ spec:
             - name: POIESIS_CORE_CONFIGMAP_NAME
               value: {{ include "poiesis.coreConfigMapName" .}}
             - name: POIESIS_MONGO_SECRET_NAME
-              value: {{ include "poiesis.mongo.secretName" .}}
+              value: {{ include "poiesis.mongodb.secretName" .}}
             - name: MONGODB_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "poiesis.mongo.secretName" . }}
+                  name: {{ include "poiesis.mongodb.secretName" . }}
                   key: MONGODB_USER
             - name: MONGODB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "poiesis.mongo.secretName" . }}
+                  name: {{ include "poiesis.mongodb.secretName" . }}
                   key: MONGODB_PASSWORD
             - name: LOG_LEVEL
               valueFrom:
@@ -82,7 +82,7 @@ spec:
                 configMapKeyRef:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: MESSAGE_BROKER_PORT
-            {{- if or .Values.redis.auth.enabled .Values.poiesis.externalDependencies.redis.rootPassword}}
+            {{- if eq (include "poiesis.redis.authEnabled" .) "true" }}
             - name: MESSAGE_BROKER_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -94,7 +94,7 @@ spec:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_REDIS_SECRET_NAME
             {{- end }}
-            {{- if .Values.keycloak.enabled }}
+            {{- if eq (include "poiesis.keycloak.enabled" .) "true" }}
             - name: KEYCLOAK_URL
               valueFrom:
                 configMapKeyRef:
@@ -116,17 +116,12 @@ spec:
                   name: {{ include "poiesis.keycloak.secretName" . }}
                   key: KEYCLOAK_CLIENT_SECRET
             {{- end }}
-            {{- if .Values.minio.enabled }}
+            {{- if eq (include "poiesis.minio.enabled" .) "true" }}
             - name: POIESIS_S3_SECRET_NAME
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_S3_SECRET_NAME
             {{- end }}
-            - name: MONITOR_TIMEOUT_SECONDS
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "poiesis.coreConfigMapName" . }}
-                  key: MONITOR_TIMEOUT_SECONDS
             - name: POIESIS_API_SERVER_PORT
               value: {{ .Values.poiesis.service.port | quote}}

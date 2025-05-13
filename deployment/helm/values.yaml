@@ -31,9 +31,9 @@ poiesis:
     # The Docker image repository for the Poiesis application.
     repository: jaeaeich/poiesis
     # The Kubernetes image pull policy (e.g., Always, Never, IfNotPresent).
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
     # The tag of the Docker image to use (e.g., "latest", "v0.1.0"). "latest" is generally not recommended for production.
-    tag: "alpha02"
+    tag: "alpha04"
 
   # Configuration for the Kubernetes Service exposing the Poiesis application.
   service:
@@ -45,10 +45,9 @@ poiesis:
   # Poiesis application-specific runtime configuration.
   # These values are typically passed as environment variables or configuration files to the application.
   config:
-    # Logging level for the Poiesis application (e.g., "INFO", "DEBUG", "WARN", "ERROR").
-    logLevel: "INFO"
-    # The Kubernetes namespace where Poiesis is running or expects related resources.
     k8sNamespace: "poiesis"
+    # Logging level for the Poiesis application (e.g., "INFO", "DEBUG", "WARN", "ERROR").
+    logLevel: "DEBUG"
     # Maximum number of connections in the MongoDB connection pool.
     mongodbMaxPoolSize: "100"
     # The name of the MongoDB database used by Poiesis.
@@ -57,7 +56,7 @@ poiesis:
     poiesisEnv: "prod"
     # Note: If you have selected `dummy` for auth, then no need to change below settings
     # they will be ignored anyways.
-    # Timeout duration in seconds for monitoring operations.
+    # Timeout duration in seconds for monitoring operations.b
     monitorTimeoutSeconds: "80"
     # Keycloak realm name used for authentication.
     keycloakRealm: "poiesis"
@@ -90,20 +89,25 @@ poiesis:
       host: ""
       # Port number of the external MongoDB server.
       port: ""
-      # Username for authenticating with the external MongoDB.
-      rootUser: ""
-      # Password for authenticating with the external MongoDB. Use secrets management for production.
-      rootPassword: "" # <-- IMPORTANT: Secure this value.
+      # Auth for mongoDB
+      auth:
+        enabled: true
+        # Username for authenticating with the external MongoDB.
+        rootUser: ""
+        # Password for authenticating with the external MongoDB. Use secrets management for production.
+        rootPassword: "" # <-- IMPORTANT: Secure this value.
     # Configuration for connecting to an external Minio (S3-compatible) object storage instance.
     minio:
       # If true, Poiesis will use the connection details specified below instead of deploying the minio sub-chart.
       enabled: false
       # URL of the external Minio server (e.g., "http://minio.example.com:9000").
       url: ""
-      # Access key (username) for the external Minio instance.
-      rootUser: ""
-      # Secret key (password) for the external Minio instance. Use secrets management for production.
-      rootPassword: "" # <-- IMPORTANT: Secure this value.
+      # Auth configs
+      auth:
+        # Access key (username) for the external Minio instance.
+        rootUser: ""
+        # Secret key (password) for the external Minio instance. Use secrets management for production.
+        rootPassword: "" # <-- IMPORTANT: Secure this value.
     # Configuration for connecting to an external Redis instance.
     redis:
       # If true, Poiesis will use the connection details specified below instead of deploying the redis sub-chart.
@@ -112,8 +116,11 @@ poiesis:
       host: ""
       # Port number of the external Redis server.
       port: ""
-      # Password for authenticating with the external Redis server. Use secrets management for production.
-      rootPassword: "" # <-- IMPORTANT: Secure this value.
+      # Auth configs
+      auth:
+        enabled: true
+        # Password for authenticating with the external Redis server. Use secrets management for production.
+        rootPassword: "" # <-- IMPORTANT: Secure this value.
     # Configuration for connecting to an external Keycloak instance.
     keycloak:
       # If true, Poiesis will use the connection details specified below instead of deploying the keycloak sub-chart.
@@ -126,43 +133,6 @@ poiesis:
 # Each dependency is managed by its own Helm chart (sub-chart), likely sourced from repositories like Bitnami.
 # If you enable a dependency under `externalDependencies` above, you should generally disable the corresponding sub-chart here.
 
-# --- Self managed Sub-chart -------------
-
-# Configuration for a custom MongoDB deployment managed directly within this chart.
-# NOTE: This is provided due to potential architecture compatibility issues with the standard Bitnami MongoDB chart.
-# It takes precedence over the Bitnami `mongodb` sub-chart below if `customMongo.enabled` is true.
-# **Recommendation:** Use the standard `mongodb` (Bitnami) sub-chart unless specifically needed for development or compatibility.
-customMongo:
-  # If true, deploy this custom MongoDB instance.
-  enabled: false
-  # Container image configuration for the custom MongoDB.
-  image:
-    repository: mongo
-    tag: "8.0.9" # Pinned version for consistency
-    pullPolicy: IfNotPresent
-
-  # Authentication settings for the custom MongoDB instance.
-  auth:
-    # Root username for the database.
-    rootUser: "root"
-    # Root password for the database. **CHANGE THIS IN PRODUCTION**.
-    rootPassword: "mongoPassword123" # <-- IMPORTANT: Secure this value.
-
-  # Kubernetes Service configuration for the custom MongoDB.
-  service:
-    type: ClusterIP # Expose only within the cluster
-    port: "27017"   # Standard MongoDB port
-
-  # Persistence configuration using PersistentVolumeClaims (PVCs).
-  persistence:
-    # If true, data will be stored on a persistent volume.
-    enabled: true
-    # Access modes for the persistent volume (e.g., ReadWriteOnce, ReadOnlyMany, ReadWriteMany).
-    accessModes:
-      - ReadWriteOnce # Standard for single-pod databases
-    # Size of the persistent volume claim (e.g., 1Gi, 10Gi).
-    size: 2Gi
-
 # --- Bitnami Sub-charts -------------
 # These sub-charts provide convenient deployments of common dependencies, managed by Bitnami.
 # They are tested to work with Poiesis.
@@ -172,7 +142,7 @@ customMongo:
 # Configuration for the Minio sub-chart (Object Storage).
 minio:
   # If true, deploy Minio using the Bitnami Minio sub-chart. Disable if using `externalDependencies.minio`.
-  enabled: true
+  enabled: false
   # Override the full name generated for the Minio deployment (useful for consistent naming).
   fullnameOverride: "poiesis-minio"
   # Authentication settings for the deployed Minio instance.
@@ -214,14 +184,19 @@ keycloak:
     adminUser: user
     # Admin password for Keycloak management console. **CHANGE THIS IN PRODUCTION**.
     adminPassword: "admin" # <-- IMPORTANT: Secure this value.
+  ## Service configuration
+  service:
+    type: ClusterIP
+    http:
+      enabled: true
+    ports:
+      http: 80
+      https: 443
 
 # Configuration for the MongoDB sub-chart (Database).
-# NOTE: This uses the standard Bitnami MongoDB chart. If `customMongo.enabled` is true, this chart might not be deployed
-# or its deployment might conflict, depending on how the parent chart manages dependencies.
-# Generally, enable either `customMongo` OR this `mongodb` section, OR `externalDependencies.mongodb`.
 mongodb:
-  # If true, deploy MongoDB using the Bitnami MongoDB sub-chart. Disable if using `externalDependencies.mongodb` or `customMongo`.
-  enabled: true # Enabled by default, assuming `customMongo` might be preferred or external is used.
+  # If true, deploy MongoDB using the Bitnami MongoDB sub-chart. Disable if using `externalDependencies.mongodb`.
+  enabled: true
   # Override the full name generated for the MongoDB deployment.
   fullnameOverride: "poiesis-mongodb"
   # Authentication settings for the deployed MongoDB instance.

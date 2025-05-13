@@ -99,6 +99,27 @@ Default RBAC rules
 {{- end }}
 
 {{/*
+Namespaced RBAC rules (exclude cluster-scoped resources like Jobs)
+*/}}
+{{- define "poiesis.rbac.namespacedRules" }} # <-- CHANGE: New template name
+- apiGroups: [""]
+  resources: ["pods", "persistentvolumeclaims"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+{{- end }}
+
+{{/*
+Cluster-scoped RBAC rules (include Jobs)
+*/}}
+{{- define "poiesis.rbac.clusterRules" }} # <-- ADDED: New template for cluster rules
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+{{- end }}
+
+{{/*
 Common annotations block
 */}}
 {{- define "poiesis.commonAnnotations" -}}
@@ -126,51 +147,91 @@ API component name
 {{/* ----------------------------- MongoDB Component ----------------------------- */}}
 
 {{/*
-MongoDB component name
+MongoDB component name (Parent chart context)
+This helper uses the parent chart's naming and does NOT respect the subchart's fullnameOverride.
+It might be used for parent chart labels or other parent-specific resource naming.
 */}}
-{{- define "poiesis.mongo.componentName" -}}
-{{- printf "%s-mongo" (include "poiesis.name" .) }}
+{{- define "poiesis.mongodb.componentName" -}}
+{{- printf "%s-mongodb" (include "poiesis.name" .) -}}
 {{- end -}}
 
 {{/*
-MongoDB Secret name
+MongoDB Secret name (Parent chart context)
+This helper uses the parent chart's naming and does NOT respect the subchart's fullnameOverride.
+Its purpose is unclear given the current username/password helpers read directly from .Values.
+If it were meant to refer to the subchart's secret, it would need to use include "mongodb.fullname".
 */}}
-{{- define "poiesis.mongo.secretName" -}}
-{{- printf "%s-secret" (include "poiesis.mongo.componentName" .) -}}
+{{- define "poiesis.mongodb.secretName" -}}
+{{- printf "%s-secret" (include "poiesis.mongodb.componentName" .) -}}
 {{- end -}}
 
 {{/*
-MongoDB Persistent Volume Claim name
+Checks if authentication is enabled for the active MongoDB configuration (either external or subchart).
+Returns true if either external MongoDB with auth enabled, OR subchart MongoDB with auth enabled is selected.
 */}}
-{{- define "poiesis.customMongo.pvcName" -}}
-{{- printf "%s-pvc" (include "poiesis.mongo.componentName" .) -}}
+{{- define "poiesis.mongodb.authEnabled" -}}
+{{- $externalAuthEnabled := and .Values.poiesis.externalDependencies.mongodb.enabled (default false .Values.poiesis.externalDependencies.mongodb.auth.enabled) -}}
+{{- $subchartAuthEnabled := and .Values.mongodb.enabled (default false .Values.mongodb.auth.enabled) -}}
+{{- or $externalAuthEnabled $subchartAuthEnabled -}}
 {{- end -}}
 
 {{/*
-MongoDB username
+MongoDB host for the Poiesis application to connect to.
+This helper correctly considers external, custom, or subchart deployments.
+When using the Bitnami subchart, it uses the subchart's service name, which respects mongodb.fullnameOverride.
 */}}
-{{- define "poiesis.mongo.username" -}}
+{{- define "poiesis.mongodb.host" -}}
   {{- if .Values.poiesis.externalDependencies.mongodb.enabled -}}
-    {{ required "MongoDB external username (.Values.poiesis.externalDependencies.mongodb.username) or rootPassword (.Values.poiesis.externalDependencies.mongodb.rootPassword) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.username }}
-  {{- else if .Values.customMongo.enabled -}}
-    {{ required "MongoDB custom username (.Values.customMongo.auth.rootUser) is required when custom MongoDB is enabled" .Values.customMongo.auth.rootUser }}
+    {{ required "MongoDB external host (.Values.poiesis.externalDependencies.mongodb.host) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.host }}
+  {{- else if .Values.mongodb.enabled -}}
+    {{ required "MongoDB subchart (.Values.mongodb.enabled) must be enabled if neither external" .Values.mongodb.enabled }}
+    {{ include "mongodb.fullname" . }} {{- /* Use the subchart's fullname helper for the service name */}}
+  {{- else -}}
+    {{ fail "No MongoDB configuration is enabled. Please enable externalDependencies.mongodb or the mongodb subchart (.Values.mongodb.enabled)." }}
+  {{- end -}}
+{{- end -}}
+
+{{/*
+MongoDB port for the Poiesis application to connect to.
+Reads the port from the configured source (external or subchart values).
+*/}}
+{{- define "poiesis.mongodb.port" -}}
+  {{- if .Values.poiesis.externalDependencies.mongodb.enabled -}}
+    {{ required "MongoDB external port (.Values.poiesis.externalDependencies.mongodb.port) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.port }}
+  {{- else if .Values.mongodb.enabled -}}
+    {{ required "MongoDB subchart (.Values.mongodb.enabled) must be enabled if neither external are enabled" .Values.mongodb.enabled }}
+    {{ .Values.mongodb.service.ports.mongodb }} {{- /* Reads port from subchart values */}}
+  {{- else -}}
+    {{ fail "No MongoDB configuration is enabled. Please enable externalDependencies.mongodb or the mongodb subchart (.Values.mongodb.enabled)." }}
+  {{- end -}}
+{{- end -}}
+
+{{/*
+MongoDB username for the Poiesis application to connect with.
+Reads the username from the configured source (external or subchart values).
+Note: Reading credentials directly from .Values is not recommended for production.
+*/}}
+{{- define "poiesis.mongodb.username" -}}
+  {{- if and .Values.poiesis.externalDependencies.mongodb.enabled .Values.poiesis.externalDependencies.mongodb.auth.enabled -}}
+    {{ required "MongoDB external username (.Values.poiesis.externalDependencies.mongodb.username) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.username }}
   {{- else -}}
     {{ required "MongoDB subchart/default username (.Values.mongodb.auth.rootUser) is required when neither external nor custom MongoDB is enabled" .Values.mongodb.auth.rootUser }}
   {{- end -}}
 {{- end -}}
 
 {{/*
-MongoDB password
+MongoDB password for the Poiesis application to connect with.
+Reads the password from the configured source (external or subchart values).
+Note: Reading credentials directly from .Values is not recommended for production. Passwords should be in Secrets.
 */}}
-{{- define "poiesis.mongo.password" -}}
+{{- define "poiesis.mongodb.password" -}}
   {{- if .Values.poiesis.externalDependencies.mongodb.enabled -}}
     {{ required "MongoDB external password (.Values.poiesis.externalDependencies.mongodb.password) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.password }}
-  {{- else if .Values.customMongo.enabled -}}
-    {{ required "MongoDB custom password (.Values.customMongo.auth.rootPassword) is required when custom MongoDB is enabled" .Values.customMongo.auth.rootPassword }}
   {{- else -}}
     {{ required "MongoDB subchart/default password (.Values.mongodb.auth.rootPassword) is required when neither external nor custom MongoDB is enabled" .Values.mongodb.auth.rootPassword }}
   {{- end -}}
 {{- end -}}
+
 {{/* ----------------------------- Redis Component ----------------------------- */}}
 
 {{/*
@@ -194,6 +255,12 @@ Redis Secret name
 {{- printf "%s-redis" .Release.Name | trunc 63 | trimSuffix "-" }}
 {{- end }}
 {{- end }}
+
+{{- define "poiesis.redis.authEnabled" -}}
+{{- $externalAuthEnabled := and .Values.poiesis.externalDependencies.redis.enabled (default false .Values.poiesis.externalDependencies.redis.auth.enabled) -}}
+{{- $subchartAuthEnabled := and .Values.redis.enabled (default false .Values.redis.auth.enabled) -}}
+{{- or $externalAuthEnabled $subchartAuthEnabled -}}
+{{- end -}}
 
 {{/*
 Return the configured Redis host.
@@ -261,7 +328,6 @@ Else use Bitnami redis.auth.password.
   {{- end -}}
 {{- end -}}
 
-
 {{/* ----------------------------- Keycloak Component ----------------------------- */}}
 
 {{/*
@@ -269,6 +335,14 @@ Keycloak component name
 */}}
 {{- define "poiesis.keycloak.componentName" -}}
 {{- printf "%s-keycloak" (include "poiesis.name" .) }}
+{{- end -}}
+
+{{- define "poiesis.keycloak.enabled" -}}
+{{- if eq .Values.poiesis.auth.type "dummy" -}}
+false
+{{- else -}}
+{{ or .Values.poiesis.externalDependencies.keycloak.enabled .Values.keycloak.enabled }}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -290,7 +364,7 @@ Keycloak Secret name
   {{- $externalEnabled := .Values.poiesis.externalDependencies.keycloak.enabled -}}
   {{- $externalURL := .Values.poiesis.externalDependencies.keycloak.url -}}
   {{- $subchartEnabled := .Values.keycloak.enabled -}}
-  {{- $subchartPort := .Values.keycloak.service.port | default 80 -}}
+  {{- $subchartPort := ternary .Values.keycloak.service.ports.http .Values.keycloak.service.ports.https .Values.keycloak.service.http.enabled }}
   {{- $authType := .Values.poiesis.auth.type | lower -}}
 
   {{- if and (not $externalEnabled) (not $subchartEnabled) (ne $authType "dummy") -}}
@@ -329,6 +403,9 @@ Get the full name of the MinIO service
 {{- end }}
 {{- end }}
 
+{{- define "poiesis.minio.enabled" -}}
+    {{ or .Values.poiesis.externalDependencies.minio.enabled .Values.minio.enabled}}
+{{- end -}}
 
 {{/*
 Resolve the MinIO URL:
@@ -407,4 +484,3 @@ Core configmap name
 {{- define "poiesis.coreConfigMapName" -}}
 {{- printf "%s-core-configmap" (include "poiesis.fullname" .) -}}
 {{- end -}}
-

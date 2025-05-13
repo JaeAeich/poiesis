@@ -10,29 +10,29 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 data:
+  LOG_LEVEL: {{ .Values.poiesis.config.logLevel | quote }}
+  POIESIS_SERVICE_ACCOUNT_NAME: {{ include "poiesis.serviceAccountName" . }}
+  POIESIS_K8S_NAMESPACE: {{ .Release.Namespace | quote }}
+  MONITOR_TIMEOUT_SECONDS: {{ .Values.poiesis.config.monitorTimeoutSeconds | quote }}
+  # --- Message broker (Redis)
   MESSAGE_BROKER_HOST: {{ include "poiesis.redis.host" .}}
   MESSAGE_BROKER_PORT: {{ include "poiesis.redis.port" .}}
-  {{- if .Values.redis.auth.enabled }}
+  {{- if eq (include "poiesis.redis.authEnabled" .) "true" }}
   POIESIS_REDIS_SECRET_NAME: {{include "poiesis.redis.secretName" .}}
   {{- end }}
-  LOG_LEVEL: {{ .Values.poiesis.config.logLevel | quote }}
-  {{- if or .Values.customMongo.enabled .Values.anotherCondition }}
-  POIESIS_MONGO_SECRET_NAME: {{ include "poiesis.mongo.secretName" . }}
-  {{- end }}
-  {{- if .Values.customMongo.enabled }}
-  MONGODB_HOST: {{ include "poiesis.mongo.componentName" . }}
+  # --- MongoDB
+  MONGODB_HOST: {{ include "poiesis.mongodb.componentName" . }}
   MONGODB_PORT: "27017"
+  {{- if eq (include "poiesis.mongodb.authEnabled" .) "true" }}
+  POIESIS_MONGO_SECRET_NAME: {{ include "poiesis.mongodb.secretName" . }}
   {{- end }}
-  POIESIS_K8S_NAMESPACE: {{ .Values.poiesis.config.k8sNamespace | quote }} # Set in deployment via fieldRef
-  MONITOR_TIMEOUT_SECONDS: {{ .Values.poiesis.config.monitorTimeoutSeconds | quote }}
-  {{- if .Values.minio.enabled }}
+  {{- if eq (include "poiesis.minio.enabled" .) "true" }}
   S3_URL: {{ include "poiesis.minio.url" .}}
   POIESIS_S3_SECRET_NAME: {{include "poiesis.s3.secretName" .}}
   {{- end }}
-  {{- if or .Values.keycloak.enabled .Values.keycloak.enabled}}
+  {{- if eq (include "poiesis.keycloak.enabled" .) "true" }}
   KEYCLOAK_URL: {{ include "poiesis.keycloak.url" .}}
   KEYCLOAK_REALM: {{ .Values.poiesis.config.keycloakClientId}}
   KEYCLOAK_CLIENT_ID: {{ .Values.poiesis.config.keycloakAlgorithm}}
   KEYCLOAK_ALGORITHM: {{ .Values.poiesis.config.keycloakClientSecret}}
   {{- end }}
-  POIESIS_SERVICE_ACCOUNT_NAME: {{ include "poiesis.serviceAccountName" . }}
