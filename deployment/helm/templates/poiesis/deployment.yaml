@@ -49,6 +49,21 @@ spec:
               value: {{ include "poiesis.coreConfigMapName" .}}
             - name: POIESIS_MONGODB_AUTH_ENABLED
               value: {{eq (include "poiesis.mongodb.authEnabled" .) "true" | quote}}
+            - name: POIESIS_RESTART_POLICY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" .}}
+                  key: POIESIS_RESTART_POLICY
+            - name: POIESIS_IMAGE_PULL_POLICY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" .}}
+                  key: POIESIS_IMAGE_PULL_POLICY
+            - name: POIESIS_JOB_TTL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" .}}
+                  key: POIESIS_JOB_TTL
             {{- if eq (include "poiesis.mongodb.authEnabled" .) "true" }}
             - name: POIESIS_MONGO_SECRET_NAME
               value: {{ include "poiesis.mongodb.secretName" .}}

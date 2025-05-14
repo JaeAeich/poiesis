@@ -14,6 +14,9 @@ data:
   POIESIS_SERVICE_ACCOUNT_NAME: {{ include "poiesis.serviceAccountName" . }}
   POIESIS_K8S_NAMESPACE: {{ .Release.Namespace | quote }}
   MONITOR_TIMEOUT_SECONDS: {{ .Values.poiesis.config.monitorTimeoutSeconds | quote }}
+  POIESIS_RESTART_POLICY: {{ .Values.poiesis.config.restartPolicy }}
+  POIESIS_IMAGE_PULL_POLICY: {{ .Values.poiesis.config.imagePullPolicy }}
+  POIESIS_JOB_TTL: {{ .Values.poiesis.config.jobTtl }}
   # --- Message broker (Redis)
   MESSAGE_BROKER_HOST: {{ include "poiesis.redis.host" .}}
   MESSAGE_BROKER_PORT: {{ include "poiesis.redis.port" .}}
