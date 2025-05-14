@@ -138,7 +138,7 @@ class CreateTaskController(InterfaceController):
                 ),
             ),
         )
-
+        logger.debug(job)
         try:
             await self.kubernetes_client.create_job(job)
         except Exception as e:

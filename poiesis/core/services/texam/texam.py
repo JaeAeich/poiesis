@@ -148,7 +148,7 @@ class Texam:
                 while backoff_time <= core_constants.Texam.BACKOFF_LIMIT:
                     try:
                         await self.db.add_task_executor_log(self.task_id)
-
+                        logger.debug(pod_manifest)
                         pod_name = await self.kubernetes_client.create_pod(pod_manifest)
                         self.task_pool.append(pod_name)
                         break
