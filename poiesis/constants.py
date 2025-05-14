@@ -22,6 +22,9 @@ class PoesisConstants:
     ENVIRONMENT: Literal["dev", "prod"] = cast(
         Literal["dev", "prod"], os.environ.get("POIESIS_ENV", "dev")
     )
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = cast(
+        Literal["DEBUG", "INFO", "WARNING", "ERROR"], os.getenv("LOG_LEVEL", "INFO")
+    )
 
     @dataclass(frozen=True)
     class Database:

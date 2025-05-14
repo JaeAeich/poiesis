@@ -138,7 +138,7 @@ class TorcExecutionTemplate(ABC):
                 ),
             ),
         )
-
+        logger.debug(job)
         try:
             await self.kubernetes_client.create_job(job)
         except ApiException as e:
