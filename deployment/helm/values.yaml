@@ -33,7 +33,7 @@ poiesis:
     # The Kubernetes image pull policy (e.g., Always, Never, IfNotPresent).
     pullPolicy: Always
     # The tag of the Docker image to use (e.g., "latest", "v0.1.0"). "latest" is generally not recommended for production.
-    tag: "alpha04"
+    tag: "alpha08"
 
   # Configuration for the Kubernetes Service exposing the Poiesis application.
   service:
@@ -45,7 +45,6 @@ poiesis:
   # Poiesis application-specific runtime configuration.
   # These values are typically passed as environment variables or configuration files to the application.
   config:
-    k8sNamespace: "poiesis"
     # Logging level for the Poiesis application (e.g., "INFO", "DEBUG", "WARN", "ERROR").
     logLevel: "DEBUG"
     # Maximum number of connections in the MongoDB connection pool.
