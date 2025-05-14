@@ -5,7 +5,7 @@ ARG PY_IMAGE=alpine
 ###################################################
 # Stage 1: Build application                      #
 ###################################################
-FROM python:3.13.0-alpine AS builder
+FROM python:${PY_VERSION}-${PY_IMAGE} AS builder
 
 WORKDIR /app
 
@@ -28,7 +28,7 @@ RUN apk add --no-cache tini
 ###################################################
 # Stage 3: Final runtime image                    #
 ###################################################
-FROM python:3.13.0-alpine AS runtime
+FROM python:${PY_VERSION}-${PY_IMAGE} AS runtime
 
 ARG PY_VERSION
 ARG PY_IMAGE
