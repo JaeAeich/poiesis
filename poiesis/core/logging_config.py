@@ -1,8 +1,11 @@
 """Logging configuration for the core module."""
 
 import logging
-import os
 import sys
+
+from poiesis.constants import get_poiesis_constants
+
+constant = get_poiesis_constants()
 
 # ANSI escape codes for colors
 LOG_COLORS = {
@@ -57,7 +60,7 @@ def setup_logging(level: str | None = None) -> None:
         level: Optional logging level. If not provided, defaults to INFO.
     """
     if level is None:
-        level = os.getenv("LOG_LEVEL", "INFO")
+        level = constant.LOG_LEVEL
 
     formatter = ColorFormatter(
         "%(asctime)s - %(levelname)s - %(message)s",

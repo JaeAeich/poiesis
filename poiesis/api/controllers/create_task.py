@@ -80,6 +80,7 @@ class CreateTaskController(InterfaceController):
             kind="Job",
             metadata=V1ObjectMeta(
                 name=torc_job_name,
+                namespace=core_constants.K8s.K8S_NAMESPACE,
                 labels={
                     "service": core_constants.K8s.TORC_PREFIX,
                     "name": torc_job_name,
@@ -102,6 +103,10 @@ class CreateTaskController(InterfaceController):
                                 + list(get_secret_names())
                                 + list(get_configmap_names())
                                 + [
+                                    V1EnvVar(
+                                        name="POIESIS_IMAGE",
+                                        value=core_constants.K8s.POIESIS_IMAGE,
+                                    ),
                                     V1EnvVar(
                                         name="LOG_LEVEL",
                                         value_from=V1EnvVarSource(
@@ -130,7 +135,7 @@ class CreateTaskController(InterfaceController):
                                         ),
                                     ),
                                 ],
-                                image_pull_policy="Never",  # TODO: Remove this
+                                image_pull_policy="IfNotPresent",  # TODO: Remove this
                             ),
                         ],
                         restart_policy="Never",
@@ -138,7 +143,7 @@ class CreateTaskController(InterfaceController):
                 ),
             ),
         )
-
+        logger.debug(job)
         try:
             await self.kubernetes_client.create_job(job)
         except Exception as e:

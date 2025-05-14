@@ -104,7 +104,7 @@ def get_message_broker_envs() -> tuple[V1EnvVar, ...]:
 
     Used in k8s manifest for `tif`, `torc` etc.
     """
-    return (
+    common = (
         V1EnvVar(
             name="MESSAGE_BROKER_HOST",
             value_from=V1EnvVarSource(
@@ -123,6 +123,9 @@ def get_message_broker_envs() -> tuple[V1EnvVar, ...]:
                 )
             ),
         ),
+    )
+
+    auth = (
         V1EnvVar(
             name="MESSAGE_BROKER_PASSWORD",
             value_from=V1EnvVarSource(
@@ -135,6 +138,8 @@ def get_message_broker_envs() -> tuple[V1EnvVar, ...]:
         ),
     )
 
+    return common + auth if core_constants.K8s.REDIS_SECRET_NAME else common
+
 
 @lru_cache
 def get_mongo_envs() -> tuple[V1EnvVar, ...]:
@@ -142,25 +147,7 @@ def get_mongo_envs() -> tuple[V1EnvVar, ...]:
 
     Used in k8s manifest for `tif`, `torc` etc.
     """
-    return (
-        V1EnvVar(
-            name="MONGODB_USER",
-            value_from=V1EnvVarSource(
-                secret_key_ref=V1SecretKeySelector(
-                    name=core_constants.K8s.MONGODB_SECRET_NAME,
-                    key="MONGODB_USER",
-                )
-            ),
-        ),
-        V1EnvVar(
-            name="MONGODB_PASSWORD",
-            value_from=V1EnvVarSource(
-                secret_key_ref=V1SecretKeySelector(
-                    name=core_constants.K8s.MONGODB_SECRET_NAME,
-                    key="MONGODB_PASSWORD",
-                )
-            ),
-        ),
+    common = (
         V1EnvVar(
             name="MONGODB_HOST",
             value_from=V1EnvVarSource(
@@ -180,6 +167,30 @@ def get_mongo_envs() -> tuple[V1EnvVar, ...]:
             ),
         ),
     )
+    auth = (
+        V1EnvVar(
+            name="MONGODB_USER",
+            value_from=V1EnvVarSource(
+                secret_key_ref=V1SecretKeySelector(
+                    name=core_constants.K8s.MONGODB_SECRET_NAME,
+                    key="MONGODB_USER",
+                    optional=True,
+                )
+            ),
+        ),
+        V1EnvVar(
+            name="MONGODB_PASSWORD",
+            value_from=V1EnvVarSource(
+                secret_key_ref=V1SecretKeySelector(
+                    name=core_constants.K8s.MONGODB_SECRET_NAME,
+                    key="MONGODB_PASSWORD",
+                    optional=True,
+                )
+            ),
+        ),
+    )
+
+    return common + auth if core_constants.K8s.MONGODB_SECRET_NAME else common
 
 
 @lru_cache
@@ -189,36 +200,40 @@ def get_s3_envs() -> tuple[V1EnvVar, ...]:
     Used in k8s manifest for `tif`, `tof`.
     """
     return (
-        V1EnvVar(
-            name="S3_URL",
-            value_from=V1EnvVarSource(
-                config_map_key_ref=V1ConfigMapKeySelector(
-                    name=core_constants.K8s.CONFIGMAP_NAME,
-                    key="S3_URL",
-                    optional=True,
-                )
+        (
+            V1EnvVar(
+                name="S3_URL",
+                value_from=V1EnvVarSource(
+                    config_map_key_ref=V1ConfigMapKeySelector(
+                        name=core_constants.K8s.CONFIGMAP_NAME,
+                        key="S3_URL",
+                        optional=True,
+                    )
+                ),
             ),
-        ),
-        V1EnvVar(
-            name="AWS_ACCESS_KEY_ID",
-            value_from=V1EnvVarSource(
-                secret_key_ref=V1SecretKeySelector(
-                    name=core_constants.K8s.S3_SECRET_NAME,
-                    key="AWS_ACCESS_KEY_ID",
-                    optional=True,
-                )
+            V1EnvVar(
+                name="AWS_ACCESS_KEY_ID",
+                value_from=V1EnvVarSource(
+                    secret_key_ref=V1SecretKeySelector(
+                        name=core_constants.K8s.S3_SECRET_NAME,
+                        key="AWS_ACCESS_KEY_ID",
+                        optional=True,
+                    )
+                ),
             ),
-        ),
-        V1EnvVar(
-            name="AWS_SECRET_ACCESS_KEY",
-            value_from=V1EnvVarSource(
-                secret_key_ref=V1SecretKeySelector(
-                    name=core_constants.K8s.S3_SECRET_NAME,
-                    key="AWS_SECRET_ACCESS_KEY",
-                    optional=True,
-                )
+            V1EnvVar(
+                name="AWS_SECRET_ACCESS_KEY",
+                value_from=V1EnvVarSource(
+                    secret_key_ref=V1SecretKeySelector(
+                        name=core_constants.K8s.S3_SECRET_NAME,
+                        key="AWS_SECRET_ACCESS_KEY",
+                        optional=True,
+                    )
+                ),
             ),
-        ),
+        )
+        if core_constants.K8s.S3_SECRET_NAME
+        else ()
     )
 
 
@@ -242,6 +257,7 @@ def get_secret_names() -> tuple[V1EnvVar, ...]:
                 config_map_key_ref=V1ConfigMapKeySelector(
                     name=core_constants.K8s.CONFIGMAP_NAME,
                     key="POIESIS_MONGO_SECRET_NAME",
+                    optional=True,
                 )
             ),
         ),
