@@ -1,19 +1,19 @@
-# Database
-export MONGODB_HOST=<url>
-export MONGODB_PORT=27017
-export MONGODB_USER=root
-export MONGODB_PASSWORD=password
-export MONGODB_MAX_POOL_SIZE=100
-export MONGODB_DATABASE=poiesis
-
-# K8s
-export POIESIS_K8S_NAMESPACE=poiesis
-export POIESIS_IMAGE=docker.io/jaeaeich/poiesis:latest
-
-# Auth
-export AUTH=keycloak
-export KEYCLOAK_CLIENT_SECRET=<secret>
-export KEYCLOAK_ALGORITHM=RS256
-export KEYCLOAK_URL=<ulr>
-export KEYCLOAK_REALM=poiesis
-export KEYCLOAK_CLIENT_ID=poiesis
+export POIESIS_IMAGE="jaeaeich/poiesis:latest"
+export POIESIS_K8S_NAMESPACE="poiesis"
+export MONGODB_MAX_POOL_SIZE="100"
+export POIESIS_SERVICE_ACCOUNT_NAME="poiesis-pod-creator"
+export MONGODB_DATABASE="poiesis"
+export POIESIS_ENV="dev"
+export AUTH="dummy"
+export POIESIS_CORE_CONFIGMAP_NAME="poiesis-core-config-map"
+export POIESIS_MONGO_SECRET_NAME="poiesis-mongo-secret"
+export LOG_LEVEL="DEBUG"
+export MONGODB_HOST="localhost"
+export MONGODB_PORT="27017" # Port forward mongo service to 27017
+export MESSAGE_BROKER_HOST="localhost"
+export MESSAGE_BROKER_PORT="6379"
+POIESIS_MONGODB_AUTH_ENABLED="true"
+export MONGODB_USER="root" # Change, if the different username is specified
+export MONGODB_PASSWORD="password"  # Change, if the different password is specified
+export MONITOR_TIMEOUT_SECONDS="0"
+export POIESIS_API_SERVER_PORT="8000"

@@ -107,6 +107,10 @@ class TorcExecutionTemplate(ABC):
                                 + list(get_configmap_names())
                                 + [
                                     V1EnvVar(
+                                        name="POIESIS_IMAGE",
+                                        value=core_constants.K8s.POIESIS_IMAGE,
+                                    ),
+                                    V1EnvVar(
                                         name="LOG_LEVEL",
                                         value_from=V1EnvVarSource(
                                             config_map_key_ref=V1ConfigMapKeySelector(
@@ -114,7 +118,7 @@ class TorcExecutionTemplate(ABC):
                                                 key="LOG_LEVEL",
                                             )
                                         ),
-                                    )
+                                    ),
                                 ],
                                 volume_mounts=[
                                     V1VolumeMount(
@@ -122,7 +126,7 @@ class TorcExecutionTemplate(ABC):
                                         mount_path=core_constants.K8s.FILER_PVC_PATH,
                                     )
                                 ],
-                                image_pull_policy="Never",  # TODO: Remove this
+                                image_pull_policy="IfNotPresent",  # TODO: Remove this
                             ),
                         ],
                         volumes=[

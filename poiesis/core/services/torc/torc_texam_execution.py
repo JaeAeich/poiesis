@@ -94,12 +94,16 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                     "--task",
                                     task,
                                 ],
-                                image_pull_policy="Never",
+                                image_pull_policy="IfNotPresent",
                                 env=list(get_mongo_envs())
                                 + list(get_message_broker_envs())
                                 + list(get_secret_names())
                                 + list(get_configmap_names())
                                 + [
+                                    V1EnvVar(
+                                        name="POIESIS_IMAGE",
+                                        value=core_constants.K8s.POIESIS_IMAGE,
+                                    ),
                                     V1EnvVar(
                                         name="LOG_LEVEL",
                                         value_from=V1EnvVarSource(
@@ -125,7 +129,6 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                             config_map_key_ref=V1ConfigMapKeySelector(
                                                 name=core_constants.K8s.CONFIGMAP_NAME,
                                                 key="POIESIS_K8S_NAMESPACE",
-                                                optional=True,
                                             )
                                         ),
                                     ),
@@ -135,7 +138,6 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                             config_map_key_ref=V1ConfigMapKeySelector(
                                                 name=core_constants.K8s.CONFIGMAP_NAME,
                                                 key="POIESIS_SERVICE_ACCOUNT_NAME",
-                                                optional=True,
                                             )
                                         ),
                                     ),
