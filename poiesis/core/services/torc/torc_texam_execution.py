@@ -151,6 +151,33 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                             )
                                         ),
                                     ),
+                                    V1EnvVar(
+                                        name="POIESIS_RESTART_POLICY",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="POIESIS_RESTART_POLICY",
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="POIESIS_IMAGE_PULL_POLICY",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="POIESIS_IMAGE_PULL_POLICY",
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="POIESIS_JOB_TTL",
+                                        value_from=V1EnvVarSource(
+                                            config_map_key_ref=V1ConfigMapKeySelector(
+                                                name=core_constants.K8s.CONFIGMAP_NAME,
+                                                key="POIESIS_JOB_TTL",
+                                            )
+                                        ),
+                                    ),
                                 ],
                             )
                         ],
