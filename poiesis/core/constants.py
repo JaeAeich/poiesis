@@ -69,9 +69,9 @@ class PoiesisCoreConstants:
         SERVICE_ACCOUNT_NAME = os.getenv("POIESIS_SERVICE_ACCOUNT_NAME")
         BACKOFF_LIMIT = os.getenv("BACKOFF_LIMIT", "1")
         CONFIGMAP_NAME = os.getenv("POIESIS_CORE_CONFIGMAP_NAME")
-        RESTART_POLICY = os.getenv("RESTART_POLICY", "Never")
-        IMAGE_PULL_POLICY = os.getenv("IMAGE_PULL_POLICY", "IfNotPresent")
-        JOB_TTL = os.getenv("JOB_TTL")
+        RESTART_POLICY = os.getenv("POIESIS_RESTART_POLICY", "Never")
+        IMAGE_PULL_POLICY = os.getenv("POIESIS_IMAGE_PULL_POLICY", "IfNotPresent")
+        JOB_TTL = os.getenv("POIESIS_JOB_TTL")
 
     @dataclass(frozen=True)
     class Texam:

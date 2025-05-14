@@ -75,7 +75,17 @@ class CreateTaskController(InterfaceController):
 
     async def _create_torc_job(self) -> None:
         torc_job_name = f"{core_constants.K8s.TORC_PREFIX}-{self.task.id}"
-        _ttl = int(core_constants.K8s.JOB_TTL) if core_constants.K8s.JOB_TTL else None
+        try:
+            _ttl = (
+                int(core_constants.K8s.JOB_TTL) if core_constants.K8s.JOB_TTL else None
+            )
+        except (ValueError, TypeError):
+            logger.warning(
+                f"Invalid JOB_TTL {core_constants.K8s.JOB_TTL}, falling back to no TTL "
+                "(None).",
+            )
+            _ttl = None
+
         job = V1Job(
             api_version="batch/v1",
             kind="Job",

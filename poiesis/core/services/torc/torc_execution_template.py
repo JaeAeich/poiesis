@@ -86,7 +86,16 @@ class TorcExecutionTemplate(ABC):
             args: The arguments to pass to the filer commands.
             metadata: The metadata for the job to be used in K8s manifest.
         """
-        _ttl = int(core_constants.K8s.JOB_TTL) if core_constants.K8s.JOB_TTL else None
+        try:
+            _ttl = (
+                int(core_constants.K8s.JOB_TTL) if core_constants.K8s.JOB_TTL else None
+            )
+        except (ValueError, TypeError):
+            logger.warning(
+                f"Invalid JOB_TTL {core_constants.K8s.JOB_TTL}, falling back to no TTL "
+                "(None).",
+            )
+            _ttl = None
         job = V1Job(
             api_version="batch/v1",
             kind="Job",

@@ -69,7 +69,16 @@ class TorcTexamExecution(TorcExecutionTemplate):
     async def start_job(self) -> None:
         """Create the K8s job for Texam."""
         texam_name = f"{core_constants.K8s.TEXAM_PREFIX}-{self.id}"
-        _ttl = int(core_constants.K8s.JOB_TTL) if core_constants.K8s.JOB_TTL else None
+        try:
+            _ttl = (
+                int(core_constants.K8s.JOB_TTL) if core_constants.K8s.JOB_TTL else None
+            )
+        except (ValueError, TypeError):
+            logger.warning(
+                f"Invalid JOB_TTL {core_constants.K8s.JOB_TTL}, falling back to no TTL "
+                "(None).",
+            )
+            _ttl = None
         task = json.dumps(self.task.model_dump())
         job = V1Job(
             api_version="batch/v1",
