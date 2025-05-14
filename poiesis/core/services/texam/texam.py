@@ -257,6 +257,7 @@ class Texam:
                                 for volume in self.task.volumes or []
                             ]
                             + _volume_pvc_mount,
+                            image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                         )
                     ],
                     volumes=[
@@ -267,7 +268,7 @@ class Texam:
                             ),
                         )
                     ],
-                    restart_policy="Never",
+                    restart_policy=core_constants.K8s.RESTART_POLICY,
                 ),
             )
             await create_pod_with_backoff(pod_manifest, executor_name)
