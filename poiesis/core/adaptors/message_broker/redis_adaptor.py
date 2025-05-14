@@ -6,11 +6,9 @@ from collections.abc import Iterator
 
 import redis
 
-from poiesis.constants import get_poiesis_constants
 from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.ports.message_broker import Message, MessageBroker
 
-constants = get_poiesis_constants()
 core_constants = get_poiesis_core_constants()
 
 
