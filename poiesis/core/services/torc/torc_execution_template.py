@@ -86,6 +86,16 @@ class TorcExecutionTemplate(ABC):
             args: The arguments to pass to the filer commands.
             metadata: The metadata for the job to be used in K8s manifest.
         """
+        try:
+            _ttl = (
+                int(core_constants.K8s.JOB_TTL) if core_constants.K8s.JOB_TTL else None
+            )
+        except (ValueError, TypeError):
+            logger.warning(
+                f"Invalid JOB_TTL {core_constants.K8s.JOB_TTL}, falling back to no TTL "
+                "(None).",
+            )
+            _ttl = None
         job = V1Job(
             api_version="batch/v1",
             kind="Job",
@@ -126,7 +136,7 @@ class TorcExecutionTemplate(ABC):
                                         mount_path=core_constants.K8s.FILER_PVC_PATH,
                                     )
                                 ],
-                                image_pull_policy="IfNotPresent",  # TODO: Remove this
+                                image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                             ),
                         ],
                         volumes=[
@@ -137,9 +147,10 @@ class TorcExecutionTemplate(ABC):
                                 ),
                             )
                         ],
-                        restart_policy="Never",
+                        restart_policy=core_constants.K8s.RESTART_POLICY,
                     ),
                 ),
+                ttl_seconds_after_finished=_ttl,
             ),
         )
         logger.debug(job)
