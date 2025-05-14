@@ -14,9 +14,9 @@ data:
   POIESIS_SERVICE_ACCOUNT_NAME: {{ include "poiesis.serviceAccountName" . }}
   POIESIS_K8S_NAMESPACE: {{ .Release.Namespace | quote }}
   MONITOR_TIMEOUT_SECONDS: {{ .Values.poiesis.config.monitorTimeoutSeconds | quote }}
-  POIESIS_RESTART_POLICY: {{ .Values.poiesis.config.restartPolicy }}
-  POIESIS_IMAGE_PULL_POLICY: {{ .Values.poiesis.config.imagePullPolicy }}
-  POIESIS_JOB_TTL: {{ .Values.poiesis.config.jobTtl }}
+  POIESIS_RESTART_POLICY: {{ .Values.poiesis.config.restartPolicy | quote }}
+  POIESIS_IMAGE_PULL_POLICY: {{ .Values.poiesis.config.imagePullPolicy | quote }}
+  POIESIS_JOB_TTL: {{ .Values.poiesis.config.jobTtl | quote }}
   # --- Message broker (Redis)
   MESSAGE_BROKER_HOST: {{ include "poiesis.redis.host" .}}
   MESSAGE_BROKER_PORT: {{ include "poiesis.redis.port" .}}
@@ -35,7 +35,7 @@ data:
   {{- end }}
   {{- if eq (include "poiesis.keycloak.enabled" .) "true" }}
   KEYCLOAK_URL: {{ include "poiesis.keycloak.url" .}}
-  KEYCLOAK_REALM: {{ .Values.poiesis.config.keycloakClientId}}
-  KEYCLOAK_CLIENT_ID: {{ .Values.poiesis.config.keycloakAlgorithm}}
-  KEYCLOAK_ALGORITHM: {{ .Values.poiesis.config.keycloakClientSecret}}
+  KEYCLOAK_REALM: {{ .Values.poiesis.config.keycloakClientId | quote}}
+  KEYCLOAK_CLIENT_ID: {{ .Values.poiesis.config.keycloakAlgorithm | quote}}
+  KEYCLOAK_ALGORITHM: {{ .Values.poiesis.config.keycloakClientSecret | quote}}
   {{- end }}
