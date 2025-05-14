@@ -33,7 +33,7 @@ poiesis:
     # The Kubernetes image pull policy (e.g., Always, Never, IfNotPresent).
     pullPolicy: Always
     # The tag of the Docker image to use (e.g., "latest", "v0.1.0"). "latest" is generally not recommended for production.
-    tag: "alpha08"
+    tag: "latest"
 
   # Configuration for the Kubernetes Service exposing the Poiesis application.
   service:
@@ -54,8 +54,10 @@ poiesis:
     # Specifies the deployment environment (e.g., "dev", "staging", "prod"). Affects application behavior.
     poiesisEnv: "prod"
     # Job configs for core components
+    # Restart and pull policy for core components
     restartPolicy: "Never"
-    imagePullPolicy: "Always"
+    imagePullPolicy: "IfNotPresent"
+    # Defines after how long should a completed or failed job be removed
     jobTtl: "3600"
     # Note: If you have selected `dummy` for auth, then no need to change below settings
     # they will be ignored anyways.
@@ -151,7 +153,7 @@ minio:
   # Authentication settings for the deployed Minio instance.
   auth:
     # Root user (access key) for Minio.
-    rootUser: admin
+    rootUser: minioUser123
     # Root password (secret key) for Minio. **CHANGE THIS IN PRODUCTION**.
     rootPassword: "minioPassword123" # <-- IMPORTANT: Secure this value.
   # Specifies buckets to be created automatically upon Minio startup.
@@ -184,9 +186,9 @@ keycloak:
   # Initial admin user credentials for the deployed Keycloak instance.
   auth:
     # Admin username for Keycloak management console.
-    adminUser: user
+    adminUser: keycloakUser123
     # Admin password for Keycloak management console. **CHANGE THIS IN PRODUCTION**.
-    adminPassword: "admin" # <-- IMPORTANT: Secure this value.
+    adminPassword: "keycloakPassword123" # <-- IMPORTANT: Secure this value.
   ## Service configuration
   service:
     type: ClusterIP
@@ -207,9 +209,9 @@ mongodb:
     # If true, enable authentication for MongoDB. Highly recommended.
     enabled: true
     # Root username for MongoDB.
-    rootUser: root
+    rootUser: mongodbUser123
     # Root password for MongoDB. **CHANGE THIS IN PRODUCTION**.
-    rootPassword: "poiesisMongo123" # <-- IMPORTANT: Secure this value.
+    rootPassword: "mongodbPassword123" # <-- IMPORTANT: Secure this value.
   # Service configuration for MongoDB.
   service:
     # Port mapping for the MongoDB service.
