@@ -69,6 +69,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
     async def start_job(self) -> None:
         """Create the K8s job for Texam."""
         texam_name = f"{core_constants.K8s.TEXAM_PREFIX}-{self.id}"
+        _ttl = int(core_constants.K8s.JOB_TTL) if core_constants.K8s.JOB_TTL else None
         task = json.dumps(self.task.model_dump())
         job = V1Job(
             api_version="batch/v1",
@@ -94,7 +95,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                     "--task",
                                     task,
                                 ],
-                                image_pull_policy="IfNotPresent",
+                                image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                                 env=list(get_mongo_envs())
                                 + list(get_message_broker_envs())
                                 + list(get_secret_names())
@@ -144,9 +145,10 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                 ],
                             )
                         ],
-                        restart_policy="Never",  # TODO: Remove this
+                        restart_policy=core_constants.K8s.RESTART_POLICY,
                     )
-                )
+                ),
+                ttl_seconds_after_finished=_ttl,
             ),
         )
         logger.debug(job)

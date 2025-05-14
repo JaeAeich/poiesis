@@ -46,6 +46,10 @@ class PoiesisCoreConstants:
                 component to interact with K8s API and create, list and delete pods.
             BACKOFF_LIMIT: The backoff limit for Job.
             CONFIGMAP_NAME: The configmap name for the core services.
+            RESTART_POLICY: Restart policy for pods.
+            IMAGE_PULL_POLICY: Image pull policy.
+            JOB_TTL: Time in seconds after which the completed or failed job will be
+                removed.
         """
 
         K8S_NAMESPACE = os.getenv("POIESIS_K8S_NAMESPACE", "poiesis")
@@ -65,6 +69,9 @@ class PoiesisCoreConstants:
         SERVICE_ACCOUNT_NAME = os.getenv("POIESIS_SERVICE_ACCOUNT_NAME")
         BACKOFF_LIMIT = os.getenv("BACKOFF_LIMIT", "1")
         CONFIGMAP_NAME = os.getenv("POIESIS_CORE_CONFIGMAP_NAME")
+        RESTART_POLICY = os.getenv("RESTART_POLICY", "Never")
+        IMAGE_PULL_POLICY = os.getenv("IMAGE_PULL_POLICY", "IfNotPresent")
+        JOB_TTL = os.getenv("JOB_TTL")
 
     @dataclass(frozen=True)
     class Texam:

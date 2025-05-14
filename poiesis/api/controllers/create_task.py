@@ -75,6 +75,7 @@ class CreateTaskController(InterfaceController):
 
     async def _create_torc_job(self) -> None:
         torc_job_name = f"{core_constants.K8s.TORC_PREFIX}-{self.task.id}"
+        _ttl = int(core_constants.K8s.JOB_TTL) if core_constants.K8s.JOB_TTL else None
         job = V1Job(
             api_version="batch/v1",
             kind="Job",
@@ -135,12 +136,13 @@ class CreateTaskController(InterfaceController):
                                         ),
                                     ),
                                 ],
-                                image_pull_policy="IfNotPresent",  # TODO: Remove this
+                                image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                             ),
                         ],
-                        restart_policy="Never",
+                        restart_policy=core_constants.K8s.RESTART_POLICY,
                     ),
                 ),
+                ttl_seconds_after_finished=_ttl,
             ),
         )
         logger.debug(job)
