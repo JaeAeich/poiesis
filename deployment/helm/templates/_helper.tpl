@@ -84,24 +84,9 @@ rbac.authorization.k8s.io/v1beta1
 {{- end -}}
 
 {{/*
-Default RBAC rules
-*/}}
-{{- define "poiesis.rbac.rules" }}
-- apiGroups: [""]
-  resources: ["pods", "persistentvolumeclaims"]
-  verbs: ["create", "get", "list", "watch", "delete"]
-- apiGroups: [""]
-  resources: ["pods/log"]
-  verbs: ["get"]
-- apiGroups: ["batch"]
-  resources: ["jobs"]
-  verbs: ["create", "get", "list", "watch", "delete"]
-{{- end }}
-
-{{/*
 Namespaced RBAC rules (exclude cluster-scoped resources like Jobs)
 */}}
-{{- define "poiesis.rbac.namespacedRules" }} # <-- CHANGE: New template name
+{{- define "poiesis.rbac.namespacedRules" }}
 - apiGroups: [""]
   resources: ["pods", "persistentvolumeclaims"]
   verbs: ["create", "get", "list", "watch", "delete"]
@@ -113,7 +98,7 @@ Namespaced RBAC rules (exclude cluster-scoped resources like Jobs)
 {{/*
 Cluster-scoped RBAC rules (include Jobs)
 */}}
-{{- define "poiesis.rbac.clusterRules" }} # <-- ADDED: New template for cluster rules
+{{- define "poiesis.rbac.clusterRules" }}
 - apiGroups: ["batch"]
   resources: ["jobs"]
   verbs: ["create", "get", "list", "watch", "delete"]
@@ -182,9 +167,9 @@ When using the Bitnami subchart, it uses the subchart's service name, which resp
 */}}
 {{- define "poiesis.mongodb.host" -}}
   {{- if .Values.poiesis.externalDependencies.mongodb.enabled -}}
-    {{ required "MongoDB external host (.Values.poiesis.externalDependencies.mongodb.host) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.host }}
+    {{- required "MongoDB external host (.Values.poiesis.externalDependencies.mongodb.host) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.host }}
   {{- else if .Values.mongodb.enabled -}}
-    {{ required "MongoDB subchart (.Values.mongodb.enabled) must be enabled if neither external" .Values.mongodb.enabled }}
+    {{- required "MongoDB subchart (.Values.mongodb.enabled) must be enabled if neither external" .Values.mongodb.enabled }}
     {{ include "mongodb.fullname" . }} {{- /* Use the subchart's fullname helper for the service name */}}
   {{- else -}}
     {{ fail "No MongoDB configuration is enabled. Please enable externalDependencies.mongodb or the mongodb subchart (.Values.mongodb.enabled)." }}
@@ -197,9 +182,9 @@ Reads the port from the configured source (external or subchart values).
 */}}
 {{- define "poiesis.mongodb.port" -}}
   {{- if .Values.poiesis.externalDependencies.mongodb.enabled -}}
-    {{ required "MongoDB external port (.Values.poiesis.externalDependencies.mongodb.port) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.port }}
+    {{- required "MongoDB external port (.Values.poiesis.externalDependencies.mongodb.port) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.port }}
   {{- else if .Values.mongodb.enabled -}}
-    {{ required "MongoDB subchart (.Values.mongodb.enabled) must be enabled if neither external are enabled" .Values.mongodb.enabled }}
+    {{- required "MongoDB subchart (.Values.mongodb.enabled) must be enabled if neither external are enabled" .Values.mongodb.enabled }}
     {{ .Values.mongodb.service.ports.mongodb }} {{- /* Reads port from subchart values */}}
   {{- else -}}
     {{ fail "No MongoDB configuration is enabled. Please enable externalDependencies.mongodb or the mongodb subchart (.Values.mongodb.enabled)." }}
@@ -213,9 +198,9 @@ Note: Reading credentials directly from .Values is not recommended for productio
 */}}
 {{- define "poiesis.mongodb.username" -}}
   {{- if and .Values.poiesis.externalDependencies.mongodb.enabled .Values.poiesis.externalDependencies.mongodb.auth.enabled -}}
-    {{ required "MongoDB external username (.Values.poiesis.externalDependencies.mongodb.username) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.username }}
+    {{- required "MongoDB external username (.Values.poiesis.externalDependencies.mongodb.username) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.username }}
   {{- else -}}
-    {{ required "MongoDB subchart/default username (.Values.mongodb.auth.rootUser) is required when neither external nor custom MongoDB is enabled" .Values.mongodb.auth.rootUser }}
+    {{- required "MongoDB subchart/default username (.Values.mongodb.auth.rootUser) is required when neither external nor custom MongoDB is enabled" .Values.mongodb.auth.rootUser }}
   {{- end -}}
 {{- end -}}
 
@@ -226,9 +211,9 @@ Note: Reading credentials directly from .Values is not recommended for productio
 */}}
 {{- define "poiesis.mongodb.password" -}}
   {{- if .Values.poiesis.externalDependencies.mongodb.enabled -}}
-    {{ required "MongoDB external password (.Values.poiesis.externalDependencies.mongodb.password) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.password }}
+    {{- required "MongoDB external password (.Values.poiesis.externalDependencies.mongodb.password) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.password }}
   {{- else -}}
-    {{ required "MongoDB subchart/default password (.Values.mongodb.auth.rootPassword) is required when neither external nor custom MongoDB is enabled" .Values.mongodb.auth.rootPassword }}
+    {{- required "MongoDB subchart/default password (.Values.mongodb.auth.rootPassword) is required when neither external nor custom MongoDB is enabled" .Values.mongodb.auth.rootPassword }}
   {{- end -}}
 {{- end -}}
 
@@ -444,13 +429,13 @@ error for external MinIO password missing.
   {{- $subchartMinioUser := .Values.minio.auth.rootUser -}}
 
   {{- if and $externalMinioEnabled (not $externalMinioUser) -}}
-	{{- fail (printf "\n[poiesis.minio.password] External MinIO (poiesis.externalDependencies.minio) is enabled but 'poiesis.externalDependencies.minio.rootPassword' is missing or empty.") -}}
+	{{- fail (printf "\n[poiesis.minio.username] External MinIO (poiesis.externalDependencies.minio) is enabled but 'poiesis.externalDependencies.minio.rootUser' is missing or empty.") -}}
   {{- else if and $externalMinioEnabled $externalMinioUser -}}
 	{{- $externalMinioUser -}}
   {{- else if and $subchartMinioEnabled $subchartMinioUser -}}
 	{{- $subchartMinioUser -}}
   {{- else -}}
-	{{- fail (printf "\n[poiesis.minio.password] You forgot to set rootPassword for MinIO.\n- If using a custom MinIO under 'poiesis.externalDependencies.minio', ensure 'poiesis.externalDependencies.minio.enabled' is true and set:\n  poiesis.externalDependencies.minio.rootPassword: <your-password>\n- If using the Bitnami subchart 'minio', ensure 'minio.enabled' is true and set:\n  minio.auth.rootPassword: <your-password>") -}}
+	{{- fail (printf "\n[poiesis.minio.username] You forgot to set rootUser for MinIO.\n- If using a custom MinIO under 'poiesis.externalDependencies.minio', ensure 'poiesis.externalDependencies.minio.enabled' is true and set:\n  poiesis.externalDependencies.minio.rootUser: <your-user>\n- If using the Bitnami subchart 'minio', ensure 'minio.enabled' is true and set:\n  minio.auth.rootUser: <your-user>") -}}
   {{- end -}}
 {{- end -}}
 

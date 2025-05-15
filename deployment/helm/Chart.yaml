@@ -1,8 +1,17 @@
 apiVersion: v2
 name: poiesis
 description: |
-  Helm chart for Poiesis, a task execution service (TES) implementation
-  for kubernetes.
+  A Helm chart for deploying Poiesis – a GA4GH TES-compliant Task Execution Service
+  (TES) designed for Kubernetes. Poiesis enables scalable, secure, and user-friendly
+  orchestration of high-throughput computational workflows.
+
+  Built with the needs of modern bioinformatics in mind, Poiesis makes it easier to run
+  complex genomics analyses involving tens of thousands of distributed compute tasks.
+
+  This implementation adheres to the GA4GH TES specification, promoting interoperability
+  and cross-institutional research by standardizing task execution across different
+  compute backends.
+
 version: 0.1.0
 appVersion: latest
 
@@ -11,6 +20,8 @@ keywords:
   - GA4GH
   - TES
   - "task execution service"
+  - genomics
+  - workflow
 
 home: "https://poiesis.vercel.app"
 
