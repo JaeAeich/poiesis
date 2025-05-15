@@ -161,19 +161,20 @@ Returns true if either external MongoDB with auth enabled, OR subchart MongoDB w
 {{- end }}
 
 {{/*
-MongoDB host for the Poiesis application to connect to.
-This helper correctly considers external, custom, or subchart deployments.
-When using the Bitnami subchart, it uses the subchart's service name, which respects mongodb.fullnameOverride.
+  MongoDB host for the Poiesis application to connect to.
+  This helper correctly considers external, custom, or subchart deployments.
+  When using the Bitnami subchart, it uses the subchart's service name,
+  which respects mongodb.fullnameOverride.
 */}}
 {{- define "poiesis.mongodb.host" -}}
-{{- if .Values.poiesis.externalDependencies.mongodb.enabled -}}
-{{- required "MongoDB external host (.Values.poiesis.externalDependencies.mongodb.host) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.host }}
-{{- else if .Values.mongodb.enabled -}}
-{{- required "MongoDB subchart (.Values.mongodb.enabled) must be enabled if neither external" .Values.mongodb.enabled }}
-{{ include "mongodb.fullname" . }} {{- /* Use the subchart's fullname helper for the service name */}}
-{{- else -}}
-{{ fail "No MongoDB configuration is enabled. Please enable externalDependencies.mongodb or the mongodb subchart (.Values.mongodb.enabled)." }}
-{{- end }}
+  {{- if .Values.poiesis.externalDependencies.mongodb.enabled -}}
+    {{- required "MongoDB external host (.Values.poiesis.externalDependencies.mongodb.host) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.host }}
+  {{- else if .Values.mongodb.enabled -}}
+    {{- $subchartHost := include "mongodb.fullname" . }}
+    {{- required (printf "MongoDB subchart host (from include \"mongodb.fullname\") is required when mongodb subchart is enabled. Ensure the subchart's fullname template resolves correctly and is not empty. Current value: %q" $subchartHost) $subchartHost }}
+  {{- else -}}
+    {{- fail "No MongoDB configuration is enabled. Please enable externalDependencies.mongodb (poiesis.externalDependencies.mongodb.enabled) or the mongodb subchart (.Values.mongodb.enabled)." }}
+  {{- end }}
 {{- end }}
 
 {{/*
