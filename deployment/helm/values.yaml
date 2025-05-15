@@ -144,20 +144,25 @@ poiesis:
 # To customize these further beyond the options exposed here, refer to the original Bitnami chart's `values.yaml`.
 # Example: `helm show values bitnami/minio`
 
-# Configuration for the Minio sub-chart (Object Storage).
-minio:
-  # If true, deploy Minio using the Bitnami Minio sub-chart. Disable if using `externalDependencies.minio`.
-  enabled: false
-  # Override the full name generated for the Minio deployment (useful for consistent naming).
-  fullnameOverride: "poiesis-minio"
-  # Authentication settings for the deployed Minio instance.
+# Configuration for the MongoDB sub-chart (Database).
+mongodb:
+  # If true, deploy MongoDB using the Bitnami MongoDB sub-chart. Disable if using `externalDependencies.mongodb`.
+  enabled: true
+  # Override the full name generated for the MongoDB deployment.
+  fullnameOverride: "poiesis-mongodb"
+  # Authentication settings for the deployed MongoDB instance.
   auth:
-    # Root user (access key) for Minio.
-    rootUser: minioUser123
-    # Root password (secret key) for Minio. **CHANGE THIS IN PRODUCTION**.
-    rootPassword: "minioPassword123" # <-- IMPORTANT: Secure this value.
-  # Specifies buckets to be created automatically upon Minio startup.
-  defaultBuckets: "poiesis"
+    # If true, enable authentication for MongoDB. Highly recommended.
+    enabled: true
+    # Root username for MongoDB.
+    rootUser: mongodbUser123
+    # Root password for MongoDB. **CHANGE THIS IN PRODUCTION**.
+    rootPassword: "mongodbPassword123" # <-- IMPORTANT: Secure this value.
+  # Service configuration for MongoDB.
+  service:
+    # Port mapping for the MongoDB service.
+    ports:
+      mongodb: 27017 # Standard MongoDB port
 
 # Configuration for the Redis sub-chart (In-memory data store).
 redis:
@@ -176,6 +181,21 @@ redis:
     # Port mapping for the Redis service.
     ports:
       redis: "6379" # Standard Redis port
+
+# Configuration for the Minio sub-chart (Object Storage).
+minio:
+  # If true, deploy Minio using the Bitnami Minio sub-chart. Disable if using `externalDependencies.minio`.
+  enabled: false
+  # Override the full name generated for the Minio deployment (useful for consistent naming).
+  fullnameOverride: "poiesis-minio"
+  # Authentication settings for the deployed Minio instance.
+  auth:
+    # Root user (access key) for Minio.
+    rootUser: minioUser123
+    # Root password (secret key) for Minio. **CHANGE THIS IN PRODUCTION**.
+    rootPassword: "minioPassword123" # <-- IMPORTANT: Secure this value.
+  # Specifies buckets to be created automatically upon Minio startup.
+  defaultBuckets: "poiesis"
 
 # Configuration for the Keycloak sub-chart (Authentication/Authorization).
 keycloak:
@@ -197,26 +217,7 @@ keycloak:
     ports:
       http: 80
       https: 443
+  # PSQL configuration
   postgresql:
     auth:
       password: "keycloakPsqlPassword123"
-
-# Configuration for the MongoDB sub-chart (Database).
-mongodb:
-  # If true, deploy MongoDB using the Bitnami MongoDB sub-chart. Disable if using `externalDependencies.mongodb`.
-  enabled: true
-  # Override the full name generated for the MongoDB deployment.
-  fullnameOverride: "poiesis-mongodb"
-  # Authentication settings for the deployed MongoDB instance.
-  auth:
-    # If true, enable authentication for MongoDB. Highly recommended.
-    enabled: true
-    # Root username for MongoDB.
-    rootUser: mongodbUser123
-    # Root password for MongoDB. **CHANGE THIS IN PRODUCTION**.
-    rootPassword: "mongodbPassword123" # <-- IMPORTANT: Secure this value.
-  # Service configuration for MongoDB.
-  service:
-    # Port mapping for the MongoDB service.
-    ports:
-      mongodb: 27017 # Standard MongoDB port

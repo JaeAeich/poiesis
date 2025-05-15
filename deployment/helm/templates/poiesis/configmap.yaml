@@ -25,7 +25,7 @@ data:
   {{- end }}
   # --- MongoDB
   MONGODB_HOST: {{ include "poiesis.mongodb.componentName" . }}
-  MONGODB_PORT: "27017"
+  MONGODB_PORT: {{ include "poiesis.mongodb.port" . }}
   {{- if eq (include "poiesis.mongodb.authEnabled" .) "true" }}
   POIESIS_MONGO_SECRET_NAME: {{ include "poiesis.mongodb.secretName" . }}
   {{- end }}
