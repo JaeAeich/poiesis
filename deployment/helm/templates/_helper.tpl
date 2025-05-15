@@ -373,7 +373,7 @@ Keycloak Secret name
     {{- $externalURL | quote -}}
   {{- else if $subchartEnabled -}}
     {{- $svc := include "poiesis.keycloak.fullname" . -}}
-    {{- printf "http://%s:%d" $svc $subchartPort | quote -}}
+    "http://{{ $svc }}:{{ $subchartPort }}"
   {{- else -}}
     {{- "" -}} {{/* dummy auth type or both disabled */}}
   {{- end -}}
