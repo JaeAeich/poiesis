@@ -1,4 +1,3 @@
----
 apiVersion: {{ include "poiesis.deployment.apiVersion" . }}
 kind: Deployment
 metadata:
@@ -145,4 +144,3 @@ spec:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_S3_SECRET_NAME
             {{- end }}
-...

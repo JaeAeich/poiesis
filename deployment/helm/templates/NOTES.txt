@@ -39,7 +39,7 @@ Redis:
   URL/Host: {{ include "poiesis.redis.host" . }}:{{ include "poiesis.redis.port" . }}
   {{- else if .Values.redis.enabled }}
   Type: Internal
-  Service URL (within cluster, master): {{ include "redis.fullname" . }}-master:{{ include "poiesis.redis.port" . }}
+  Service URL (within cluster, master): {{ include "poiesis.redis.fullname" . }}-master:{{ include "poiesis.redis.port" . }}
   {{- else }}
   Type: Not Configured
   {{- end }}
@@ -53,7 +53,7 @@ Authentication (Method: {{ .Values.poiesis.auth.type | upper }}):
     {{- else if .Values.keycloak.enabled }}
     Type: Internal
     Keycloak URL (for Poiesis): {{ include "poiesis.keycloak.url" . }}
-    (Internal Keycloak Service: {{ include "keycloak.fullname" . }})
+    (Internal Keycloak Service: {{ include "poiesis.keycloak.fullname" . }})
     {{- else }}
     Type: Keycloak selected ('{{ .Values.poiesis.auth.type }}') but no Keycloak instance (external or internal) is enabled/configured.
     {{- end }}
@@ -66,12 +66,12 @@ S3 Storage:
   Endpoint URL (for Poiesis): {{ include "poiesis.minio.url" . }}
   {{- else if .Values.minio.enabled }}
   Type: Internal Minio
-  Service Name (within cluster): {{ include "minio.fullname" . }} (API Port: typically 9000, Console: typically 9001)
+  Service Name (within cluster): {{ include "poiesis.minio.fullname" . }} (API Port: typically 9000, Console: typically 9001)
   Configured URL for Poiesis: {{ include "poiesis.minio.url" . }}
     (Note: Verify port in the URL above. If it's missing or incorrect, Poiesis may not connect.
      The helper relies on '.Values.minio.service.ports.api' which may not be set in parent values.)
   Default Bucket(s) Created: {{ .Values.minio.defaultBuckets }}
-  For local Minio console access (if internal): kubectl port-forward svc/{{ include "minio.fullname" . }} 9001:9001
+  For local Minio console access (if internal): kubectl port-forward svc/{{ include "poiesis.minio.fullname" . }} 9001:9001
   {{- else }}
   Type: Not Configured
   {{- end }}
