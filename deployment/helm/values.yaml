@@ -197,6 +197,9 @@ keycloak:
     ports:
       http: 80
       https: 443
+  postgresql:
+    auth:
+      password: "keycloakPsqlPassword123"
 
 # Configuration for the MongoDB sub-chart (Database).
 mongodb:
