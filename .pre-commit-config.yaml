@@ -35,6 +35,7 @@ repos:
     rev: v1.35.1
     hooks:
       - id: yamllint
+        exclude: deployment/helm/*
   - repo: https://github.com/pappasam/toml-sort
     rev: v0.23.1
     hooks:
