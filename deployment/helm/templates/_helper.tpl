@@ -88,11 +88,11 @@ Namespaced RBAC rules (exclude cluster-scoped resources like Jobs)
 */}}
 {{- define "poiesis.rbac.namespacedRules" }}
 - apiGroups: [""]
-resources: ["pods", "persistentvolumeclaims"]
-verbs: ["create", "get", "list", "watch", "delete"]
+  resources: ["pods", "persistentvolumeclaims"]
+  verbs: ["create", "get", "list", "watch", "delete"]
 - apiGroups: [""]
-resources: ["pods/log"]
-verbs: ["get"]
+  resources: ["pods/log"]
+  verbs: ["get"]
 {{- end }}
 
 {{/*
@@ -100,8 +100,8 @@ Cluster-scoped RBAC rules (include Jobs)
 */}}
 {{- define "poiesis.rbac.clusterRules" }}
 - apiGroups: ["batch"]
-resources: ["jobs"]
-verbs: ["create", "get", "list", "watch", "delete"]
+  resources: ["jobs"]
+  verbs: ["create", "get", "list", "watch", "delete"]
 {{- end }}
 
 {{/*
