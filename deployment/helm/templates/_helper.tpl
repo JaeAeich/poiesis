@@ -182,9 +182,9 @@ Reads the port from the configured source (external or subchart values).
 */}}
 {{- define "poiesis.mongodb.port" -}}
 {{- if .Values.poiesis.externalDependencies.mongodb.enabled -}}
-{{- required "MongoDB external port (.Values.poiesis.externalDependencies.mongodb.port) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.port }}
+{{- required "MongoDB external port (.Values.poiesis.externalDependencies.mongodb.port) is required when external MongoDB is enabled" .Values.poiesis.externalDependencies.mongodb.port | quote }}
 {{- else if .Values.mongodb.enabled -}}
-{{- required (printf "MongoDB subchart port (.Values.mongodb.service.ports.mongodb) is required when mongodb subchart is enabled. Ensure it's correctly set in the subchart values. Current value: %q" (toString .Values.mongodb.service.ports.mongodb)) .Values.mongodb.service.ports.mongodb }}
+{{- required (printf "MongoDB subchart port (.Values.mongodb.service.ports.mongodb) is required when mongodb subchart is enabled. Ensure it's correctly set in the subchart values. Current value: %q" (toString .Values.mongodb.service.ports.mongodb)) .Values.mongodb.service.ports.mongodb | quote }}
 {{- else -}}
 {{- fail "No MongoDB configuration is enabled. Please enable externalDependencies.mongodb (poiesis.externalDependencies.mongodb.enabled) or the mongodb subchart (.Values.mongodb.enabled)." }}
 {{- end }}
