@@ -31,7 +31,7 @@ poiesis:
     # The Docker image repository for the Poiesis application.
     repository: jaeaeich/poiesis
     # The Kubernetes image pull policy (e.g., Always, Never, IfNotPresent).
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
     # The tag of the Docker image to use (e.g., "latest", "v0.1.0"). "latest" is generally not recommended for production.
     tag: "latest"
 
@@ -46,7 +46,7 @@ poiesis:
   # These values are typically passed as environment variables or configuration files to the application.
   config:
     # Logging level for the Poiesis application (e.g., "INFO", "DEBUG", "WARN", "ERROR").
-    logLevel: "DEBUG"
+    logLevel: "INFO"
     # Maximum number of connections in the MongoDB connection pool.
     mongodbMaxPoolSize: "100"
     # The name of the MongoDB database used by Poiesis.

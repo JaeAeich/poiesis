@@ -362,7 +362,7 @@ Keycloak Secret name
 {{- end }}
 
 {{- define "poiesis.keycloak.clientSecret" -}}
-{{- default "changeme" .Values.poiesis.config.keycloakClientSecret | quote -}}
+{{- default "changeme" .Values.poiesis.config.keycloakClientSecret -}}
 {{- end }}
 
 {{/* -----------------------------  S3/Minio ----------------------------- */}}
