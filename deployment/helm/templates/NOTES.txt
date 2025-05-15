@@ -36,10 +36,10 @@ MongoDB:
 Redis:
   {{- if .Values.poiesis.externalDependencies.redis.enabled }}
   Type: External
-  URL/Host: {{ include "poiesis.redis.host" . }}:{{ include "poiesis.redis.port" . | replace "\"" "" }}
+  URL/Host: http://{{ include "poiesis.redis.host" . }}:{{ include "poiesis.redis.port" . | | trim "\""  }}
   {{- else if .Values.redis.enabled }}
   Type: Internal
-  Service URL (within cluster, master): {{ include "poiesis.redis.fullname" . }}-master:{{ include "poiesis.redis.port" . | replace "\"" "" }}
+  Service URL (within cluster, master): {{ include "poiesis.redis.fullname" . }}-master:{{ include "poiesis.redis.port" . | | trim "\"" }}
   {{- else }}
   Type: Not Configured
   {{- end }}
