@@ -35,7 +35,7 @@ data:
   {{- end }}
   {{- if eq (include "poiesis.keycloak.enabled" .) "true" }}
   KEYCLOAK_URL: {{ include "poiesis.keycloak.url" .}}
-  KEYCLOAK_REALM: {{ .Values.poiesis.config.keycloakClientId | quote}}
-  KEYCLOAK_CLIENT_ID: {{ .Values.poiesis.config.keycloakAlgorithm | quote}}
-  KEYCLOAK_ALGORITHM: {{ .Values.poiesis.config.keycloakClientSecret | quote}}
+  KEYCLOAK_REALM: {{ .Values.poiesis.config.keycloakRealm | quote}}
+  KEYCLOAK_CLIENT_ID: {{ .Values.poiesis.config.keycloakClientId | quote}}
+  KEYCLOAK_ALGORITHM: {{ .Values.poiesis.config.keycloakAlgorithm | quote}}
   {{- end }}
