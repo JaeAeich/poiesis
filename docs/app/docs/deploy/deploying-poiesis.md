@@ -76,14 +76,14 @@ curl -X 'POST' \
   "inputs": [
     {
       "content": "poiesis",
-      "path": "/data/file"
+      "path": "/data/file1"
     }
   ],
   "resources": {
     "cpu_cores": 1,
     "preemptible": false,
     "ram_gb": 1,
-    "disk_gb": 1,
+    "disk_gb": 1
   },
   "executors": [
     {
@@ -92,9 +92,9 @@ curl -X 'POST' \
         "/bin/cat",
         "/data/file1"
       ],
-      "workdir": "/data/",
+      "workdir": "/data/"
     }
-  ],
+  ]
 }'
 ```
 
