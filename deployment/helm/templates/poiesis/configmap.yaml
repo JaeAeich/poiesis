@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "poiesis.coreConfigMapName" . }}
+  labels:
+    {{- include "poiesis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: core
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  LOG_LEVEL: {{ .Values.poiesis.config.logLevel | quote }}
+  POIESIS_SERVICE_ACCOUNT_NAME: {{ include "poiesis.serviceAccountName" . }}
+  POIESIS_K8S_NAMESPACE: {{ .Release.Namespace | quote }}
+  MONITOR_TIMEOUT_SECONDS: {{ .Values.poiesis.config.monitorTimeoutSeconds | quote }}
+  POIESIS_RESTART_POLICY: {{ .Values.poiesis.config.restartPolicy | quote }}
+  POIESIS_IMAGE_PULL_POLICY: {{ .Values.poiesis.config.imagePullPolicy | quote }}
+  POIESIS_JOB_TTL: {{ .Values.poiesis.config.jobTtl | quote }}
+  # --- Message broker (Redis)
+  MESSAGE_BROKER_HOST: {{ include "poiesis.redis.host" . }}
+  MESSAGE_BROKER_PORT: {{ include "poiesis.redis.port" . }}
+  {{- if eq (include "poiesis.redis.authEnabled" .) "true" }}
+  POIESIS_REDIS_SECRET_NAME: {{include "poiesis.redis.secretName" . }}
+  {{- end }}
+  # --- MongoDB
+  MONGODB_HOST: {{ include "poiesis.mongodb.host" . }}
+  MONGODB_PORT: {{ include "poiesis.mongodb.port" . }}
+  {{- if eq (include "poiesis.mongodb.authEnabled" .) "true" }}
+  POIESIS_MONGO_SECRET_NAME: {{ include "poiesis.mongodb.secretName" . }}
+  {{- end }}
+  {{- if eq (include "poiesis.minio.enabled" .) "true" }}
+  S3_URL: {{ include "poiesis.minio.url" . }}
+  POIESIS_S3_SECRET_NAME: {{include "poiesis.s3.secretName" . }}
+  {{- end }}
+  {{- if eq (include "poiesis.keycloak.enabled" .) "true" }}
+  KEYCLOAK_URL: {{ include "poiesis.keycloak.url" . }}
+  KEYCLOAK_REALM: {{ .Values.poiesis.config.keycloakRealm | quote}}
+  KEYCLOAK_CLIENT_ID: {{ .Values.poiesis.config.keycloakClientId | quote}}
+  KEYCLOAK_ALGORITHM: {{ .Values.poiesis.config.keycloakAlgorithm | quote}}
+  {{- end }}

@@ -31,7 +31,72 @@ A [TES] compliant task execution service built on kubernetes with `security`,
 
 ## Installation
 
+> **Note:** This is a high-level overview. For detailed instructions, please
+> refer to the [Deployment Docs](https://poiesis.readthedocs.io/en/docs/).
+
+To install Poiesis into your Kubernetes cluster using Helm:
+
+1. Navigate to the Helm chart directory:
+
+   ```bash
+   cd deployment/helm
+   ```
+
+1. Run the following command to install Poiesis:
+
+   ```bash
+   helm install poiesis . -n poiesis --create-namespace
+   ```
+
+This will install Poiesis into a new namespace called `poiesis`.
+
 ## Development
+
+To get started with development:
+
+> **Note:** This is a high-level overview. For detailed instructions, please
+> refer to the [Development Docs](https://poiesis.readthedocs.io/en/docs/).
+
+1. **Create a virtual environment** using
+   [`uv`](https://github.com/astral-sh/uv):
+
+   ```bash
+   make v
+   ```
+
+   > Note: You’ll need to install `uv` first — see their docs for setup
+   > instructions.
+
+1. **Activate the virtual environment**:
+
+   ```bash
+   source .venv/bin/activate
+   ```
+
+   *(Optional: alias this command to something like `sv` for convenience.)*
+
+1. **Install dependencies**:
+
+   ```bash
+   make i
+   ```
+
+1. **Set environment variables**:
+
+   - Copy the `.envrc.template` to `.envrc` and fill in the necessary values.
+   - If you’re using [`direnv`](#setting-environment-variables-direnv), it will
+     automatically load `.envrc`.
+   - Alternatively, you can load the file manually:
+
+   ```bash
+   source .envrc
+   ```
+
+1. **Run the server**:
+
+   ```bash
+   make dev
+   ```
 
 ### Makefile
 

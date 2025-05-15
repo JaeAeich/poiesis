@@ -1,0 +1,146 @@
+apiVersion: {{ include "poiesis.deployment.apiVersion" . }}
+kind: Deployment
+metadata:
+  name: {{ include "poiesis.api.componentName" . }}
+  labels:
+    {{- include "poiesis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  annotations:
+spec:
+  replicas: {{ .Values.poiesis.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "poiesis.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+      annotations:
+    spec:
+      serviceAccountName: {{ include "poiesis.serviceAccountName" . }}
+      containers:
+        - name: {{ include "poiesis.api.componentName" . }}
+          image: "{{ .Values.poiesis.image.repository }}:{{ .Values.poiesis.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.poiesis.image.pullPolicy }}
+          command: ["poiesis", "api", "run"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.poiesis.service.port }}
+              protocol: TCP
+          env:
+            - name: POIESIS_IMAGE
+              value: "{{ .Values.poiesis.image.repository }}:{{ .Values.poiesis.image.tag | default .Chart.AppVersion }}"
+            - name: POIESIS_K8S_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: POIESIS_API_SERVER_PORT
+              value: {{ .Values.poiesis.service.port | quote}}
+            - name: MONGODB_MAX_POOL_SIZE
+              value: {{ .Values.poiesis.config.mongodbMaxPoolSize | quote }}
+            - name: POIESIS_SERVICE_ACCOUNT_NAME
+              value: {{ include "poiesis.serviceAccountName" . }}
+            - name: MONGODB_DATABASE
+              value: {{ .Values.poiesis.config.mongodbDatabase | quote }}
+            - name: POIESIS_ENV
+              value: {{ .Values.poiesis.config.poiesisEnv | quote }}
+            - name: AUTH
+              value: {{ .Values.poiesis.auth.type | quote }}
+            - name: POIESIS_CORE_CONFIGMAP_NAME
+              value: {{ include "poiesis.coreConfigMapName" . }}
+            - name: POIESIS_MONGODB_AUTH_ENABLED
+              value: {{eq (include "poiesis.mongodb.authEnabled" .) "true" | quote }}
+            - name: POIESIS_RESTART_POLICY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: POIESIS_RESTART_POLICY
+            - name: POIESIS_IMAGE_PULL_POLICY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: POIESIS_IMAGE_PULL_POLICY
+            - name: POIESIS_JOB_TTL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: POIESIS_JOB_TTL
+            {{- if eq (include "poiesis.mongodb.authEnabled" .) "true" }}
+            - name: POIESIS_MONGO_SECRET_NAME
+              value: {{ include "poiesis.mongodb.secretName" . }}
+            - name: MONGODB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "poiesis.mongodb.secretName" . }}
+                  key: MONGODB_USER
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "poiesis.mongodb.secretName" . }}
+                  key: MONGODB_PASSWORD
+            {{- end }}
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: LOG_LEVEL
+            - name: MONGODB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: MONGODB_HOST
+            - name: MONGODB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: MONGODB_PORT
+            - name: MESSAGE_BROKER_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: MESSAGE_BROKER_HOST
+            - name: MESSAGE_BROKER_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: MESSAGE_BROKER_PORT
+            {{- if eq (include "poiesis.redis.authEnabled" .) "true" }}
+            - name: MESSAGE_BROKER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "poiesis.redis.secretName" . }}
+                  key: MESSAGE_BROKER_PASSWORD
+            - name: POIESIS_REDIS_SECRET_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: POIESIS_REDIS_SECRET_NAME
+            {{- end }}
+            {{- if eq (include "poiesis.keycloak.enabled" .) "true" }}
+            - name: KEYCLOAK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: KEYCLOAK_URL
+            - name: KEYCLOAK_REALM
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: KEYCLOAK_REALM
+            - name: KEYCLOAK_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: KEYCLOAK_CLIENT_ID
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "poiesis.keycloak.secretName" . }}
+                  key: KEYCLOAK_CLIENT_SECRET
+            {{- end }}
+            {{- if eq (include "poiesis.minio.enabled" .) "true" }}
+            - name: POIESIS_S3_SECRET_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "poiesis.coreConfigMapName" . }}
+                  key: POIESIS_S3_SECRET_NAME
+            {{- end }}

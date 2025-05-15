@@ -85,4 +85,11 @@ export default defineConfig({
             dark: "catppuccin-macchiato",
         },
     },
+    ignoreDeadLinks: [
+        // ignore all localhost links
+        /^https?:\/\/localhost/,
+        (url) => {
+        return url.toLowerCase().includes('ignore')
+        }
+    ]
 });

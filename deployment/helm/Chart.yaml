@@ -1,0 +1,52 @@
+apiVersion: v2
+name: poiesis
+description: |
+  A Helm chart for deploying Poiesis – a GA4GH TES-compliant Task Execution Service
+  (TES) designed for Kubernetes. Poiesis enables scalable, secure, and user-friendly
+  orchestration of high-throughput computational workflows.
+
+  Built with the needs of modern bioinformatics in mind, Poiesis makes it easier to run
+  complex genomics analyses involving tens of thousands of distributed compute tasks.
+
+  This implementation adheres to the GA4GH TES specification, promoting interoperability
+  and cross-institutional research by standardizing task execution across different
+  compute backends.
+
+version: 0.1.0
+appVersion: latest
+icon: https://raw.githubusercontent.com/JaeAeich/poiesis/refs/heads/main/docs/app/public/logo/logo.png
+
+keywords:
+  - poiesis
+  - GA4GH
+  - TES
+  - "task execution service"
+  - genomics
+  - workflow
+
+home: "https://poiesis.vercel.app"
+
+sources:
+  - "https://github.com/jaeaeich/poiesis/deployment/helm"
+  - "https://github.com/jaeaeich/poiesis"
+
+maintainers:
+  - name: "Javed Habib"
+    email: "jh4official@gmail.com"
+
+dependencies:
+  - name: minio
+    version: 16.0.10
+    repository: https://charts.bitnami.com/bitnami
+    condition: minio.enabled
+  - name: redis
+    version: 21.0.2
+    repository: https://charts.bitnami.com/bitnami
+  - name: keycloak
+    version: 24.6.6
+    repository: https://charts.bitnami.com/bitnami
+    condition: keycloak.enabled
+  - name: mongodb
+    version: 16.5.6
+    repository: https://charts.bitnami.com/bitnami
+    condition: mongodb.enabled
