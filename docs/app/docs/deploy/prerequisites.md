@@ -67,10 +67,11 @@ This means that when you deploy Poiesis using Helm, these dependencies can be
 deployed and configured automatically.
 
 The primary subcharts used by Poiesis include:
+
 - **MongoDB:** A NoSQL database used for data persistence.
 - **MinIO:** An S3-compatible object storage service.
 - **Keycloak:** An open-source identity and access management solution.
-- **Redis:** An in-memory data structure store, used as message broker.
+- **Redis:** An in-memory data structure store, used as a message broker.
 
 The Helm charts for these components are primarily sourced from the
 [Bitnami Helm charts repository](https://github.com/bitnami/charts), which

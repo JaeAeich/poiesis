@@ -62,7 +62,7 @@ Swagger is available at
 You can submit tasks directly from the UI if you prefer that over `curl`.
 :::
 
-you can launch a task:
+You can launch a task:
 
 ```bash
 curl -X 'POST' \

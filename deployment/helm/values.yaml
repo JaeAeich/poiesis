@@ -59,10 +59,10 @@ poiesis:
     imagePullPolicy: "IfNotPresent"
     # Defines after how long should a completed or failed job be removed
     jobTtl: "3600"
+    # Timeout duration in seconds for monitoring operations.
+    monitorTimeoutSeconds: "80"
     # Note: If you have selected `dummy` for auth, then no need to change below settings
     # they will be ignored anyways.
-    # Timeout duration in seconds for monitoring operations.b
-    monitorTimeoutSeconds: "80"
     # Keycloak realm name used for authentication.
     keycloakRealm: "poiesis"
     # Keycloak client ID registered for the Poiesis application.
