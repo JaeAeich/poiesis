@@ -1,183 +1,116 @@
- ________   ________   ___   _______    ________   ___   ________
-|\   __  \ |\   __  \ |\  \ |\  ___ \  |\   ____\ |\  \ |\   ____\
-\ \  \|\  \\ \  \|\  \\ \  \\ \   __/| \ \  \___|_\ \  \\ \  \___|_
- \ \   ____\\ \  \\\  \\ \  \\ \  \_|/__\ \_____  \\ \  \\ \_____  \
-  \ \  \___| \ \  \\\  \\ \  \\ \  \_|\ \\|____|\  \\ \  \\|____|\  \
-   \ \__\     \ \_______\\ \__\\ \_______\ ____\_\  \\ \__\ ____\_\  \
-    \|__|      \|_______| \|__| \|_______||\_________\\|__||\_________\
-                                          \|_________|     \|_________|
+ ███████████            ███                    ███
+░░███░░░░░███          ░░░                    ░░░
+ ░███    ░███  ██████  ████   ██████   █████  ████   █████
+ ░██████████  ███░░███░░███  ███░░███ ███░░  ░░███  ███░░
+ ░███░░░░░░  ░███ ░███ ░███ ░███████ ░░█████  ░███ ░░█████
+ ░███        ░███ ░███ ░███ ░███░░░   ░░░░███ ░███  ░░░░███
+ █████       ░░██████  █████░░██████  ██████  █████ ██████
+░░░░░         ░░░░░░  ░░░░░  ░░░░░░  ░░░░░░  ░░░░░ ░░░░░░
 
 Authored: Javed Habib (jaeaeich)
 
-Your Poiesis application suite ({{ .Chart.Name }} version {{ .Chart.Version }}) has been deployed!
+Poiesis Deployment Summary:
 --------------------------------------------------------------------------------
-  Release Name:      {{ .Release.Name }}
-  Release Namespace: {{ .Release.Namespace }}
-  Chart Version:     {{ .Chart.Version }}
-  App Version:       {{ .Chart.AppVersion | default "Not set" }}
---------------------------------------------------------------------------------
+Services Used & Access Information:
 
-{{- /* Poiesis API Access Instructions */ -}}
-{{- $poiesisFullname := include "poiesis.fullname" . }}
-{{- $apiServiceName := printf "%s-%s" $poiesisFullname "api" }} {{/* Assuming API service is named '{{fullname}}-api' */}}
-{{- $apiServicePort := .Values.api.service.port | default 8080 }} {{/* Adjust if your API port value is different */}}
-{{- $apiServiceType := .Values.api.service.type | default "ClusterIP" }} {{/* Adjust if your API service type value is different */}}
-
- Poiesis API
---------------------------------------------------------------------------------
-The Poiesis API ({{ $apiServiceName }}) can be accessed as follows:
-
-  Service Name: {{ $apiServiceName }}
-  Service Type: {{ $apiServiceType }}
-  Namespace:    {{ .Release.Namespace }}
-  Target Port:  {{ $apiServicePort }}
-
-{{- if eq $apiServiceType "LoadBalancer" }}
-  To get the External IP for the API service (may take a few minutes):
-    kubectl get svc --namespace {{ .Release.Namespace }} {{ $apiServiceName }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-  Once the IP is available, access the API at: http://<EXTERNAL-IP>:{{ $apiServicePort }}
-{{- else if eq $apiServiceType "NodePort" }}
-  To get the NodePort for the API service:
-    export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ $apiServiceName }})
-    export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
-  Access the API at: http://$NODE_IP:$NODE_PORT
-{{- else if eq $apiServiceType "ClusterIP" }}
-  The API service is reachable within the cluster. For local access, use port-forwarding:
-    echo "Forwarding API service {{ $apiServiceName }} from port {{ $apiServicePort }}..."
-    kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ $apiServiceName }} {{ $apiServicePort }}:{{ $apiServicePort }} &
-  Then access the API at: http://localhost:{{ $apiServicePort }}
-  (To stop port-forwarding, run 'fg' then Ctrl+C in the terminal where it was started)
-{{- else }}
-  API Service Type is '{{ $apiServiceType }}'. Please refer to your service definition for access methods.
-{{- end }}
-
-{{- /* MongoDB Section */}}
- MongoDB (Database)
---------------------------------------------------------------------------------
-{{- if .Values.poiesis.externalDependencies.mongodb.enabled }}
-Poiesis is configured to use an EXTERNAL MongoDB instance.
-  Host: {{ include "poiesis.mongodb.host" . }}
-  Port: {{ include "poiesis.mongodb.port" . }}
-  Authentication: {{ if eq (include "poiesis.mongodb.authEnabled" .) "true" }}Enabled{{ else }}Disabled{{ end }}
-{{- else if .Values.mongodb.enabled }}
-Poiesis is configured to use an INTERNAL MongoDB instance (deployed via the 'mongodb' subchart).
-  {{- $mongodbFullname := include "mongodb.fullname" . }} {{- /* Assumes 'mongodb' is the subchart alias */}}
-  Service Name: {{ $mongodbFullname }}
-  Port: {{ include "poiesis.mongodb.port" . }}
-  Authentication: {{ if eq (include "poiesis.mongodb.authEnabled" .) "true" }}Enabled{{ else }}Disabled{{ end }}
-  {{- if eq (include "poiesis.mongodb.authEnabled" .) "true" }}
-  To get the root password for the internal MongoDB:
-    export MONGODB_ROOT_PASSWORD=$(kubectl get secret --namespace {{ .Release.Namespace }} {{ $mongodbFullname }} -o jsonpath="{.data.mongodb-root-password}" | base64 --decode)
-    echo "MongoDB Root Password: $MONGODB_ROOT_PASSWORD"
-    (Note: Secret name '{{ $mongodbFullname }}' and key 'mongodb-root-password' are common for Bitnami MongoDB. Verify if using a different subchart.)
-  {{- end }}
-{{- else }}
-No MongoDB configuration (external or internal subchart) is enabled. The application may not function correctly.
-{{- end }}
-
-{{- /* Redis Section */}}
- Redis (Cache)
---------------------------------------------------------------------------------
-{{- if .Values.poiesis.externalDependencies.redis.enabled }}
-Poiesis is configured to use an EXTERNAL Redis instance.
-  Host: {{ include "poiesis.redis.host" . }}
-  Port: {{ include "poiesis.redis.port" . }}
-  Authentication: {{ if eq (include "poiesis.redis.authEnabled" .) "true" }}Enabled{{ else }}Disabled{{ end }}
-{{- else if .Values.redis.enabled }}
-Poiesis is configured to use an INTERNAL Redis instance (deployed via the 'redis' subchart).
-  {{- $redisFullname := include "redis.fullname" . }} {{- /* Assumes 'redis' is the subchart alias */}}
-  Service Name (Master): {{ $redisFullname }}-master
-  Service Port: {{ include "poiesis.redis.port" . }}
-  Authentication: {{ if eq (include "poiesis.redis.authEnabled" .) "true" }}Enabled{{ else }}Disabled{{ end }}
-  {{- if eq (include "poiesis.redis.authEnabled" .) "true" }}
-  To get the password for the internal Redis:
-    export REDIS_PASSWORD=$(kubectl get secret --namespace {{ .Release.Namespace }} {{ $redisFullname }} -o jsonpath="{.data.redis-password}" | base64 --decode)
-    echo "Redis Password: $REDIS_PASSWORD"
-    (Note: Secret name '{{ $redisFullname }}' and key 'redis-password' are common for Bitnami Redis.)
-  {{- end }}
-{{- else }}
-No Redis configuration (external or internal subchart) is enabled. Performance might be affected.
-{{- end }}
-
-{{- /* Keycloak Section */}}
-{{- if eq (include "poiesis.keycloak.enabled" .) "true" }}
- Keycloak (Authentication)
---------------------------------------------------------------------------------
-  Keycloak is ENABLED for Poiesis.
-  Keycloak URL: {{ include "poiesis.keycloak.url" . }}
-  Poiesis Client ID: {{ .Values.poiesis.config.keycloakClientId | default "poiesis-client" }} {{- /* Adjust .Values path if needed */}}
-
-  {{- if .Values.poiesis.externalDependencies.keycloak.enabled }}
-  Poiesis is configured to use an EXTERNAL Keycloak instance.
-  Ensure your Poiesis application is configured with the correct client secret for Client ID '{{ .Values.poiesis.config.keycloakClientId | default "poiesis-client" }}'.
-  The client secret Poiesis is configured to use is: '{{ include "poiesis.keycloak.clientSecret" . }}'
-  {{- else if .Values.keycloak.enabled }}
-  Poiesis is configured to use an INTERNAL Keycloak instance (deployed via the 'keycloak' subchart).
-    {{- $keycloakFullname := include "keycloak.fullname" . }} {{- /* Assumes 'keycloak' is the subchart alias */}}
-    Keycloak Admin User: {{ .Values.keycloak.auth.adminUser | default "user" }}
-    To get the Keycloak Admin password:
-      export KEYCLOAK_ADMIN_PASSWORD=$(kubectl get secret --namespace {{ .Release.Namespace }} {{ printf "%s-http" $keycloakFullname }} -o jsonpath="{.data.password}" | base64 --decode)
-      echo "Keycloak Admin Password: $KEYCLOAK_ADMIN_PASSWORD"
-      (Note: Secret name '{{ printf "%s-http" $keycloakFullname }}' and key 'password' are common for Bitnami Keycloak.)
-    Poiesis Client Secret configured in this chart: '{{ include "poiesis.keycloak.clientSecret" . }}'
-    {{- if eq (include "poiesis.keycloak.clientSecret" . ) "'changeme'" }}
-    WARNING: The Keycloak client secret for Poiesis is 'changeme'.
-    This MUST be updated for production environments (via '.Values.poiesis.config.keycloakClientSecret').
-    You must also configure this same secret in the Keycloak admin console for the client '{{ .Values.poiesis.config.keycloakClientId | default "poiesis-client" }}'.
+Poiesis API:
+  Service Name: {{ printf "%s-%s" (include "poiesis.fullname" .) "api" }}
+  Port: {{ .Values.poiesis.service.port }}
+  Access: Type '{{ .Values.poiesis.service.type }}'.
+    {{- if eq .Values.poiesis.service.type "LoadBalancer" }} (Requires External IP assignment)
+    {{- else if eq .Values.poiesis.service.type "NodePort" }} (Access via NodeIP:NodePort)
+    {{- else if eq .Values.poiesis.service.type "ClusterIP" }} (For local access, use: kubectl port-forward svc/{{ printf "%s-%s" (include "poiesis.fullname" .) "api" }} {{ .Values.poiesis.service.port }}:{{ .Values.poiesis.service.port }})
     {{- end }}
-  {{- end }}
-{{- else if eq (.Values.poiesis.auth.type | lower) "dummy" }}
- Authentication (Dummy Mode)
---------------------------------------------------------------------------------
-Poiesis is configured with DUMMY authentication. This is NOT suitable for production.
-{{- end }}
 
-{{- /* S3/Minio Section */}}
-{{- if eq (include "poiesis.minio.enabled" .) "true" }}
- S3 Storage (Minio / External)
---------------------------------------------------------------------------------
+MongoDB:
+  {{- if .Values.poiesis.externalDependencies.mongodb.enabled }}
+  Type: External
+  URL/Host: {{ include "poiesis.mongodb.host" . }}:{{ include "poiesis.mongodb.port" . }}
+  {{- else if .Values.mongodb.enabled }}
+  Type: Internal
+  Service URL (within cluster): {{ include "mongodb.fullname" . }}:{{ include "poiesis.mongodb.port" . }}
+  {{- else }}
+  Type: Not Configured
+  {{- end }}
+
+Redis:
+  {{- if .Values.poiesis.externalDependencies.redis.enabled }}
+  Type: External
+  URL/Host: {{ include "poiesis.redis.host" . }}:{{ include "poiesis.redis.port" . }}
+  {{- else if .Values.redis.enabled }}
+  Type: Internal
+  Service URL (within cluster, master): {{ include "redis.fullname" . }}-master:{{ include "poiesis.redis.port" . }}
+  {{- else }}
+  Type: Not Configured
+  {{- end }}
+
+Authentication (Method: {{ .Values.poiesis.auth.type | upper }}):
+  {{- if ne (.Values.poiesis.auth.type | lower) "dummy" }}
+  Keycloak:
+    {{- if .Values.poiesis.externalDependencies.keycloak.enabled }}
+    Type: External
+    Keycloak URL (for Poiesis): {{ include "poiesis.keycloak.url" . }}
+    {{- else if .Values.keycloak.enabled }}
+    Type: Internal
+    Keycloak URL (for Poiesis): {{ include "poiesis.keycloak.url" . }}
+    (Internal Keycloak Service: {{ include "keycloak.fullname" . }})
+    {{- else }}
+    Type: Keycloak selected ('{{ .Values.poiesis.auth.type }}') but no Keycloak instance (external or internal) is enabled/configured.
+    {{- end }}
+  Poiesis Client ID in Keycloak: {{ .Values.poiesis.config.keycloakClientId }}
+  {{- end }}
+
+S3 Storage:
   {{- if .Values.poiesis.externalDependencies.minio.enabled }}
-  Poiesis is configured to use EXTERNAL S3-compatible storage.
-    Endpoint URL: {{ include "poiesis.minio.url" . }}
-    Access Key (Username): {{ include "poiesis.minio.username" . }}
-    (Ensure the corresponding secret key is correctly configured within Poiesis application settings.)
+  Type: External S3-compatible
+  Endpoint URL (for Poiesis): {{ include "poiesis.minio.url" . }}
   {{- else if .Values.minio.enabled }}
-  Poiesis is configured to use an INTERNAL Minio instance (deployed via the 'minio' subchart).
-    {{- $minioFullname := include "minio.fullname" . }} {{- /* Assumes 'minio' is the subchart alias */}}
-    Minio Service URL (within cluster): {{ include "poiesis.minio.url" . }}
-    To access Minio locally via port-forward:
-      echo "Forwarding Minio API (svc/{{ $minioFullname }}) from port 9000..."
-      kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ $minioFullname }} 9000:9000 &
-      echo "Forwarding Minio Console (svc/{{ $minioFullname }}) from port 9001..."
-      kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ $minioFullname }} 9001:9001 &
-    Access Minio Console at: http://localhost:9001 (Username: {{ include "poiesis.minio.username" . }})
-    Root User (Access Key): {{ include "poiesis.minio.username" . }}
-    Root Password (Secret Key): {{ include "poiesis.minio.password" . }}
-    (Credentials from .Values.minio.auth for the subchart.)
-    Poiesis S3 Bucket Name: {{ .Values.poiesis.config.s3BucketName | default "poiesis-bucket" }} {{- /* Adjust .Values path if needed */}}
+  Type: Internal Minio
+  Service Name (within cluster): {{ include "minio.fullname" . }} (API Port: typically 9000, Console: typically 9001)
+  Configured URL for Poiesis: {{ include "poiesis.minio.url" . }}
+    (Note: Verify port in the URL above. If it's missing or incorrect, Poiesis may not connect.
+     The helper relies on '.Values.minio.service.ports.api' which may not be set in parent values.)
+  Default Bucket(s) Created: {{ .Values.minio.defaultBuckets }}
+  For local Minio console access (if internal): kubectl port-forward svc/{{ include "minio.fullname" . }} 9001:9001
+  {{- else }}
+  Type: Not Configured
   {{- end }}
+
+--------------------------------------------------------------------------------
+CRITICAL WARNINGS & ACTIONS:
+--------------------------------------------------------------------------------
+{{- if eq (.Values.poiesis.auth.type | lower) "dummy" }}
+- DUMMY AUTH ENABLED: Poiesis is using insecure dummy authentication.
+  DO NOT USE IN PRODUCTION. Change 'poiesis.auth.type' to 'keycloak'.
 {{- end }}
 
- General Information & Next Steps
---------------------------------------------------------------------------------
-1. Check pod statuses:
-   kubectl get pods --namespace {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+- DEFAULT CREDENTIALS: Review and change default passwords/secrets for production.
+  {{- if eq (.Values.poiesis.config.keycloakClientSecret | toString) "changeMe" }}
+  - Poiesis Keycloak Client Secret ('poiesis.config.keycloakClientSecret') is 'changeMe'.
+  {{- end }}
+  {{- if and .Values.mongodb.enabled (eq (.Values.mongodb.auth.rootPassword | toString) "mongodbPassword123") }}
+  - Internal MongoDB root password ('mongodb.auth.rootPassword') is default.
+  {{- end }}
+  {{- if and .Values.redis.enabled (eq (.Values.redis.auth.password | toString) "poiesisRedis123") }}
+  - Internal Redis password ('redis.auth.password') is default.
+  {{- end }}
+  {{- if and .Values.keycloak.enabled (eq (.Values.keycloak.auth.adminPassword | toString) "keycloakPassword123") }}
+  - Internal Keycloak admin password ('keycloak.auth.adminPassword') is default.
+  {{- end }}
+  {{- if and .Values.minio.enabled (eq (.Values.minio.auth.rootPassword | toString) "minioPassword123") }}
+  - Internal Minio root password ('minio.auth.rootPassword') is default.
+  {{- end }}
 
-2. View logs for the Poiesis API component:
-   kubectl logs --namespace {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/name={{ include "poiesis.name" . }},app.kubernetes.io/component=api -f
-   (Replace 'api' with other component names as defined by the 'app.kubernetes.io/component' label on your pods.)
-
-3. If you encounter issues, check events in the namespace:
-   kubectl get events --namespace {{ .Release.Namespace }} --sort-by='.lastTimestamp'
-
-4. To uninstall this release:
-   helm uninstall {{ .Release.Name }} --namespace {{ .Release.Namespace }}
-
-Important Notes:
-- Components like databases or Keycloak might take a few minutes to become fully ready after deployment.
-- For INTERNAL components (MongoDB, Redis, Keycloak, Minio), it's crucial to retrieve and securely store any auto-generated credentials, especially if you need to connect directly or for backup/recovery purposes.
-- The access methods and service details described above are based on common configurations and the values provided in your deployment. If you've customized service types, ports, Ingress controllers, or use different subchart versions, actual access methods may vary.
-- Assumed subchart aliases in this NOTES.txt: 'mongodb', 'redis', 'keycloak', 'minio'. If your aliases in Chart.yaml are different, some include statements might need adjustment.
-- Assumed .Values paths for service ports/types and certain configurations (e.g., `.Values.api.service.port`, `.Values.poiesis.config.keycloakClientId`). Please verify these against your `values.yaml`.
-
-Thank you for deploying Poiesis!
+{{- if and (ne (.Values.poiesis.auth.type | lower) "dummy") (or .Values.poiesis.externalDependencies.keycloak.enabled .Values.keycloak.enabled) }}
+- KEYCLOAK INTEGRATION REQUIRED:
+  {{- if .Values.keycloak.enabled }}
+  - Deploying the internal Keycloak subchart can increase overall deployment time.
+  {{- end }}
+  - This Helm chart DOES NOT fully configure Keycloak itself (e.g., clients, roles within Keycloak).
+  - ACTION: You MUST manually ensure the Keycloak client '{{ .Values.poiesis.config.keycloakClientId }}'
+    (in realm '{{ .Values.poiesis.config.keycloakRealm }}') is correctly set up in your Keycloak instance.
+  - ACTION: The Poiesis API is configured to use the client secret specified in
+    '.Values.poiesis.config.keycloakClientSecret' ('{{ .Values.poiesis.config.keycloakClientSecret }}').
+    VERIFY THIS SECRET MATCHES the one configured for the client within Keycloak.
+  - Consult Poiesis and Keycloak documentation for detailed setup.
+{{- end }}

@@ -1,3 +1,4 @@
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -76,3 +77,4 @@ roleRef:
   kind: ClusterRole
   name: {{ include "poiesis.serviceAccountName" . }}-clusterrole
   apiGroup: rbac.authorization.k8s.io
+...

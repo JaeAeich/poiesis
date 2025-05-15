@@ -1,3 +1,4 @@
+---
 apiVersion: v2
 name: poiesis
 description: |
@@ -53,3 +54,4 @@ dependencies:
     version: 16.5.6
     repository: https://charts.bitnami.com/bitnami
     condition: mongodb.enabled
+...

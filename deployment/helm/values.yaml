@@ -1,3 +1,4 @@
+---
 # Default values for the poiesis Helm chart.
 # This file defines the configurable parameters for deploying the Poiesis application
 # and its dependencies using Helm. Values here can be overridden during Helm installation or upgrade.
@@ -217,3 +218,4 @@ mongodb:
     # Port mapping for the MongoDB service.
     ports:
       mongodb: 27017 # Standard MongoDB port
+...
