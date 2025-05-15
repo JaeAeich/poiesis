@@ -28,7 +28,7 @@ MongoDB:
   URL/Host: {{ include "poiesis.mongodb.host" . }}:{{ include "poiesis.mongodb.port" . | trimAll "\"" }}
   {{- else if .Values.mongodb.enabled }}
   Type: Internal
-  Service URL (within cluster): {{ include "mongodb.fullname" . }}:{{ include "poiesis.mongodb.port" . }}
+  Service URL (within cluster): {{ include "poiesis.mongodb.host" . }}:{{ include "poiesis.mongodb.port" . | trimAll "\"" }}
   {{- else }}
   Type: Not Configured
   {{- end }}
