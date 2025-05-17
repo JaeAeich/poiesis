@@ -5,6 +5,7 @@
 # - Removed the `BasicAuth`, the API is secured with Bearer token
 # - Added `x-bearerInfoFunc` to the BearerAuth security scheme
 # - Formatted the file with yamllint
+# - Removed default state parameter from filter which was wrongly set to UNKNOWN
 openapi: 3.0.1
 info:
   title: Task Execution Service
