@@ -65,18 +65,21 @@ class ListTasksController(InterfaceController):
 
         # Tags
         if self.query_filter.tag_key:
-            for key, val in zip(
-                self.query_filter.tag_key,
-                self.query_filter.tag_value or [],
-                strict=False,
-            ):
-                if val == "":
+            for i, key in enumerate(self.query_filter.tag_key or []):
+                val = None
+                if self.query_filter.tag_value and i < len(self.query_filter.tag_value):
+                    val = self.query_filter.tag_value[i]
+
+                if val is None or val == "":
                     tag_filter.append({f"tags.{key}": {"$exists": True}})
                 else:
                     tag_filter.append({f"tags.{key}": val})
 
         if tag_filter:
-            query["$and"] = tag_filter
+            if "$and" in query:
+                query["$and"].extend(tag_filter)
+            else:
+                query["$and"] = tag_filter
 
         if self.user_id:
             query["user_id"] = self.user_id
