@@ -122,6 +122,8 @@ async def CreateTask(body: dict[str, Any]) -> TesCreateTaskResponse:
             message="Invalid request body",
             details=e.errors(),
         ) from e
+    if task.resources and task.resources.backend_parameters_strict:
+        raise BadRequestException("Backend parameters are not valid.")
     controller = CreateTaskController(db=db, task=task, user_id=user_id)
     return await controller.execute()
 
