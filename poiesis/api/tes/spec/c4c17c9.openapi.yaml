@@ -5,6 +5,7 @@
 # - Removed the `BasicAuth`, the API is secured with Bearer token
 # - Added `x-bearerInfoFunc` to the BearerAuth security scheme
 # - Formatted the file with yamllint
+# - Removed default state parameter from filter which was wrongly set to UNKNOWN
 openapi: 3.0.1
 info:
   title: Task Execution Service
@@ -810,7 +811,6 @@ components:
          - `PREEMPTED`: The task is stopped (preempted) by the system. The reasons for this would be tied to
         the specific system running the job. Generally, this means that the system reclaimed the compute
         capacity for reallocation.
-      default: UNKNOWN
       example: COMPLETE
       enum:
         - UNKNOWN
