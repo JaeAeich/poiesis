@@ -810,7 +810,6 @@ components:
          - `PREEMPTED`: The task is stopped (preempted) by the system. The reasons for this would be tied to
         the specific system running the job. Generally, this means that the system reclaimed the compute
         capacity for reallocation.
-      default: UNKNOWN
       example: COMPLETE
       enum:
         - UNKNOWN

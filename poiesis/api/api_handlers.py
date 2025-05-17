@@ -64,7 +64,7 @@ async def GetServiceInfo() -> TesServiceInfo:
 @pydantic_to_dict_response
 async def ListTasks(  # noqa: PLR0913
     name_prefix: str | None = None,
-    state: str | None = TesState.UNKNOWN.value,
+    state: str | None = None,
     tag_key: list[str] | None = None,
     tag_value: list[str] | None = None,
     page_size: int | None = None,
