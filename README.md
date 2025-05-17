@@ -32,7 +32,7 @@ A [TES] compliant task execution service built on kubernetes with `security`,
 ## Installation
 
 > **Note:** This is a high-level overview. For detailed instructions, please
-> refer to the [Deployment Docs](https://poiesis.readthedocs.io/en/docs/).
+> refer to the [Deployment Docs](https://poiesis.vercel.app/docs/deploy/deploying-poiesis.html).
 
 To install Poiesis into your Kubernetes cluster using Helm:
 

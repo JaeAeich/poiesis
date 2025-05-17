@@ -10,7 +10,7 @@ NAME := poiesis
 VERSION := $(shell uv tree | grep ${NAME} | awk '{print $$2}' | sed 's/^v//')
 BUILD_DATE := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 GIT_REVISION := $(shell git rev-parse HEAD)
-PY_VERSION := $(shell uvx python --version | awk '{print$$2}')
+PY_VERSION := 3.13.0
 DOCKERFILE := deployment/images/Dockerfile
 
 # Full image names
@@ -137,6 +137,7 @@ PHONY: build-docker-image bi
 build-docker-image:
 	@echo "\nBuilding Docker image +++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n"
 	@docker build \
+		--platform linux/amd64,linux/arm64 \
 		--build-arg PY_VERSION="${PY_VERSION}" \
 		--build-arg BUILD_DATE="${BUILD_DATE}" \
 		--build-arg GIT_REVISION="${GIT_REVISION}" \
