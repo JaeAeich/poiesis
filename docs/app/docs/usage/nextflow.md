@@ -1,11 +1,9 @@
 # Nextflow with Poiesis as Backend
 
 [Nextflow](https://www.nextflow.io/) is a workflow management system designed
-for running scientific data analysis pipelines.
-
-Most importantly for our case:
-[Nextflow supports GA4GH TES (Task Execution Service)](https://github.com/nextflow-io/nf-ga4gh)
-as an execution backend. This means you can write workflows in Nextflow and
+for running scientific data analysis pipelines. Nextflow
+[supports GA4GH TES (Task Execution Service)](https://github.com/nextflow-io/nf-ga4gh)
+as an execution backend. This means you can write workflows in `Nextflow` and
 execute individual tasks using `Poiesis` as the TES backend—on Kubernetes.
 
 This guide walks you through running a simple workflow using `Nextflow` with
@@ -21,7 +19,7 @@ Nextflow version 25.04.2 build 5947
 Things might break or behave differently in other versions.
 :::
 
-## ⚙️ Configuring Nextflow to Use Poiesis
+## Configuring Nextflow to Use Poiesis
 
 Nextflow supports TES backends via the
 [`nf-ga4gh`](https://github.com/nextflow-io/nf-ga4gh) plugin.
@@ -47,7 +45,7 @@ tes.oauthToken = 'asdf'
 - If your Poiesis deployment uses Keycloak, you’ll need a valid OAuth token here.
 :::
 
-## 🪣 Configuring S3/MinIO for Nextflow
+## Configuring S3/MinIO for Nextflow
 
 Since Poiesis executes tasks remotely, your local files aren't directly
 accessible once a task is launched. This means Nextflow needs to know how to
@@ -84,7 +82,7 @@ If you're using an external MinIO/S3 setup, make sure your `workDir` bucket
 exists beforehand.
 :::
 
-## ✨ Running a Workflow – `SAY_HI`
+## Running a Workflow – `SAY_HI`
 
 Let’s start with a basic workflow called `SAY_HI`. Create a file named `main.nf`:
 
@@ -131,7 +129,7 @@ Received: Hello Charlie from the TES executor!
 Received: Hello Bob from the TES executor!
 ```
 
-## 📂 Workflow with Inputs from Object Storage
+## Workflow with Inputs
 
 Let’s kick it up a notch. Suppose you’ve got a list of names stored in MinIO.
 Here’s how to feed it into a workflow.
