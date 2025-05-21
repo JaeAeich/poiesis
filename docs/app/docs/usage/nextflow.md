@@ -1,12 +1,12 @@
 # Nextflow with Poiesis as Backend
 
 [Nextflow](https://www.nextflow.io/) is a workflow management system designed
-for running scientific data analysis pipelines. Nextflow
-[supports GA4GH TES (Task Execution Service)](https://github.com/nextflow-io/nf-ga4gh)
+for running scientific data analysis pipelines. But more importantly,
+[Nextflow supports GA4GH TES (Task Execution Service)](https://github.com/nextflow-io/nf-ga4gh)
 as an execution backend. This means you can write workflows in `Nextflow` and
 execute individual tasks using `Poiesis` as the TES backend—on Kubernetes.
 
-This guide walks you through running a simple workflow using `Nextflow` with
+Below is a step-by-step guide to running a simple workflow using `Nextflow` with
 `Poiesis`.
 
 :::info 🧬 Nextflow Version
@@ -15,11 +15,9 @@ This guide was tested with:
 ```bash
 Nextflow version 25.04.2 build 5947
 ```
-
-Things might break or behave differently in other versions.
 :::
 
-## Configuring Nextflow to Use Poiesis
+## Configuring Nextflow for TES
 
 Nextflow supports TES backends via the
 [`nf-ga4gh`](https://github.com/nextflow-io/nf-ga4gh) plugin.
@@ -45,7 +43,7 @@ tes.oauthToken = 'asdf'
 - If your Poiesis deployment uses Keycloak, you’ll need a valid OAuth token here.
 :::
 
-## Configuring S3/MinIO for Nextflow
+## Configuring S3/MinIO
 
 Since Poiesis executes tasks remotely, your local files aren't directly
 accessible once a task is launched. This means Nextflow needs to know how to
