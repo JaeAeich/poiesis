@@ -3,6 +3,7 @@ import { defineConfig } from "vitepress";
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
     title: "Poiesis",
+    head: [['link', { rel: 'icon', href: '/logo/favicon.ico' }]],
     description: "TES on Kubernetes",
     themeConfig: {
         // https://vitepress.dev/reference/default-theme-config
@@ -22,6 +23,14 @@ export default defineConfig({
                     { text: "API", link: "/docs/intro/api" },
                     { text: "CLI", link: "/docs/intro/cli" },
                     { text: "Authentication", link: "/docs/intro/auth" },
+                ],
+            },
+            {
+                text: "Usage",
+                items: [
+                    { text: "Poiesis, TES and usage", link: "/docs/usage/usage" },
+                    { text: "Running Nextflow with Poiesis", link: "/docs/usage/nextflow" },
+                    { text: "Training ML models", link: "/docs/usage/training" },
                 ],
             },
             {

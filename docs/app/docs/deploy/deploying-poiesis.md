@@ -6,11 +6,11 @@ This guide assumes you already have your Kubernetes cluster set up and Helm inst
 
 The `values.yaml` file for Poiesis includes two important sections for managing dependencies:
 
-- `.Values.poiesis.externalDependencies`
+- `.Values.poiesis.externalDependencies.<dependency_name>`
 - `.Values.<dependency_name>`
 
 This setup allows you to control whether Helm should deploy a specific component
-for Poiesis or use an externally managed one. If you opt for the latter, you’ll
+for Poiesis or use an externally managed one. If you opt for the former, you’ll
 need to provide configuration details (e.g., host, port, username, password).
 
 This document walks through the deployment in a layered manner, starting with
@@ -24,8 +24,8 @@ Poiesis depends on two essential services:
 - **MongoDB**: Stores task-related data.
 - **Redis**: Powers internal messaging between services.
 
-By default, dependencies in `values.yaml` are disabled
-(`<dependency_name>.enabled=false`). So we’ll need to enable them as needed.
+By default, dependencies in `values.yaml` are enabled
+(`<dependency_name>.enabled=true`).
 
 We’ll install Poiesis in a new namespace called... `poiesis` (naming is hard, okay?).
 
