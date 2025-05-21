@@ -29,6 +29,19 @@ A [TES] compliant task execution service built on kubernetes with `security`,
 
 ## Basic Usage
 
+> **Note:** This is a high-level overview. For more details, please refer to the
+> [Basic Usage Docs](https://poiesis.vercel.app/docs/usage/usage.html).
+
+At its core, `Poiesis` lets you run a single task via a GA4GH TES-compliant API.
+But since it runs natively on Kubernetes, it’s far more versatile:
+
+- Use Poiesis as the execution backend for workflow engines
+- Launch thousands of batch tasks efficiently on Kubernetes
+- Train and track ML models using reproducible task definitions
+
+Whether you're running a one-off container or building full workflows, Poiesis
+abstracts away the complexity—so you can focus on what to run, not how to run it.
+
 ## Installation
 
 > **Note:** This is a high-level overview. For detailed instructions, please
