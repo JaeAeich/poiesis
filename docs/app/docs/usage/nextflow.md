@@ -27,7 +27,7 @@ Nextflow supports TES backends via the
 [`nf-ga4gh`](https://github.com/nextflow-io/nf-ga4gh) plugin.
 
 Before we begin, make sure you’ve deployed `Poiesis` with `MinIO` (or configured
-it to use external object storage). You can follow our [deployment guide here](/docs/app/docs/deploy/deploying-poiesis.md#step-2-add-object-storage-minio).
+it to use external object storage). You can follow our [deployment guide here](../deploy/deploying-poiesis.md#step-2-add-object-storage-minio).
 
 Here’s a minimal `nextflow.config` to connect with Poiesis:
 
