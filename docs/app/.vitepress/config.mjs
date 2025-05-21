@@ -3,6 +3,7 @@ import { defineConfig } from "vitepress";
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
     title: "Poiesis",
+    head: [['link', { rel: 'icon', href: '/logo/favicon.ico' }]],
     description: "TES on Kubernetes",
     themeConfig: {
         // https://vitepress.dev/reference/default-theme-config
