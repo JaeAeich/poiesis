@@ -25,6 +25,14 @@ export default defineConfig({
                 ],
             },
             {
+                text: "Usage",
+                items: [
+                    { text: "Poiesis, TES and usage", link: "/docs/usage/usage" },
+                    { text: "Running Nextflow with Poiesis", link: "/docs/usage/nextflow" },
+                    { text: "Training ML models", link: "/docs/usage/training" },
+                ],
+            },
+            {
                 text: "Developer Guide",
                 items: [
                     {
