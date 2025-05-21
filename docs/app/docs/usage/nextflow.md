@@ -15,6 +15,7 @@ This guide was tested with:
 ```bash
 Nextflow version 25.04.2 build 5947
 ```
+
 :::
 
 ## Configuring Nextflow for TES
