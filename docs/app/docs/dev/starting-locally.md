@@ -7,9 +7,9 @@ API locally with hot reloading.
 
 You can use any local Kubernetes setup like:
 
-- Docker Desktop
-- Minikube
-- Kind
+- [Docker Desktop](https://docs.docker.com/desktop/)
+- [Minikube](https://minikube.sigs.k8s.io/docs/)
+- [Kind](https://kind.sigs.k8s.io/)
 
 Make sure your cluster is up and running before proceeding.
 
