@@ -40,7 +40,8 @@ But since it runs natively on Kubernetes, it’s far more versatile:
 - Train and track ML models using reproducible task definitions
 
 Whether you're running a one-off container or building full workflows, Poiesis
-abstracts away the complexity—so you can focus on what to run, not how to run it.
+abstracts away the complexity—so you can focus on what to run, not how to run
+it.
 
 ## Installation
 
@@ -69,7 +70,8 @@ This will install Poiesis into a new namespace called `poiesis`.
 To get started with development:
 
 > **Note:** This is a high-level overview. For detailed instructions, please
-> refer to the [Development Docs](https://poiesis.readthedocs.io/en/docs/).
+> refer to the
+> [Development Docs](https://poiesis.vercel.app/docs/dev/starting-locally).
 
 1. **Create a virtual environment** using
    [`uv`](https://github.com/astral-sh/uv):
@@ -93,6 +95,12 @@ To get started with development:
 
    ```bash
    make i
+   ```
+
+1. **Start all the services**:
+
+   ```bash
+   kubectl apply -f ./deployment/dev.yaml
    ```
 
 1. **Set environment variables**:
