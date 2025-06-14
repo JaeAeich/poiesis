@@ -15,18 +15,6 @@ Make sure your cluster is up and running before proceeding.
 
 ## Step 2: Launch Dev Services
 
-Apply the development Kubernetes manifest to start all dependent services in
-the `po` namespace:
-
-```bash
-kubectl apply -f ./deployment/dev.yaml
-```
-
-:::info Namespace Info
-The dev setup uses a dedicated namespace named `po` to isolate services and
-keep things simple.
-:::
-
 ### Choosing the Right Service Type
 
 By default, the services in `dev.yaml` use `ClusterIP`. Depending on your setup,
@@ -42,6 +30,18 @@ you might need to change this:
   ```bash
   kubectl port-forward svc/poiesis-mongodb 27017:27017 -n po
   ```
+
+Apply the development Kubernetes manifest to start all dependent services in
+the `po` namespace:
+
+```bash
+kubectl apply -f ./deployment/dev.yaml
+```
+
+:::info Namespace Info
+The dev setup uses a dedicated namespace named `po` to isolate services and
+keep things simple.
+:::
 
 ## Step 3: Start the Dev Server
 

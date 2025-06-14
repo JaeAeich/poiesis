@@ -135,7 +135,7 @@ spec:
     spec:
       containers:
         - name: mongodb
-          image: mongo:16.5.6
+          image: mongo
           ports:
             - containerPort: 27017
           env:
@@ -200,7 +200,7 @@ spec:
     spec:
       containers:
         - name: redis
-          image: redis:21.0.2
+          image: redis
           command: ["redis-server", "--requirepass", "password"]
           ports:
             - containerPort: 6379
@@ -241,7 +241,7 @@ spec:
     spec:
       containers:
         - name: minio
-          image: minio/minio:16.0.10
+          image: minio/minio
           command:
             - /bin/bash
             - -c
