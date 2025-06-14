@@ -1,22 +1,39 @@
-export POIESIS_IMAGE="jaeaeich/poiesis:latest"
-export POIESIS_K8S_NAMESPACE="poiesis"
-export MONGODB_MAX_POOL_SIZE="100"
-export POIESIS_SERVICE_ACCOUNT_NAME="poiesis-pod-creator"
-export MONGODB_DATABASE="poiesis"
+# --- General Poiesis Configuration ---
 export POIESIS_ENV="dev"
-export AUTH="dummy"
-export POIESIS_CORE_CONFIGMAP_NAME="poiesis-core-config-map"
-export POIESIS_MONGO_SECRET_NAME="poiesis-mongo-secret"
 export LOG_LEVEL="DEBUG"
-export MONGODB_HOST="localhost"
-export MONGODB_PORT="27017" # Port forward mongo service to 27017
-export MESSAGE_BROKER_HOST="localhost"
-export MESSAGE_BROKER_PORT="6379"
-POIESIS_MONGODB_AUTH_ENABLED="true"
-export MONGODB_USER="root" # Change, if the different username is specified
-export MONGODB_PASSWORD="password"  # Change, if the different password is specified
-export MONITOR_TIMEOUT_SECONDS="0"
+export AUTH="dummy"
 export POIESIS_API_SERVER_PORT="8000"
+
+# --- Kubernetes Configuration ---
+# Your KUBECONFIG must be pointing to the correct cluster.
+export POIESIS_K8S_NAMESPACE="po"
+export POIESIS_SERVICE_ACCOUNT_NAME="poiesis-sa"
+export POIESIS_IMAGE="jaeaeich/poiesis:latest" # Or your custom dev image
 export POIESIS_RESTART_POLICY="Never"
 export POIESIS_IMAGE_PULL_POLICY="IfNotPresent"
 export POIESIS_JOB_TTL="3600"
+
+# --- Secret & ConfigMap Names ---
+# These tell the API which secrets to mount into the worker jobs it creates.
+export POIESIS_MONGO_SECRET_NAME="poiesis-mongodb-secret"
+export POIESIS_REDIS_SECRET_NAME="poiesis-redis-secret"
+export POIESIS_S3_SECRET_NAME="poiesis-s3-secret"
+export POIESIS_CORE_CONFIGMAP_NAME="poiesis-core-configmap"
+
+# --- MongoDB Connection (via port-forward) ---
+export MONGODB_HOST="localhost"
+export MONGODB_PORT="27017"
+export MONGODB_USER="admin"
+export MONGODB_PASSWORD="password"
+export MONGODB_DATABASE="poiesis"
+export MONGODB_MAX_POOL_SIZE="100"
+
+# --- Redis Connection (via port-forward) ---
+export MESSAGE_BROKER_HOST="poiesis-redis"
+export MESSAGE_BROKER_PORT="6379"
+export MESSAGE_BROKER_PASSWORD="password"
+
+# --- Minio (S3) Connection (via port-forward) ---
+export S3_URL="http://poiesis-minio:9000"
+export AWS_ACCESS_KEY_ID="admin"
+export AWS_SECRET_ACCESS_KEY="password"

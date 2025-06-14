@@ -1,0 +1,338 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: po
+...
+---
+################################################################################
+# RBAC CONFIGURATION
+# Correctly configured for the Poiesis API to manage jobs and other resources.
+################################################################################
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: poiesis-sa
+  namespace: po
+...
+---
+# CLUSTER ROLE: For permissions across the entire cluster (e.g., creating jobs)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: poiesis-cluster-role
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["nodes", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+...
+---
+# CLUSTER ROLE BINDING: Binds the ClusterRole to our ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: poiesis-cluster-role-binding
+subjects:
+  - kind: ServiceAccount
+    name: poiesis-sa
+    namespace: po
+roleRef:
+  kind: ClusterRole
+  name: poiesis-cluster-role
+  apiGroup: rbac.authorization.k8s.io
+...
+---
+# ROLE: For permissions ONLY within the 'po' namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: poiesis-role
+  namespace: po
+rules:
+  - apiGroups: [""]
+    resources:
+      ["pods", "pods/log", "persistentvolumeclaims", "secrets", "configmaps"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
+...
+---
+# ROLE BINDING: Binds the namespaced Role to our ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: poiesis-role-binding
+  namespace: po
+subjects:
+  - kind: ServiceAccount
+    name: poiesis-sa
+    namespace: po
+roleRef:
+  kind: Role
+  name: poiesis-role
+  apiGroup: rbac.authorization.k8s.io
+...
+---
+################################################################################
+# SECRETS
+# Hardcoded credentials for development.
+################################################################################
+apiVersion: v1
+kind: Secret
+metadata:
+  name: poiesis-mongodb-secret
+  namespace: po
+type: Opaque
+data:
+  # user: admin
+  MONGODB_USER: YWRtaW4=
+  # password: password
+  MONGODB_PASSWORD: cGFzc3dvcmQ=
+...
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: poiesis-redis-secret
+  namespace: po
+type: Opaque
+data:
+  # password: password
+  MESSAGE_BROKER_PASSWORD: cGFzc3dvcmQ=
+...
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: poiesis-s3-secret
+  namespace: po
+type: Opaque
+data:
+  # user: admin
+  AWS_ACCESS_KEY_ID: YWRtaW4=
+  # password: password
+  AWS_SECRET_ACCESS_KEY: cGFzc3dvcmQ=
+...
+---
+################################################################################
+# MONGODB
+################################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb
+  namespace: po
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:8.0.10
+          ports:
+            - containerPort: 27017
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: poiesis-mongodb-secret
+                  key: username
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: poiesis-mongodb-secret
+                  key: password
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+      volumes:
+        - name: mongo-data
+          persistentVolumeClaim:
+            claimName: mongo-pvc
+...
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+  namespace: po
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+...
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: poiesis-mongodb
+  namespace: po
+spec:
+  type: ClusterIP
+  selector:
+    app: mongodb
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017
+...
+---
+################################################################################
+# REDIS
+################################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: po
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:8.0.0
+          command: ["redis-server", "--requirepass", "password"]
+          ports:
+            - containerPort: 6379
+...
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: poiesis-redis
+  namespace: po
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379
+...
+---
+################################################################################
+# MINIO
+################################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: po
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+          command:
+            - /bin/bash
+            - -c
+            - minio server /data --console-address :9001
+          env:
+            - name: MINIO_ROOT_USER
+              value: "admin"
+            - name: MINIO_ROOT_PASSWORD
+              value: "password"
+          ports:
+            - containerPort: 9000
+              name: api
+            - containerPort: 9001
+              name: console
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+      volumes:
+        - name: minio-data
+          persistentVolumeClaim:
+            claimName: minio-pvc
+...
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-pvc
+  namespace: po
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+...
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: poiesis-minio
+  namespace: po
+spec:
+  type: ClusterIP
+  selector:
+    app: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+...
+---
+################################################################################
+# ConfigMap
+################################################################################
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: poiesis-core-configmap
+  namespace: po
+  labels:
+    app.kubernetes.io/name: poiesis
+    app.kubernetes.io/component: core
+data:
+  LOG_LEVEL: "INFO"
+  POIESIS_SERVICE_ACCOUNT_NAME: "poiesis-sa"
+  POIESIS_K8S_NAMESPACE: "po"
+  MONITOR_TIMEOUT_SECONDS: "80"
+  POIESIS_RESTART_POLICY: "Never"
+  POIESIS_IMAGE_PULL_POLICY: "IfNotPresent"
+  POIESIS_JOB_TTL: "3600"
+
+  # --- Message broker (Redis) ---
+  MESSAGE_BROKER_HOST: "poiesis-redis"
+  MESSAGE_BROKER_PORT: "6379"
+  POIESIS_REDIS_SECRET_NAME: "poiesis-redis-secret"
+
+  # --- MongoDB ---
+  MONGODB_HOST: "poiesis-mongodb"
+  MONGODB_PORT: "27017"
+  POIESIS_MONGO_SECRET_NAME: "poiesis-mongodb-secret"
+
+  # --- S3/Minio ---
+  S3_URL: "http://poiesis-minio:9000"
+  POIESIS_S3_SECRET_NAME: "poiesis-s3-secret"
+...
