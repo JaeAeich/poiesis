@@ -20,14 +20,6 @@ poiesis.cli.main module
    :show-inheritance:
    :undoc-members:
 
-poiesis.cli.styling module
---------------------------
-
-.. automodule:: poiesis.cli.styling
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 poiesis.cli.utils module
 ------------------------
 

@@ -1,5 +1,6 @@
 """Info retrieval for CLI commands."""
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -12,36 +13,17 @@ api_constants = get_poiesis_api_constants()
 constants = get_poiesis_constants()
 
 
+@lru_cache
 def get_version() -> str:
-    """Get version from pyproject.toml.
-
-    Falls back to a default version if the file cannot be read.
-
-    Returns:
-        Version string from pyproject.toml or default
-    """
-    try:
-        possible_paths = [
-            Path("pyproject.toml"),
-            Path(__file__).parent.parent.parent / "pyproject.toml",
-        ]
-
-        for path in possible_paths:
-            if path.exists():
-                with open(path, "rb") as f:
-                    pyproject = tomli.load(f)
-                    v: str = (
-                        pyproject.get("tool", {})
-                        .get("poetry", {})
-                        .get("version", "0.1.0")
-                    )
-                    return v
-
-        return "0.1.0"
-    except Exception:
-        return "0.1.0"
+    """Get version from pyproject.toml."""
+    if pyproject_data := get_pyproject_data():
+        version: str = pyproject_data.get("project", {}).get("version", "UNKNOWN")
+        return version
+    else:
+        return "UNKNOWN"
 
 
+@lru_cache
 def get_pyproject_data() -> dict[str, Any]:
     """Get all data from pyproject.toml.
 
@@ -64,30 +46,38 @@ def get_pyproject_data() -> dict[str, Any]:
         return {}
 
 
+@lru_cache
 def get_basic_info() -> dict[str, Any]:
     """Get basic information about the project.
 
     Returns:
         Dictionary with basic information about the project.
     """
-    info: dict[str, str] = {
+    info: dict[str, Any] = {
         "version": get_version(),
     }
 
     if pyproject_data := get_pyproject_data():
-        poetry_data = pyproject_data.get("tool", {}).get("poetry", {})
+        project_data = pyproject_data.get("project", {})
 
-        if "authors" in poetry_data:
-            info["authors"] = ", ".join(poetry_data["authors"])
+        if "authors" in project_data:
+            info["authors"] = ", ".join(
+                author.get("name", "") for author in project_data["authors"]
+            )
 
-        if "maintainers" in poetry_data:
-            info["maintainers"] = ", ".join(poetry_data["maintainers"])
+        if "maintainers" in project_data:
+            info["maintainers"] = ", ".join(
+                maintainer.get("name", "") for maintainer in project_data["maintainers"]
+            )
 
-        if "repository" in poetry_data:
-            info["repository"] = poetry_data["repository"]
+        if "urls" in project_data and "Repository" in project_data["urls"]:
+            info["repository"] = project_data["urls"]["Repository"]
 
-        if "license" in poetry_data:
-            info["license"] = poetry_data["license"]
+        if "urls" in project_data and "Documentation" in project_data["urls"]:
+            info["documentation"] = project_data["urls"]["Documentation"]
+
+        if "license" in project_data:
+            info["license"] = project_data["license"]
 
     info |= {
         "TES version": api_constants.TES_VERSION,
@@ -95,6 +85,7 @@ def get_basic_info() -> dict[str, Any]:
         "environment": constants.ENVIRONMENT,
     }
 
+    # Format keys (e.g., "tes version") and sort for display
     return dict(
         sorted({k.replace("_", " ").title(): v for k, v in info.items()}.items())
     )

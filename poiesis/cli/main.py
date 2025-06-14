@@ -8,7 +8,6 @@ from poiesis.cli.commands.poiesis.texam import TexamCommand
 from poiesis.cli.commands.poiesis.tif import TifCommand
 from poiesis.cli.commands.poiesis.tof import TofCommand
 from poiesis.cli.commands.poiesis.torc import TorcCommand
-from poiesis.cli.commands.tes.task import TaskCommand
 from poiesis.cli.utils import get_basic_info, get_version
 from poiesis.constants import get_poiesis_constants
 
@@ -53,8 +52,5 @@ def main():
     TifCommand.register(cli)
     TofCommand.register(cli)
     TorcCommand.register(cli)
-
-    # TES commands
-    TaskCommand.register(cli)
 
     cli()
