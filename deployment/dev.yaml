@@ -309,6 +309,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: poiesis-core-configmap
+  namespace: po
   labels:
     app.kubernetes.io/name: poiesis
     app.kubernetes.io/component: core
