@@ -3,17 +3,11 @@
 from abc import abstractmethod
 from typing import Any, TypeVar
 
-import rich_click as click
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
+import click
 
 from poiesis.api.constants import get_poiesis_api_constants
-from poiesis.cli.styling import STYLE_INFO
 from poiesis.cli.utils import get_basic_info, get_version
 from poiesis.constants import get_poiesis_constants
-
-console = Console()
 
 T = TypeVar("T", bound="BaseCommand")
 
@@ -71,7 +65,7 @@ class BaseCommand:
         )
         def version():
             version_info = get_version()
-            console.print(f"{self.name.upper()} Service v{version_info}")
+            click.echo(f"{self.name.upper()} Service v{version_info}")
 
     def add_info_command(self, group: click.Group) -> None:
         """Add the info command to the group.
@@ -84,27 +78,15 @@ class BaseCommand:
             name="info", help=f"Display information about the {self.name} service"
         )
         def info():
-            table = Table(show_header=False, box=None)
-            table.add_column("Key", style="cyan")
-            table.add_column("Value", style="green")
-
             info_dict = self.get_info()
+            title = f"--- {self.name.upper()} ---"
+            click.echo(title)
             for key, value in info_dict.items():
-                table.add_row(str(key), str(value))
-
-            panel = Panel(
-                table,
-                title=f"{self.name.upper()}",
-                style=STYLE_INFO,
-                border_style="cyan",
-            )
-            console.print(panel)
+                click.echo(f"{key}: {value}")
+            click.echo("-" * len(title))
 
     def get_info(self) -> dict[str, Any]:
         """Get information about the service.
-
-        Args:
-            extra: Whether to include extra information
 
         Returns:
             Dictionary with service information

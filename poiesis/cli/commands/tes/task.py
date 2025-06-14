@@ -5,10 +5,9 @@ import json
 from enum import Enum
 from typing import Any
 
-import rich_click as click
+import click
 import yaml
 from pydantic import BaseModel, ValidationError
-from rich.console import Console
 
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.api.controllers.cancel_task import CancelTaskController
@@ -24,9 +23,6 @@ from poiesis.repository.mongo import MongoDBClient
 
 api_constants = get_poiesis_api_constants()
 constants = get_poiesis_constants()
-
-
-console = Console()
 
 
 class OutputFormat(Enum):
@@ -66,13 +62,7 @@ class TaskCommand(BaseCommand):
             help="Output format",
         )
         def create(task: str, token: str, format: str | None = OutputFormat.YAML.value):
-            """Create a task.
-
-            Args:
-                task: TES task request JSON string
-                token: User auth token
-                format: Output format
-            """
+            """Create a task."""
             db = MongoDBClient()
             try:
                 user_id = self._get_user_id(token)
@@ -127,14 +117,7 @@ class TaskCommand(BaseCommand):
             view: str | None = TesView.MINIMAL.value,
             format: str | None = OutputFormat.YAML.value,
         ):
-            """Get a task.
-
-            Args:
-                id: Task ID
-                token: User auth token
-                view: Task view
-                format: Output format
-            """
+            """Get a task."""
             db = MongoDBClient()
 
             try:
@@ -245,19 +228,7 @@ class TaskCommand(BaseCommand):
             tag_value: str | None = None,
             view: str | None = TesView.MINIMAL.value,
         ):
-            """List tasks.
-
-            Args:
-                token: User auth token
-                format: Output format
-                page_size: Page size
-                page_token: Page token
-                name_prefix: Name prefix
-                state: State of the task
-                tag_key: Tag key
-                tag_value: Tag value
-                view: View of the task
-            """
+            """List tasks."""
             db = MongoDBClient()
 
             try:
@@ -315,8 +286,8 @@ class TaskCommand(BaseCommand):
         )
 
         if format == OutputFormat.JSON:
-            console.print(json.dumps(_response, indent=4))
+            click.echo(json.dumps(_response, indent=4))
         elif format == OutputFormat.YAML:
-            console.print(yaml.dump(_response))
+            click.echo(yaml.dump(_response))
         else:
-            console.print(_response)
+            click.echo(_response)

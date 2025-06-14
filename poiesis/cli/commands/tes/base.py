@@ -3,13 +3,10 @@
 from abc import abstractmethod
 from typing import TypeVar
 
-import rich_click as click
-from rich.console import Console
+import click
 
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.constants import get_poiesis_constants
-
-console = Console()
 
 T = TypeVar("T", bound="BaseCommand")
 

@@ -2,18 +2,14 @@
 
 import asyncio
 import json
-import sys
 from typing import Any
 
-import rich_click as click
-from rich.console import Console
-from rich.panel import Panel
+import click
+from pydantic import ValidationError
 
 from poiesis.api.tes.models import TesTask
 from poiesis.cli.commands.poiesis.base import BaseCommand
 from poiesis.core.services.torc.torc import Torc
-
-console = Console()
 
 
 class TorcCommand(BaseCommand):
@@ -33,41 +29,29 @@ class TorcCommand(BaseCommand):
         @group.command(name="run", help="Execute a Torc task")
         @click.option("--task", required=True, help="Task JSON string")
         def run(task: str):
-            """Execute a Torc task with the provided task JSON.
-
-            Args:
-                task: Task JSON string
-            """
+            """Execute a Torc task with the provided task JSON."""
             try:
                 task_json = json.loads(task)
-
                 tes_task = TesTask(**task_json)
 
-                console.print(
-                    Panel(
-                        f"Task ID: [cyan]{tes_task.id}[/cyan]\n"
-                        f"Name: [cyan]{tes_task.name}[/cyan]",
-                        title="Executing Torc Task",
-                        border_style="blue",
-                    )
-                )
+                click.echo("--- Executing Torc Task ---")
+                click.echo(f"Task ID: {tes_task.id}")
+                click.echo(f"Name: {tes_task.name}")
+                click.echo("---------------------------")
 
                 asyncio.run(Torc(tes_task).execute())
 
-                console.print("[green]Task execution completed successfully[/green]")
+                click.echo("Task execution completed successfully")
 
             except json.JSONDecodeError as e:
-                console.print(f"[bold red]JSON parsing error:[/bold red] {str(e)}")
-                sys.exit(1)
+                raise click.ClickException(f"JSON parsing error: {str(e)}") from e
+            except ValidationError as e:
+                raise click.ClickException(f"Validation error: {str(e)}") from e
             except Exception as e:
-                console.print(f"[bold red]Error:[/bold red] {str(e)}")
-                sys.exit(1)
+                raise click.ClickException(f"Error: {str(e)}") from e
 
     def get_info(self) -> dict[str, Any]:
-        """Get TOF service information.
-
-        Args:
-            extra: Whether to include extra information
+        """Get Torc service information.
 
         Returns:
             Dictionary with TOF service information

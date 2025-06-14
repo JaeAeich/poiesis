@@ -2,20 +2,15 @@
 
 import asyncio
 import json
-import sys
 from typing import Any
 
-import rich_click as click
+import click
 from pydantic import ValidationError
-from rich.console import Console
-from rich.panel import Panel
 
 from poiesis.api.tes.models import TesInput
 from poiesis.cli.commands.poiesis.base import BaseCommand
 from poiesis.core.services.filer.filer_strategy_factory import STRATEGY_MAP
 from poiesis.core.services.filer.tif import Tif
-
-console = Console()
 
 
 class TifCommand(BaseCommand):
@@ -39,62 +34,27 @@ class TifCommand(BaseCommand):
         @click.option("--name", required=True, help="Name of the task")
         @click.option("--inputs", required=True, help="List of task inputs as JSON")
         def run(name: str, inputs: str):
-            """Execute a TIF task with the provided parameters.
-
-            Downloads input files for the task based on the provided input
-            specifications.
-
-            Example:
-                Command line usage:
-                ```bash
-                $ tif --name md5sum --inputs '[{
-                    "url": "s3://my-object-store/file1",
-                    "path": "/data/file1"
-                }]'
-                ```
-
-                Multiple inputs:
-                ```bash
-                $ tif --name image-processor --inputs '[
-                    {
-                        "url": "s3://my-object-store/file1",
-                        "path": "/data/file1"
-                    },
-                    {
-                        "url": "file://local/file2",
-                        "path": "/data/file2"
-                    }
-                ]'
-                ```
-            """
+            """Execute a TIF task with the provided parameters."""
             try:
                 inputs_json = json.loads(inputs)
-
                 _inputs = [TesInput(**input_) for input_ in inputs_json]
 
                 file_count = len(_inputs)
-                console.print(
-                    Panel(
-                        f"Task: [cyan]{name}[/cyan]\n"
-                        f"Input files: [cyan]{file_count}[/cyan]",
-                        title="TIF Task Information",
-                        border_style="blue",
-                    )
-                )
+                click.echo("--- TIF Task Information ---")
+                click.echo(f"Task: {name}")
+                click.echo(f"Input files: {file_count}")
+                click.echo("--------------------------")
 
-                console.print("[cyan]Downloading input files...[/cyan]")
+                click.echo("Downloading input files...")
                 asyncio.run(Tif(name, _inputs).execute())
-                console.print("[green]All input files downloaded successfully[/green]")
+                click.echo("All input files downloaded successfully")
 
             except json.JSONDecodeError as e:
-                console.print(f"[bold red]JSON parsing error:[/bold red] {str(e)}")
-                sys.exit(1)
+                raise click.ClickException(f"JSON parsing error: {str(e)}") from e
             except ValidationError as e:
-                console.print(f"[bold red]Validation error:[/bold red] {str(e)}")
-                sys.exit(1)
+                raise click.ClickException(f"Validation error: {str(e)}") from e
             except Exception as e:
-                console.print(f"[bold red]Error:[/bold red] {str(e)}")
-                sys.exit(1)
+                raise click.ClickException(f"Error: {str(e)}") from e
 
     def get_info(self) -> dict[str, Any]:
         """Get TIF service information.

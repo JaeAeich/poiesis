@@ -74,29 +74,26 @@ def get_basic_info() -> dict[str, Any]:
         "version": get_version(),
     }
 
-    pyproject_data = get_pyproject_data()
-    if pyproject_data:
+    if pyproject_data := get_pyproject_data():
         poetry_data = pyproject_data.get("tool", {}).get("poetry", {})
 
         if "authors" in poetry_data:
-            info.update({"authors": ", ".join(poetry_data["authors"])})
+            info["authors"] = ", ".join(poetry_data["authors"])
 
         if "maintainers" in poetry_data:
-            info.update({"maintainers": ", ".join(poetry_data["maintainers"])})
+            info["maintainers"] = ", ".join(poetry_data["maintainers"])
 
         if "repository" in poetry_data:
-            info.update({"repository": poetry_data["repository"]})
+            info["repository"] = poetry_data["repository"]
 
         if "license" in poetry_data:
-            info.update({"license": poetry_data["license"]})
+            info["license"] = poetry_data["license"]
 
-    info.update(
-        {
-            "TES version": api_constants.TES_VERSION,
-            "TES spec hash": api_constants.SPEC_GIT_HASH,
-            "environment": constants.ENVIRONMENT,
-        }
-    )
+    info |= {
+        "TES version": api_constants.TES_VERSION,
+        "TES spec hash": api_constants.SPEC_GIT_HASH,
+        "environment": constants.ENVIRONMENT,
+    }
 
     return dict(
         sorted({k.replace("_", " ").title(): v for k, v in info.items()}.items())
