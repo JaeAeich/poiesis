@@ -8,7 +8,6 @@ Subpackages
    :maxdepth: 4
 
    poiesis.cli.commands.poiesis
-   poiesis.cli.commands.tes
 
 Module contents
 ---------------
