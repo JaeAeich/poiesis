@@ -135,14 +135,20 @@ spec:
     spec:
       containers:
         - name: mongodb
-          image: mongo:8.9.0
+          image: mongo:8.0.10
           ports:
             - containerPort: 27017
           env:
             - name: MONGO_INITDB_ROOT_USERNAME
-              value: "admin"
+              valueFrom:
+                secretKeyRef:
+                  name: poiesis-mongodb-secret
+                  key: username
             - name: MONGO_INITDB_ROOT_PASSWORD
-              value: "password"
+              valueFrom:
+                secretKeyRef:
+                  name: poiesis-mongodb-secret
+                  key: password
           volumeMounts:
             - name: mongo-data
               mountPath: /data/db
@@ -241,7 +247,7 @@ spec:
     spec:
       containers:
         - name: minio
-          image: minio/minio:25.4.22
+          image: minio/minio:RELEASE.2025-04-22T22-12-26Z
           command:
             - /bin/bash
             - -c
