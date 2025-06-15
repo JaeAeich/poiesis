@@ -24,9 +24,6 @@ level, it consists of:
 2.**Core Services:** The backend engine that interacts directly with the
     Kubernetes API to orchestrate, execute, and monitor tasks.
 
-3.**CLI Tool (`poiesis`):** A command-line utility for interacting with the
-    service and managing its components.
-
 This architecture, packaged into a single deployable unit, provides a powerful
 yet manageable solution for task execution.
 
@@ -39,12 +36,6 @@ The Poiesis API strictly adheres to the
 It provides the standard RESTful endpoints for submitting tasks, querying their
 status, and retrieving results, ensuring compatibility with existing TES clients
 and workflows.
-
-::: tip Check TES Version
-You can easily verify the exact `TES` specification version and commit hash
-implemented by your `Poiesis` instance by running the `poiesis info` command
-using the [CLI](./cli.md).
-:::
 
 ### Core Services
 
@@ -83,17 +74,4 @@ requests are defined by the user submitting the task.
 inputs are staged, computations occur, and outputs are generated before being
 collected by `TOF`. For privacy and security of sensitive data, PVCs are
 automatically deleted after task completion.
-:::
-
-### CLI
-
-The `poiesis` Command Line Interface (CLI) is a versatile tool for interacting
-with the `Poiesis` service. It is exactly like the API but handles much more
-than the simple user facing API endpoints.
-
-::: warning With great power comes great responsibility
-The `poiesis` CLI is designed for advanced users who want to interact with the
-`Poiesis` service in a more dynamic and flexible way. It is not recommended for
-users who only need to submit tasks and retrieve results. Read the
-[CLI](./cli.md) page for more information.
 :::

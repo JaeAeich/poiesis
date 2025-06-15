@@ -47,7 +47,6 @@ class TifCommand(BaseCommand):
 
                 click.echo("Downloading input files...")
                 asyncio.run(Tif(name, _inputs).execute())
-                click.echo("All input files downloaded successfully")
 
             except json.JSONDecodeError as e:
                 raise click.ClickException(f"JSON parsing error: {str(e)}") from e

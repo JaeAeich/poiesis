@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import sys
 from typing import Any
 
 import click
@@ -35,15 +34,14 @@ class TexamCommand(BaseCommand):
             try:
                 _task = TesTask(**json.loads(task))
             except ValidationError as e:
-                click.echo(f"Error: {e}", err=True)
-                sys.exit(1)
+                raise click.ClickException(f"Validation Error: {e}") from e
             except json.JSONDecodeError as e:
-                click.echo(f"Error: Invalid JSON in --task argument: {e}", err=True)
-                sys.exit(1)
+                raise click.ClickException(
+                    f"Invalid JSON in --task argument: {e}"
+                ) from e
 
             click.echo(f"Executing TExAM task: {_task.id}")
             asyncio.run(Texam(_task).execute())
-            click.echo("Task execution completed successfully")
 
     def get_info(self) -> dict[str, Any]:
         """Get TExAM service information.

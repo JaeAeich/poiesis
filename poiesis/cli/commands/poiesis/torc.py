@@ -41,8 +41,6 @@ class TorcCommand(BaseCommand):
 
                 asyncio.run(Torc(tes_task).execute())
 
-                click.echo("Task execution completed successfully")
-
             except json.JSONDecodeError as e:
                 raise click.ClickException(f"JSON parsing error: {str(e)}") from e
             except ValidationError as e:

@@ -44,7 +44,6 @@ class TofCommand(BaseCommand):
 
                 click.echo("Uploading output files...")
                 asyncio.run(Tof(name, _outputs).execute())
-                click.echo("All output files uploaded successfully")
 
             except json.JSONDecodeError as e:
                 raise click.ClickException(f"JSON parsing error: {str(e)}") from e
