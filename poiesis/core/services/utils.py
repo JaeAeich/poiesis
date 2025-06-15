@@ -43,12 +43,9 @@ def split_path_for_mounting(path_str: str) -> tuple[str, str]:
     Returns:
         tuple[str, str]: A tuple containing (`first_component`, `rest_of_path`),
             e.g., ('/data', 'f1/f2/file1') for the path `/data/f1/f2/file1`.
-            Returns ('/', '') for the root path '/'.
-            Returns (path_str, '') if there's only one component (e.g., '/data').
 
     Raises:
-        ValueError: If the path_str is None or empty.
-        ValueError: If the path_str is not an absolute path (does not start with '/').
+        ValueError: If the path_str is None, or not nested at least once.
     """
     if not path_str:
         raise ValueError("Path is empty.")
@@ -57,17 +54,13 @@ def split_path_for_mounting(path_str: str) -> tuple[str, str]:
 
     path_parts = p.parts
 
-    if len(path_parts) == 0:
-        raise ValueError("Path is empty.")
-    if len(path_parts) == 1:
-        if path_parts[0] == p.anchor:
-            return p.anchor, ""
-        else:
-            raise ValueError(f"Invalid path: {path_str} is not absolute.")
-    elif len(path_parts) == 2:  # noqa: PLR2004
-        return str(p), ""
-    else:
-        first_part = Path(p.anchor) / path_parts[1]
-        rest_parts = path_parts[2:]
-        rest_of_path = os.path.join(*rest_parts) if rest_parts else ""
-        return str(first_part), rest_of_path
+    # This check shouldn't be reached because pydantic already checks this
+    if len(path_parts) <= 2:  # noqa: PLR2004
+        raise ValueError(
+            "Path can't be at the root, it must be at least one level nested."
+        )
+
+    first_part = Path(p.anchor) / path_parts[1]
+    rest_parts = path_parts[2:]
+    rest_of_path = os.path.join(*rest_parts) if rest_parts else ""
+    return str(first_part), rest_of_path

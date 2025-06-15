@@ -1,9 +1,17 @@
 """Models for TES API."""
 
+import os
 from datetime import UTC, datetime
 from enum import Enum
+from pathlib import Path
 
-from pydantic import AnyUrl, BaseModel, Field, field_serializer
+from pydantic import (
+    AnyUrl,
+    BaseModel,
+    Field,
+    field_serializer,
+    field_validator,
+)
 
 
 class TesCancelTaskResponse(BaseModel):
@@ -159,6 +167,7 @@ class TesInput(BaseModel):
         path: Path of the file inside the container.
             Must be an absolute path.
             Example: "/data/file1"
+            Note: The path can't be at root, needs to be nested at least once.
         type: File type (file or directory)
         content: File content literal.
             Implementations should support a minimum of 128 KiB in this field
@@ -188,6 +197,20 @@ class TesInput(BaseModel):
         """Serialize the type to a string."""
         return v.value
 
+    @field_validator("path")
+    @classmethod
+    def serialize_path(cls, path: str) -> str:
+        """Serialize path so that its not at root."""
+        if not path.startswith("/"):
+            raise ValueError("Path must be an absolute path.")
+        normalized_path = os.path.normpath(path)
+        path_obj = Path(normalized_path)
+        if len(path_obj.parts) < 3:  # noqa: PLR2004
+            raise ValueError(
+                "Path can't be at the root, it must be at least one level nested."
+            )
+        return normalized_path
+
 
 class TesOutput(BaseModel):
     """Output describes Task output files.
@@ -209,6 +232,7 @@ class TesOutput(BaseModel):
             but mind implications for `tesOutput.url` and `tesOutput.path_prefix`.
             Only wildcards defined in IEEE Std 1003.1-2017 (POSIX), 12.3 are supported;
             see https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_13
+            Note: The path can't be at root, needs to be nested at least once.
         path_prefix: Prefix to be removed from matching outputs if `tesOutput.path`
             contains wildcards; output URLs are constructed by appending pruned paths
             to the directory specified in `tesOutput.url`.
@@ -227,6 +251,20 @@ class TesOutput(BaseModel):
     def serialize_type(self, v: TesFileType) -> str:
         """Serialize the type to a string."""
         return v.value
+
+    @field_validator("path")
+    @classmethod
+    def serialize_path(cls, path: str) -> str:
+        """Serialize path so that its not at root."""
+        if not path.startswith("/"):
+            raise ValueError("Path must be an absolute path.")
+        normalized_path = os.path.normpath(path)
+        path_obj = Path(normalized_path)
+        if len(path_obj.parts) < 3:  # noqa: PLR2004
+            raise ValueError(
+                "Path can't be at the root, it must be at least one level nested."
+            )
+        return normalized_path
 
 
 class TesOutputFileLog(BaseModel):

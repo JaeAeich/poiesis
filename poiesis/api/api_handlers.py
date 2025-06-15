@@ -120,7 +120,7 @@ async def CreateTask(body: dict[str, Any]) -> TesCreateTaskResponse:
     except ValidationError as e:
         raise BadRequestException(
             message="Invalid request body",
-            details=e.errors(),
+            details=str(e),
         ) from e
     if task.resources and task.resources.backend_parameters_strict:
         raise BadRequestException("Backend parameters are not valid.")
