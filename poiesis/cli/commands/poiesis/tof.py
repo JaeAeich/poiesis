@@ -2,20 +2,15 @@
 
 import asyncio
 import json
-import sys
 from typing import Any
 
-import rich_click as click
+import click
 from pydantic import ValidationError
-from rich.console import Console
-from rich.panel import Panel
 
 from poiesis.api.tes.models import TesOutput
 from poiesis.cli.commands.poiesis.base import BaseCommand
 from poiesis.core.services.filer.filer_strategy_factory import STRATEGY_MAP
 from poiesis.core.services.filer.tof import Tof
-
-console = Console()
 
 
 class TofCommand(BaseCommand):
@@ -30,71 +25,32 @@ class TofCommand(BaseCommand):
 
         Args:
             group: Click group to add the command to
-
-        Example:
-            Command line usage:
-            ```bash
-            $ tof --name md5sum --outputs '[{
-                "path": "/data/outfile",
-                "url": "s3://my-object-store/outfile-1",
-                "type": "FILE"
-            }]'
-            ```
-
-            Multiple outputs:
-            ```bash
-            $ tof --name image-processor --outputs '[
-                {
-                    "path": "/data/outfile1",
-                    "url": "s3://my-object-store/outfile-1",
-                    "type": "FILE"
-                },
-                {
-                    "path": "/data/outfile2",
-                    "url": "file:///data/outfile-2",
-                    "type": "FILE"
-                }
-            ]'
-            ```
         """
 
         @group.command(name="run", help="Execute a TOF task")
         @click.option("--name", required=True, help="Name of the task")
         @click.option("--outputs", required=True, help="List of task outputs as JSON")
         def run(name: str, outputs: str):
-            """Execute a TOF task with the provided parameters.
-
-            Uploads output files for the task based on the provided output
-            specifications.
-            """
+            """Execute a TOF task with the provided parameters."""
             try:
                 outputs_json = json.loads(outputs)
-
                 _outputs = [TesOutput(**output) for output in outputs_json]
 
                 file_count = len(_outputs)
-                console.print(
-                    Panel(
-                        f"Task: [cyan]{name}[/cyan]\n"
-                        f"Output files: [cyan]{file_count}[/cyan]",
-                        title="TOF Task Information",
-                        border_style="blue",
-                    )
-                )
+                click.echo("--- TOF Task Information ---")
+                click.echo(f"Task: {name}")
+                click.echo(f"Output files: {file_count}")
+                click.echo("--------------------------")
 
-                console.print("[cyan]Uploading output files...[/cyan]")
+                click.echo("Uploading output files...")
                 asyncio.run(Tof(name, _outputs).execute())
-                console.print("[green]All output files uploaded successfully[/green]")
 
             except json.JSONDecodeError as e:
-                console.print(f"[bold red]JSON parsing error:[/bold red] {str(e)}")
-                sys.exit(1)
+                raise click.ClickException(f"JSON parsing error: {str(e)}") from e
             except ValidationError as e:
-                console.print(f"[bold red]Validation error:[/bold red] {str(e)}")
-                sys.exit(1)
+                raise click.ClickException(f"Validation error: {str(e)}") from e
             except Exception as e:
-                console.print(f"[bold red]Error:[/bold red] {str(e)}")
-                sys.exit(1)
+                raise click.ClickException(f"Error: {str(e)}") from e
 
     def get_info(self) -> dict[str, Any]:
         """Get TOF service information.

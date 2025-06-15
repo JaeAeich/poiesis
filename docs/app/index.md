@@ -23,8 +23,6 @@ features:
     details: Poiesis is designed to be easily extended to support new features and integrations.
   - title: Cloud Native
     details: Poiesis is designed to be cloud native, running on Kubernetes.
-  - title: CLI support (sdk)
-    details: Poiesis comes with a CLI tooling to help you get started quickly.
   - title: Authenticated
     details: Poiesis comes with OIDC via Keycloak but can be easily extended to support other authentication mechanisms.
   - title: Private

@@ -21,7 +21,6 @@ export default defineConfig({
                     { text: "Glossary", link: "/docs/intro/glossary" },
                     { text: "Poiesis", link: "/docs/intro/poiesis" },
                     { text: "API", link: "/docs/intro/api" },
-                    { text: "CLI", link: "/docs/intro/cli" },
                     { text: "Authentication", link: "/docs/intro/auth" },
                 ],
             },

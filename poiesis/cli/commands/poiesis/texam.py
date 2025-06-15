@@ -2,17 +2,13 @@
 
 import asyncio
 import json
-import sys
 from typing import Any
 
-from click import Group, option
+import click
 from pydantic import ValidationError
-from rich.console import Console
 
 from poiesis.api.tes.models import TesTask
 from poiesis.cli.commands.poiesis.base import BaseCommand
-
-console = Console()
 
 
 class TexamCommand(BaseCommand):
@@ -22,7 +18,7 @@ class TexamCommand(BaseCommand):
     help = "Task Executor and Monitor service"
     description = "Task Executor and Monitor service for managing task execution."
 
-    def add_run_command(self, group: Group):
+    def add_run_command(self, group: click.Group):
         """Add TExAM run command.
 
         Args:
@@ -30,7 +26,7 @@ class TexamCommand(BaseCommand):
         """
 
         @group.command(name="run", help="Execute a TExAM task")
-        @option("--task", required=True, help="TES task request as JSON")
+        @click.option("--task", required=True, help="TES task request as JSON")
         def run(task: str):
             """Execute a TExAM task with the provided parameters."""
             from poiesis.core.services.texam.texam import Texam
@@ -38,12 +34,14 @@ class TexamCommand(BaseCommand):
             try:
                 _task = TesTask(**json.loads(task))
             except ValidationError as e:
-                console.print(f"[red]Error:[/red] {e}")
-                sys.exit(1)
+                raise click.ClickException(f"Validation Error: {e}") from e
+            except json.JSONDecodeError as e:
+                raise click.ClickException(
+                    f"Invalid JSON in --task argument: {e}"
+                ) from e
 
-            console.print(f"[cyan]Executing TExAM task:[/cyan] {_task.id}")
+            click.echo(f"Executing TExAM task: {_task.id}")
             asyncio.run(Texam(_task).execute())
-            console.print("[green]Task execution completed successfully[/green]")
 
     def get_info(self) -> dict[str, Any]:
         """Get TExAM service information.

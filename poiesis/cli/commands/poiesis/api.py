@@ -3,8 +3,7 @@
 import os
 from typing import Any
 
-import rich_click as click
-from rich.console import Console
+import click
 
 from poiesis.api.asgi import run as api_run
 from poiesis.api.constants import get_poiesis_api_constants
@@ -13,9 +12,6 @@ from poiesis.constants import get_poiesis_constants
 
 api_constants = get_poiesis_api_constants()
 constants = get_poiesis_constants()
-
-
-console = Console()
 
 
 class ApiCommand(BaseCommand):
@@ -36,17 +32,11 @@ class ApiCommand(BaseCommand):
         def run():
             """Start the Poiesis API server."""
             url = f"http://{api_constants.Gunicorn.HOST}:{api_constants.Gunicorn.PORT}/{api_constants.BASE_PATH}/ui"
-            console.print(
-                "[cyan]Starting Poiesis API server, checkout "
-                f"[green]{url}[green] ...[/cyan]"
-            )
+            click.echo(f"Starting Poiesis API server, checkout {url} ...")
             api_run()
 
     def get_info(self) -> dict[str, Any]:
         """Get API service information.
-
-        Args:
-            extra: Whether to include extra information
 
         Returns:
             Dictionary with API service information
