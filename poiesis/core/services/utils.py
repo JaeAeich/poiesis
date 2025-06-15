@@ -43,8 +43,6 @@ def split_path_for_mounting(path_str: str) -> tuple[str, str]:
     Returns:
         tuple[str, str]: A tuple containing (`first_component`, `rest_of_path`),
             e.g., ('/data', 'f1/f2/file1') for the path `/data/f1/f2/file1`.
-            Returns ('/', '') for the root path '/'.
-            Returns (path_str, '') if there's only one component (e.g., '/data').
 
     Raises:
         ValueError: If the path_str is None, or not nested at least once.
@@ -56,8 +54,11 @@ def split_path_for_mounting(path_str: str) -> tuple[str, str]:
 
     path_parts = p.parts
 
+    # This check shouldn't be reached because pydantic already checks this
     if len(path_parts) <= 2:  # noqa: PLR2004
-        raise ValueError("Path needs to be nested at least once.")
+        raise ValueError(
+            "Path can't be at the root, it must be at least one level nested."
+        )
 
     first_part = Path(p.anchor) / path_parts[1]
     rest_parts = path_parts[2:]

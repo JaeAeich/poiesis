@@ -1,7 +1,9 @@
 """Models for TES API."""
 
+import os
 from datetime import UTC, datetime
 from enum import Enum
+from pathlib import Path
 
 from pydantic import (
     AnyUrl,
@@ -201,13 +203,13 @@ class TesInput(BaseModel):
         """Serialize path so that its not at root."""
         if not path.startswith("/"):
             raise ValueError("Path must be an absolute path.")
-
-        if len(path.split("/")) <= 2:  # noqa: PLR2004
+        normalized_path = os.path.normpath(path)
+        path_obj = Path(normalized_path)
+        if len(path_obj.parts) < 3:  # noqa: PLR2004
             raise ValueError(
                 "Path can't be at the root, it must be at least one level nested."
             )
-
-        return path
+        return normalized_path
 
 
 class TesOutput(BaseModel):
@@ -256,13 +258,13 @@ class TesOutput(BaseModel):
         """Serialize path so that its not at root."""
         if not path.startswith("/"):
             raise ValueError("Path must be an absolute path.")
-
-        if len(path.split("/")) <= 2:  # noqa: PLR2004
+        normalized_path = os.path.normpath(path)
+        path_obj = Path(normalized_path)
+        if len(path_obj.parts) < 3:  # noqa: PLR2004
             raise ValueError(
                 "Path can't be at the root, it must be at least one level nested."
             )
-
-        return path
+        return normalized_path
 
 
 class TesOutputFileLog(BaseModel):
