@@ -3,7 +3,13 @@
 from datetime import UTC, datetime
 from enum import Enum
 
-from pydantic import AnyUrl, BaseModel, Field, field_serializer
+from pydantic import (
+    AnyUrl,
+    BaseModel,
+    Field,
+    field_serializer,
+    field_validator,
+)
 
 
 class TesCancelTaskResponse(BaseModel):
@@ -189,8 +195,9 @@ class TesInput(BaseModel):
         """Serialize the type to a string."""
         return v.value
 
-    @field_serializer("path")
-    def serialize_path(self, path: str) -> str:
+    @field_validator("path")
+    @classmethod
+    def serialize_path(cls, path: str) -> str:
         """Serialize path so that its not at root."""
         if not path.startswith("/"):
             raise ValueError("Path must be an absolute path.")
@@ -243,8 +250,9 @@ class TesOutput(BaseModel):
         """Serialize the type to a string."""
         return v.value
 
-    @field_serializer("path")
-    def serialize_path(self, path: str) -> str:
+    @field_validator("path")
+    @classmethod
+    def serialize_path(cls, path: str) -> str:
         """Serialize path so that its not at root."""
         if not path.startswith("/"):
             raise ValueError("Path must be an absolute path.")
