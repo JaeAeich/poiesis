@@ -57,25 +57,30 @@ class PoiesisApiConstants:
             AUTH: The authentication method.
         """
 
-        AUTH: Literal["keycloak", "dummy"] = cast(
-            Literal["keycloak", "dummy"], os.getenv("AUTH", "dummy")
+        AUTH: Literal["oauth2", "dummy"] = cast(
+            Literal["oauth2", "dummy"], os.getenv("AUTH", "dummy")
         )
 
         @dataclass(frozen=True)
-        class Keycloak:
-            """Constants used in the Keycloak.
+        class OAuth2:
+            """Constants used in the generic OAuth2 / OpenID Connect client.
 
             Attributes:
-                URL: The URL of the Keycloak server.
-                REALM: The realm of the Keycloak server.
-                CLIENT_ID: The client id of the Keycloak server.
-                ALGORITHM: The algorithm of the Keycloak server.
+                ISSUER: The OpenID Connect issuer URL.
+                CLIENT_ID: The OAuth2 client identifier.
+                TOKEN_ENDPOINT: URL to exchange credentials for tokens.
+                USERINFO_ENDPOINT: URL to fetch authenticated user details.
+                INTROSPECT_ENDPOINT: URL to validate tokens (optional).
+                JWKS_URI: Public keys used to validate JWT tokens.
             """
 
-            URL = os.getenv("KEYCLOAK_URL")
-            REALM = os.getenv("KEYCLOAK_REALM")
-            CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID")
-            ALGORITHM = os.getenv("KEYCLOAK_ALGORITHM", "RS256")
+            ISSUER = os.getenv("OAUTH2_ISSUER")
+            CLIENT_ID = os.getenv("OAUTH2_CLIENT_ID")
+
+            TOKEN_ENDPOINT = f"{ISSUER}/protocol/openid-connect/token"
+            USERINFO_ENDPOINT = f"{ISSUER}/protocol/openid-connect/userinfo"
+            INTROSPECT_ENDPOINT = f"{ISSUER}/protocol/openid-connect/token/introspect"
+            JWKS_URI = f"{ISSUER}/protocol/openid-connect/certs"
 
 
 @lru_cache
