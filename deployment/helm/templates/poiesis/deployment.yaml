@@ -115,27 +115,16 @@ spec:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_REDIS_SECRET_NAME
             {{- end }}
-            {{- if eq (include "poiesis.keycloak.enabled" .) "true" }}
-            - name: KEYCLOAK_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "poiesis.coreConfigMapName" . }}
-                  key: KEYCLOAK_URL
-            - name: KEYCLOAK_REALM
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "poiesis.coreConfigMapName" . }}
-                  key: KEYCLOAK_REALM
-            - name: KEYCLOAK_CLIENT_ID
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "poiesis.coreConfigMapName" . }}
-                  key: KEYCLOAK_CLIENT_ID
-            - name: KEYCLOAK_CLIENT_SECRET
+            {{- if eq .Values.auth.type "oauth2" }}
+            - name: OAUTH2_ISSUER
+              value: {{ .Values.auth.oauth2.issuer }}
+            - name: OAUTH2_CLIENT_ID
+              value: {{ .Values.auth.oauth2.clientId }}
+            - name: OAUTH2_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "poiesis.keycloak.secretName" . }}
-                  key: KEYCLOAK_CLIENT_SECRET
+                  name: {{ include "poiesis.auth.secretName" . }}
+                  key: OAUTH2_CLIENT_SECRET
             {{- end }}
             {{- if eq (include "poiesis.minio.enabled" .) "true" }}
             - name: POIESIS_S3_SECRET_NAME
