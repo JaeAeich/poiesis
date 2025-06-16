@@ -23,6 +23,8 @@ from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.constants import (
     get_configmap_names,
+    get_default_container_security_context,
+    get_default_pod_security_context,
     get_message_broker_envs,
     get_mongo_envs,
     get_poiesis_core_constants,
@@ -104,6 +106,7 @@ class TorcExecutionTemplate(ABC):
                 backoff_limit=int(core_constants.K8s.BACKOFF_LIMIT),
                 template=V1PodTemplateSpec(
                     spec=V1PodSpec(
+                        security_context=get_default_pod_security_context(),
                         containers=[
                             V1Container(
                                 name=job_name,
@@ -137,6 +140,7 @@ class TorcExecutionTemplate(ABC):
                                     )
                                 ],
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
+                                security_context=get_default_container_security_context(),
                             ),
                         ],
                         volumes=[

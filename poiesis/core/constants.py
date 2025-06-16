@@ -5,10 +5,14 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from kubernetes.client.models import (
+    V1Capabilities,
     V1ConfigMapKeySelector,
     V1EnvVar,
     V1EnvVarSource,
+    V1PodSecurityContext,
+    V1SeccompProfile,
     V1SecretKeySelector,
+    V1SecurityContext,
 )
 
 
@@ -288,4 +292,33 @@ def get_configmap_names() -> tuple[V1EnvVar, ...]:
         V1EnvVar(
             name="POIESIS_CORE_CONFIGMAP_NAME", value=core_constants.K8s.CONFIGMAP_NAME
         ),
+    )
+
+
+@lru_cache
+def get_default_pod_security_context() -> V1PodSecurityContext:
+    """Returns a default, hardened V1PodSecurityContext.
+
+    This context enforces that all containers in the pod run as a non-root user
+    and uses the 'OnRootMismatch' policy to speed up volume mounting.
+    """
+    return V1PodSecurityContext(
+        run_as_non_root=True,
+        seccomp_profile=V1SeccompProfile(type="RuntimeDefault"),
+        fs_group_change_policy="OnRootMismatch",
+    )
+
+
+@lru_cache
+def get_default_container_security_context() -> V1SecurityContext:
+    """Returns a default, hardened V1SecurityContext for a container.
+
+    This context enforces the principle of least privilege.
+    """
+    return V1SecurityContext(
+        run_as_non_root=True,
+        run_as_user=1001,
+        run_as_group=1001,
+        allow_privilege_escalation=False,
+        capabilities=V1Capabilities(drop=["ALL"]),
     )

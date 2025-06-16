@@ -19,6 +19,8 @@ from kubernetes.client.exceptions import ApiException
 from poiesis.api.tes.models import TesTask
 from poiesis.core.constants import (
     get_configmap_names,
+    get_default_container_security_context,
+    get_default_pod_security_context,
     get_message_broker_envs,
     get_mongo_envs,
     get_poiesis_core_constants,
@@ -95,6 +97,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
                 template=V1PodTemplateSpec(
                     spec=V1PodSpec(
                         service_account_name=core_constants.K8s.SERVICE_ACCOUNT_NAME,
+                        security_context=get_default_pod_security_context(),
                         containers=[
                             V1Container(
                                 name=core_constants.K8s.TIF_PREFIX,
@@ -105,6 +108,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                     task,
                                 ],
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
+                                security_context=get_default_container_security_context(),
                                 env=list(get_mongo_envs())
                                 + list(get_message_broker_envs())
                                 + list(get_secret_names())
