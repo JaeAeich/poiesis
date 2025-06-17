@@ -117,9 +117,9 @@ spec:
             {{- end }}
             {{- if eq (.Values.poiesis.auth.type) "oauth2" }}
             - name: OAUTH2_ISSUER
-              value: {{ .Values.auth.oauth2.issuer }}
+              value: {{ .Values.poiesis.auth.oauth2.issuer }}
             - name: OAUTH2_CLIENT_ID
-              value: {{ .Values.auth.oauth2.clientId }}
+              value: {{ .Values.poiesis.auth.oauth2.clientId }}
             - name: OAUTH2_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
