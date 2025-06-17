@@ -44,7 +44,7 @@ spec:
             - name: POIESIS_ENV
               value: {{ .Values.poiesis.config.poiesisEnv | quote }}
             - name: AUTH
-              value: {{ .Values.poiesis.auth.type | quote }}
+              value: {{ .Values.poiesis.auth.type }}
             - name: POIESIS_CORE_CONFIGMAP_NAME
               value: {{ include "poiesis.coreConfigMapName" . }}
             - name: POIESIS_MONGODB_AUTH_ENABLED
