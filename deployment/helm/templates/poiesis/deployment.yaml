@@ -115,7 +115,7 @@ spec:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_REDIS_SECRET_NAME
             {{- end }}
-            {{- if eq .Values.auth.type "oauth2" }}
+            {{- if eq (.Values.poiesis.auth.type) "oauth2" }}
             - name: OAUTH2_ISSUER
               value: {{ .Values.auth.oauth2.issuer }}
             - name: OAUTH2_CLIENT_ID

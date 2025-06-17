@@ -51,19 +51,10 @@ Redis:
   {{- end }}
 
 Authentication (Method: {{ .Values.poiesis.auth.type | upper }}):
-  {{- if ne (.Values.poiesis.auth.type | lower) "dummy" }}
-  Keycloak:
-    {{- if .Values.poiesis.externalDependencies.keycloak.enabled }}
-    Type: External
-    Keycloak URL (for Poiesis): {{ include "poiesis.keycloak.url" . }}
-    {{- else if .Values.keycloak.enabled }}
-    Type: Internal
-    Keycloak URL (for Poiesis): {{ include "poiesis.keycloak.url" . | trimAll "\"" }}
-    (Internal Keycloak Service: {{ include "poiesis.keycloak.fullname" . }})
-    {{- else }}
-    Type: Keycloak selected ('{{ .Values.poiesis.auth.type }}') but no Keycloak instance (external or internal) is enabled/configured.
-    {{- end }}
-  Poiesis Client ID in Keycloak: {{ .Values.poiesis.config.keycloakClientId }}
+  {{- if eq .Values.poiesis.auth.type "oauth2" }}
+  OAuth2 Provider:
+    Issuer URL: {{ .Values.poiesis.auth.oauth2.issuer }}
+    Poiesis Client ID: {{ .Values.poiesis.auth.oauth2.clientId }}
   {{- end }}
 
 S3 Storage:
@@ -87,12 +78,12 @@ CRITICAL WARNINGS & ACTIONS:
 --------------------------------------------------------------------------------
 {{- if eq (.Values.poiesis.auth.type | lower) "dummy" }}
 - DUMMY AUTH ENABLED: Poiesis is using insecure dummy authentication.
-  DO NOT USE IN PRODUCTION. Change 'poiesis.auth.type' to 'keycloak'.
+  DO NOT USE IN PRODUCTION. Change 'poiesis.auth.type' to 'oauth2'.
 {{- end }}
 
 - DEFAULT CREDENTIALS: Review and change default passwords/secrets for production.
-  {{- if eq (.Values.poiesis.config.keycloakClientSecret | toString) "changeMe" }}
-  - Poiesis Keycloak Client Secret ('poiesis.config.keycloakClientSecret') is 'changeMe'.
+  {{- if and (eq .Values.poiesis.auth.type "oauth2") (not .Values.poiesis.auth.oauth2.clientSecret) }}
+  - Poiesis OAuth2 Client Secret ('poiesis.auth.oauth2.clientSecret') is not set. This is required if using a private client.
   {{- end }}
   {{- if and .Values.mongodb.enabled (eq (.Values.mongodb.auth.rootPassword | toString) "mongodbPassword123") }}
   - Internal MongoDB root password ('mongodb.auth.rootPassword') is default.
@@ -100,23 +91,18 @@ CRITICAL WARNINGS & ACTIONS:
   {{- if and .Values.redis.enabled (eq (.Values.redis.auth.password | toString) "poiesisRedis123") }}
   - Internal Redis password ('redis.auth.password') is default.
   {{- end }}
-  {{- if and .Values.keycloak.enabled (eq (.Values.keycloak.auth.adminPassword | toString) "keycloakPassword123") }}
-  - Internal Keycloak admin password ('keycloak.auth.adminPassword') is default.
-  {{- end }}
   {{- if and .Values.minio.enabled (eq (.Values.minio.auth.rootPassword | toString) "minioPassword123") }}
   - Internal Minio root password ('minio.auth.rootPassword') is default.
   {{- end }}
 
-{{- if and (ne (.Values.poiesis.auth.type | lower) "dummy") (or .Values.poiesis.externalDependencies.keycloak.enabled .Values.keycloak.enabled) }}
-- KEYCLOAK INTEGRATION REQUIRED:
-  {{- if .Values.keycloak.enabled }}
-  - Deploying the internal Keycloak subchart can increase overall deployment time.
-  {{- end }}
-  - This Helm chart DOES NOT fully configure Keycloak itself (e.g., clients, roles within Keycloak).
-  - ACTION: You MUST manually ensure the Keycloak client '{{ .Values.poiesis.config.keycloakClientId }}'
-    (in realm '{{ .Values.poiesis.config.keycloakRealm }}') is correctly set up in your Keycloak instance.
-  - ACTION: The Poiesis API is configured to use the client secret specified in
-    '.Values.poiesis.config.keycloakClientSecret' ('{{ .Values.poiesis.config.keycloakClientSecret }}').
-    VERIFY THIS SECRET MATCHES the one configured for the client within Keycloak.
-  - Consult Poiesis and Keycloak documentation for detailed setup.
+{{- if eq .Values.poiesis.auth.type "oauth2" }}
+- OAUTH2 INTEGRATION REQUIRED:
+  - This Helm chart DOES NOT configure your OAuth2/OIDC provider.
+  - ACTION: You MUST manually ensure that the OAuth2 client '{{ .Values.poiesis.auth.oauth2.clientId }}'
+    is correctly set up in your provider (e.g., Keycloak, Auth0, Okta, etc.).
+  - ACTION: If using a private client, the Poiesis API is configured to use the client secret specified in
+    '.Values.poiesis.auth.oauth2.clientSecret'.
+    VERIFY THIS SECRET MATCHES the one configured for the client within your provider.
+  - Consult Poiesis and your OAuth2 provider's documentation for detailed setup instructions,
+    including setting the correct callback/redirect URIs.
 {{- end }}
