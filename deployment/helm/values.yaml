@@ -67,19 +67,19 @@ poiesis:
     # Specifies the authentication provider.
     # Options:
     #   "dummy":   Uses a simple, potentially insecure, internal authentication (for development/testing).
-    #   "oauth2": Use an OAuth2 as authentication.
+    #   "oidc":  Uses OpenID Connect for authentication (recommended for production).
     type: dummy
     # Note: If you have selected `dummy` for auth, then no need to change below settings
     # they will be ignored anyways.
     # Add you OAuth2/ODIC server url
     # Example: If using keycloak with realm as poiesis
     #   https://myorg.keycloak.com/realms/poiesis
-    oauth2:
-      issuer: "https://myoauth2.com"
+    oidc:
+      issuer: "https://myoidcprovider.com"
       # Client ID registered for the Poiesis application.
       clientId: "poiesis"
-      # If registered as private client (recommended), fill in the client secret
-      clientSecret: ""
+      # Client secret for the Poiesis application.
+      clientSecret: "my-secret"
 
   # -- External Dependency Configuration --
   # Use this section IF you are connecting Poiesis to ALREADY EXISTING instances

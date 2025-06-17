@@ -57,30 +57,23 @@ class PoiesisApiConstants:
             AUTH: The authentication method.
         """
 
-        AUTH: Literal["oauth2", "dummy"] = cast(
-            Literal["oauth2", "dummy"], os.getenv("AUTH", "dummy")
+        AUTH: Literal["oidc", "dummy"] = cast(
+            Literal["oidc", "dummy"], os.getenv("AUTH", "dummy")
         )
 
         @dataclass(frozen=True)
-        class OAuth2:
-            """Constants used in the generic OAuth2 / OpenID Connect client.
+        class OIDC:
+            """Constants used in the generic OpenID Connect client.
 
             Attributes:
                 ISSUER: The OpenID Connect issuer URL.
-                CLIENT_ID: The OAuth2 client identifier.
-                TOKEN_ENDPOINT: URL to exchange credentials for tokens.
-                USERINFO_ENDPOINT: URL to fetch authenticated user details.
+                CLIENT_ID: The OpenID Connect client identifier.
                 INTROSPECT_ENDPOINT: URL to validate tokens (optional).
-                JWKS_URI: Public keys used to validate JWT tokens.
             """
 
-            ISSUER = os.getenv("OAUTH2_ISSUER")
-            CLIENT_ID = os.getenv("OAUTH2_CLIENT_ID")
-
-            TOKEN_ENDPOINT = f"{ISSUER}/protocol/openid-connect/token"
-            USERINFO_ENDPOINT = f"{ISSUER}/protocol/openid-connect/userinfo"
+            ISSUER = os.getenv("OIDC_ISSUER")
+            CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
             INTROSPECT_ENDPOINT = f"{ISSUER}/protocol/openid-connect/token/introspect"
-            JWKS_URI = f"{ISSUER}/protocol/openid-connect/certs"
 
 
 @lru_cache

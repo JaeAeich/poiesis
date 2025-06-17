@@ -43,7 +43,7 @@ spec:
               value: {{ .Values.poiesis.config.mongodbDatabase | quote }}
             - name: POIESIS_ENV
               value: {{ .Values.poiesis.config.poiesisEnv | quote }}
-            - name: AUTH
+            - name: AUTH_TYPE
               value: {{ .Values.poiesis.auth.type }}
             - name: POIESIS_CORE_CONFIGMAP_NAME
               value: {{ include "poiesis.coreConfigMapName" . }}
@@ -115,16 +115,16 @@ spec:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_REDIS_SECRET_NAME
             {{- end }}
-            {{- if eq (.Values.poiesis.auth.type) "oauth2" }}
-            - name: OAUTH2_ISSUER
-              value: {{ .Values.poiesis.auth.oauth2.issuer }}
-            - name: OAUTH2_CLIENT_ID
-              value: {{ .Values.poiesis.auth.oauth2.clientId }}
-            - name: OAUTH2_CLIENT_SECRET
+            {{- if eq (.Values.poiesis.auth.type) "oidc" }}
+            - name: OIDC_ISSUER
+              value: {{ .Values.poiesis.auth.oidc.issuer }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.poiesis.auth.oidc.clientId }}
+            - name: OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "poiesis.auth.secretName" . }}
-                  key: OAUTH2_CLIENT_SECRET
+                  key: OIDC_CLIENT_SECRET
             {{- end }}
             {{- if eq (include "poiesis.minio.enabled" .) "true" }}
             - name: POIESIS_S3_SECRET_NAME
