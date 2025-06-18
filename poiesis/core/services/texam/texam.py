@@ -95,11 +95,14 @@ class Texam:
         self.message_broker = RedisMessageBroker()
         self.failed = False
         self.db = MongoDBClient()
+        self.pods_to_cleanup: list[str] = []
 
     async def execute(self) -> None:
         """Complete TExAM job."""
         await self.start_executors()
+        self.pods_to_cleanup = self.task_pool.copy()
         await self.monitor_executors()
+        await self.cleanup_pods()
         await self.message()
 
     def _build_command_string(self, executor: TesExecutor) -> str:
@@ -477,6 +480,30 @@ class Texam:
                     )
                 self._remove_pod_from_pool(pod_name, active_pod_names)
                 self.failed = True
+
+    async def cleanup_pods(self) -> None:
+        """Clean up completed executor pods to free PVC references.
+
+        Deletes pods that allow PVCs to be properly cleaned up.
+        """
+        if not self.pods_to_cleanup:
+            logger.debug("No executor pods to clean up")
+            return
+
+        logger.info(f"Starting cleanup of {len(self.pods_to_cleanup)} executor pods")
+        cleanup_count = 0
+
+        for pod_name in self.pods_to_cleanup[:]:
+            try:
+                await self.kubernetes_client.delete_pod(pod_name)
+                cleanup_count += 1
+            except Exception as e:
+                logger.warning(f"Could not cleanup pod {pod_name}: {e}")
+
+        logger.debug(
+            "Pod cleanup completed. Cleaned up "
+            f"{cleanup_count}/{len(self.task_pool)} pods"
+        )
 
     async def message(self) -> None:
         """Send message to TORC."""

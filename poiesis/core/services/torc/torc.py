@@ -102,6 +102,11 @@ class Torc:
                 # If we get here, everything succeeded
                 logger.info(f"Task {self.id}: Execution completed successfully")
                 await self.db.update_task_state(self.id, TesState.COMPLETE)
+
+                # Clean up PVC after successful completion
+                await self.kubernetes_client.delete_pvc(self.pvc_name)
+                logger.info(f"Task {self.id}: PVC {self.pvc_name} deleted successfully")
+
                 break
             except Exception as e:
                 logger.error(
