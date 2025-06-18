@@ -153,7 +153,8 @@ class Torc:
                 },
             ),
             spec=V1PersistentVolumeClaimSpec(
-                access_modes=["ReadWriteMany"],
+                access_modes=[core_constants.K8s.PVC_ACCESS_MODE],
+                storage_class_name=core_constants.K8s.PVC_STORAGE_CLASS,
                 resources=V1ResourceRequirements(
                     requests={
                         "storage": f"{size}Gi"

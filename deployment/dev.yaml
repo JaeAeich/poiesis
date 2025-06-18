@@ -140,15 +140,9 @@ spec:
             - containerPort: 27017
           env:
             - name: MONGO_INITDB_ROOT_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: poiesis-mongodb-secret
-                  key: username
+              value: "admin"
             - name: MONGO_INITDB_ROOT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: poiesis-mongodb-secret
-                  key: password
+              value: "password"
           volumeMounts:
             - name: mongo-data
               mountPath: /data/db
@@ -321,6 +315,8 @@ data:
   POIESIS_RESTART_POLICY: "Never"
   POIESIS_IMAGE_PULL_POLICY: "IfNotPresent"
   POIESIS_JOB_TTL: "3600"
+  POIESIS_PVC_ACCESS_MODE: "ReadWriteOnce"
+  POIESIS_PVC_STORAGE_CLASS: "standard"
 
   # --- Message broker (Redis) ---
   MESSAGE_BROKER_HOST: "poiesis-redis"
