@@ -57,12 +57,19 @@ poiesis:
     # Restart and pull policy for core components
     restartPolicy: "Never"
     imagePullPolicy: "IfNotPresent"
-    # Defines after how long should a completed or failed job be removed
+    # Defines after how long should a completed or failed job be removed.
+    # This is critical for PVC cleanup - completed job pods hold references to PVCs
+    # preventing them from being deleted. Setting this ensures jobs and their pods
+    # are automatically cleaned up, allowing PVCs to terminate properly.
+    # Value in seconds (3600 = 1 hour). Lower values = faster cleanup but less debugging time.
     jobTtl: "3600"
     # Timeout duration in seconds for monitoring operations.
     monitorTimeoutSeconds: "80"
 
   # Storage configuration for PVCs used by Poiesis tasks
+  # NOTE: PVCs are automatically created for each task and cleaned up when the task completes.
+  # If PVCs get stuck in "Terminating" state, check if job pods are still running - they
+  # hold references to PVCs preventing deletion. The jobTtl setting above helps with this.
   storage:
     # Access mode for task PVCs (ReadWriteOnce, ReadWriteMany, ReadWriteOncePod)
     # ReadWriteOnce: Volume can be mounted as read-write by a single node (most common)
