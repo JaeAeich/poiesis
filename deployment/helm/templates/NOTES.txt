@@ -83,7 +83,7 @@ CRITICAL WARNINGS & ACTIONS:
 
 - DEFAULT CREDENTIALS: Review and change default passwords/secrets for production.
   {{- if and (eq .Values.poiesis.auth.type "oidc") (not .Values.poiesis.auth.oidc.clientSecret) }}
-  - Poiesis OAuth2 Client Secret ('poiesis.auth.oidc.clientSecret') is not set. This is required if using a private client.
+  - Poiesis OAuth2 Client Secret ('poiesis.auth.oidc.clientSecret') is not set. This is required.
   {{- end }}
   {{- if and .Values.mongodb.enabled (eq (.Values.mongodb.auth.rootPassword | toString) "mongodbPassword123") }}
   - Internal MongoDB root password ('mongodb.auth.rootPassword') is default.
@@ -100,7 +100,7 @@ CRITICAL WARNINGS & ACTIONS:
   - This Helm chart DOES NOT configure your OAuth2/OIDC provider.
   - ACTION: You MUST manually ensure that the OAuth2 client '{{ .Values.poiesis.auth.oidc.clientId }}'
     is correctly set up in your provider (e.g., Keycloak, Auth0, Okta, etc.).
-  - ACTION: If using a private client, the Poiesis API is configured to use the client secret specified in
+  - ACTION: The Poiesis API requires the client secret specified in
     '.Values.poiesis.auth.oidc.clientSecret'.
     VERIFY THIS SECRET MATCHES the one configured for the client within your provider.
   - Consult Poiesis and your OAuth2 provider's documentation for detailed setup instructions,

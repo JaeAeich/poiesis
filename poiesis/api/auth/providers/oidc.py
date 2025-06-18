@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 from typing import Any
 
 import jwt
@@ -17,12 +18,32 @@ logger = logging.getLogger(__name__)
 constants = get_poiesis_api_constants()
 
 
-class OpenIDConnectAuthProvider(AuthProvider):
+class SingletonMeta(type):
+    """Singleton metaclass for OpenIDConnectAuthProvider."""
+
+    _instances: dict[type, "OpenIDConnectAuthProvider"] = {}
+    _lock = threading.Lock()
+
+    def __call__(cls, *args: Any, **kwargs: Any) -> "OpenIDConnectAuthProvider":
+        """Create a singleton instance of OpenIDConnectAuthProvider."""
+        with cls._lock:
+            if cls not in cls._instances:
+                cls._instances[cls] = super().__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+
+class OpenIDConnectAuthProvider(AuthProvider, metaclass=SingletonMeta):
     """Generic OpenID Connect authentication provider."""
 
+    _oidc_client: OAuth2Client | None = None
+    _introspect_url: str | None = None
+
     def __init__(self):
-        """Initialize the OpenIDConnectAuthProvider."""
-        logger.debug("Initializing OpenIDConnectAuthProvider")
+        """Initialize the OpenIDConnectAuthProvider singleton."""
+        if getattr(self, "_initialized", False):
+            return
+
+        logger.debug("Initializing OpenIDConnectAuthProvider singleton")
         if not getattr(constants.Auth.OIDC, "ISSUER", None) or not getattr(
             constants.Auth.OIDC, "CLIENT_ID", None
         ):
@@ -31,22 +52,37 @@ class OpenIDConnectAuthProvider(AuthProvider):
                 "OIDC_ISSUER and OIDC_CLIENT_ID must be configured."
             )
 
-        self.introspect_url = get_oidc_introspect_url()
-        logger.debug(f"Using introspection URL: {self.introspect_url}")
+        if not OpenIDConnectAuthProvider._introspect_url:
+            OpenIDConnectAuthProvider._introspect_url = get_oidc_introspect_url()
+            logger.debug(
+                f"Using introspection URL: {OpenIDConnectAuthProvider._introspect_url}"
+            )
 
         client_secret = os.getenv("OIDC_CLIENT_SECRET")
         if not client_secret:
             logger.error("OIDC_CLIENT_SECRET is not configured")
             raise InternalServerException("OIDC_CLIENT_SECRET is not configured")
 
-        self.oidc_client = OAuth2Client(
-            client_id=constants.Auth.OIDC.CLIENT_ID,
-            client_secret=client_secret,
-            server_metadata_url=constants.Auth.OIDC.DISCOVERY_URL,
-        )
-        logger.debug(
-            f"OIDC client initialized with client_id: {constants.Auth.OIDC.CLIENT_ID}"
-        )
+        # Initialize the OAuth2Client singleton if not already done
+        if OpenIDConnectAuthProvider._oidc_client is None:
+            OpenIDConnectAuthProvider._oidc_client = OAuth2Client(
+                client_id=constants.Auth.OIDC.CLIENT_ID,
+                client_secret=client_secret,
+                server_metadata_url=constants.Auth.OIDC.DISCOVERY_URL,
+            )
+            logger.debug(
+                "OIDC client initialized with "
+                f"client_id: {constants.Auth.OIDC.CLIENT_ID}"
+            )
+        else:
+            logger.debug(
+                "OIDC client already initialized with "
+                f"client_id: {constants.Auth.OIDC.CLIENT_ID}"
+            )
+
+        self.oidc_client = OpenIDConnectAuthProvider._oidc_client
+        self.introspect_url = OpenIDConnectAuthProvider._introspect_url
+        self._initialized = True
 
     def _validate_token_local(self, token: str) -> dict[str, Any]:
         """Locally validate a JWT using the provider's JWKS."""
@@ -66,7 +102,7 @@ class OpenIDConnectAuthProvider(AuthProvider):
                 raise InternalServerException(
                     "Decoded JWT payload is not a dictionary."
                 )
-            logger.debug("Local JWT validation successful")
+            logger.debug(f"Local JWT validation successful: {data}")
             return data
         except InvalidTokenError as e:
             logger.warning(f"Local JWT validation failed: {e}")
