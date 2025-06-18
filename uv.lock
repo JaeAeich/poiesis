@@ -892,6 +892,7 @@ test = [
 types = [
     { name = "boto3-stubs" },
     { name = "kubernetes-stubs" },
+    { name = "types-authlib" },
     { name = "types-botocore" },
     { name = "types-pyyaml" },
     { name = "types-requests" },
@@ -939,6 +940,7 @@ test = [
 types = [
     { name = "boto3-stubs", specifier = ">=1.36.26,<2" },
     { name = "kubernetes-stubs", specifier = ">=22.6.0.post1,<23" },
+    { name = "types-authlib", specifier = ">=1.5.0.20250608" },
     { name = "types-botocore", specifier = ">=1.0.2,<2" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20250402,<7" },
     { name = "types-requests", specifier = ">=2.32.0.20250328,<3" },
@@ -1632,6 +1634,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c5/8c/7d682431efca5fd290017663ea4588bf6f2c6aad085c7f108c5dbc316e70/typer-0.16.0.tar.gz", hash = "sha256:af377ffaee1dbe37ae9440cb4e8f11686ea5ce4e9bae01b84ae7c63b87f1dd3b", size = 102625 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/76/42/3efaf858001d2c2913de7f354563e3a3a2f0decae3efe98427125a8f441e/typer-0.16.0-py3-none-any.whl", hash = "sha256:1f79bed11d4d02d4310e3c1b7ba594183bcedb0ac73b27a9e5f28f6fb5b98855", size = 46317 },
+]
+
+[[package]]
+name = "types-authlib"
+version = "1.5.0.20250608"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c8/8e/ee4af80f51b10b351464b8f2d4b3bc8474d569327a5e95e1c60f66b936ea/types_authlib-1.5.0.20250608.tar.gz", hash = "sha256:165149473c951fbbbea0b0f65cb232ac4ce2ee491191383afe119723a3d8059b", size = 34519 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/4c/5683cd9d0d49124f46fc621da362d6bc6555807e20b6b04fa12340677a53/types_authlib-1.5.0.20250608-py3-none-any.whl", hash = "sha256:ce65b51f8fd4892945a5b23e82071601a47f3e9e0398b4947e702f9ad5c14b40", size = 74435 },
 ]
 
 [[package]]

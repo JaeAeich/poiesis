@@ -1,100 +1,78 @@
-"""Provides a generic OAuth2 authentication provider."""
+"""OpenIDConnectAuthProvider."""
 
 import logging
 import os
 from typing import Any
 
-import requests
-from requests import RequestException
+from authlib.integrations.httpx_client import OAuth2Client
 
 from poiesis.api.auth.providers.auth import AuthProvider
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.api.exceptions import InternalServerException, UnauthorizedException
+from poiesis.api.utils import get_oidc_introspect_url
 
 logger = logging.getLogger(__name__)
-
 constants = get_poiesis_api_constants()
 
 
 class OpenIDConnectAuthProvider(AuthProvider):
-    """A generic OpenID Connect authentication provider.
-
-    This class validates bearer tokens by checking them against the OpenID Connect
-    provider's introspection endpoint.
-
-    Attributes:
-        client_id: The OpenID Connect client ID.
-        client_secret: The OpenID Connect client secret.
-        issuer: The URL of the token issuer.
-        introspect_endpoint: The URL of the introspection endpoint.
-    """
+    """Generic OpenID Connect authentication provider."""
 
     def __init__(self):
-        """Initializes the OpenIDConnectAuthProvider with configuration."""
+        """Initialize the OpenIDConnectAuthProvider."""
         logger.debug("Initializing OpenIDConnectAuthProvider")
-        self.client_id = constants.Auth.OIDC.CLIENT_ID
-        self.client_secret = os.getenv("OIDC_CLIENT_SECRET")
-        self.issuer = constants.Auth.OIDC.ISSUER
-        self.introspect_endpoint = constants.Auth.OIDC.INTROSPECT_ENDPOINT
-
-        missing = []
-        if not self.client_id:
-            missing.append("OIDC_CLIENT_ID")
-        if not self.issuer:
-            missing.append("OIDC_ISSUER")
-        if not self.client_secret:
-            missing.append("OIDC_CLIENT_SECRET")
-
-        if missing:
-            logger.error(
-                f"Missing required OpenID Connect configuration: {', '.join(missing)}"
+        if not getattr(constants.Auth.OIDC, "ISSUER", None) or not getattr(
+            constants.Auth.OIDC, "CLIENT_ID", None
+        ):
+            logger.error("Missing required OIDC configuration")
+            raise InternalServerException(
+                "OIDC_ISSUER and OIDC_CLIENT_ID must be configured."
             )
-            raise InternalServerException("Internal authorization server error.")
 
-        logger.debug(f"OpenID Connect configuration loaded - Issuer: {self.issuer}")
-        self.issuer = self.issuer.rstrip("/")  # type: ignore
+        self.introspect_url = get_oidc_introspect_url()
+        logger.debug(f"Using introspection URL: {self.introspect_url}")
+
+        client_secret = os.getenv("OIDC_CLIENT_SECRET")
+        if not client_secret:
+            logger.error("OIDC_CLIENT_SECRET is not configured")
+            raise InternalServerException("OIDC_CLIENT_SECRET is not configured")
+
+        self.oidc_client = OAuth2Client(
+            client_id=constants.Auth.OIDC.CLIENT_ID,
+            client_secret=client_secret,
+            server_metadata_url=constants.Auth.OIDC.DISCOVERY_URL,
+        )
+        logger.debug(
+            f"OIDC client initialized with client_id: {constants.Auth.OIDC.CLIENT_ID}"
+        )
 
     def validate_token(self, token: str) -> dict[str, Any]:
-        """Validates a bearer token using the introspection endpoint.
+        """Validates an OIDC ID token.
+
+        This method checks the token's signature, issuer, audience, and expiration.
 
         Args:
-            token: The bearer token to validate.
+            token: The JWT string to validate.
 
         Returns:
-            A dictionary containing the token's claims if valid.
+            A dictionary of the token's claims if validation is successful.
 
         Raises:
-            UnauthorizedException: If the token is invalid or validation fails for
-                any reason.
+            InternalServerException: If the token is invalid.
         """
-        logger.debug("Starting token validation")
         try:
-            logger.debug(
-                "Attempting validation with introspection "
-                f"endpoint: {self.introspect_endpoint}"
+            token_data = self.oidc_client.introspect_token(
+                url=self.introspect_url, token=token
             )
-            return self._validate_with_introspection(token)
-        except ValueError as e:
-            logger.error(f"Token introspection failed: {e}")
-            raise UnauthorizedException("Token validation failed") from e
+            data: dict[str, Any] = token_data.json()
+            logger.debug(f"Token introspection response: {data}")
 
-    def _validate_with_introspection(self, token: str) -> dict[str, Any]:
-        """Validates a token using the introspection endpoint."""
-        data = {
-            "token": token,
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-        }
+            if not data.get("active", False):
+                logger.warning("OIDC token is not active")
+                raise UnauthorizedException("OIDC token is not active")
 
-        logger.debug(f"Making introspection request to {self.introspect_endpoint}")
-        try:
-            response = requests.post(self.introspect_endpoint, data=data, timeout=5)
-            response.raise_for_status()
-            token_info: dict[str, Any] = response.json()
-            logger.debug(f"Introspection validation successful: {token_info}")
-            return token_info
-        except RequestException as e:
-            logger.error(f"Token introspection request failed: {str(e)}")
-            raise UnauthorizedException(
-                f"Token introspection request failed: {e}"
-            ) from e
+            logger.debug("Token validation successful")
+            return data
+        except Exception as e:
+            logger.error(f"OIDC token validation failed: {e}", exc_info=True)
+            raise InternalServerException("OIDC token validation failed") from e

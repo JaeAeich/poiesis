@@ -58,7 +58,7 @@ class PoiesisApiConstants:
         """
 
         AUTH: Literal["oidc", "dummy"] = cast(
-            Literal["oidc", "dummy"], os.getenv("AUTH", "dummy")
+            Literal["oidc", "dummy"], os.getenv("AUTH_TYPE", "dummy")
         )
 
         @dataclass(frozen=True)
@@ -73,7 +73,7 @@ class PoiesisApiConstants:
 
             ISSUER = os.getenv("OIDC_ISSUER")
             CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
-            INTROSPECT_ENDPOINT = f"{ISSUER}/protocol/openid-connect/token/introspect"
+            DISCOVERY_URL = f"{ISSUER}/.well-known/openid-configuration"
 
 
 @lru_cache
