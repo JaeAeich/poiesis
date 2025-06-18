@@ -73,7 +73,9 @@ class PoiesisApiConstants:
 
             ISSUER = os.getenv("OIDC_ISSUER")
             CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
-            DISCOVERY_URL = f"{ISSUER}/.well-known/openid-configuration"
+            DISCOVERY_URL = (
+                f"{str(ISSUER).rstrip('/')}/.well-known/openid-configuration"
+            )
 
 
 @lru_cache
