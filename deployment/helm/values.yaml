@@ -188,6 +188,10 @@ redis:
     enabled: true
     # Password for Redis authentication. **CHANGE THIS IN PRODUCTION**.
     password: "poiesisRedis123" # <-- IMPORTANT: Secure this value.
+  # Replica configuration - reduce from default 3 to 1 for message broker use case
+  replica:
+    # Number of Redis replicas (reduced from default 3)
+    replicaCount: 1
   # Service configuration for Redis.
   service:
     # Port mapping for the Redis service.
