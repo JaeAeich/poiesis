@@ -61,28 +61,29 @@ poiesis:
     jobTtl: "3600"
     # Timeout duration in seconds for monitoring operations.
     monitorTimeoutSeconds: "80"
-    # Note: If you have selected `dummy` for auth, then no need to change below settings
-    # they will be ignored anyways.
-    # Keycloak realm name used for authentication.
-    keycloakRealm: "poiesis"
-    # Keycloak client ID registered for the Poiesis application.
-    keycloakClientId: "poiesis"
-    # The algorithm used by Keycloak for signing tokens (e.g., "RS256").
-    keycloakAlgorithm: "RS256"
-    # The client secret for the Poiesis application in Keycloak. **CHANGE THIS IN PRODUCTION**.
-    keycloakClientSecret: "changeMe" # <-- IMPORTANT: Secure this value, ideally using secrets management.
 
   # Configuration for the authentication mechanism used by Poiesis.
   auth:
     # Specifies the authentication provider.
     # Options:
-    #   "dummy":    Uses a simple, potentially insecure, internal authentication (for development/testing).
-    #   "keycloak": Integrates with a Keycloak instance for robust authentication.
+    #   "dummy":   Uses a simple, potentially insecure, internal authentication (for development/testing).
+    #   "oidc":  Uses OpenID Connect for authentication (recommended for production).
     type: dummy
+    # Note: If you have selected `dummy` for auth, then no need to change below settings
+    # they will be ignored anyways.
+    # Add you OAuth2/ODIC server url
+    # Example: If using keycloak with realm as poiesis
+    #   https://myorg.keycloak.com/realms/poiesis
+    oidc:
+      issuer: "https://myoidcprovider.com"
+      # Client ID registered for the Poiesis application.
+      clientId: "poiesis"
+      # Client secret for the Poiesis application.
+      clientSecret: "my-secret"
 
   # -- External Dependency Configuration --
   # Use this section IF you are connecting Poiesis to ALREADY EXISTING instances
-  # of its dependencies (MongoDB, Minio, Redis, Keycloak) running outside of this Helm chart deployment.
+  # of its dependencies (MongoDB, Minio, Redis) running outside of this Helm chart deployment.
   # Enabling a dependency here (e.g., `externalDependencies.mongodb.enabled: true`) will typically
   # DISABLE the deployment of the corresponding sub-chart (e.g., `mongodb.enabled` will be ignored or should be false).
   externalDependencies:
@@ -126,12 +127,6 @@ poiesis:
         enabled: true
         # Password for authenticating with the external Redis server. Use secrets management for production.
         rootPassword: "" # <-- IMPORTANT: Secure this value.
-    # Configuration for connecting to an external Keycloak instance.
-    keycloak:
-      # If true, Poiesis will use the connection details specified below instead of deploying the keycloak sub-chart.
-      enabled: false
-      # Base URL of the external Keycloak server (e.g., "http://keycloak.example.com/auth").
-      url: ""
 
 # --- Sub-chart Configurations ---
 # These sections configure dependencies that can be deployed AS PART of this Helm chart release.
@@ -196,28 +191,3 @@ minio:
     rootPassword: "minioPassword123" # <-- IMPORTANT: Secure this value.
   # Specifies buckets to be created automatically upon Minio startup.
   defaultBuckets: "poiesis"
-
-# Configuration for the Keycloak sub-chart (Authentication/Authorization).
-keycloak:
-  # If true, deploy Keycloak using the Bitnami Keycloak sub-chart. Disable if using `externalDependencies.keycloak`.
-  enabled: false # Disabled by default, potentially requires significant resources.
-  # Override the full name generated for the Keycloak deployment.
-  fullnameOverride: "poiesis-keycloak"
-  # Initial admin user credentials for the deployed Keycloak instance.
-  auth:
-    # Admin username for Keycloak management console.
-    adminUser: keycloakUser123
-    # Admin password for Keycloak management console. **CHANGE THIS IN PRODUCTION**.
-    adminPassword: "keycloakPassword123" # <-- IMPORTANT: Secure this value.
-  ## Service configuration
-  service:
-    type: ClusterIP
-    http:
-      enabled: true
-    ports:
-      http: 80
-      https: 443
-  # PSQL configuration
-  postgresql:
-    auth:
-      password: "keycloakPsqlPassword123"

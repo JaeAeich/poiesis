@@ -33,9 +33,3 @@ data:
   S3_URL: {{ include "poiesis.minio.url" . }}
   POIESIS_S3_SECRET_NAME: {{include "poiesis.s3.secretName" . }}
   {{- end }}
-  {{- if eq (include "poiesis.keycloak.enabled" .) "true" }}
-  KEYCLOAK_URL: {{ include "poiesis.keycloak.url" . }}
-  KEYCLOAK_REALM: {{ .Values.poiesis.config.keycloakRealm | quote}}
-  KEYCLOAK_CLIENT_ID: {{ .Values.poiesis.config.keycloakClientId | quote}}
-  KEYCLOAK_ALGORITHM: {{ .Values.poiesis.config.keycloakAlgorithm | quote}}
-  {{- end }}
