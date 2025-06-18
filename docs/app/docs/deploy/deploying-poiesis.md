@@ -270,7 +270,8 @@ curl -X POST "http://localhost:8080/realms/poiesis/protocol/openid-connect/token
   -d "client_id=poiesis" \
   -d "username=jaeaeich" \
   -d "password=password" \
-  -d "client_secret=client_secret_from_keycloak"
+  -d "client_secret=client_secret_from_keycloak" \
+  -d "scope=openid"
 ```
 
 Copy the `access_token` and use it to run authenticated tasks:

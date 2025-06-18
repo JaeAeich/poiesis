@@ -116,3 +116,22 @@ def get_oidc_introspect_url() -> str:
         raise InternalServerException(
             f"Failed to fetch OIDC introspect URL: {e}"
         ) from e
+
+
+@lru_cache
+def get_oidc_jwks_uri() -> str:
+    """Get the OIDC JWKS URI from the discovery document."""
+    discovery_url = get_poiesis_api_constants().Auth.OIDC.DISCOVERY_URL
+    try:
+        with httpx.Client() as client:
+            resp = client.get(discovery_url, timeout=10)
+            resp.raise_for_status()
+            metadata = resp.json()
+            if jwks_uri := metadata.get("jwks_uri"):
+                return cast(str, jwks_uri)
+            else:
+                raise InternalServerException(
+                    "OIDC discovery document does not contain 'jwks_uri'."
+                )
+    except Exception as e:
+        raise InternalServerException(f"Failed to fetch OIDC JWKS URI: {e}") from e
