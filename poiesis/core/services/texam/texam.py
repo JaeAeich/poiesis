@@ -502,7 +502,7 @@ class Texam:
 
         logger.debug(
             "Pod cleanup completed. Cleaned up "
-            f"{cleanup_count}/{len(self.task_pool)} pods"
+            f"{cleanup_count}/{len(self.pods_to_cleanup)} pods"
         )
 
     async def message(self) -> None:
