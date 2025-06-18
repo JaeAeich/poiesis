@@ -62,6 +62,16 @@ poiesis:
     # Timeout duration in seconds for monitoring operations.
     monitorTimeoutSeconds: "80"
 
+  # Storage configuration for PVCs used by Poiesis tasks
+  storage:
+    # Access mode for task PVCs (ReadWriteOnce, ReadWriteMany, ReadWriteOncePod)
+    # ReadWriteOnce: Volume can be mounted as read-write by a single node (most common)
+    # ReadWriteMany: Volume can be mounted as read-write by many nodes (requires supporting storage class)
+    accessMode: "ReadWriteOnce"
+    # Storage class name for task PVCs - must exist in your cluster
+    # Common values: "standard", "gp3", "local-path", "nfs", "premium-rwo"
+    className: "standard"
+
   # Configuration for the authentication mechanism used by Poiesis.
   auth:
     # Specifies the authentication provider.

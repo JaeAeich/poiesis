@@ -40,6 +40,12 @@ class PoiesisCoreConstants:
             TEXAM_PREFIX: The prefix for the Texam job name.
             PVC_DEFAULT_DISK_SIZE: The default disk size for the Persistent Volume
                 Claim.
+                        PVC_ACCESS_MODE: The access mode for PVCs (e.g., ReadWriteOnce,
+                ReadWriteMany). Defaults to ReadWriteOnce for compatibility with
+                most storage providers.
+            PVC_STORAGE_CLASS: The storage class name for PVCs. Defaults to
+                'standard' which is commonly available across different K8s
+                distributions.
             POIESIS_IMAGE: The Poiesis image.
             COMMON_PVC_VOLUME_NAME: The common PVC volume name.
             FILER_PVC_PATH: The path in the PVC for the filer.
@@ -64,6 +70,8 @@ class PoiesisCoreConstants:
         PVC_PREFIX = "pvc"
         TEXAM_PREFIX = "texam"
         PVC_DEFAULT_DISK_SIZE = "1Gi"
+        PVC_ACCESS_MODE = os.getenv("POIESIS_PVC_ACCESS_MODE", "ReadWriteOnce")
+        PVC_STORAGE_CLASS = os.getenv("POIESIS_PVC_STORAGE_CLASS", "standard")
         POIESIS_IMAGE = os.getenv("POIESIS_IMAGE", "docker.io/jaeaeich/poiesis:latest")
         COMMON_PVC_VOLUME_NAME = "task-pvc-volume"
         FILER_PVC_PATH = "/transfer"

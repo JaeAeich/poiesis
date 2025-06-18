@@ -17,6 +17,8 @@ data:
   POIESIS_RESTART_POLICY: {{ .Values.poiesis.config.restartPolicy | quote }}
   POIESIS_IMAGE_PULL_POLICY: {{ .Values.poiesis.config.imagePullPolicy | quote }}
   POIESIS_JOB_TTL: {{ .Values.poiesis.config.jobTtl | quote }}
+  POIESIS_PVC_ACCESS_MODE: {{ .Values.poiesis.storage.accessMode | default "ReadWriteOnce" | quote }}
+  POIESIS_PVC_STORAGE_CLASS: {{ .Values.poiesis.storage.className | default "standard" | quote }}
   # --- Message broker (Redis)
   MESSAGE_BROKER_HOST: {{ include "poiesis.redis.host" . }}
   MESSAGE_BROKER_PORT: {{ include "poiesis.redis.port" . }}
