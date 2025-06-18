@@ -18,9 +18,26 @@ spec:
         app.kubernetes.io/component: api
       annotations:
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: {{ include "poiesis.serviceAccountName" . }}
       containers:
         - name: {{ include "poiesis.api.componentName" . }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
           image: "{{ .Values.poiesis.image.repository }}:{{ .Values.poiesis.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.poiesis.image.pullPolicy }}
           command: ["poiesis", "api", "run"]

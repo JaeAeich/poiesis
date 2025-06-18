@@ -305,6 +305,7 @@ def get_default_pod_security_context() -> V1PodSecurityContext:
     return V1PodSecurityContext(
         run_as_non_root=True,
         seccomp_profile=V1SeccompProfile(type="RuntimeDefault"),
+        fs_group=1001,
         fs_group_change_policy="OnRootMismatch",
     )
 
