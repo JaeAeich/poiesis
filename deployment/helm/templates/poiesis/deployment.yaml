@@ -37,7 +37,6 @@ spec:
             capabilities:
               drop:
                 - ALL
-            readOnlyRootFilesystem: true
           image: "{{ .Values.poiesis.image.repository }}:{{ .Values.poiesis.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.poiesis.image.pullPolicy }}
           command: ["poiesis", "api", "run"]
