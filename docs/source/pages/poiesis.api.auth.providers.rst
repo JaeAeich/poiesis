@@ -20,10 +20,10 @@ poiesis.api.auth.providers.dummy module
    :show-inheritance:
    :undoc-members:
 
-poiesis.api.auth.providers.keycloak module
-------------------------------------------
+poiesis.api.auth.providers.oidc module
+--------------------------------------
 
-.. automodule:: poiesis.api.auth.providers.keycloak
+.. automodule:: poiesis.api.auth.providers.oidc
    :members:
    :show-inheritance:
    :undoc-members:

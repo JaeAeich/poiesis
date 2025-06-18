@@ -175,70 +175,72 @@ Once the task completes, verify the output:
 mc ls minio/poiesis
 ```
 
-## Step 3: Enable Authentication with Keycloak
+## Step 3: Enable Authentication with OIDC (Example: Keycloak)
 
-Previously we used a dummy Bearer token (`asdf`). Poiesis supports Keycloak for
-real authentication.
+By default, Poiesis uses a dummy Bearer token (`asdf`). For production, Poiesis
+supports authentication via any OIDC (OpenID Connect) provider. Here, we show
+how to use Keycloak as an example OIDC provider, but you can use any
+OIDC-compliant service (e.g., Auth0, Okta, Google, etc.).
 
-:::warning Manual Management Ahead
-The Helm chart handles deployment and secret creation only. Keycloak
-configuration must be done manually.
-:::
+### 1. Install Keycloak (Example OIDC Provider)
 
-Enable Keycloak and set the auth type:
+First, install Keycloak in your cluster using the Bitnami Helm chart:
 
 ```bash
-helm upgrade \
-  --set minio.enabled=true \
-  --set poiesis.auth.type=keycloak \
-  --set keycloak.enabled=true \
-  -n poiesis poiesis .
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+
+helm install keycloak bitnami/keycloak \
+  --namespace poiesis \
+  --create-namespace \
+  --set auth.adminUser=admin \
+  --set auth.adminPassword=admin
 ```
 
-:::warning Keycloak Start Delay
-Keycloak may take some time to initialize. Be patient if `kubectl port-forward`
-doesn’t work immediately.
-:::
-
-Once ready, access the Keycloak admin UI:
+Keycloak may take a few minutes to start. Once ready, access the Keycloak admin UI:
 
 ```bash
-kubectl port-forward svc/poiesis-keycloak 8080:80 -n poiesis
+kubectl port-forward svc/keycloak 8080:80 -n poiesis
 ```
 
 Visit [http://localhost:8080](http://localhost:8080) and log in with:
 
-- **Username**: `keycloakUser123`
-- **Password**: `keycloakPassword123`
+- **Username**: `admin`
+- **Password**: `admin`
 
-### Keycloak Setup
+### 2. Configure Keycloak Realm and Client
 
-1. Create a realm named `poiesis`.
-2. Inside the realm, create a client named `poiesis`.
-
-   - Enable **Client Authentication** and **Direct Access Grants**.
-   - Set **Valid Redirect URIs** to `http://poiesis-api:8000/*`
-   - Set **Web Origins** to `http://poiesis-api:8000/`
+1. **Create a realm** named `poiesis`.
+2. **Create a client** named `poiesis` in the `poiesis` realm.
+    - Enable **Client Authentication** and **Direct Access Grants**.
+    - Set **Valid Redirect URIs** to `http://poiesis-api:8000/*`
+    - Set **Web Origins** to `http://poiesis-api:8000/`
 3. After creating the client, note down the **Client Secret**.
 
-Let’s assume the secret is `client_secret_from_keycloak`.
+### 3. Configure Poiesis to Use OIDC
 
-Update your deployment with this secret:
+Update your deployment to use OIDC authentication by setting the following
+values (either in `values.yaml` or via `helm upgrade --set ...`):
 
 ```bash
 helm upgrade \
   --set minio.enabled=true \
-  --set poiesis.auth.type=keycloak \
-  --set keycloak.enabled=true \
-  --set poiesis.config.keycloakClientSecret=client_secret_from_keycloak \
+  --set poiesis.auth.type=oidc \
+  --set poiesis.auth.oidc.issuer=http://keycloak.poiesis.svc.cluster.local/realms/poiesis \
+  --set poiesis.auth.oidc.clientId=poiesis \
+  --set poiesis.auth.oidc.clientSecret=client_secret_from_keycloak \
   -n poiesis poiesis .
 ```
 
-If the secret `poiesis-keycloak-secret` isn't updated (check its age), delete
-and reapply:
+- Replace `client_secret_from_keycloak` with the actual client secret from Keycloak.
+- Adjust the `issuer` URL if your Keycloak service uses a different address or
+    if using an external OIDC provider.
+
+If you update the client secret, you may need to delete and recreate the
+relevant Kubernetes secret:
 
 ```bash
-kubectl delete secret keycloak-poiesis-secret -n poiesis
+kubectl delete secret poiesis-keycloak-secret -n poiesis || true
 helm upgrade ... (same command as above)
 ```
 
@@ -248,7 +250,7 @@ Restart the API deployment to apply changes:
 kubectl rollout restart deployment poiesis-api -n poiesis
 ```
 
-### Create a User and Get a Token
+### 4. Create a User and Get a Token
 
 1. In the `poiesis` realm, go to **Users → Create User**.
 2. After creating, go to **Credentials**, set a password, and disable the
@@ -268,7 +270,8 @@ curl -X POST "http://localhost:8080/realms/poiesis/protocol/openid-connect/token
   -d "client_id=poiesis" \
   -d "username=jaeaeich" \
   -d "password=password" \
-  -d "client_secret=client_secret_from_keycloak"
+  -d "client_secret=client_secret_from_keycloak" \
+  -d "scope=openid"
 ```
 
 Copy the `access_token` and use it to run authenticated tasks:
@@ -280,7 +283,7 @@ curl -X 'POST' \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "auth-s3-file-cat",
-    "description": "Testing Poiesis MinIO with Keycloak auth",
+    "description": "Testing Poiesis MinIO with OIDC auth",
     "inputs": [
       {
         "url": "s3://poiesis/inputs/file",

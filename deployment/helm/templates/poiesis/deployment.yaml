@@ -60,8 +60,8 @@ spec:
               value: {{ .Values.poiesis.config.mongodbDatabase | quote }}
             - name: POIESIS_ENV
               value: {{ .Values.poiesis.config.poiesisEnv | quote }}
-            - name: AUTH
-              value: {{ .Values.poiesis.auth.type | quote }}
+            - name: AUTH_TYPE
+              value: {{ .Values.poiesis.auth.type }}
             - name: POIESIS_CORE_CONFIGMAP_NAME
               value: {{ include "poiesis.coreConfigMapName" . }}
             - name: POIESIS_MONGODB_AUTH_ENABLED
@@ -132,27 +132,16 @@ spec:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_REDIS_SECRET_NAME
             {{- end }}
-            {{- if eq (include "poiesis.keycloak.enabled" .) "true" }}
-            - name: KEYCLOAK_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "poiesis.coreConfigMapName" . }}
-                  key: KEYCLOAK_URL
-            - name: KEYCLOAK_REALM
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "poiesis.coreConfigMapName" . }}
-                  key: KEYCLOAK_REALM
-            - name: KEYCLOAK_CLIENT_ID
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "poiesis.coreConfigMapName" . }}
-                  key: KEYCLOAK_CLIENT_ID
-            - name: KEYCLOAK_CLIENT_SECRET
+            {{- if eq (.Values.poiesis.auth.type) "oidc" }}
+            - name: OIDC_ISSUER
+              value: {{ .Values.poiesis.auth.oidc.issuer }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.poiesis.auth.oidc.clientId }}
+            - name: OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "poiesis.keycloak.secretName" . }}
-                  key: KEYCLOAK_CLIENT_SECRET
+                  name: {{ include "poiesis.auth.secretName" . }}
+                  key: OIDC_CLIENT_SECRET
             {{- end }}
             {{- if eq (include "poiesis.minio.enabled" .) "true" }}
             - name: POIESIS_S3_SECRET_NAME

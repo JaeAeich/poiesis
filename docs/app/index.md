@@ -24,7 +24,7 @@ features:
   - title: Cloud Native
     details: Poiesis is designed to be cloud native, running on Kubernetes.
   - title: Authenticated
-    details: Poiesis comes with OIDC via Keycloak but can be easily extended to support other authentication mechanisms.
+    details: Poiesis supports OIDC (OAuth2) authentication out of the box (e.g., Keycloak, Auth0, Okta, Google) and can be extended to other authentication mechanisms.
   - title: Private
     details: Poiesis is designed to be private, with a focus on security and privacy, nothing is stored and is immediately deleted after the run is completed.
 ---

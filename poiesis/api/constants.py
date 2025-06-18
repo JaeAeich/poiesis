@@ -57,25 +57,25 @@ class PoiesisApiConstants:
             AUTH: The authentication method.
         """
 
-        AUTH: Literal["keycloak", "dummy"] = cast(
-            Literal["keycloak", "dummy"], os.getenv("AUTH", "dummy")
+        AUTH: Literal["oidc", "dummy"] = cast(
+            Literal["oidc", "dummy"], os.getenv("AUTH_TYPE", "dummy")
         )
 
         @dataclass(frozen=True)
-        class Keycloak:
-            """Constants used in the Keycloak.
+        class OIDC:
+            """Constants used in the generic OpenID Connect client.
 
             Attributes:
-                URL: The URL of the Keycloak server.
-                REALM: The realm of the Keycloak server.
-                CLIENT_ID: The client id of the Keycloak server.
-                ALGORITHM: The algorithm of the Keycloak server.
+                ISSUER: The OpenID Connect issuer URL.
+                CLIENT_ID: The OpenID Connect client identifier.
+                INTROSPECT_ENDPOINT: URL to validate tokens (optional).
             """
 
-            URL = os.getenv("KEYCLOAK_URL")
-            REALM = os.getenv("KEYCLOAK_REALM")
-            CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID")
-            ALGORITHM = os.getenv("KEYCLOAK_ALGORITHM", "RS256")
+            ISSUER = os.getenv("OIDC_ISSUER")
+            CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
+            DISCOVERY_URL = (
+                f"{str(ISSUER).rstrip('/')}/.well-known/openid-configuration"
+            )
 
 
 @lru_cache

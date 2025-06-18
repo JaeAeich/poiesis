@@ -135,6 +135,15 @@ API component name
 {{- printf "%s-api" (include "poiesis.name" .) }}
 {{- end }}
 
+{{/* ----------------------------- Auth Component -------------------------------- */}}
+
+{{/*
+Auth Secret name
+*/}}
+{{- define "poiesis.auth.secretName" -}}
+{{- printf "%s-auth-secret" (include "poiesis.name" .) -}}
+{{- end }}
+
 {{/* ----------------------------- MongoDB Component ----------------------------- */}}
 
 {{/*
@@ -309,66 +318,6 @@ Return the configured Redis password.
 {{- else -}}
   {{- "" -}}
 {{- end }}
-{{- end }}
-
-{{/* ----------------------------- Keycloak Component ----------------------------- */}}
-
-{{/*
-Keycloak component name
-*/}}
-{{- define "poiesis.keycloak.componentName" -}}
-{{- printf "%s-keycloak" (include "poiesis.name" .) }}
-{{- end }}
-
-{{- define "poiesis.keycloak.enabled" -}}
-{{- if eq (.Values.poiesis.auth.type | lower) "dummy" -}}
-false
-{{- else -}}
-{{ or .Values.poiesis.externalDependencies.keycloak.enabled .Values.keycloak.enabled }}
-{{- end }}
-{{- end }}
-
-{{/*
-Keycloak Secret name
-*/}}
-{{- define "poiesis.keycloak.secretName" -}}
-{{- printf "%s-secret" (include "poiesis.keycloak.componentName" .) -}}
-{{- end }}
-
-{{- define "poiesis.keycloak.fullname" -}}
-{{- if .Values.keycloak.fullnameOverride }}
-{{- .Values.keycloak.fullnameOverride | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- printf "%s-keycloak" .Release.Name | trunc 63 | trimSuffix "-" }} {{/* Assumes subchart alias 'keycloak' */}}
-{{- end }}
-{{- end }}
-
-{{- define "poiesis.keycloak.url" -}}
-{{- $authType := .Values.poiesis.auth.type | lower -}}
-{{- if eq $authType "keycloak" -}}
-  {{- if .Values.poiesis.externalDependencies.keycloak.enabled -}}
-    {{- required ".Values.poiesis.externalDependencies.keycloak.url is required for external Keycloak" .Values.poiesis.externalDependencies.keycloak.url | quote }}
-  {{- else if .Values.keycloak.enabled -}}
-    {{- $protocol := "http" -}}
-    {{- $port := .Values.keycloak.service.ports.http -}}
-    {{- if not .Values.keycloak.service.http.enabled -}}
-      {{- $protocol = "https" -}}
-      {{- $port = .Values.keycloak.service.ports.https -}}
-      {{- if not $port -}}
-        {{- fail "Keycloak subchart is enabled and HTTP is disabled, but no HTTPS port is configured under .Values.keycloak.service.ports.https" -}}
-      {{- end -}}
-    {{- end -}}
-    {{- printf "%s://%s:%v" $protocol (include "poiesis.keycloak.fullname" .) $port | quote }}
-  {{- else -}}
-    {{- fail "auth.type is 'keycloak' but neither external Keycloak (poiesis.externalDependencies.keycloak.enabled) nor Keycloak subchart (keycloak.enabled) is enabled." }}
-  {{- end -}}
-{{- else -}}
-  {{- "" -}}
-{{- end }}
-{{- end }}
-
-{{- define "poiesis.keycloak.clientSecret" -}}
-{{- default "changeme" .Values.poiesis.config.keycloakClientSecret -}}
 {{- end }}
 
 {{/* -----------------------------  S3/Minio ----------------------------- */}}
