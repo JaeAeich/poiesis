@@ -61,6 +61,9 @@ class KubernetesAdapter(KubernetesPort):
             logger.info(
                 f"Created job {job.metadata.name} in namespace {self.namespace}"
             )
+            assert api_response.metadata is not None, (
+                "API response should have metadata"
+            )
             return str(api_response.metadata.name)
         except ApiException as e:
             logger.error(f"Error creating job: {e}")
@@ -97,6 +100,9 @@ class KubernetesAdapter(KubernetesPort):
             logger.info(
                 f"Created PVC {pvc.metadata.name} in namespace {self.namespace}"
             )
+            assert api_response.metadata is not None, (
+                "Create PVC API response should have metadata"
+            )
             return str(api_response.metadata.name)
         except ApiException as e:
             logger.error(f"Error creating PVC: {e}")
@@ -130,6 +136,9 @@ class KubernetesAdapter(KubernetesPort):
             assert pod.metadata.name is not None, "Pod name is None"
             logger.info(
                 f"Created pod {pod.metadata.name} in namespace {self.namespace}"
+            )
+            assert api_response.metadata is not None, (
+                "Create pod API response should have metadata"
             )
             return str(api_response.metadata.name)
         except ApiException as e:

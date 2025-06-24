@@ -249,19 +249,20 @@ class MongoDBClient:
                     system_logs.append(f"Error getting logs for {prefix}: {str(e)}")
 
             # Add system logs to the task
-            task.data.logs[-1].system_logs = system_logs
+            if task.data.logs:
+                task.data.logs[-1].system_logs = system_logs
 
-            # Update the task in the database
-            await self.db[
-                poiesis_constants.Database.MongoDB.TASK_COLLECTION
-            ].update_one(
-                {"task_id": task_id},
-                {
-                    "$set": {
-                        "data.logs": [log.model_dump() for log in task.data.logs],
-                    }
-                },
-            )
+                # Update the task in the database
+                await self.db[
+                    poiesis_constants.Database.MongoDB.TASK_COLLECTION
+                ].update_one(
+                    {"task_id": task_id},
+                    {
+                        "$set": {
+                            "data.logs": [log.model_dump() for log in task.data.logs],
+                        }
+                    },
+                )
         except Exception as e:
             logger.error(
                 "Error adding system logs in collection "

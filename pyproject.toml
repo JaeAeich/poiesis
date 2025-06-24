@@ -4,7 +4,7 @@ requires = ["hatchling"]
 
 [dependency-groups]
 code_quality = [
-  "mypy>=1.10.0",
+  "pyrefly>=0.21.0",
   "ruff>=0.4.10",
   "typos>=1.22.8",
 ]
@@ -78,16 +78,9 @@ Repository = "https://github.com/jaeaeich/poiesis"
 [tool.bandit]
 skips = ["B101"]
 
-[tool.mypy]
-warn_return_any = true
-warn_unused_configs = true
-
-[[tool.mypy.overrides]]
-ignore_missing_imports = true
-module = [
-  "connexion.*",
-  "gunicorn.*",
-]
+[tool.pyrefly]
+project-excludes = ["**/*venv/**/*"]
+project-includes = ["**/*"]
 
 [tool.ruff]
 indent-width = 4

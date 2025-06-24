@@ -1,5 +1,7 @@
 """Controller for canceling tasks."""
 
+from typing import Any
+
 from poiesis.api.controllers.interface import InterfaceController
 from poiesis.api.exceptions import BadRequestException, NotFoundException
 from poiesis.api.tes.models import TesCancelTaskResponse, TesState
@@ -39,7 +41,7 @@ class CancelTaskController(InterfaceController):
         self.user_id = user_id
         self.kubernetes_client = KubernetesAdapter()
 
-    async def execute(self) -> TesCancelTaskResponse:
+    async def execute(self, *args: Any, **kwargs: Any) -> TesCancelTaskResponse:
         """Cancel a task.
 
         Returns:

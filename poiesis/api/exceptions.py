@@ -31,9 +31,12 @@ class APIException(Exception):
 
 
 def handle_api_exception(
-    request: ConnexionRequest, exc: APIException
+    request: ConnexionRequest, exc: Exception
 ) -> ConnexionResponse:
     """Handler for our custom APIException hierarchy."""
+    # Cast to APIException since we know this handler is only called for APIException
+    exc = exc if isinstance(exc, APIException) else APIException(str(exc))
+
     if exc.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR.value:
         logger.error(f"Server error: {exc.message}", exc_info=True)
     else:

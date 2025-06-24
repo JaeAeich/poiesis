@@ -65,8 +65,15 @@ class TorcTexamExecution(TorcExecutionTemplate):
             message: Message for the message broker.
         """
         super().__init__()
-        self.id = task.id
         self.task = task
+        self._task_id = task.id
+
+    @property
+    def id(self) -> str:
+        """Return the task ID."""
+        if self._task_id is None:
+            raise ValueError("Task ID is None")
+        return self._task_id
 
     async def start_job(self) -> None:
         """Create the K8s job for Texam."""

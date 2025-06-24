@@ -86,7 +86,7 @@ class ListTasksController(InterfaceController):
 
         return query
 
-    async def execute(self) -> TesListTasksResponse:
+    async def execute(self, *args: Any, **kwargs: Any) -> TesListTasksResponse:
         """Execute the controller to list tasks.
 
         Returns:

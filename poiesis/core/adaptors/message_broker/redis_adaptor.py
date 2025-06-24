@@ -38,15 +38,18 @@ class RedisMessageBroker(MessageBroker):
 
         password = os.getenv("MESSAGE_BROKER_PASSWORD")
 
-        redis_args = {
-            "host": host,
-            "port": int(port),
-        }
-
         if password:
-            redis_args["password"] = password
+            self.redis = redis.Redis(
+                host=host,
+                port=int(port),
+                password=password,
+            )
+        else:
+            self.redis = redis.Redis(
+                host=host,
+                port=int(port),
+            )
 
-        self.redis = redis.Redis(**redis_args)
         self.pubsub = self.redis.pubsub()
 
     def publish(self, channel: str, message: Message) -> None:
@@ -70,7 +73,9 @@ class RedisMessageBroker(MessageBroker):
         self.pubsub.subscribe(channel)
         for message in self.pubsub.listen():
             if message["type"] == "message":
-                yield Message(**json.loads(message["data"]))
+                data = message["data"]
+                if data is not None:
+                    yield Message(**json.loads(data))
 
     def close(self) -> None:
         """Close the message broker."""
