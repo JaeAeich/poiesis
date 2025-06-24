@@ -197,7 +197,7 @@ class TesInput(BaseModel):
         """Serialize the type to a string."""
         return v.value
 
-    @field_validator("path")
+    @field_validator("path")  # type: ignore[bad-argument-type]
     @classmethod
     def serialize_path(cls, path: str) -> str:
         """Serialize path so that its not at root."""
@@ -252,7 +252,7 @@ class TesOutput(BaseModel):
         """Serialize the type to a string."""
         return v.value
 
-    @field_validator("path")
+    @field_validator("path")  # type: ignore[bad-argument-type]
     @classmethod
     def serialize_path(cls, path: str) -> str:
         """Serialize path so that its not at root."""

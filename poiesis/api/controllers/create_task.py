@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import uuid
+from typing import Any
 
 from kubernetes.client.models import (
     V1ConfigMapKeySelector,
@@ -60,7 +61,7 @@ class CreateTaskController(InterfaceController):
         self.user_id = user_id
         self.kubernetes_client = KubernetesAdapter()
 
-    async def execute(self) -> TesCreateTaskResponse:
+    async def execute(self, *args: Any, **kwargs: Any) -> TesCreateTaskResponse:
         """Execute the controller."""
         _task = self._create_dummy_task_document(self.task)
         try:
