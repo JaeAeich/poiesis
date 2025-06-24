@@ -341,11 +341,9 @@ def get_permissive_container_security_context() -> V1SecurityContext:
     specific user/group permissions or capabilities.
     """
     return V1SecurityContext(
-        run_as_non_root=False,  # Allow running as root inside the container
-        allow_privilege_escalation=True,  # Let setuid/setgid, sudo work as expected
-        seccomp_profile=V1SeccompProfile(
-            type="RuntimeDefault"
-        ),  # Restrict dangerous syscalls
+        run_as_non_root=False,
+        allow_privilege_escalation=True,
+        seccomp_profile=V1SeccompProfile(type="RuntimeDefault"),
         capabilities=V1Capabilities(
             drop=[
                 "SYS_ADMIN",  # Block mount, pivot_root, remount, etc.
