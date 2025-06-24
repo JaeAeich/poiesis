@@ -24,8 +24,8 @@ from poiesis.api.tes.models import TesExecutor, TesTask
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.constants import (
-    get_default_container_security_context,
-    get_default_pod_security_context,
+    get_permissive_container_security_context,
+    get_permissive_pod_security_context,
     get_poiesis_core_constants,
 )
 from poiesis.core.ports.message_broker import Message, MessageStatus
@@ -239,7 +239,7 @@ class Texam:
                     },
                 ),
                 spec=V1PodSpec(
-                    security_context=get_default_pod_security_context(),
+                    security_context=get_permissive_pod_security_context(),
                     containers=[
                         V1Container(
                             name=executor_name,
@@ -266,7 +266,7 @@ class Texam:
                             ]
                             + _volume_pvc_mount,
                             image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
-                            security_context=get_default_container_security_context(),
+                            security_context=get_permissive_container_security_context(),
                         )
                     ],
                     volumes=[

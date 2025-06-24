@@ -331,3 +331,31 @@ def get_default_container_security_context() -> V1SecurityContext:
         allow_privilege_escalation=False,
         capabilities=V1Capabilities(drop=["ALL"]),
     )
+
+
+@lru_cache
+def get_permissive_container_security_context() -> V1SecurityContext:
+    """Returns a permissive V1SecurityContext for executor containers.
+
+    This context is more permissive to support applications that require
+    specific user/group permissions or capabilities.
+    """
+    return V1SecurityContext(
+        run_as_non_root=False,  # Allow running as root if needed
+        allow_privilege_escalation=False,  # Still prevent privilege escalation
+        capabilities=V1Capabilities(drop=["NET_RAW"]),  # Only drop NET_RAW, keep others
+    )
+
+
+@lru_cache
+def get_permissive_pod_security_context() -> V1PodSecurityContext:
+    """Returns a permissive V1PodSecurityContext for executor pods.
+
+    This context is more permissive to support applications that require
+    specific user/group permissions for file access.
+    """
+    return V1PodSecurityContext(
+        run_as_non_root=False,  # Allow running as root if needed
+        seccomp_profile=V1SeccompProfile(type="RuntimeDefault"),
+        fs_group_change_policy="Always",  # Allow changing file permissions
+    )
