@@ -341,9 +341,24 @@ def get_permissive_container_security_context() -> V1SecurityContext:
     specific user/group permissions or capabilities.
     """
     return V1SecurityContext(
-        run_as_non_root=False,  # Allow running as root if needed
-        allow_privilege_escalation=False,  # Still prevent privilege escalation
-        capabilities=V1Capabilities(drop=["NET_RAW"]),  # Only drop NET_RAW, keep others
+        run_as_non_root=False,  # Allow running as root inside the container
+        allow_privilege_escalation=True,  # Let setuid/setgid, sudo work as expected
+        seccomp_profile=V1SeccompProfile(
+            type="RuntimeDefault"
+        ),  # Restrict dangerous syscalls
+        capabilities=V1Capabilities(
+            drop=[
+                "SYS_ADMIN",  # Block mount, pivot_root, remount, etc.
+                "SYS_MODULE",  # Block kernel module loading
+                "SYS_PTRACE",  # Block ptrace of other processes
+                "SYS_TIME",  # Block system time modification
+                "NET_ADMIN",  # Block network config (e.g., iptables, interfaces)
+                "NET_RAW",  # Block raw sockets (ping, nmap, etc.)
+                "NET_BIND_SERVICE",  # Block binding to ports <1024
+                "NET_BROADCAST",  # Block sending network broadcasts
+            ],
+        ),
+        privileged=False,  # Do not run as fully privileged container
     )
 
 
