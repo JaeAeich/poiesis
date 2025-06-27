@@ -84,7 +84,7 @@ rbac.authorization.k8s.io/v1beta1
 {{- end }}
 
 {{/*
-Namespaced RBAC rules (exclude cluster-scoped resources like Jobs)
+Namespaced RBAC rules (include Jobs - they are namespace-scoped, not cluster-scoped)
 */}}
 {{- define "poiesis.rbac.namespacedRules" }}
 {{- $namespacedRules := list
@@ -94,21 +94,14 @@ Namespaced RBAC rules (exclude cluster-scoped resources like Jobs)
     (dict "apiGroups" (list "")
         "resources" (list "pods/log")
         "verbs" (list "get"))
+    (dict "apiGroups" (list "batch")
+        "resources" (list "jobs")
+        "verbs" (list "create" "get" "list" "watch" "delete"))
 }}
 {{ toYaml $namespacedRules | indent 2 }}
 {{- end }}
 
-{{/*
-Cluster-scoped RBAC rules (include Jobs)
-*/}}
-{{- define "poiesis.rbac.clusterRules" }}
-{{- $clusterRules := list
-  (dict "apiGroups" (list "batch")
-        "resources" (list "jobs")
-        "verbs" (list "create" "get" "list" "watch" "delete"))
-}}
-{{ toYaml $clusterRules | indent 2 }}
-{{- end }}
+
 
 {{/*
 Common annotations block
