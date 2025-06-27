@@ -42,37 +42,3 @@ roleRef:
   kind: Role
   name: {{ include "poiesis.serviceAccountName" . }}-role
   apiGroup: rbac.authorization.k8s.io
----
-apiVersion: {{ include "poiesis.rbac.apiVersion" . }}
-kind: ClusterRole
-metadata:
-  name: {{ include "poiesis.serviceAccountName" . }}-clusterrole
-  labels:
-    {{- include "poiesis.labels" . | nindent 4 }}
-    app.kubernetes.io/component: rbac
-  {{- with .Values.commonAnnotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-rules:
-  {{- include "poiesis.rbac.clusterRules" . | indent 2 }}
----
-apiVersion: {{ include "poiesis.rbac.apiVersion" . }}
-kind: ClusterRoleBinding
-metadata:
-  name: {{ include "poiesis.serviceAccountName" . }}-clusterbinding
-  labels:
-    {{- include "poiesis.labels" . | nindent 4 }}
-    app.kubernetes.io/component: rbac
-  {{- with .Values.commonAnnotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-subjects:
-- kind: ServiceAccount
-  name: {{ include "poiesis.serviceAccountName" . }}
-  namespace: {{ .Release.Namespace }}
-roleRef:
-  kind: ClusterRole
-  name: {{ include "poiesis.serviceAccountName" . }}-clusterrole
-  apiGroup: rbac.authorization.k8s.io
