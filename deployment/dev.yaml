@@ -16,35 +16,6 @@ metadata:
   namespace: po
 ...
 ---
-# CLUSTER ROLE: For permissions across the entire cluster (e.g., creating jobs)
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: poiesis-cluster-role
-rules:
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["create", "get", "list", "watch", "delete"]
-  - apiGroups: [""]
-    resources: ["nodes", "persistentvolumes"]
-    verbs: ["get", "list", "watch"]
-...
----
-# CLUSTER ROLE BINDING: Binds the ClusterRole to our ServiceAccount
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: poiesis-cluster-role-binding
-subjects:
-  - kind: ServiceAccount
-    name: poiesis-sa
-    namespace: po
-roleRef:
-  kind: ClusterRole
-  name: poiesis-cluster-role
-  apiGroup: rbac.authorization.k8s.io
-...
----
 # ROLE: For permissions ONLY within the 'po' namespace
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -56,6 +27,9 @@ rules:
     resources:
       ["pods", "pods/log", "persistentvolumeclaims", "secrets", "configmaps"]
     verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
 ...
 ---
 # ROLE BINDING: Binds the namespaced Role to our ServiceAccount
