@@ -362,8 +362,6 @@ def _read_security_context_json(filename: str) -> dict | None:
             or core_constants.K8s.EXECUTOR_SECURITY_CONTEXT_ENABLED
         ):
             raise InternalServerException("Security context path is not set.")
-        else:
-            return None
 
         file_path = Path(str(core_constants.K8s.SECURITY_CONTEXT_PATH)) / filename
         if file_path.exists():
@@ -404,6 +402,7 @@ def get_infrastructure_container_security_context() -> V1SecurityContext | None:
     """
     if not core_constants.K8s.INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED:
         return None
+
     filename = "infrastructure_container_security_context.json"
     json_data = _read_security_context_json(filename)
     if json_data is None:
@@ -421,6 +420,7 @@ def get_executor_container_security_context() -> V1SecurityContext | None:
     """
     if not core_constants.K8s.EXECUTOR_SECURITY_CONTEXT_ENABLED:
         return None
+
     filename = "executor_container_security_context.json"
     json_data = _read_security_context_json(filename)
     if json_data is None:
@@ -438,6 +438,7 @@ def get_executor_pod_security_context() -> V1PodSecurityContext | None:
     """
     if not core_constants.K8s.EXECUTOR_SECURITY_CONTEXT_ENABLED:
         return None
+
     filename = "executor_pod_security_context.json"
     json_data = _read_security_context_json(filename)
     if json_data is None:
