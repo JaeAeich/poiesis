@@ -66,6 +66,8 @@ class V1WindowsSecurityContextOptionsPydanticModel(BaseModel):
         return V1WindowsSecurityContextOptions(
             gmsa_credential_spec=self.gmsa_credential_spec,
             gmsa_credential_spec_name=self.gmsa_credential_spec_name,
+            host_process=self.host_process,
+            run_as_user_name=self.run_as_user_name,
         )
 
 

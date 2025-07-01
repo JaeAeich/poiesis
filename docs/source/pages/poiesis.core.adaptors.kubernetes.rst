@@ -12,6 +12,14 @@ poiesis.core.adaptors.kubernetes.kubernetes module
    :show-inheritance:
    :undoc-members:
 
+poiesis.core.adaptors.kubernetes.models module
+----------------------------------------------
+
+.. automodule:: poiesis.core.adaptors.kubernetes.models
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 Module contents
 ---------------
 
