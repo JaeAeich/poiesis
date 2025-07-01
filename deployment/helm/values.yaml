@@ -93,10 +93,8 @@ poiesis:
       enabled: true
 
       # Pod security context for infrastructure components
-      # The below section is used as is, if any extra fields are needed,
-      # add them to the podSecurityContextPath and containerSecurityContextPath.
-      # Eg: If you want to add `sysctls`, add it to podSecurityContextPath and
-      # it will be picked.
+      # Additional fields can be added directly to this section as needed.
+      # Example: To add sysctls, include them in the pod section below.
       pod:
         runAsNonRoot: true
         runAsUser: 1001
@@ -112,21 +110,24 @@ poiesis:
         runAsUser: 1001
         runAsGroup: 1001
         allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
         capabilities:
           drop:
             - "ALL"
 
     # Task executor pods (launched by TExAM to run user workloads)
     # These are also hardened for security but can be disabled if needed.
-    # NOTE: Since TES API doesn't 
+    # NOTE: Since TES expects the executor to be the user's sandbox,
+    # it's possible that users might need to run some privileged operations.
+    # If you are sure that you don't need any privileged operations,
+    # you can disable this by setting `enabled: false` or make the
+    # security context more permissive by modifying the settings below.
     executors:
       # Set to false to disable security contexts for task executor pods
       enabled: true
 
-      # The below section is used as is, if any extra fields are needed,
-      # add them to the podSecurityContextPath and containerSecurityContextPath.
-      # Eg: If you want to add `sysctls`, add it to podSecurityContextPath and
-      # it will be picked.
+      # Additional fields can be added directly to this section as needed.
+      # Example: To add sysctls, include them in the pod section below.
       pod:
         runAsNonRoot: false
         runAsUser: 1001
@@ -139,19 +140,20 @@ poiesis:
       container:
         runAsNonRoot: false
         allowPrivilegeEscalation: true
+        readOnlyRootFilesystem: false
         runAsUser: 1001
         runAsGroup: 1001
         privileged: false
         capabilities:
           drop:
-            - "SYS_ADMIN"  # Block mount, pivot_root, remount, etc.
-            - "SYS_MODULE"  # Block kernel module loading
-            - "SYS_PTRACE"  # Block ptrace of other processes
-            - "SYS_TIME"  # Block system time modification
-            - "NET_ADMIN"  # Block network config (e.g., iptables, interfaces)
-            - "NET_RAW"  # Block raw sockets (ping, nmap, etc.)
-            - "NET_BIND_SERVICE"  # Block binding to ports <1024
-            - "NET_BROADCAST"  # Block sending network broadcasts
+            - "SYS_ADMIN" # Block mount, pivot_root, remount, etc.
+            - "SYS_MODULE" # Block kernel module loading
+            - "SYS_PTRACE" # Block ptrace of other processes
+            - "SYS_TIME" # Block system time modification
+            - "NET_ADMIN" # Block network config (e.g., iptables, interfaces)
+            - "NET_RAW" # Block raw sockets (ping, nmap, etc.)
+            - "NET_BIND_SERVICE" # Block binding to ports <1024
+            - "NET_BROADCAST" # Block sending network broadcasts
 
   # Configuration for the authentication mechanism used by Poiesis.
   auth:
