@@ -1,6 +1,7 @@
 """Constants used in core services."""
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -23,6 +24,8 @@ from poiesis.core.adaptors.kubernetes.models import (
     V1PodSecurityContextPydanticModel,
     V1SecurityContextPydanticModel,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -366,7 +369,10 @@ def _read_security_context_json(filename: str) -> dict | None:
         file_path = Path(str(core_constants.K8s.SECURITY_CONTEXT_PATH)) / filename
         if file_path.exists():
             with open(file_path) as f:
-                return json.load(f)
+                context: dict = json.load(f)
+                if not context:
+                    logger.warning(f"Security context is empty in {filename}.")
+                return context
     except (FileNotFoundError, json.JSONDecodeError, PermissionError) as e:
         raise InternalServerException(
             "Failed to read security context JSON file"
