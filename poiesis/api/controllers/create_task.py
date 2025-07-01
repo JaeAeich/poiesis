@@ -29,10 +29,15 @@ from poiesis.constants import get_poiesis_constants
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.constants import (
     get_configmap_names,
+    get_infrastructure_container_security_context,
+    get_infrastructure_pod_security_context,
+    get_infrastructure_security_volume,
+    get_infrastructure_security_volume_mount,
     get_message_broker_envs,
     get_mongo_envs,
     get_poiesis_core_constants,
     get_secret_names,
+    get_security_context_envs,
 )
 from poiesis.repository.mongo import MongoDBClient
 from poiesis.repository.schemas import TaskSchema
@@ -103,16 +108,19 @@ class CreateTaskController(InterfaceController):
                 template=V1PodTemplateSpec(
                     spec=V1PodSpec(
                         service_account_name=core_constants.K8s.SERVICE_ACCOUNT_NAME,
+                        security_context=get_infrastructure_pod_security_context(),
                         containers=[
                             V1Container(
                                 name=core_constants.K8s.TORC_PREFIX,
                                 image=core_constants.K8s.POIESIS_IMAGE,
                                 command=["poiesis", "torc", "run"],
+                                security_context=get_infrastructure_container_security_context(),
                                 args=["--task", json.dumps(self.task.model_dump())],
                                 env=list(get_message_broker_envs())
                                 + list(get_mongo_envs())
                                 + list(get_secret_names())
                                 + list(get_configmap_names())
+                                + list(get_security_context_envs())
                                 + [
                                     V1EnvVar(
                                         name="POIESIS_IMAGE",
@@ -174,9 +182,11 @@ class CreateTaskController(InterfaceController):
                                     ),
                                 ],
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
+                                volume_mounts=get_infrastructure_security_volume_mount(),
                             ),
                         ],
                         restart_policy=core_constants.K8s.RESTART_POLICY,
+                        volumes=get_infrastructure_security_volume(),
                     ),
                 ),
                 ttl_seconds_after_finished=_ttl,

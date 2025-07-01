@@ -79,6 +79,80 @@ poiesis:
     # Common values: "standard", "gp3", "local-path", "nfs", "premium-rwo"
     className: "standard"
 
+  # Security Context Configuration
+  # This section allows you to configure or disable security contexts
+  securityContext:
+    # Path where the security context will be mounted,
+    # services will read this path to get the security context.
+    path: "/etc/poiesis/security"
+
+    # Infrastructure components (API pod/container + all jobs: TIF, TOF, TExAM, etc.)
+    # These should be hardened as they are part of the Poiesis infrastructure
+    infrastructure:
+      # Set to false to disable security contexts for all infrastructure components
+      enabled: true
+
+      # Pod security context for infrastructure components
+      # The below section is used as is, if any extra fields are needed,
+      # add them to the podSecurityContextPath and containerSecurityContextPath.
+      # Eg: If you want to add `sysctls`, add it to podSecurityContextPath and
+      # it will be picked.
+      pod:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: "OnRootMismatch"
+        seccompProfile:
+          type: "RuntimeDefault"
+
+      # Container security context for infrastructure components
+      container:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - "ALL"
+
+    # Task executor pods (launched by TExAM to run user workloads)
+    # These are also hardened for security but can be disabled if needed.
+    # NOTE: Since TES API doesn't 
+    executors:
+      # Set to false to disable security contexts for task executor pods
+      enabled: true
+
+      # The below section is used as is, if any extra fields are needed,
+      # add them to the podSecurityContextPath and containerSecurityContextPath.
+      # Eg: If you want to add `sysctls`, add it to podSecurityContextPath and
+      # it will be picked.
+      pod:
+        runAsNonRoot: false
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: "OnRootMismatch"
+        seccompProfile:
+          type: "RuntimeDefault"
+
+      container:
+        runAsNonRoot: false
+        allowPrivilegeEscalation: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        privileged: false
+        capabilities:
+          drop:
+            - "SYS_ADMIN"  # Block mount, pivot_root, remount, etc.
+            - "SYS_MODULE"  # Block kernel module loading
+            - "SYS_PTRACE"  # Block ptrace of other processes
+            - "SYS_TIME"  # Block system time modification
+            - "NET_ADMIN"  # Block network config (e.g., iptables, interfaces)
+            - "NET_RAW"  # Block raw sockets (ping, nmap, etc.)
+            - "NET_BIND_SERVICE"  # Block binding to ports <1024
+            - "NET_BROADCAST"  # Block sending network broadcasts
+
   # Configuration for the authentication mechanism used by Poiesis.
   auth:
     # Specifies the authentication provider.

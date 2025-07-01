@@ -1,18 +1,27 @@
 """Constants used in core services."""
 
+import json
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 
 from kubernetes.client.models import (
-    V1Capabilities,
     V1ConfigMapKeySelector,
+    V1ConfigMapVolumeSource,
     V1EnvVar,
     V1EnvVarSource,
     V1PodSecurityContext,
-    V1SeccompProfile,
     V1SecretKeySelector,
     V1SecurityContext,
+    V1Volume,
+    V1VolumeMount,
+)
+
+from poiesis.api.exceptions import InternalServerException
+from poiesis.core.adaptors.kubernetes.models import (
+    V1PodSecurityContextPydanticModel,
+    V1SecurityContextPydanticModel,
 )
 
 
@@ -84,6 +93,18 @@ class PoiesisCoreConstants:
         RESTART_POLICY = os.getenv("POIESIS_RESTART_POLICY", "Never")
         IMAGE_PULL_POLICY = os.getenv("POIESIS_IMAGE_PULL_POLICY", "IfNotPresent")
         JOB_TTL = os.getenv("POIESIS_JOB_TTL")
+        SECURITY_CONTEXT_CONFIGMAP_NAME = os.getenv(
+            "POIESIS_SECURITY_CONTEXT_CONFIGMAP_NAME"
+        )
+        SECURITY_CONTEXT_PATH = os.getenv("POIESIS_SECURITY_CONTEXT_PATH")
+        INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED = (
+            os.getenv("POIESIS_INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED", "true").lower()
+            == "true"
+        )
+        EXECUTOR_SECURITY_CONTEXT_ENABLED = (
+            os.getenv("POIESIS_EXECUTOR_SECURITY_CONTEXT_ENABLED", "true").lower()
+            == "true"
+        )
 
     @dataclass(frozen=True)
     class Texam:
@@ -304,71 +325,201 @@ def get_configmap_names() -> tuple[V1EnvVar, ...]:
 
 
 @lru_cache
-def get_default_pod_security_context() -> V1PodSecurityContext:
-    """Returns a default, hardened V1PodSecurityContext.
-
-    This context enforces that all containers in the pod run as a non-root user
-    and uses the 'OnRootMismatch' policy to speed up volume mounting.
-    """
-    return V1PodSecurityContext(
-        run_as_non_root=True,
-        seccomp_profile=V1SeccompProfile(type="RuntimeDefault"),
-        fs_group=1001,
-        fs_group_change_policy="OnRootMismatch",
-    )
-
-
-@lru_cache
-def get_default_container_security_context() -> V1SecurityContext:
-    """Returns a default, hardened V1SecurityContext for a container.
-
-    This context enforces the principle of least privilege.
-    """
-    return V1SecurityContext(
-        run_as_non_root=True,
-        run_as_user=1001,
-        run_as_group=1001,
-        allow_privilege_escalation=False,
-        capabilities=V1Capabilities(drop=["ALL"]),
-    )
-
-
-@lru_cache
-def get_permissive_container_security_context() -> V1SecurityContext:
-    """Returns a permissive V1SecurityContext for executor containers.
-
-    This context is more permissive to support applications that require
-    specific user/group permissions or capabilities.
-    """
-    return V1SecurityContext(
-        run_as_non_root=False,
-        allow_privilege_escalation=True,
-        seccomp_profile=V1SeccompProfile(type="RuntimeDefault"),
-        capabilities=V1Capabilities(
-            drop=[
-                "SYS_ADMIN",  # Block mount, pivot_root, remount, etc.
-                "SYS_MODULE",  # Block kernel module loading
-                "SYS_PTRACE",  # Block ptrace of other processes
-                "SYS_TIME",  # Block system time modification
-                "NET_ADMIN",  # Block network config (e.g., iptables, interfaces)
-                "NET_RAW",  # Block raw sockets (ping, nmap, etc.)
-                "NET_BIND_SERVICE",  # Block binding to ports <1024
-                "NET_BROADCAST",  # Block sending network broadcasts
-            ],
+def get_security_context_envs() -> tuple[V1EnvVar, ...]:
+    """Get the env vars for security context."""
+    return (
+        V1EnvVar(
+            name="POIESIS_SECURITY_CONTEXT_PATH",
+            value=core_constants.K8s.SECURITY_CONTEXT_PATH,
         ),
-        privileged=False,  # Do not run as fully privileged container
+        V1EnvVar(
+            name="POIESIS_INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED",
+            value=str(core_constants.K8s.INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED),
+        ),
+        V1EnvVar(
+            name="POIESIS_EXECUTOR_SECURITY_CONTEXT_ENABLED",
+            value=str(core_constants.K8s.EXECUTOR_SECURITY_CONTEXT_ENABLED),
+        ),
     )
+
+
+def _read_security_context_json(filename: str) -> dict | None:
+    """Read a security context JSON file and return the parsed data.
+
+    Args:
+        filename: Name of the JSON file to read
+            (e.g., "infrastructure_pod_security_context.json")
+
+    Returns:
+        Parsed JSON data as dict, or None if file doesn't exist or can't be read
+
+    Raises:
+        InternalServerException: If the file doesn't exist or can't be read
+    """
+    try:
+        if not core_constants.K8s.SECURITY_CONTEXT_PATH and (
+            core_constants.K8s.INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED
+            or core_constants.K8s.EXECUTOR_SECURITY_CONTEXT_ENABLED
+        ):
+            raise InternalServerException("Security context path is not set.")
+        else:
+            return None
+
+        file_path = Path(str(core_constants.K8s.SECURITY_CONTEXT_PATH)) / filename
+        if file_path.exists():
+            with open(file_path) as f:
+                return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, PermissionError) as e:
+        raise InternalServerException(
+            "Failed to read security context JSON file"
+        ) from e
+    return None
 
 
 @lru_cache
-def get_permissive_pod_security_context() -> V1PodSecurityContext:
-    """Returns a permissive V1PodSecurityContext for executor pods.
+def get_infrastructure_pod_security_context() -> V1PodSecurityContext | None:
+    """Returns a V1PodSecurityContext for infrastructure components.
 
-    This context is more permissive to support applications that require
-    specific user/group permissions for file access.
+    Returns:
+        V1PodSecurityContext: The security context for infrastructure components.
+        None: If security context is disabled.
     """
-    return V1PodSecurityContext(
-        run_as_non_root=False,  # Allow running as root if needed
-        seccomp_profile=V1SeccompProfile(type="RuntimeDefault"),
-        fs_group_change_policy="Always",  # Allow changing file permissions
-    )
+    if not core_constants.K8s.INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED:
+        return None
+
+    filename = "infrastructure_pod_security_context.json"
+    json_data = _read_security_context_json(filename)
+    if json_data is None:
+        raise InternalServerException(f"Failed to read {filename}")
+    return V1PodSecurityContextPydanticModel.model_validate(json_data).to_k8s_model()
+
+
+@lru_cache
+def get_infrastructure_container_security_context() -> V1SecurityContext | None:
+    """Returns a V1SecurityContext for infrastructure containers.
+
+    Returns:
+        V1SecurityContext: The security context for infrastructure containers.
+        None: If security context is disabled.
+    """
+    if not core_constants.K8s.INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED:
+        return None
+    filename = "infrastructure_container_security_context.json"
+    json_data = _read_security_context_json(filename)
+    if json_data is None:
+        raise InternalServerException(f"Failed to read {filename}")
+    return V1SecurityContextPydanticModel.model_validate(json_data).to_k8s_model()
+
+
+@lru_cache
+def get_executor_container_security_context() -> V1SecurityContext | None:
+    """Returns a V1SecurityContext for task executor containers.
+
+    Returns:
+        V1SecurityContext: The security context for task executor containers.
+        None: If security context is disabled.
+    """
+    if not core_constants.K8s.EXECUTOR_SECURITY_CONTEXT_ENABLED:
+        return None
+    filename = "executor_container_security_context.json"
+    json_data = _read_security_context_json(filename)
+    if json_data is None:
+        raise InternalServerException(f"Failed to read {filename}")
+    return V1SecurityContextPydanticModel.model_validate(json_data).to_k8s_model()
+
+
+@lru_cache
+def get_executor_pod_security_context() -> V1PodSecurityContext | None:
+    """Returns a V1PodSecurityContext for task executor pods.
+
+    Returns:
+        V1PodSecurityContext: The security context for task executor pods.
+        None: If security context is disabled.
+    """
+    if not core_constants.K8s.EXECUTOR_SECURITY_CONTEXT_ENABLED:
+        return None
+    filename = "executor_pod_security_context.json"
+    json_data = _read_security_context_json(filename)
+    if json_data is None:
+        raise InternalServerException(f"Failed to read {filename}")
+    return V1PodSecurityContextPydanticModel.model_validate(json_data).to_k8s_model()
+
+
+@lru_cache
+def get_infrastructure_security_volume() -> list[V1Volume]:
+    """Returns the name of the security context configmap."""
+    if not core_constants.K8s.INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED:
+        return []
+
+    if not core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME:
+        raise InternalServerException("Security context configmap name is not set.")
+
+    return [
+        V1Volume(
+            name=str(core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME),
+            config_map=V1ConfigMapVolumeSource(
+                name=str(core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME)
+            ),
+        )
+    ]
+
+
+@lru_cache
+def get_infrastructure_security_volume_mount() -> list[V1VolumeMount]:
+    """Returns the name of the security context configmap."""
+    if not core_constants.K8s.INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED:
+        return []
+
+    if not core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME:
+        raise InternalServerException("Security context configmap name is not set.")
+
+    if not core_constants.K8s.SECURITY_CONTEXT_PATH:
+        raise InternalServerException("Security context path is not set.")
+
+    return [
+        V1VolumeMount(
+            name=str(core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME),
+            mount_path=core_constants.K8s.SECURITY_CONTEXT_PATH,
+            read_only=True,
+        )
+    ]
+
+
+@lru_cache
+def get_executor_security_volume() -> list[V1Volume]:
+    """Returns the name of the security context configmap."""
+    if not core_constants.K8s.EXECUTOR_SECURITY_CONTEXT_ENABLED:
+        return []
+
+    if not core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME:
+        raise InternalServerException("Security context configmap name is not set.")
+
+    return [
+        V1Volume(
+            name=str(core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME),
+            config_map=V1ConfigMapVolumeSource(
+                name=str(core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME)
+            ),
+        )
+    ]
+
+
+@lru_cache
+def get_executor_security_volume_mount() -> list[V1VolumeMount]:
+    """Returns the name of the security context configmap."""
+    if not core_constants.K8s.EXECUTOR_SECURITY_CONTEXT_ENABLED:
+        return []
+
+    if not core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME:
+        raise InternalServerException("Security context configmap name is not set.")
+
+    if not core_constants.K8s.SECURITY_CONTEXT_PATH:
+        raise InternalServerException("Security context path is not set.")
+
+    return [
+        V1VolumeMount(
+            name=str(core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME),
+            mount_path=core_constants.K8s.SECURITY_CONTEXT_PATH,
+            read_only=True,
+        )
+    ]

@@ -19,12 +19,15 @@ from kubernetes.client.exceptions import ApiException
 from poiesis.api.tes.models import TesTask
 from poiesis.core.constants import (
     get_configmap_names,
-    get_default_container_security_context,
-    get_default_pod_security_context,
+    get_infrastructure_container_security_context,
+    get_infrastructure_pod_security_context,
+    get_infrastructure_security_volume,
+    get_infrastructure_security_volume_mount,
     get_message_broker_envs,
     get_mongo_envs,
     get_poiesis_core_constants,
     get_secret_names,
+    get_security_context_envs,
 )
 from poiesis.core.services.torc.torc_execution_template import TorcExecutionTemplate
 
@@ -97,7 +100,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
                 template=V1PodTemplateSpec(
                     spec=V1PodSpec(
                         service_account_name=core_constants.K8s.SERVICE_ACCOUNT_NAME,
-                        security_context=get_default_pod_security_context(),
+                        security_context=get_infrastructure_pod_security_context(),
                         containers=[
                             V1Container(
                                 name=core_constants.K8s.TIF_PREFIX,
@@ -108,11 +111,12 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                     task,
                                 ],
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
-                                security_context=get_default_container_security_context(),
+                                security_context=get_infrastructure_container_security_context(),
                                 env=list(get_mongo_envs())
                                 + list(get_message_broker_envs())
                                 + list(get_secret_names())
                                 + list(get_configmap_names())
+                                + list(get_security_context_envs())
                                 + [
                                     V1EnvVar(
                                         name="POIESIS_IMAGE",
@@ -183,9 +187,11 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                         ),
                                     ),
                                 ],
+                                volume_mounts=get_infrastructure_security_volume_mount(),
                             )
                         ],
                         restart_policy=core_constants.K8s.RESTART_POLICY,
+                        volumes=get_infrastructure_security_volume(),
                     )
                 ),
                 ttl_seconds_after_finished=_ttl,

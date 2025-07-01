@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "poiesis.securityConfigMapName" . }}
+  labels:
+    {{- include "poiesis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: core
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  infrastructure_pod_security_context.json: |
+    {{ .Values.poiesis.securityContext.infrastructure.pod | toJson }}
+  infrastructure_container_security_context.json: |
+    {{ .Values.poiesis.securityContext.infrastructure.container | toJson }}
+  executor_pod_security_context.json: |
+    {{ .Values.poiesis.securityContext.executors.pod | toJson }}
+  executor_container_security_context.json: |
+    {{ .Values.poiesis.securityContext.executors.container | toJson }}
