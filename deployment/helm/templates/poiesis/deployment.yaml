@@ -153,11 +153,15 @@ spec:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_S3_SECRET_NAME
             {{- end }}
+          {{- if or .Values.poiesis.securityContext.infrastructure.enabled .Values.poiesis.securityContext.executors.enabled }}
           volumeMounts:
             - name: {{ include "poiesis.securityConfigMapName" . }}
               mountPath: {{ .Values.poiesis.securityContext.path }}
               readOnly: true
+          {{- end }}
+      {{- if or .Values.poiesis.securityContext.infrastructure.enabled .Values.poiesis.securityContext.executors.enabled }}
       volumes:
         - name: {{ include "poiesis.securityConfigMapName" . }}
           configMap:
             name: {{ include "poiesis.securityConfigMapName" . }}
+      {{- end }}

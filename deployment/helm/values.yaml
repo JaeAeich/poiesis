@@ -110,7 +110,7 @@ poiesis:
         runAsUser: 1001
         runAsGroup: 1001
         allowPrivilegeEscalation: false
-        readOnlyRootFilesystem: true
+        readOnlyRootFilesystem: false # Setting to true breaks the API - requires writable filesystem
         capabilities:
           drop:
             - "ALL"
@@ -122,6 +122,7 @@ poiesis:
     # If you are sure that you don't need any privileged operations,
     # you can disable this by setting `enabled: false` or make the
     # security context more permissive by modifying the settings below.
+    # cf. https://github.com/ga4gh/task-execution-schemas/issues/237
     executors:
       # Set to false to disable security contexts for task executor pods
       enabled: true

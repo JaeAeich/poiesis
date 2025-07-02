@@ -81,6 +81,16 @@ CRITICAL WARNINGS & ACTIONS:
   DO NOT USE IN PRODUCTION. Change 'poiesis.auth.type' to 'oidc'.
 {{- end }}
 
+{{- if not .Values.poiesis.securityContext.infrastructure.enabled }}
+- INFRASTRUCTURE SECURITY CONTEXTS DISABLED: Security contexts for infrastructure components are disabled.
+  NOT RECOMMENDED FOR PRODUCTION. Enable 'poiesis.securityContext.infrastructure.enabled'.
+{{- end }}
+
+{{- if not .Values.poiesis.securityContext.executors.enabled }}
+- EXECUTOR SECURITY CONTEXTS DISABLED: Security contexts for task executor pods are disabled.
+  Tasks can run with privileges.
+{{- end }}
+
 - DEFAULT CREDENTIALS: Review and change default passwords/secrets for production.
   {{- if and (eq .Values.poiesis.auth.type "oidc") (not .Values.poiesis.auth.oidc.clientSecret) }}
   - Poiesis OAuth2 Client Secret ('poiesis.auth.oidc.clientSecret') is not set. This is required.

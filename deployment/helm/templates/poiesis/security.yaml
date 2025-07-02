@@ -1,3 +1,4 @@
+{{- if or .Values.poiesis.securityContext.infrastructure.enabled .Values.poiesis.securityContext.executors.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,11 +11,16 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 data:
+  {{- if .Values.poiesis.securityContext.infrastructure.enabled }}
   infrastructure_pod_security_context.json: |
     {{ .Values.poiesis.securityContext.infrastructure.pod | toJson }}
   infrastructure_container_security_context.json: |
     {{ .Values.poiesis.securityContext.infrastructure.container | toJson }}
+  {{- end }}
+  {{- if .Values.poiesis.securityContext.executors.enabled }}
   executor_pod_security_context.json: |
     {{ .Values.poiesis.securityContext.executors.pod | toJson }}
   executor_container_security_context.json: |
     {{ .Values.poiesis.securityContext.executors.container | toJson }}
+  {{- end }}
+{{- end }}
