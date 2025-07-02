@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from kubernetes.client.models import (
     V1ConfigMapKeySelector,
@@ -18,6 +19,7 @@ from kubernetes.client.models import (
     V1Volume,
     V1VolumeMount,
 )
+from pydantic import ValidationError
 
 from poiesis.api.exceptions import InternalServerException
 from poiesis.core.adaptors.kubernetes.models import (
@@ -350,7 +352,7 @@ def get_security_context_envs() -> tuple[V1EnvVar, ...]:
     )
 
 
-def _read_security_context_json(filename: str) -> dict | None:
+def _read_security_context_json(filename: str) -> dict[str, Any]:
     """Read a security context JSON file and return the parsed data.
 
     Args:
@@ -358,31 +360,37 @@ def _read_security_context_json(filename: str) -> dict | None:
             (e.g., "infrastructure_pod_security_context.json")
 
     Returns:
-        Parsed JSON data as dict, or None if file doesn't exist or can't be read
+        Parsed JSON data as dict
 
     Raises:
         InternalServerException: If the file doesn't exist or can't be read
     """
     try:
-        if not core_constants.K8s.SECURITY_CONTEXT_PATH and (
+        security_context_path = (
+            core_constants.K8s.SECURITY_CONTEXT_PATH.strip()
+            if core_constants.K8s.SECURITY_CONTEXT_PATH is not None
+            else ""
+        )
+        if not security_context_path and (
             core_constants.K8s.INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED
             or core_constants.K8s.EXECUTOR_SECURITY_CONTEXT_ENABLED
         ):
             raise InternalServerException("Security context path is not set.")
+        file_path = Path(str(security_context_path)) / filename
 
-        file_path = Path(str(core_constants.K8s.SECURITY_CONTEXT_PATH)) / filename
-        if file_path.exists():
-            with open(file_path) as f:
-                context: dict = json.load(f)
-                if not context:
-                    logger.warning(f"Security context is empty in {filename}.")
-                logger.debug(f"Security context: \n{json.dumps(context, indent=2)}")
-                return context
+        if not file_path.exists():
+            raise InternalServerException(f"Security context file {filename} not found")
+
+        with open(file_path) as f:
+            context: dict[str, Any] = json.load(f)
+            if not context:
+                logger.warning(f"Security context is empty in {filename}.")
+            logger.debug(f"Security context: \n{json.dumps(context, indent=2)}")
+            return context
     except (FileNotFoundError, json.JSONDecodeError, PermissionError) as e:
         raise InternalServerException(
             "Failed to read security context JSON file"
         ) from e
-    return None
 
 
 @lru_cache
@@ -398,9 +406,12 @@ def get_infrastructure_pod_security_context() -> V1PodSecurityContext | None:
 
     filename = "infrastructure_pod_security_context.json"
     json_data = _read_security_context_json(filename)
-    if json_data is None:
-        raise InternalServerException(f"Failed to read {filename}")
-    return V1PodSecurityContextPydanticModel.model_validate(json_data).to_k8s_model()
+    try:
+        return V1PodSecurityContextPydanticModel.model_validate(
+            json_data
+        ).to_k8s_model()
+    except ValidationError as e:
+        raise InternalServerException(f"Failed to validate {filename}") from e
 
 
 @lru_cache
@@ -416,9 +427,10 @@ def get_infrastructure_container_security_context() -> V1SecurityContext | None:
 
     filename = "infrastructure_container_security_context.json"
     json_data = _read_security_context_json(filename)
-    if json_data is None:
-        raise InternalServerException(f"Failed to read {filename}")
-    return V1SecurityContextPydanticModel.model_validate(json_data).to_k8s_model()
+    try:
+        return V1SecurityContextPydanticModel.model_validate(json_data).to_k8s_model()
+    except ValidationError as e:
+        raise InternalServerException(f"Failed to validate {filename}") from e
 
 
 @lru_cache
@@ -434,9 +446,10 @@ def get_executor_container_security_context() -> V1SecurityContext | None:
 
     filename = "executor_container_security_context.json"
     json_data = _read_security_context_json(filename)
-    if json_data is None:
-        raise InternalServerException(f"Failed to read {filename}")
-    return V1SecurityContextPydanticModel.model_validate(json_data).to_k8s_model()
+    try:
+        return V1SecurityContextPydanticModel.model_validate(json_data).to_k8s_model()
+    except ValidationError as e:
+        raise InternalServerException(f"Failed to validate {filename}") from e
 
 
 @lru_cache
@@ -452,9 +465,12 @@ def get_executor_pod_security_context() -> V1PodSecurityContext | None:
 
     filename = "executor_pod_security_context.json"
     json_data = _read_security_context_json(filename)
-    if json_data is None:
-        raise InternalServerException(f"Failed to read {filename}")
-    return V1PodSecurityContextPydanticModel.model_validate(json_data).to_k8s_model()
+    try:
+        return V1PodSecurityContextPydanticModel.model_validate(
+            json_data
+        ).to_k8s_model()
+    except ValidationError as e:
+        raise InternalServerException(f"Failed to validate {filename}") from e
 
 
 @lru_cache
@@ -463,8 +479,13 @@ def get_infrastructure_security_volume() -> list[V1Volume]:
     if not core_constants.K8s.INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED:
         return []
 
-    if not core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME:
-        raise InternalServerException("Security context configmap name is not set.")
+    if (
+        not core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME
+        or not core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME.strip()
+    ):
+        raise InternalServerException(
+            "Security context configmap name is not set or is empty/whitespace."
+        )
 
     return [
         V1Volume(
