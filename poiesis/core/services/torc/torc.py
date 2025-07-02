@@ -148,6 +148,16 @@ class Torc:
             f"{core_constants.K8s.PVC_DEFAULT_DISK_SIZE}"
         )
 
+        if (
+            not core_constants.K8s.PVC_ACCESS_MODE
+            and not core_constants.K8s.PVC_STORAGE_CLASS
+        ):
+            logger.warning(
+                "PVC access mode and storage class are not set. Using default values."
+            )
+            logger.debug(f"PVC access mode: {core_constants.K8s.PVC_ACCESS_MODE}")
+            logger.debug(f"PVC storage class: {core_constants.K8s.PVC_STORAGE_CLASS}")
+
         pvc = V1PersistentVolumeClaim(
             api_version="v1",
             kind="PersistentVolumeClaim",
@@ -160,8 +170,10 @@ class Torc:
                 },
             ),
             spec=V1PersistentVolumeClaimSpec(
-                access_modes=[core_constants.K8s.PVC_ACCESS_MODE],
-                storage_class_name=core_constants.K8s.PVC_STORAGE_CLASS,
+                access_modes=[core_constants.K8s.PVC_ACCESS_MODE]
+                if core_constants.K8s.PVC_ACCESS_MODE
+                else None,
+                storage_class_name=core_constants.K8s.PVC_STORAGE_CLASS or None,
                 resources=V1ResourceRequirements(
                     requests={
                         "storage": f"{size}Gi"

@@ -53,6 +53,10 @@ spec:
               value: {{ .Values.poiesis.service.port | quote}}
             - name: MONGODB_MAX_POOL_SIZE
               value: {{ .Values.poiesis.config.mongodbMaxPoolSize | quote }}
+            - name: POIESIS_PVC_ACCESS_MODE
+              value: {{ .Values.poiesis.storage.accessMode | quote }}
+            - name: POIESIS_PVC_STORAGE_CLASS
+              value: {{ .Values.poiesis.storage.className | quote }}
             - name: POIESIS_SERVICE_ACCOUNT_NAME
               value: {{ include "poiesis.serviceAccountName" . }}
             - name: MONGODB_DATABASE
