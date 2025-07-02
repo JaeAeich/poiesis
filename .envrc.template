@@ -12,6 +12,8 @@ export POIESIS_IMAGE="jaeaeich/poiesis:latest" # Or your custom dev image
 export POIESIS_RESTART_POLICY="Never"
 export POIESIS_IMAGE_PULL_POLICY="IfNotPresent"
 export POIESIS_JOB_TTL="3600"
+export POIESIS_INFRASTRUCTURE_SECURITY_CONTEXT_ENABLED="false"
+export POIESIS_EXECUTOR_SECURITY_CONTEXT_ENABLED="false"
 
 # --- Secret & ConfigMap Names ---
 # These tell the API which secrets to mount into the worker jobs it creates.
