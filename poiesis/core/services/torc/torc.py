@@ -10,6 +10,7 @@ from kubernetes.client import (
     V1ResourceRequirements,
 )
 
+from poiesis.api.exceptions import InternalServerException
 from poiesis.api.tes.models import (
     TesInput,
     TesOutput,
@@ -145,6 +146,12 @@ class Torc:
             f"PVC storage size: {size}Gi if size else "
             f"{core_constants.K8s.PVC_DEFAULT_DISK_SIZE}"
         )
+
+        if not core_constants.K8s.PVC_ACCESS_MODE:
+            raise InternalServerException(
+                message="PVC access mode is not set.",
+                details="PVC access mode is not set.",
+            )
 
         pvc = V1PersistentVolumeClaim(
             api_version="v1",
