@@ -32,9 +32,17 @@ class S3FilerStrategy(FilerStrategy):
         self.input = self.payload if isinstance(self.payload, TesInput) else None
         self.output = self.payload if isinstance(self.payload, TesOutput) else None
         self.s3_host: str | None = None
+        self.key = ""
+        self.bucket = ""
 
         assert self.payload.url is not None, "URL is required"
         self._set_host_bucket_key(self.payload.url)
+        assert self.key is not None and self.key != "", (
+            "S3 key must be set after parsing URL"
+        )
+        assert self.bucket is not None and self.bucket != "", (
+            "S3 bucket must be set after parsing URL"
+        )
 
         if not all(
             [
@@ -138,9 +146,6 @@ class S3FilerStrategy(FilerStrategy):
             container_path: The path inside the container where the file needs to be
                 downloaded to.
         """
-        assert self.input is not None
-        assert self.input.url is not None
-
         try:
             prefix = self.key
             if prefix and not prefix.endswith("/"):
@@ -169,6 +174,9 @@ class S3FilerStrategy(FilerStrategy):
                         "Downloading s3://%s/%s to %s", self.bucket, s3_key, local_path
                     )
                     self.client.download_file(self.bucket, s3_key, local_path)
+
+            assert self.input is not None
+            assert self.input.url is not None
 
             logger.info(
                 "Successfully downloaded directory from %s to %s",
@@ -207,8 +215,6 @@ class S3FilerStrategy(FilerStrategy):
             container_path: The path inside the container from where the directory
                 needs to be uploaded.
         """
-        assert self.output is not None
-
         try:
             if not os.path.exists(container_path):
                 logger.error("Output directory not found: %s", container_path)
@@ -234,6 +240,9 @@ class S3FilerStrategy(FilerStrategy):
                         s3_key,
                     )
                     self.client.upload_file(local_file_path, self.bucket, s3_key)
+
+            assert self.output is not None
+            assert self.output.url is not None
 
             logger.info(
                 "Successfully uploaded directory from %s to %s",

@@ -52,9 +52,12 @@ class Torc:
             pvc_name: Name of the PVC created
         """
         self.task = task
+        if task.id is None:
+            raise ValueError("Task ID is required")
         self.id = task.id
         self.kubernetes_client = KubernetesAdapter()
         self.db = MongoDBClient()
+        self.pvc_name = ""
         logger.info(f"Torc initialized with task ID: {self.id}")
 
     async def execute(self) -> None:

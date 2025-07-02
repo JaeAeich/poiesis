@@ -154,6 +154,8 @@ class Texam:
                 backoff_time = 1
                 while backoff_time <= core_constants.Texam.BACKOFF_LIMIT:
                     try:
+                        if self.task_id is None:
+                            raise ValueError("Task ID is None")
                         await self.db.add_task_executor_log(self.task_id)
                         logger.debug(pod_manifest)
                         pod_name = await self.kubernetes_client.create_pod(pod_manifest)
@@ -314,7 +316,10 @@ class Texam:
             )
 
             stream_func = self.kubernetes_client.core_api.list_namespaced_pod
-            for event in await asyncio.to_thread(w.stream, stream_func, **stream_args):
+            event_stream = await asyncio.to_thread(w.stream, stream_func, **stream_args)
+            for event in event_stream:
+                if not isinstance(event, dict):
+                    continue
                 event_type = event["type"]
                 pod = event["object"]
                 pod_name = str(pod.metadata.name)
@@ -359,7 +364,7 @@ class Texam:
             self._remove_pod_from_pool(pod_name, active_pod_names)
             return
 
-        if pod_phase in (PodPhase.SUCCEEDED.value, PodPhase.FAILED.value):
+        if pod_phase and pod_phase in (PodPhase.SUCCEEDED.value, PodPhase.FAILED.value):
             logs_stdout, logs_stderr = await self._get_pod_logs(pod_name, pod_phase)
             await self.db.update_executor_log(
                 pod_name,
@@ -373,7 +378,7 @@ class Texam:
             )
             self._remove_pod_from_pool(pod_name, active_pod_names)
 
-        elif pod_phase == PodPhase.UNKNOWN.value:
+        elif pod_phase and pod_phase == PodPhase.UNKNOWN.value:
             logger.warning(f"Pod {pod_name} is in an Unknown state.")
 
     def _check_container_failure(self, pod: V1Pod) -> str | None:
@@ -401,9 +406,12 @@ class Texam:
         ):
             for status in all_container_statuses:
                 if status.state and status.state.waiting:
+                    container_name = status.name or "Unknown"
                     logger.info(
-                        f"Pending pod {pod.metadata.name} has container {status.name} "
-                        f"in waiting state with reason: {status.state.waiting.reason}"
+                        f"Pending pod "
+                        f"{pod.metadata.name if pod.metadata else 'Unknown'} "
+                        f"has container {container_name} in waiting state with reason: "
+                        f"{status.state.waiting.reason}"
                     )
                     if status.state.waiting.reason in CRITICAL_WAITING_REASONS:
                         return status.state.waiting.reason

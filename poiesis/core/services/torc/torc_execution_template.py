@@ -47,7 +47,14 @@ class TorcExecutionTemplate(ABC):
         message_broker: Message broker.
         message: Message for the message broker, which would be sent to TOrc.
         db: Database client.
+        id: Task identifier
     """
+
+    @property
+    @abstractmethod
+    def id(self) -> str:
+        """Task identifier - must be implemented by subclasses."""
+        pass
 
     def __init__(self) -> None:
         """TorcTemplate initialization.
@@ -179,8 +186,6 @@ class TorcExecutionTemplate(ABC):
         and waits on that channel for the message.
         """
         message = None
-        if not hasattr(self, "id"):
-            raise AttributeError("The id of the task is not set.")
         for message in self.message_broker.subscribe(self.id):
             if message:
                 if message.status == MessageStatus.ERROR:
@@ -190,8 +195,6 @@ class TorcExecutionTemplate(ABC):
 
     async def log(self) -> None:
         """Log the job status in TaskDB."""
-        if not hasattr(self, "id"):
-            raise AttributeError("The id of the task is not set.")
         if self.message:
             if MessageStatus(self.message.status) == MessageStatus.ERROR:
                 logger.error(self.message.message)

@@ -117,8 +117,8 @@ t: test
 
 .PHONY: type-check tc
 type-check:
-	@echo "\nPerforming type checking with mypy ++++++++++++++++++++++++++++++++++++++++++++\n"
-	@mypy --cache-fine-grained poiesis
+	@echo "\nPerforming type checking with pyrefly ++++++++++++++++++++++++++++++++++++++++\n"
+	@pyrefly check poiesis
 
 tc: type-check
 
