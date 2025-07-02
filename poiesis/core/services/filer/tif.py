@@ -36,8 +36,13 @@ class Tif(Filer):
             message_broker: Message broker.
         """
         super().__init__()
-        self.name = name
+        self._name = name
         self.inputs = inputs
+
+    @property
+    def name(self) -> str:
+        """Name of the filer."""
+        return self._name
 
     async def file(self) -> None:
         """Filing logic, download.

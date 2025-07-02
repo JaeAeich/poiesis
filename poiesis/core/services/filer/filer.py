@@ -15,6 +15,7 @@ class Filer(ABC):
 
     Attributes:
         message_broker: Message broker
+        name: Name of the filer
     """
 
     def __init__(self) -> None:
@@ -22,6 +23,7 @@ class Filer(ABC):
 
         Attributes:
             message_broker: Message broker
+            name: Name of the filer
         """
         self.message_broker = RedisMessageBroker()
 
@@ -50,6 +52,12 @@ class Filer(ABC):
         If TIF encounters any error, it will send a message to TORC
         and break.
         """
+        pass
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Name of the filer."""
         pass
 
     def message(self, message: Message):

@@ -1,5 +1,7 @@
 """Controller for getting a task."""
 
+from typing import Any
+
 from poiesis.api.controllers.interface import InterfaceController
 from poiesis.api.exceptions import NotFoundException
 from poiesis.api.models import TesView
@@ -40,7 +42,7 @@ class GetTaskController(InterfaceController):
         self.user_id = user_id
         self.view = TesView(view) if view else TesView.MINIMAL
 
-    async def execute(self) -> TesTask:
+    async def execute(self, *args: Any, **kwargs: Any) -> TesTask:
         """Execute the controller to get a task.
 
         Returns:

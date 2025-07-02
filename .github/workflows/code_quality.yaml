@@ -71,5 +71,5 @@ jobs:
           uv-sync-args: "--group code_quality --group types"
 
       - name: Check types
-        run: uv run mypy poiesis/
+        run: uv run pyrefly check poiesis/
 ...

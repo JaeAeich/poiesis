@@ -64,7 +64,7 @@ class FilerStrategy(ABC):
         pass
 
     @abstractmethod
-    async def upload_glob(self, container_path):
+    async def upload_glob(self, glob_files: list[tuple[str, str]]):
         """Upload files when wildcards are present."""
         pass
 
@@ -152,7 +152,7 @@ class FilerStrategy(ABC):
         Get the appropriate secrets, check permissions and upload the file.
         """
         container_path = self._get_container_path(self.payload.path)
-        if self.payload.path_prefix:
+        if isinstance(self.payload, TesOutput) and self.payload.path_prefix:
             await self.upload_glob(self._get_glob_files(container_path))
         elif self.payload.type == TesFileType.FILE:
             await self.upload_output_file(container_path)

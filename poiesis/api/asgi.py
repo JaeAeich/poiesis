@@ -65,12 +65,12 @@ def run():
             self.app_import_path = app_import_path
             super().__init__()
 
-        def load_config(self):
+        def load_config(self):  # type: ignore[override]
             for key, value in self.options.items():
-                if key in self.cfg.settings and value is not None:
+                if self.cfg and key in self.cfg.settings and value is not None:
                     self.cfg.set(key.lower(), value)
 
-        def load(self):
+        def load(self):  # type: ignore[override]
             return import_app_from_string(self.app_import_path)
 
     options = {
