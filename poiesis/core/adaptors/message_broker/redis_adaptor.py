@@ -75,6 +75,8 @@ class RedisMessageBroker(MessageBroker):
             if message["type"] == "message":
                 data = message["data"]
                 if data is not None:
+                    if isinstance(data, bytes):
+                        data = data.decode("utf-8")
                     yield Message(**json.loads(data))
 
     def close(self) -> None:

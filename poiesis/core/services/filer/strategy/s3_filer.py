@@ -37,6 +37,12 @@ class S3FilerStrategy(FilerStrategy):
 
         assert self.payload.url is not None, "URL is required"
         self._set_host_bucket_key(self.payload.url)
+        assert self.key is not None and self.key != "", (
+            "S3 key must be set after parsing URL"
+        )
+        assert self.bucket is not None and self.bucket != "", (
+            "S3 bucket must be set after parsing URL"
+        )
 
         if not all(
             [
