@@ -24,8 +24,10 @@ from poiesis.api.tes.models import TesExecutor, TesTask
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.constants import (
-    get_permissive_container_security_context,
-    get_permissive_pod_security_context,
+    get_executor_container_security_context,
+    get_executor_pod_security_context,
+    get_executor_security_volume,
+    get_executor_security_volume_mount,
     get_poiesis_core_constants,
 )
 from poiesis.core.ports.message_broker import Message, MessageStatus
@@ -241,7 +243,7 @@ class Texam:
                     },
                 ),
                 spec=V1PodSpec(
-                    security_context=get_permissive_pod_security_context(),
+                    security_context=get_executor_pod_security_context(),
                     containers=[
                         V1Container(
                             name=executor_name,
@@ -266,9 +268,10 @@ class Texam:
                                 )
                                 for volume in self.task.volumes or []
                             ]
-                            + _volume_pvc_mount,
+                            + _volume_pvc_mount
+                            + get_executor_security_volume_mount(),
                             image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
-                            security_context=get_permissive_container_security_context(),
+                            security_context=get_executor_container_security_context(),
                         )
                     ],
                     volumes=[
@@ -277,8 +280,9 @@ class Texam:
                             persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
                                 claim_name=f"{core_constants.K8s.PVC_PREFIX}-{self.task_id}"
                             ),
-                        )
-                    ],
+                        ),
+                    ]
+                    + get_executor_security_volume(),
                     restart_policy=core_constants.K8s.RESTART_POLICY,
                 ),
             )

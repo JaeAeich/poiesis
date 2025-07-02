@@ -387,3 +387,10 @@ Core configmap name
 {{- define "poiesis.coreConfigMapName" -}}
 {{- printf "%s-core-configmap" (include "poiesis.fullname" .) -}}
 {{- end }}
+
+{{/*
+Security context configmap name
+*/}}
+{{- define "poiesis.securityConfigMapName" -}}
+{{- printf "%s-security-context-configmap" (include "poiesis.fullname" .) -}}
+{{- end }}
