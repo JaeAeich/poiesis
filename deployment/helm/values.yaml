@@ -63,8 +63,13 @@ poiesis:
     # are automatically cleaned up, allowing PVCs to terminate properly.
     # Value in seconds (3600 = 1 hour). Lower values = faster cleanup but less debugging time.
     jobTtl: "3600"
-    # Timeout duration in seconds for monitoring operations.
-    monitorTimeoutSeconds: "80"
+    # Maximum duration (in seconds) allowed for monitoring operations by TExAM.
+    # Also acts as the timeout for executor pods — if any executor
+    # remains active beyond this period (including execution time), it will
+    # be terminated and the associated task marked as failed.
+    # Set to "0" for no timeout (infinite duration).
+    # For example, "10" means 10 seconds.
+    monitorTimeoutSeconds: "0"
 
   # Storage configuration for PVCs used by Poiesis tasks
   # NOTE: PVCs are automatically created for each task and cleaned up when the task completes.
