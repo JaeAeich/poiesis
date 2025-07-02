@@ -52,8 +52,15 @@ class TorcTofExecution(TorcExecutionTemplate):
             kubernetes_client: Kubernetes client.
         """
         super().__init__()
-        self.id = id
+        self._task_id = id
         self.outputs = outputs
+
+    @property
+    def id(self) -> str:
+        """Return the task ID."""
+        if self._task_id is None:
+            raise ValueError("Task ID is None")
+        return self._task_id
 
     async def start_job(self) -> None:
         """Create the K8s job for Tof."""
