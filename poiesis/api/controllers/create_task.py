@@ -180,6 +180,14 @@ class CreateTaskController(InterfaceController):
                                             )
                                         ),
                                     ),
+                                    V1EnvVar(
+                                        name="POIESIS_PVC_ACCESS_MODE",
+                                        value=core_constants.K8s.PVC_ACCESS_MODE,
+                                    ),
+                                    V1EnvVar(
+                                        name="POIESIS_PVC_STORAGE_CLASS",
+                                        value=core_constants.K8s.PVC_STORAGE_CLASS,
+                                    ),
                                 ],
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                                 volume_mounts=get_infrastructure_security_volume_mount(),

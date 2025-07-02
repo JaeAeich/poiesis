@@ -82,8 +82,8 @@ class PoiesisCoreConstants:
         PVC_PREFIX = "pvc"
         TEXAM_PREFIX = "texam"
         PVC_DEFAULT_DISK_SIZE = "1Gi"
-        PVC_ACCESS_MODE = os.getenv("POIESIS_PVC_ACCESS_MODE", "ReadWriteOnce")
-        PVC_STORAGE_CLASS = os.getenv("POIESIS_PVC_STORAGE_CLASS", "standard")
+        PVC_ACCESS_MODE = os.getenv("POIESIS_PVC_ACCESS_MODE")
+        PVC_STORAGE_CLASS = os.getenv("POIESIS_PVC_STORAGE_CLASS")
         POIESIS_IMAGE = os.getenv("POIESIS_IMAGE", "docker.io/jaeaeich/poiesis:latest")
         COMMON_PVC_VOLUME_NAME = "task-pvc-volume"
         FILER_PVC_PATH = "/transfer"
