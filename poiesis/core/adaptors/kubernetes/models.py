@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 class V1SeccompProfilePydanticModel(BaseModel):
     """Seccomp profile."""
 
-    localhost_profile: str | None = Field(alias="localhostProfile")
-    type: str
+    localhost_profile: str | None = Field(default=None, alias="localhostProfile")
+    type: str = "RuntimeDefault"
 
     def to_k8s_model(self) -> V1SeccompProfile:
         """Convert to Kubernetes model."""
@@ -28,10 +28,10 @@ class V1SeccompProfilePydanticModel(BaseModel):
 class V1SELinuxOptionsPydanticModel(BaseModel):
     """SELinux options."""
 
-    level: str
-    role: str
-    type: str
-    user: str
+    level: str | None = None
+    role: str | None = None
+    type: str | None = None
+    user: str | None = None
 
     def to_k8s_model(self) -> V1SELinuxOptions:
         """Convert to Kubernetes model."""

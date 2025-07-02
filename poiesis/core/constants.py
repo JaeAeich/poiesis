@@ -332,6 +332,10 @@ def get_security_context_envs() -> tuple[V1EnvVar, ...]:
     """Get the env vars for security context."""
     return (
         V1EnvVar(
+            name="POIESIS_SECURITY_CONTEXT_CONFIGMAP_NAME",
+            value=core_constants.K8s.SECURITY_CONTEXT_CONFIGMAP_NAME,
+        ),
+        V1EnvVar(
             name="POIESIS_SECURITY_CONTEXT_PATH",
             value=core_constants.K8s.SECURITY_CONTEXT_PATH,
         ),
@@ -372,6 +376,7 @@ def _read_security_context_json(filename: str) -> dict | None:
                 context: dict = json.load(f)
                 if not context:
                     logger.warning(f"Security context is empty in {filename}.")
+                logger.debug(f"Security context: \n{json.dumps(context, indent=2)}")
                 return context
     except (FileNotFoundError, json.JSONDecodeError, PermissionError) as e:
         raise InternalServerException(
