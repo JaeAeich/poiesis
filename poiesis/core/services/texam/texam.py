@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import shlex
-import time
 
 from kubernetes import watch  # type: ignore
 from kubernetes.client import (
@@ -87,8 +86,11 @@ class Texam:
                 await self.db.update_executor_log(
                     executor_name,
                     PodPhase.FAILED.value,
-                    stdout=None,
-                    stderr=f"Executor {idx} failed to start because previous executor failed.",
+                    stdout="",
+                    stderr=(
+                        f"Executor {idx} failed to start because previous executor"
+                        " failed."
+                    ),
                 )
                 continue
 
@@ -106,8 +108,11 @@ class Texam:
                     await self.db.update_executor_log(
                         remaining_executor_name,
                         PodPhase.FAILED.value,
-                        stdout=None,
-                        stderr=f"Executor {remaining_idx} failed to start because executor {idx} failed.",
+                        stdout="",
+                        stderr=(
+                            f"Executor {remaining_idx} failed to start because"
+                            f" executor {idx} failed."
+                        ),
                     )
                 break
 
@@ -168,38 +173,54 @@ class Texam:
             True if job was created successfully, False otherwise.
         """
         executor_name = f"{core_constants.K8s.TE_PREFIX}-{self.task_id}-{idx}"
+        job_manifest = self._create_executor_job_manifest(executor, idx)
 
-        async def create_job_with_backoff(job_manifest, executor_name) -> bool:
-            backoff_time = 1
-            while backoff_time <= core_constants.Texam.BACKOFF_LIMIT:
-                try:
-                    if self.task_id is None:
-                        raise ValueError("Task ID is None")
-                    await self.db.add_task_executor_log(self.task_id)
-                    logger.debug(f"Creating job for {executor_name}: {job_manifest}")
-                    await self.kubernetes_client.create_job(job_manifest)
-                    return True
-                except Exception as e:
-                    # Clean up the previous job if it exists
-                    logger.error(f"Failed to create job {executor_name}: {e}")
-                    logger.info(f"Deleting job {executor_name}")
-                    await self.kubernetes_client.delete_job(executor_name)
-                    logger.info(f"Retrying in {backoff_time} seconds")
-                    await asyncio.sleep(backoff_time)
-                    backoff_time = min(
-                        backoff_time * 2, core_constants.Texam.BACKOFF_LIMIT
-                    )
-            # After all retries failed, log the failure
-            await self.db.update_executor_log(
-                executor_name,
-                PodPhase.FAILED.value,
-                stdout=None,
-                stderr="Failed to create executor job after multiple retries.",
+        backoff_time = 1
+        while backoff_time < core_constants.Texam.BACKOFF_LIMIT:
+            logger.debug(
+                "Exponential backoff attempt: "
+                f"{backoff_time}/{core_constants.Texam.BACKOFF_LIMIT} "
+                f"to create job for {executor_name}."
             )
-            logger.error(
-                f"Job {executor_name} failed to be created after all retries"
-            )
-            return False
+            try:
+                if self.task_id is None:
+                    raise ValueError("Task ID is None")
+                logger.debug(
+                    f"Creating job for {executor_name}: {job_manifest.to_dict()}"
+                )
+                await self.kubernetes_client.create_job(job_manifest)
+                await self.db.add_task_executor_log(self.task_id)
+                return True
+            except Exception as e:
+                logger.error(f"Failed to create job {executor_name}: {e}")
+                logger.info(f"Deleting job {executor_name}")
+                await self.kubernetes_client.delete_job(executor_name)
+                # We don't need to delete the executor log from the DB,
+                # since it isn't added until after the job is created.
+                # If TExAM has launched successfully, the DB is clearly functional.
+                logger.info(f"Retrying in {backoff_time} seconds")
+                await asyncio.sleep(backoff_time)
+                backoff_time = min(backoff_time * 2, core_constants.Texam.BACKOFF_LIMIT)
+
+        # After all retries failed, log the failure and mark run as failed so
+        # all executors can be marked as failed.
+        await self.db.update_executor_log(
+            executor_name,
+            PodPhase.FAILED.value,
+            stdout="",
+            stderr="Failed to create executor job after multiple retries.",
+        )
+        logger.error(f"Job {executor_name} failed to be created after all retries")
+        return False
+
+    def _create_executor_job_manifest(self, executor: TesExecutor, idx: int) -> V1Job:
+        """Create a k8s Job for the executor.
+
+        Args:
+            executor: Executor object.
+            idx: Index of the executor.
+        """
+        executor_name = f"{core_constants.K8s.TE_PREFIX}-{self.task_id}-{idx}"
 
         _resource = (
             {
@@ -239,7 +260,7 @@ class Texam:
             if input.path and _volume_mount not in _volume_pvc_mount:
                 _volume_pvc_mount.append(_volume_mount)
 
-        job_manifest = V1Job(
+        return V1Job(
             api_version="batch/v1",
             kind="Job",
             metadata=V1ObjectMeta(
@@ -251,9 +272,15 @@ class Texam:
                 },
             ),
             spec=V1JobSpec(
-                ttl_seconds_after_finished=int(core_constants.K8s.JOB_TTL)
-                if core_constants.K8s.JOB_TTL
-                else None,
+                # Note: Backoff limit is set to 0 to fail immediately when pod fails.
+                #   This is because we want to fail all subsequent executors if any
+                #   executor fails.
+                backoff_limit=0,
+                ttl_seconds_after_finished=(
+                    int(core_constants.K8s.JOB_TTL)
+                    if core_constants.K8s.JOB_TTL
+                    else None
+                ),
                 template=V1PodTemplateSpec(
                     metadata=V1ObjectMeta(
                         labels={
@@ -271,12 +298,14 @@ class Texam:
                                 command=["/bin/sh", "-c"],
                                 args=[self._build_command_string(executor)],
                                 working_dir=executor.workdir,
-                                env=[
-                                    V1EnvVar(name=key, value=value)
-                                    for key, value in executor.env.items()
-                                ]
-                                if executor.env is not None
-                                else [],
+                                env=(
+                                    [
+                                        V1EnvVar(name=key, value=value)
+                                        for key, value in executor.env.items()
+                                    ]
+                                    if executor.env is not None
+                                    else []
+                                ),
                                 resources=V1ResourceRequirements(
                                     limits=resource,
                                     requests=resource,
@@ -308,7 +337,6 @@ class Texam:
                 ),
             ),
         )
-        return await create_job_with_backoff(job_manifest, executor_name)
 
     async def monitor_executor_job(self, executor: TesExecutor, idx: int) -> bool:
         """Monitor the executor job and log details in TaskDB.
@@ -342,37 +370,34 @@ class Texam:
                 if not isinstance(event, dict):
                     continue
 
-                event_type = event["type"]
                 job = event["object"]
 
                 if job.metadata.name != executor_name:
                     continue
-
-                logger.debug(f"Job event: {event_type}, Job: {executor_name}")
 
                 # Check job status
                 if job.status and job.status.conditions:
                     for condition in job.status.conditions:
                         if condition.type == "Complete" and condition.status == "True":
                             # Job completed successfully
-                            logs_stdout = await self._get_job_logs(executor_name)
+                            logs = await self._get_job_logs(executor_name)
                             await self.db.update_executor_log(
                                 executor_name,
                                 PodPhase.SUCCEEDED.value,
-                                logs_stdout,
-                                None,
+                                stdout=logs[0],
+                                stderr=logs[1],
                             )
                             logger.info(f"Job {executor_name} completed successfully")
                             w.stop()
                             return True
                         elif condition.type == "Failed" and condition.status == "True":
                             # Job failed
-                            logs_stdout = await self._get_job_logs(executor_name)
+                            logs = await self._get_job_logs(executor_name)
                             await self.db.update_executor_log(
                                 executor_name,
                                 PodPhase.FAILED.value,
-                                logs_stdout,
-                                f"Job failed: {condition.message}",
+                                stdout=logs[0],
+                                stderr=logs[1],
                             )
                             logger.error(
                                 f"Job {executor_name} failed: {condition.message}"
@@ -387,7 +412,7 @@ class Texam:
             await self.db.update_executor_log(
                 executor_name,
                 PodPhase.FAILED.value,
-                stdout=None,
+                stdout="",
                 stderr=f"Job monitoring timed out after {timeout} seconds.",
             )
             w.stop()
@@ -398,37 +423,90 @@ class Texam:
             await self.db.update_executor_log(
                 executor_name,
                 PodPhase.FAILED.value,
-                stdout=None,
+                stdout="",
                 stderr=f"Error monitoring job: {str(e)}",
             )
             return False
 
-    async def _get_job_logs(self, job_name: str) -> str | None:
+    async def _get_job_logs(self, job_name: str) -> tuple[str, str]:
         """Get logs from the job's pod.
 
         Args:
             job_name: Name of the job.
 
         Returns:
-            Job logs or None if not available.
+            Tuple of stdout and stderr logs.
         """
-        try:
-            # Get pods for this job
-            pods = self.kubernetes_client.core_api.list_namespaced_pod(
-                namespace=self.kubernetes_client.namespace,
-                label_selector=f"job-name={job_name}",
-            )
+        max_retries = 3
+        retry_delay = 1
 
-            if pods.items:
-                # Get logs from the first pod
-                pod = pods.items[0]
-                if pod.metadata and pod.metadata.name:
-                    pod_name = pod.metadata.name
-                    return await self.kubernetes_client.get_pod_log(pod_name)
-        except Exception as e:
-            logger.warning(f"Could not get logs for job {job_name}: {e}")
+        for attempt in range(max_retries):
+            try:
+                # Get pods for this job using the job-name label
+                pods = self.kubernetes_client.core_api.list_namespaced_pod(
+                    namespace=self.kubernetes_client.namespace,
+                    label_selector=f"job-name={job_name}",
+                )
 
-        return None
+                if pods.items:
+                    # Get logs from the first pod (jobs typically create one pod)
+                    pod = pods.items[0]
+                    if pod.metadata and pod.metadata.name:
+                        pod_name = pod.metadata.name
+                        logger.debug(
+                            f"Getting logs from pod {pod_name} of job {job_name}"
+                        )
+
+                        # Try to get logs, with retry for pods that aren't ready yet
+                        try:
+                            return await self.kubernetes_client.get_pod_log(
+                                pod_name
+                            ), ""
+                        except Exception as log_error:
+                            logger.warning(
+                                f"Failed to get logs from pod {pod_name}: {log_error}"
+                            )
+                            if attempt < max_retries - 1:
+                                logger.info(
+                                    f"Retrying log retrieval for pod {pod_name} "
+                                    f"(attempt {attempt + 1}/{max_retries})"
+                                )
+                                await asyncio.sleep(retry_delay)
+                                continue
+                            else:
+                                logger.error(
+                                    f"Failed to get logs from pod {pod_name} after "
+                                    f"{max_retries} attempts"
+                                )
+                                return (
+                                    "",
+                                    f"Failed to get logs for executor {job_name} "
+                                    f"after {max_retries} attempts",
+                                )
+                    else:
+                        logger.warning(
+                            f"Pod metadata or name is missing for job {job_name}"
+                        )
+                else:
+                    logger.warning(
+                        f"No pods found for job {job_name} (attempt "
+                        f"{attempt + 1}/{max_retries})"
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(retry_delay)
+                        continue
+
+            except Exception as e:
+                logger.warning(
+                    f"Could not get logs for job {job_name} (attempt "
+                    f"{attempt + 1}/{max_retries}): {e}"
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    continue
+
+        logger.error(f"Failed to get logs for job {job_name} after all attempts")
+        return "", f"Internal error while getting logs for executor {job_name}."
 
     async def message(self) -> None:
         """Send message to TORC."""
