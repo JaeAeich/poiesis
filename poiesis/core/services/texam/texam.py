@@ -1,20 +1,20 @@
 """TExAM (Task Executor and Monitor) service."""
 
 import asyncio
-import contextlib
 import logging
 import os
 import shlex
-import time
 
 from kubernetes import watch  # type: ignore
 from kubernetes.client import (
     V1Container,
     V1EnvVar,
+    V1Job,
+    V1JobSpec,
     V1ObjectMeta,
     V1PersistentVolumeClaimVolumeSource,
-    V1Pod,
     V1PodSpec,
+    V1PodTemplateSpec,
     V1ResourceRequirements,
     V1Volume,
     V1VolumeMount,
@@ -40,34 +40,19 @@ core_constants = get_poiesis_core_constants()
 logger = logging.getLogger(__name__)
 
 
-# Note: In future, add any other reasons consider fatal startup errors
-CRITICAL_WAITING_REASONS = {
-    "ImagePullBackOff",
-    "ErrImagePull",
-    "CrashLoopBackOff",
-    "InvalidImageName",
-    "ImageInspectError",
-}
-
-
 class Texam:
     """TExAM service.
 
     Args:
-        name: Name of the task.
-        executors: List of executors.
-        resources: Resources for the executors.
-        volumes: List of volumes to be mounted to the executors.
+        task: TesTask object.
 
     Attributes:
-        name: Name of the task.
-        executors: List of executors.
-        resources: Resources for the executors.
-        volumes: List of volumes to be mounted to the executors.
-        task_pool: List of executors.
+        task: TesTask object.
+        task_id: Task ID.
         kubernetes_client: Kubernetes client.
         message_broker: Message broker.
         failed: Flag defining if TE failed.
+        db: MongoDB client.
     """
 
     def __init__(
@@ -78,34 +63,74 @@ class Texam:
 
         Args:
             task: TesTask object.
-
-        Attributes:
-            task: TesTask object.
-            name: Name of the task.
-            executors: List of executors.
-            resources: Resources for the executors.
-            volumes: List of volumes to be mounted to the executors.
-            task_pool: List of executors pod name and then they were created.
-            kubernetes_client: Kubernetes client.
-            message_broker: Message broker.
-            failed: Flag defining if TE failed.
         """
         self.task = task
         self.task_id = task.id
-        self.task_pool: list[str] = []
         self.kubernetes_client = KubernetesAdapter()
         self.message_broker = RedisMessageBroker()
         self.failed = False
         self.db = MongoDBClient()
-        self.pods_to_cleanup: list[str] = []
 
     async def execute(self) -> None:
-        """Complete TExAM job."""
-        await self.start_executors()
-        self.pods_to_cleanup = self.task_pool.copy()
-        await self.monitor_executors()
-        await self.cleanup_pods()
+        """Execute TExAM.
+
+        Creates individual k8s Jobs for each executor sequentially.
+        If any executor fails, remaining executors are marked as failed.
+        """
+        for idx, executor in enumerate(self.task.executors):
+            if self.failed:
+                # If previous executor failed, mark remaining executors as failed
+                executor_name = f"{core_constants.K8s.TE_PREFIX}-{self.task_id}-{idx}"
+                if self.task_id is not None:
+                    await self.db.add_task_executor_log(self.task_id)
+                await self.db.update_executor_log(
+                    executor_name,
+                    PodPhase.FAILED.value,
+                    stdout="",
+                    stderr=(
+                        f"Executor {idx} failed to start because previous executor"
+                        " failed."
+                    ),
+                )
+                continue
+
+            # Create and monitor executor sequentially
+            success = await self.run_single_executor(executor, idx)
+            if not success:
+                self.failed = True
+                # Mark remaining executors as failed
+                for remaining_idx in range(idx + 1, len(self.task.executors)):
+                    remaining_executor_name = (
+                        f"{core_constants.K8s.TE_PREFIX}-{self.task_id}-{remaining_idx}"
+                    )
+                    if self.task_id is not None:
+                        await self.db.add_task_executor_log(self.task_id)
+                    await self.db.update_executor_log(
+                        remaining_executor_name,
+                        PodPhase.FAILED.value,
+                        stdout="",
+                        stderr=(
+                            f"Executor {remaining_idx} failed to start because"
+                            f" executor {idx} failed."
+                        ),
+                    )
+                break
+
         await self.message()
+
+    async def run_single_executor(self, executor: TesExecutor, idx: int) -> bool:
+        """Run a single executor and monitor it to completion.
+
+        Args:
+            executor: Executor object.
+            idx: Index of the executor.
+
+        Returns:
+            True if executor completed successfully, False otherwise.
+        """
+        # Create the executor job
+        job_created = await self.create_executor_job(executor, idx)
+        return await self.monitor_executor_job(executor, idx) if job_created else False
 
     def _build_command_string(self, executor: TesExecutor) -> str:
         """Constructs a shell command string.
@@ -137,385 +162,351 @@ class Texam:
 
         return command_str
 
-    async def start_executors(self) -> None:
-        """Create the K8s job for Texam.
+    async def create_executor_job(self, executor: TesExecutor, idx: int) -> bool:
+        """Create a k8s Job for the executor.
 
-        Try to create all the pods for the executors, if the pod creation
-        fails, gracefully retry with exponential backoff till a certain
-        threshold, failing executors will be ignored and logged.
+        Args:
+            executor: Executor object.
+            idx: Index of the executor.
 
-        Note:
-            Parallelism can be achieved by using threads, but due to kubernetes
-            limit on number of request per second and in the interest of scalability
-            we are launching executors sequentially.
+        Returns:
+            True if job was created successfully, False otherwise.
         """
-        for idx, executor in enumerate(self.task.executors):
-            executor_name = f"{core_constants.K8s.TE_PREFIX}-{self.task_id}-{idx}"
+        executor_name = f"{core_constants.K8s.TE_PREFIX}-{self.task_id}-{idx}"
+        job_manifest = self._create_executor_job_manifest(executor, idx)
 
-            async def create_pod_with_backoff(pod_manifest, executor_name):
-                backoff_time = 1
-                while backoff_time <= core_constants.Texam.BACKOFF_LIMIT:
-                    try:
-                        if self.task_id is None:
-                            raise ValueError("Task ID is None")
-                        await self.db.add_task_executor_log(self.task_id)
-                        logger.debug(pod_manifest)
-                        pod_name = await self.kubernetes_client.create_pod(pod_manifest)
-                        self.task_pool.append(pod_name)
-                        break
-                    except Exception as e:
-                        # Cleans the previous pod if it exists, this is to avoid
-                        #   the conflict with the same pod name, so we can try again
-                        #   with the same pod name. Trying to keep the idx same so logs
-                        #   can be associated with the same executor.
-                        logger.error(f"Failed to create pod {executor_name}: {e}")
-                        logger.info(f"Deleting pod {executor_name}")
-                        await self.kubernetes_client.delete_pod(executor_name)
-                        logger.info(f"Retrying in {backoff_time} seconds")
-                        await asyncio.sleep(backoff_time)
-                        backoff_time = min(
-                            backoff_time * 2, core_constants.Texam.BACKOFF_LIMIT
-                        )
-                else:
-                    # After all retries failed, add the executor to task_pool with a
-                    # special status This ensures it will be monitored and properly
-                    # logged
-                    self.task_pool.append(executor_name)
-                    await self.db.update_executor_log(
-                        executor_name,
-                        PodPhase.FAILED.value,
-                        stdout=None,
-                        stderr="Failed to create executor pod after multiple retries.",
-                    )
-                    logger.error(
-                        f"Pod {executor_name} failed to be created after all retries"
-                    )
-
-            _resource = (
-                {
-                    "cpu": str(self.task.resources.cpu_cores)
-                    if self.task.resources.cpu_cores
-                    else None,
-                    "memory": f"{self.task.resources.ram_gb}Gi"
-                    if self.task.resources.ram_gb
-                    else None,
-                }
-                if self.task.resources
-                else {}
+        backoff_time = 1
+        while backoff_time < core_constants.Texam.BACKOFF_LIMIT:
+            logger.debug(
+                "Exponential backoff attempt: "
+                f"{backoff_time}/{core_constants.Texam.BACKOFF_LIMIT} "
+                f"to create job for {executor_name}."
             )
-            resource = (
-                {k: v for k, v in _resource.items() if v is not None}
-                if _resource
-                else {}
-            )
-
-            _parent = f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"
-
-            # Note: Here we create mount paths for each input, since the PVC
-            #   all the data in downloaded in PVC at
-            #   `/transfer/{split_path_for_mounting(input.path)[1]}` directory.
-            #   So we need to mount the PVC at
-            #   `/transfer/{split_path_for_mounting(input.path)[0]}` directory.
-            #   This way the executor can access the data from PVC at the correct
-            #   location, that will be `{split_path_for_mounting(input.path)[1]}/
-            #   {split_path_for_mounting(input.path)[2]}` directory.
-            _volume_pvc_mount = []
-            for input in self.task.inputs or []:
-                _mount_path = split_path_for_mounting(input.path)[0].rstrip("/")
-                _volume_mount = V1VolumeMount(
-                    name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
-                    mount_path=_mount_path,
+            try:
+                if self.task_id is None:
+                    raise ValueError("Task ID is None")
+                logger.debug(
+                    f"Creating job for {executor_name}: {job_manifest.to_dict()}"
                 )
-                # Check if the volume mount is already in the list else
-                #   K8s won't process and throw 422 error.
-                if input.path and _volume_mount not in _volume_pvc_mount:
-                    _volume_pvc_mount.append(_volume_mount)
+                await self.kubernetes_client.create_job(job_manifest)
+                await self.db.add_task_executor_log(self.task_id)
+                return True
+            except Exception as e:
+                logger.error(f"Failed to create job {executor_name}: {e}")
+                logger.info(f"Deleting job {executor_name}")
+                await self.kubernetes_client.delete_job(executor_name)
+                # We don't need to delete the executor log from the DB,
+                # since it isn't added until after the job is created.
+                # If TExAM has launched successfully, the DB is clearly functional.
+                logger.info(f"Retrying in {backoff_time} seconds")
+                await asyncio.sleep(backoff_time)
+                backoff_time = min(backoff_time * 2, core_constants.Texam.BACKOFF_LIMIT)
 
-            pod_manifest = V1Pod(
-                api_version="v1",
-                kind="Pod",
-                metadata=V1ObjectMeta(
-                    name=executor_name,
-                    labels={
-                        "service": core_constants.K8s.TE_PREFIX,
-                        "parent": _parent,
-                        "name": executor_name,
-                    },
-                ),
-                spec=V1PodSpec(
-                    security_context=get_executor_pod_security_context(),
-                    containers=[
-                        V1Container(
-                            name=executor_name,
-                            image=executor.image,
-                            command=["/bin/sh", "-c"],
-                            args=[self._build_command_string(executor)],
-                            working_dir=executor.workdir,
-                            env=[
-                                V1EnvVar(name=key, value=value)
-                                for key, value in executor.env.items()
-                            ]
-                            if executor.env is not None
-                            else [],
-                            resources=V1ResourceRequirements(
-                                limits=resource,
-                                requests=resource,
-                            ),
-                            volume_mounts=[
-                                V1VolumeMount(
-                                    name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
-                                    mount_path=volume,
-                                )
-                                for volume in self.task.volumes or []
-                            ]
-                            + _volume_pvc_mount
-                            + get_executor_security_volume_mount(),
-                            image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
-                            security_context=get_executor_container_security_context(),
-                        )
-                    ],
-                    volumes=[
-                        V1Volume(
-                            name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
-                            persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
-                                claim_name=f"{core_constants.K8s.PVC_PREFIX}-{self.task_id}"
-                            ),
-                        ),
-                    ]
-                    + get_executor_security_volume(),
-                    restart_policy=core_constants.K8s.RESTART_POLICY,
-                ),
+        # After all retries failed, log the failure and mark run as failed so
+        # all executors can be marked as failed.
+        await self.db.update_executor_log(
+            executor_name,
+            PodPhase.FAILED.value,
+            stdout="",
+            stderr="Failed to create executor job after multiple retries.",
+        )
+        logger.error(f"Job {executor_name} failed to be created after all retries")
+        return False
+
+    def _create_executor_job_manifest(self, executor: TesExecutor, idx: int) -> V1Job:
+        """Create a k8s Job for the executor.
+
+        Args:
+            executor: Executor object.
+            idx: Index of the executor.
+        """
+        executor_name = f"{core_constants.K8s.TE_PREFIX}-{self.task_id}-{idx}"
+
+        _resource = (
+            {
+                "cpu": str(self.task.resources.cpu_cores)
+                if self.task.resources.cpu_cores
+                else None,
+                "memory": f"{self.task.resources.ram_gb}Gi"
+                if self.task.resources.ram_gb
+                else None,
+            }
+            if self.task.resources
+            else {}
+        )
+        resource = (
+            {k: v for k, v in _resource.items() if v is not None} if _resource else {}
+        )
+
+        _parent = f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"
+
+        # Note: Here we create mount paths for each input, since the PVC
+        #   all the data in downloaded in PVC at
+        #   `/transfer/{split_path_for_mounting(input.path)[1]}` directory.
+        #   So we need to mount the PVC at
+        #   `/transfer/{split_path_for_mounting(input.path)[0]}` directory.
+        #   This way the executor can access the data from PVC at the correct
+        #   location, that will be `{split_path_for_mounting(input.path)[1]}/
+        #   {split_path_for_mounting(input.path)[2]}` directory.
+        _volume_pvc_mount = []
+        for input in self.task.inputs or []:
+            _mount_path = split_path_for_mounting(input.path)[0].rstrip("/")
+            _volume_mount = V1VolumeMount(
+                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                mount_path=_mount_path,
             )
-            await create_pod_with_backoff(pod_manifest, executor_name)
+            # Check if the volume mount is already in the list else
+            #   K8s won't process and throw 422 error.
+            if input.path and _volume_mount not in _volume_pvc_mount:
+                _volume_pvc_mount.append(_volume_mount)
 
-    async def monitor_executors(self) -> None:
-        """Monitor the executors and log details in TaskDB."""
-        if not self.task_pool:
-            return
+        return V1Job(
+            api_version="batch/v1",
+            kind="Job",
+            metadata=V1ObjectMeta(
+                name=executor_name,
+                labels={
+                    "service": core_constants.K8s.TE_PREFIX,
+                    "parent": _parent,
+                    "name": executor_name,
+                },
+            ),
+            spec=V1JobSpec(
+                # Note: Backoff limit is set to 0 to fail immediately when pod fails.
+                #   This is because we want to fail all subsequent executors if any
+                #   executor fails.
+                backoff_limit=0,
+                ttl_seconds_after_finished=(
+                    int(core_constants.K8s.JOB_TTL)
+                    if core_constants.K8s.JOB_TTL
+                    else None
+                ),
+                template=V1PodTemplateSpec(
+                    metadata=V1ObjectMeta(
+                        labels={
+                            "service": core_constants.K8s.TE_PREFIX,
+                            "parent": _parent,
+                            "name": executor_name,
+                        }
+                    ),
+                    spec=V1PodSpec(
+                        security_context=get_executor_pod_security_context(),
+                        containers=[
+                            V1Container(
+                                name=executor_name,
+                                image=executor.image,
+                                command=["/bin/sh", "-c"],
+                                args=[self._build_command_string(executor)],
+                                working_dir=executor.workdir,
+                                env=(
+                                    [
+                                        V1EnvVar(name=key, value=value)
+                                        for key, value in executor.env.items()
+                                    ]
+                                    if executor.env is not None
+                                    else []
+                                ),
+                                resources=V1ResourceRequirements(
+                                    limits=resource,
+                                    requests=resource,
+                                ),
+                                volume_mounts=[
+                                    V1VolumeMount(
+                                        name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                                        mount_path=volume,
+                                    )
+                                    for volume in self.task.volumes or []
+                                ]
+                                + _volume_pvc_mount
+                                + get_executor_security_volume_mount(),
+                                image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
+                                security_context=get_executor_container_security_context(),
+                            )
+                        ],
+                        volumes=[
+                            V1Volume(
+                                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                                persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
+                                    claim_name=f"{core_constants.K8s.PVC_PREFIX}-{self.task_id}"
+                                ),
+                            ),
+                        ]
+                        + get_executor_security_volume(),
+                        restart_policy=core_constants.K8s.RESTART_POLICY,
+                    ),
+                ),
+            ),
+        )
 
-        pod_names_to_monitor = set(self.task_pool)
-        active_pod_names = set(pod_names_to_monitor)
+    async def monitor_executor_job(self, executor: TesExecutor, idx: int) -> bool:
+        """Monitor the executor job and log details in TaskDB.
 
-        if not active_pod_names:
-            logger.info("No pods provided to monitor.")
-            return
+        Args:
+            executor: Executor object.
+            idx: Index of the executor.
 
-        label_selector = f"service={core_constants.K8s.TE_PREFIX},parent={core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"  # noqa: E501
+        Returns:
+            True if executor completed successfully, False otherwise.
+        """
+        executor_name = f"{core_constants.K8s.TE_PREFIX}-{self.task_id}-{idx}"
+
         timeout = int(
             os.getenv(
                 "MONITOR_TIMEOUT_SECONDS", core_constants.Texam.MONITOR_TIMEOUT_SECONDS
             )
         )
-        stream_args = {
-            "namespace": self.kubernetes_client.namespace,
-            "label_selector": label_selector,
-            "timeout_seconds": timeout,
-        }
 
         try:
             w = watch.Watch()
-            start_time = time.time()
-            logger.info(
-                f"Starting watch for pods with label selector: {label_selector}"
-            )
+            logger.info(f"Starting watch for job: {executor_name}")
 
-            stream_func = self.kubernetes_client.core_api.list_namespaced_pod
-            event_stream = await asyncio.to_thread(w.stream, stream_func, **stream_args)
-            for event in event_stream:
+            # Watch for job completion
+            for event in w.stream(
+                self.kubernetes_client.batch_api.list_namespaced_job,
+                namespace=self.kubernetes_client.namespace,
+                field_selector=f"metadata.name={executor_name}",
+                timeout_seconds=timeout,
+            ):
                 if not isinstance(event, dict):
                     continue
-                event_type = event["type"]
-                pod = event["object"]
-                pod_name = str(pod.metadata.name)
 
-                if pod_name not in active_pod_names:
+                job = event["object"]
+
+                if job.metadata.name != executor_name:
                     continue
 
-                logger.debug(
-                    f"Event: {event_type}, Pod: {pod_name}, Phase: {pod.status.phase}"
-                )
-                await self._process_pod_event(pod, active_pod_names)
+                # Check job status
+                if job.status and job.status.conditions:
+                    for condition in job.status.conditions:
+                        if condition.type == "Complete" and condition.status == "True":
+                            # Job completed successfully
+                            logs = await self._get_job_logs(executor_name)
+                            await self.db.update_executor_log(
+                                executor_name,
+                                PodPhase.SUCCEEDED.value,
+                                stdout=logs[0],
+                                stderr=logs[1],
+                            )
+                            logger.info(f"Job {executor_name} completed successfully")
+                            w.stop()
+                            return True
+                        elif condition.type == "Failed" and condition.status == "True":
+                            # Job failed
+                            logs = await self._get_job_logs(executor_name)
+                            await self.db.update_executor_log(
+                                executor_name,
+                                PodPhase.FAILED.value,
+                                stdout=logs[0],
+                                stderr=logs[1],
+                            )
+                            logger.error(
+                                f"Job {executor_name} failed: {condition.message}"
+                            )
+                            w.stop()
+                            return False
 
-                if not active_pod_names:
-                    w.stop()
-                    logger.info(
-                        "All monitored pods processed in "
-                        f"{time.time() - start_time:.2f} seconds"
-                    )
-                    break
-
-            await self._handle_unresolved_pods(active_pod_names, timeout, start_time)
-
-        except asyncio.CancelledError:
-            logger.info(
-                f"Pod watch task cancelled in {time.time() - start_time:.2f} seconds"
+            # If we reach here, the timeout was reached
+            logger.error(
+                f"Job {executor_name} monitoring timed out after {timeout} seconds"
             )
-        except Exception as e:
-            logger.exception(f"Error in watch stream: {e}")
-            raise
-
-    async def _process_pod_event(self, pod: V1Pod, active_pod_names: set) -> None:
-        """Processes a single pod event."""
-        # Poiesis adds these fields, so we can safely assert them
-        assert pod.metadata is not None
-        assert pod.status is not None
-
-        pod_name = str(pod.metadata.name)
-        pod_phase = pod.status.phase if pod.status else None
-
-        if failure_reason := self._check_container_failure(pod):
-            await self._handle_pod_failure(pod_name, failure_reason)
-            self._remove_pod_from_pool(pod_name, active_pod_names)
-            return
-
-        if pod_phase and pod_phase in (PodPhase.SUCCEEDED.value, PodPhase.FAILED.value):
-            logs_stdout, logs_stderr = await self._get_pod_logs(pod_name, pod_phase)
             await self.db.update_executor_log(
-                pod_name,
-                pod_phase,
-                logs_stdout,
-                logs_stderr if pod_phase == PodPhase.FAILED.value else None,
+                executor_name,
+                PodPhase.FAILED.value,
+                stdout="",
+                stderr=f"Job monitoring timed out after {timeout} seconds.",
             )
-            logger.info(
-                f"Pod {pod_name} completed with status: {pod_phase}. Logs captured "
-                "(if available)."
-            )
-            self._remove_pod_from_pool(pod_name, active_pod_names)
+            w.stop()
+            return False
 
-        elif pod_phase and pod_phase == PodPhase.UNKNOWN.value:
-            logger.warning(f"Pod {pod_name} is in an Unknown state.")
-
-    def _check_container_failure(self, pod: V1Pod) -> str | None:
-        """Checks for container failures and returns the reason if found.
-
-        Executor pod might be in pending state, if the pod is in pending state, it
-        means that the pod might fail to start, that is why we need to check for
-        container failures.
-        """
-        pod_phase = pod.status.phase if pod.status else None
-
-        # If container is failing to start, it will be in the init_container_statuses
-        # or container_statuses list
-        if pod.status is None:
-            return None
-
-        all_container_statuses = (pod.status.init_container_statuses or []) + (
-            pod.status.container_statuses or []
-        )
-
-        assert pod.metadata is not None
-
-        if pod_phase == PodPhase.PENDING.value or (
-            pod.status and all_container_statuses
-        ):
-            for status in all_container_statuses:
-                if status.state and status.state.waiting:
-                    container_name = status.name or "Unknown"
-                    logger.info(
-                        f"Pending pod "
-                        f"{pod.metadata.name if pod.metadata else 'Unknown'} "
-                        f"has container {container_name} in waiting state with reason: "
-                        f"{status.state.waiting.reason}"
-                    )
-                    if status.state.waiting.reason in CRITICAL_WAITING_REASONS:
-                        return status.state.waiting.reason
-        return None
-
-    async def _handle_pod_failure(self, pod_name: str, failure_reason: str) -> None:
-        """Handles pod failure and updates the database."""
-        error_log_message = f"Pod failed due to container error: {failure_reason}"
-        try:
+        except Exception as e:
+            logger.exception(f"Error monitoring job {executor_name}: {e}")
             await self.db.update_executor_log(
-                pod_name, PodPhase.FAILED.value, stdout=None, stderr=error_log_message
+                executor_name,
+                PodPhase.FAILED.value,
+                stdout="",
+                stderr=f"Error monitoring job: {str(e)}",
             )
-            logger.info(
-                f"Pod {pod_name} marked as Failed in DB due to container error: "
-                f"{failure_reason}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to update DB for failed pod {pod_name}: {e}")
+            return False
 
-    async def _get_pod_logs(
-        self, pod_name: str, pod_phase: str
-    ) -> tuple[str | None, str]:
-        """Retrieves pod logs, handling potential errors.
+    async def _get_job_logs(self, job_name: str) -> tuple[str, str]:
+        """Get logs from the job's pod.
 
-        Logs are retrieved from the pod, if the pod is in failed state, we retrieve
-        the logs from the pod, if the pod is in succeeded state, we don't retrieve
-        the logs from the pod. This help in case the pod is in pending state or couldn't
-        start due to some reason.
+        Args:
+            job_name: Name of the job.
+
+        Returns:
+            Tuple of stdout and stderr logs.
         """
-        logs_stdout = None
-        logs_stderr = f"Pod phase reported as {pod_phase} by Kubernetes."
-        try:
-            logs_stdout = await self.kubernetes_client.get_pod_log(pod_name)
-        except Exception as e:
-            logger.warning(
-                f"Could not get logs for pod {pod_name} in phase {pod_phase}: {e}"
-            )
-            logs_stderr += f" Log retrieval failed: {str(e)}"
-        return logs_stdout, logs_stderr
+        max_retries = 3
+        retry_delay = 1
 
-    def _remove_pod_from_pool(self, pod_name: str, active_pod_names: set) -> None:
-        """Removes a pod from the active pool and task pool."""
-        active_pod_names.discard(pod_name)
-        if pod_entry := next((p for p in self.task_pool if p == pod_name), None):
-            with contextlib.suppress(ValueError):
-                self.task_pool.remove(pod_entry)
-
-    async def _handle_unresolved_pods(
-        self, active_pod_names: set, timeout: int, start_time: float
-    ) -> None:
-        """Handles unresolved pods after the watch ends."""
-        if active_pod_names:
-            logger.warning(
-                f"Watch ended with {len(active_pod_names)} unresolved pods: "
-                f"{active_pod_names}, Time taken: {time.time() - start_time:.2f} "
-                "seconds"
-            )
-            for pod_name in active_pod_names.copy():
-                logger.error(
-                    f"Pod {pod_name} did not reach a terminal state before watch "
-                    "timeout."
-                )
-                try:
-                    await self.kubernetes_client.delete_pod(pod_name)
-                    await self.db.update_executor_log(
-                        pod_name,
-                        PodPhase.FAILED.value,
-                        stdout=None,
-                        stderr=f"Pod monitoring timed out after {timeout} seconds.",
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to update DB for timed-out pod {pod_name}: {e}"
-                    )
-                self._remove_pod_from_pool(pod_name, active_pod_names)
-                self.failed = True
-
-    async def cleanup_pods(self) -> None:
-        """Clean up completed executor pods to free PVC references.
-
-        Deletes pods that allow PVCs to be properly cleaned up.
-        """
-        if not self.pods_to_cleanup:
-            logger.debug("No executor pods to clean up")
-            return
-
-        logger.info(f"Starting cleanup of {len(self.pods_to_cleanup)} executor pods")
-        cleanup_count = 0
-
-        for pod_name in self.pods_to_cleanup[:]:
+        for attempt in range(max_retries):
             try:
-                await self.kubernetes_client.delete_pod(pod_name)
-                cleanup_count += 1
-            except Exception as e:
-                logger.warning(f"Could not cleanup pod {pod_name}: {e}")
+                # Get pods for this job using the job-name label
+                pods = self.kubernetes_client.core_api.list_namespaced_pod(
+                    namespace=self.kubernetes_client.namespace,
+                    label_selector=f"job-name={job_name}",
+                )
 
-        logger.debug(
-            "Pod cleanup completed. Cleaned up "
-            f"{cleanup_count}/{len(self.pods_to_cleanup)} pods"
-        )
+                if pods.items:
+                    # Get logs from the first pod (jobs typically create one pod)
+                    pod = pods.items[0]
+                    if pod.metadata and pod.metadata.name:
+                        pod_name = pod.metadata.name
+                        logger.debug(
+                            f"Getting logs from pod {pod_name} of job {job_name}"
+                        )
+
+                        # Try to get logs, with retry for pods that aren't ready yet
+                        try:
+                            return await self.kubernetes_client.get_pod_log(
+                                pod_name
+                            ), ""
+                        except Exception as log_error:
+                            logger.warning(
+                                f"Failed to get logs from pod {pod_name}: {log_error}"
+                            )
+                            if attempt < max_retries - 1:
+                                logger.info(
+                                    f"Retrying log retrieval for pod {pod_name} "
+                                    f"(attempt {attempt + 1}/{max_retries})"
+                                )
+                                await asyncio.sleep(retry_delay)
+                                continue
+                            else:
+                                logger.error(
+                                    f"Failed to get logs from pod {pod_name} after "
+                                    f"{max_retries} attempts"
+                                )
+                                return (
+                                    "",
+                                    f"Failed to get logs for executor {job_name} "
+                                    f"after {max_retries} attempts",
+                                )
+                    else:
+                        logger.warning(
+                            f"Pod metadata or name is missing for job {job_name}"
+                        )
+                else:
+                    logger.warning(
+                        f"No pods found for job {job_name} (attempt "
+                        f"{attempt + 1}/{max_retries})"
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(retry_delay)
+                        continue
+
+            except Exception as e:
+                logger.warning(
+                    f"Could not get logs for job {job_name} (attempt "
+                    f"{attempt + 1}/{max_retries}): {e}"
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    continue
+
+        logger.error(f"Failed to get logs for job {job_name} after all attempts")
+        return "", f"Internal error while getting logs for executor {job_name}."
 
     async def message(self) -> None:
         """Send message to TORC."""

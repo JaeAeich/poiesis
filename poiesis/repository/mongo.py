@@ -315,9 +315,9 @@ class MongoDBClient:
 
     async def update_executor_log(
         self,
-        pod_name: str,
+        job_name: str,
         pod_phase: str,
-        stdout: str | None = None,
+        stdout: str,
         stderr: str | None = None,
     ) -> None:
         """Update the executor log in the database.
@@ -330,14 +330,14 @@ class MongoDBClient:
             try to call the get_pod_log method, if that fails, we use empty strings.
 
         Args:
-            pod_name: Name of the pod
+            job_name: Name of the job
             pod_phase: Phase of the pod
             stdout: Standard output of the pod
             stderr: Standard error of the pod
         """
         try:
             # Note: The executor name is of the form <te_prefix>-<UUID>-<idx>.
-            pod_name_without_prefix = pod_name.split(
+            pod_name_without_prefix = job_name.split(
                 f"{poiesis_core_constants.K8s.TE_PREFIX}-"
             )[-1]
             parts = pod_name_without_prefix.split("-")
@@ -352,18 +352,10 @@ class MongoDBClient:
             exec_log = task.data.logs[-1].logs[idx]
 
             exec_log.end_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S%z")
-
             exec_log.stderr = stderr or ""
-
-            try:
-                exec_log.stdout = await self.kubernetes_client.get_pod_log(pod_name)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to get pod log for {pod_name} via kubernetes client: {e}"
-                )
-                exec_log.stdout = stdout or ""
-
+            exec_log.stdout = stdout
             exec_log.exit_code = 0 if pod_phase == PodPhase.SUCCEEDED.value else 1
+
             await self.db[
                 poiesis_constants.Database.MongoDB.TASK_COLLECTION
             ].update_one(
