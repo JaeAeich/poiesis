@@ -211,6 +211,10 @@ class Torc:
         else:
             logger.debug(f"Task {name} has no inputs")
 
+        if inputs is None or len(inputs) == 0:
+            logger.info(f"Task {name} has no inputs, skipping TIF execution")
+            return
+
         try:
             tif_executor = TorcTifExecution(name, inputs)
             await tif_executor.execute()
@@ -267,6 +271,10 @@ class Torc:
             logger.debug(f"Task {name} has {len(outputs)} outputs")
         else:
             logger.debug(f"Task {name} has no outputs")
+
+        if outputs is None or len(outputs) == 0:
+            logger.info(f"Task {name} has no outputs, skipping TOF execution")
+            return
 
         try:
             tof_executor = TorcTofExecution(name, outputs)
