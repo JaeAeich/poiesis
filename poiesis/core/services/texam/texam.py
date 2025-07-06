@@ -8,6 +8,7 @@ import shlex
 from kubernetes import watch  # type: ignore
 from kubernetes.client import (
     V1Container,
+    V1EmptyDirVolumeSource,
     V1EnvVar,
     V1Job,
     V1JobSpec,
@@ -26,8 +27,6 @@ from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroke
 from poiesis.core.constants import (
     get_executor_container_security_context,
     get_executor_pod_security_context,
-    get_executor_security_volume,
-    get_executor_security_volume_mount,
     get_poiesis_core_constants,
 )
 from poiesis.core.ports.message_broker import Message, MessageStatus
@@ -141,24 +140,60 @@ class Texam:
         Args:
             executor: Executor object.
         """
-        command_str = " ".join(shlex.quote(arg) for arg in executor.command)
+        # If the command is a single string, split it. Otherwise, use as is.
+        # This handles both ["sleep 1h"] and ["sleep", "1h"] cases.
+        if len(executor.command) == 1 and " " in executor.command[0]:
+            command_parts = shlex.split(executor.command[0])
+        else:
+            command_parts = executor.command
+        command_str = " ".join(shlex.quote(arg) for arg in command_parts)
+
         # Handle stdin redirection from a file
         if executor.stdin:
             command_str = f"{command_str} < {shlex.quote(executor.stdin)}"
 
         # Handle stdout and stderr redirection
         if executor.stdout and executor.stderr:
-            command_str += (
-                f" > {shlex.quote(executor.stdout)} 2> {shlex.quote(executor.stderr)}"
+            # Create directories for both stdout and stderr files for safety
+            stdout_dir = os.path.dirname(executor.stdout)
+            stderr_dir = os.path.dirname(executor.stderr)
+            command_str = (
+                f"mkdir -p {shlex.quote(stdout_dir)} {shlex.quote(stderr_dir)} && "
+                f"{command_str} > {shlex.quote(executor.stdout)} 2> {shlex.quote(executor.stderr)}"
             )
         elif executor.stdout:
-            command_str += f" > {shlex.quote(executor.stdout)}"
+            # Create directory for stdout file for safety
+            stdout_dir = os.path.dirname(executor.stdout)
+            command_str = f"mkdir -p {shlex.quote(stdout_dir)} && {command_str} > {shlex.quote(executor.stdout)}"
         elif executor.stderr:
-            command_str += f" 2> {shlex.quote(executor.stderr)}"
+            # Create directory for stderr file for safety
+            stderr_dir = os.path.dirname(executor.stderr)
+            command_str = f"mkdir -p {shlex.quote(stderr_dir)} && {command_str} 2> {shlex.quote(executor.stderr)}"
 
         # Ignore errors if required
         if executor.ignore_error:
             command_str += " || true"
+
+        # Add post-processing to copy outputs back to transfer directory
+        post_commands = []
+        for _output in self.task.outputs or []:
+            transfer_path = os.path.join(
+                core_constants.K8s.TOF_PVC_PATH,
+                _output.path.lstrip("/"),
+            )
+            transfer_dir = os.path.dirname(transfer_path)
+
+            post_commands.extend(
+                [
+                    f"mkdir -p {shlex.quote(transfer_dir)}",
+                    f"if [ -f {shlex.quote(_output.path)} ]; then mv {shlex.quote(_output.path)} {shlex.quote(transfer_path)}; fi",
+                    f"if [ -d {shlex.quote(_output.path)} ]; then mv {shlex.quote(_output.path)}/* {shlex.quote(transfer_dir)}/; fi",
+                ]
+            )
+
+        if post_commands:
+            post_command_str = " && ".join(post_commands)
+            command_str = f"({command_str}) && ({post_command_str})"
 
         return command_str
 
@@ -240,25 +275,112 @@ class Texam:
 
         _parent = f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"
 
-        # Note: Here we create mount paths for each input, since the PVC
-        #   all the data in downloaded in PVC at
-        #   `/transfer/{split_path_for_mounting(input.path)[1]}` directory.
-        #   So we need to mount the PVC at
-        #   `/transfer/{split_path_for_mounting(input.path)[0]}` directory.
-        #   This way the executor can access the data from PVC at the correct
-        #   location, that will be `{split_path_for_mounting(input.path)[1]}/
-        #   {split_path_for_mounting(input.path)[2]}` directory.
-        _volume_pvc_mount = []
-        for input in self.task.inputs or []:
-            _mount_path = split_path_for_mounting(input.path)[0].rstrip("/")
-            _volume_mount = V1VolumeMount(
+        # Create volume mounts for file operations.
+        # All the files downloaded by the executors are mounted to /tif.
+        # All the files uploaded by the executors are mounted to /tof.
+        _tif_volume_mounts = [
+            V1VolumeMount(
                 name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
-                mount_path=_mount_path,
+                mount_path=core_constants.K8s.TIF_PVC_PATH,
             )
-            # Check if the volume mount is already in the list else
-            #   K8s won't process and throw 422 error.
-            if input.path and _volume_mount not in _volume_pvc_mount:
-                _volume_pvc_mount.append(_volume_mount)
+        ]
+        _tof_volume_mounts = [
+            V1VolumeMount(
+                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                mount_path=core_constants.K8s.TOF_PVC_PATH,
+            )
+        ]
+
+        # Create empty directories for the inputs.
+        # We will use empty dirs to move the files from /tif to
+        # the target path.
+        _empty_dir_seen = set()
+        _empty_dir_volumes: list[tuple[str, V1Volume]] = []
+        for _input in self.task.inputs or []:
+            path = split_path_for_mounting(_input.path)[0]
+            if path not in _empty_dir_seen:
+                # Sanitize the path to be a valid k8s volume name
+                sanitized_path_name = path.lstrip("/").replace("/", "-")
+                volume_name = f"empty-dir-{idx}-{sanitized_path_name}"
+                _empty_dir_volumes.append(
+                    (
+                        path,
+                        V1Volume(
+                            name=volume_name,
+                            empty_dir=V1EmptyDirVolumeSource(),
+                        ),
+                    )
+                )
+                _empty_dir_seen.add(path)
+
+        # Create init container commands to set up file structure.
+        init_script_lines = [
+            "echo 'DEBUG: Contents of /tif:'",
+            "find /tif -type f -ls || echo 'No files found in /tif'",
+            "echo 'DEBUG: Available mount points:'",
+            "df -h | grep -E '(tif|tof)' || echo 'No relevant mounts found'",
+            "echo 'DEBUG: Starting file setup...'",
+        ]
+
+        # Copy input files from /tif/path to /path (now both are mounted volumes)
+        for _input in self.task.inputs or []:
+            transfer_path = os.path.join(
+                core_constants.K8s.TIF_PVC_PATH,
+                _input.path.lstrip("/"),
+            )
+            target_path = _input.path
+
+            # Add commands for this specific input
+            init_script_lines.extend(
+                [
+                    f"echo 'Processing input: {_input.path}'",
+                    f"echo 'Source: {transfer_path}'",
+                    f"echo 'Target: {target_path}'",
+                    # Check if source file exists and copy
+                    f"if [ -f {shlex.quote(transfer_path)} ]; then",
+                    f"  echo 'Found source file: {transfer_path}'",
+                    f"  cp {shlex.quote(transfer_path)} {shlex.quote(target_path)}",
+                    f"  echo 'Copied file to: {target_path}'",
+                    f"  ls -la {shlex.quote(target_path)}",
+                    "else",
+                    f"  echo 'ERROR: Source file not found: {transfer_path}'",
+                    f"  ls -la {shlex.quote(os.path.dirname(transfer_path))} || echo 'Directory not found'",
+                    "fi",
+                    "",  # Empty line for readability
+                ]
+            )
+
+        # No need to create output directories since they're now mounted volumes
+        init_script_lines.extend(
+            [
+                "",  # Empty line
+                "echo 'DEBUG: Final status check:'",
+                "echo 'Input files created:'",
+            ]
+        )
+
+        # Add individual file checks
+        init_script_lines.extend(
+            f"ls -la {shlex.quote(_input.path)} || echo 'Missing: {_input.path}'"
+            for _input in self.task.inputs or []
+        )
+        init_script_lines.extend(
+            [
+                "echo 'DEBUG: Output directories:'",
+                *[
+                    f"ls -la {shlex.quote(os.path.dirname(_output.path))} || echo 'Missing dir: {os.path.dirname(_output.path)}'"
+                    for _output in self.task.outputs or []
+                ],
+                "echo 'Init container setup completed'",
+            ]
+        )
+
+        # Create init container setup command as a multi-line script
+        init_command = (
+            "\n".join(init_script_lines)
+            if init_script_lines
+            else "echo 'No setup needed'"
+        )
 
         return V1Job(
             api_version="batch/v1",
@@ -291,6 +413,24 @@ class Texam:
                     ),
                     spec=V1PodSpec(
                         security_context=get_executor_pod_security_context(),
+                        init_containers=[
+                            V1Container(
+                                name="file-setup",
+                                image="busybox:latest",
+                                command=["/bin/sh", "-c"],
+                                args=[init_command],
+                                volume_mounts=_tif_volume_mounts
+                                + _tof_volume_mounts
+                                + [
+                                    V1VolumeMount(
+                                        name=volume_name.name,
+                                        mount_path=path,
+                                    )
+                                    for path, volume_name in _empty_dir_volumes
+                                ],
+                                security_context=get_executor_container_security_context(),
+                            )
+                        ],
                         containers=[
                             V1Container(
                                 name=executor_name,
@@ -310,15 +450,21 @@ class Texam:
                                     limits=resource,
                                     requests=resource,
                                 ),
-                                volume_mounts=[
+                                volume_mounts=_tof_volume_mounts
+                                + [
+                                    V1VolumeMount(
+                                        name=volume_name.name,
+                                        mount_path=path,
+                                    )
+                                    for path, volume_name in _empty_dir_volumes
+                                ]
+                                + [
                                     V1VolumeMount(
                                         name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
                                         mount_path=volume,
                                     )
                                     for volume in self.task.volumes or []
-                                ]
-                                + _volume_pvc_mount
-                                + get_executor_security_volume_mount(),
+                                ],
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                                 security_context=get_executor_container_security_context(),
                             )
@@ -331,7 +477,7 @@ class Texam:
                                 ),
                             ),
                         ]
-                        + get_executor_security_volume(),
+                        + [volume for _, volume in _empty_dir_volumes],
                         restart_policy=core_constants.K8s.RESTART_POLICY,
                     ),
                 ),

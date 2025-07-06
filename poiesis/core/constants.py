@@ -62,7 +62,8 @@ class PoiesisCoreConstants:
                 distributions.
             POIESIS_IMAGE: The Poiesis image.
             COMMON_PVC_VOLUME_NAME: The common PVC volume name.
-            FILER_PVC_PATH: The path in the PVC for the filer.
+            TIF_PVC_PATH: The path in tif where pvc is mounted.
+            TOF_PVC_PATH: The path in tof where pvc is mounted.
             S3_SECRET_NAME: The S3 K8s secret name.
             REDIS_SECRET_NAME: The redis K8s secret name.
             MONGODB_SECRET_NAME: The mongo K8s secret name.
@@ -88,7 +89,8 @@ class PoiesisCoreConstants:
         PVC_STORAGE_CLASS = os.getenv("POIESIS_PVC_STORAGE_CLASS")
         POIESIS_IMAGE = os.getenv("POIESIS_IMAGE", "docker.io/jaeaeich/poiesis:latest")
         COMMON_PVC_VOLUME_NAME = "task-pvc-volume"
-        FILER_PVC_PATH = "/transfer"
+        TIF_PVC_PATH = "/tif"
+        TOF_PVC_PATH = "/tof"
         REDIS_SECRET_NAME = os.getenv("POIESIS_REDIS_SECRET_NAME")
         S3_SECRET_NAME = os.getenv("POIESIS_S3_SECRET_NAME")
         MONGODB_SECRET_NAME = os.getenv("POIESIS_MONGO_SECRET_NAME")

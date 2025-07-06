@@ -5,6 +5,7 @@ import logging
 
 from kubernetes.client import (
     V1ObjectMeta,
+    V1VolumeMount,
 )
 
 from poiesis.api.tes.models import TesInput
@@ -78,4 +79,15 @@ class TorcTifExecution(TorcExecutionTemplate):
 
         commands: list[str] = ["poiesis", "tif", "run"]
         args: list[str] = ["--name", self.id, "--inputs", inputs]
-        await self.create_job(self.id, tif_job_name, commands, args, metadata)
+
+        # Mount PVC at /transfer for file operations
+        volume_mounts = [
+            V1VolumeMount(
+                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                mount_path=core_constants.K8s.TIF_PVC_PATH,
+            )
+        ]
+
+        await self.create_job(
+            self.id, tif_job_name, commands, args, metadata, volume_mounts
+        )

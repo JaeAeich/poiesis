@@ -3,11 +3,9 @@
 import os
 from abc import ABC, abstractmethod
 from glob import glob
-from pathlib import Path
 
 from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
 from poiesis.core.constants import get_poiesis_core_constants
-from poiesis.core.services.utils import split_path_for_mounting
 
 core_constants = get_poiesis_core_constants()
 
@@ -68,51 +66,16 @@ class FilerStrategy(ABC):
         """Upload files when wildcards are present."""
         pass
 
-    def _get_container_path(self, path: str) -> str:
-        """Get the container path for the file.
-
-        For each path say `/data/f1/f2/file1`, the container path will be
-        `/transfer/f1/f2/file1`, this way this location can be mounted to PVC
-        at `/data` path, retaining the original path structure, ie `/data/f1/f2/file1`.
-
-        Note: This method creates the `container_path` if it doesn't exists.
-
-        Args:
-            path: The path of the file.
-        """
-        container_path = os.path.join(
-            core_constants.K8s.FILER_PVC_PATH,
-            split_path_for_mounting(path)[1].lstrip("/"),
-        )
-        os.makedirs(os.path.dirname(container_path), exist_ok=True)
-        return container_path
-
-    def _get_path_as_in_exec_pod(self, path: str) -> str:
-        """Get the path of the file as it was in exec pod.
-
-        Note: This is done because file structure mounted in the filer pod
-            is different from that of the executor pod.
-
-        Args:
-            path: The string path obtained from glob.
-
-        Returns:
-            str: Path of the file as it was in the executor path.
-        """
-        _path_without_pvc_base: str = path.removeprefix(
-            core_constants.K8s.FILER_PVC_PATH
-        )
-        _reconstructed_path_as_in_exec_pod = Path(
-            split_path_for_mounting(self.payload.path)[0]
-        ).joinpath(_path_without_pvc_base.lstrip("/"))
-        return str(_reconstructed_path_as_in_exec_pod)
-
     async def download(self):
         """Download file from storage and mount to PVC.
 
         Get the appropriate secrets, check permissions and download the file.
         """
-        container_path = self._get_container_path(self.payload.path)
+        container_path = os.path.join(
+            core_constants.K8s.TIF_PVC_PATH,
+            self.payload.path.lstrip("/"),
+        )
+        os.makedirs(os.path.dirname(container_path), exist_ok=True)
         if self.payload.type == TesFileType.FILE:
             await self.download_input_file(container_path)
         else:
@@ -137,11 +100,7 @@ class FilerStrategy(ABC):
         files = glob(container_path)
         for file in files:
             path_prefix = self.payload.path_prefix
-            _file_path = (
-                self._get_path_as_in_exec_pod(file)
-                .removeprefix(path_prefix)
-                .lstrip("/")
-            )
+            _file_path = file.removeprefix(path_prefix).lstrip("/")
             _ret.append((file, _file_path))
 
         return _ret
@@ -151,7 +110,11 @@ class FilerStrategy(ABC):
 
         Get the appropriate secrets, check permissions and upload the file.
         """
-        container_path = self._get_container_path(self.payload.path)
+        container_path = os.path.join(
+            core_constants.K8s.TOF_PVC_PATH,
+            self.payload.path.lstrip("/"),
+        )
+        os.makedirs(os.path.dirname(container_path), exist_ok=True)
         if isinstance(self.payload, TesOutput) and self.payload.path_prefix:
             await self.upload_glob(self._get_glob_files(container_path))
         elif self.payload.type == TesFileType.FILE:
