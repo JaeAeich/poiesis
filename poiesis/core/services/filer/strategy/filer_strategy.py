@@ -68,7 +68,7 @@ class FilerStrategy(ABC):
         """Upload files when wildcards are present."""
         pass
 
-    def _get_container_path(self, path: str) -> str:
+    def _get_container_path(self, path: str, volumes: list[str] | None = None) -> str:
         """Get the container path for the file.
 
         For each path say `/data/f1/f2/file1`, the container path will be
@@ -79,10 +79,15 @@ class FilerStrategy(ABC):
 
         Args:
             path: The path of the file.
+            volumes: The list of volumes.
         """
+        for volume in volumes or []:
+            if path.strip("/").startswith(volume.strip("/")):
+                return path
+
         container_path = os.path.join(
             core_constants.K8s.FILER_PVC_PATH,
-            split_path_for_mounting(path)[1].lstrip("/"),
+            path.lstrip("/"),
         )
         os.makedirs(os.path.dirname(container_path), exist_ok=True)
         return container_path
@@ -146,12 +151,12 @@ class FilerStrategy(ABC):
 
         return _ret
 
-    async def upload(self):
+    async def upload(self, volumes: list[str] | None):
         """Upload file to storage created by executors, mounted to PVC.
 
         Get the appropriate secrets, check permissions and upload the file.
         """
-        container_path = self._get_container_path(self.payload.path)
+        container_path = self._get_container_path(self.payload.path, volumes)
         if isinstance(self.payload, TesOutput) and self.payload.path_prefix:
             await self.upload_glob(self._get_glob_files(container_path))
         elif self.payload.type == TesFileType.FILE:

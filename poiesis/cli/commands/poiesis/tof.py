@@ -30,11 +30,13 @@ class TofCommand(BaseCommand):
         @group.command(name="run", help="Execute a TOF task")
         @click.option("--name", required=True, help="Name of the task")
         @click.option("--outputs", required=True, help="List of task outputs as JSON")
-        def run(name: str, outputs: str):
+        @click.option("--volumes", required=True, help="List of task volumes as JSON")
+        def run(name: str, outputs: str, volumes: str | None):
             """Execute a TOF task with the provided parameters."""
             try:
                 outputs_json = json.loads(outputs)
                 _outputs = [TesOutput(**output) for output in outputs_json]
+                _volumes: list[str] | None = json.loads(volumes) if volumes else None
 
                 file_count = len(_outputs)
                 click.echo("--- TOF Task Information ---")
@@ -43,7 +45,7 @@ class TofCommand(BaseCommand):
                 click.echo("--------------------------")
 
                 click.echo("Uploading output files...")
-                asyncio.run(Tof(name, _outputs).execute())
+                asyncio.run(Tof(name, _outputs, _volumes).execute())
 
             except json.JSONDecodeError as e:
                 raise click.ClickException(f"JSON parsing error: {str(e)}") from e

@@ -27,7 +27,6 @@ from poiesis.core.constants import (
     get_executor_container_security_context,
     get_executor_pod_security_context,
     get_executor_security_volume,
-    get_executor_security_volume_mount,
     get_poiesis_core_constants,
 )
 from poiesis.core.ports.message_broker import Message, MessageStatus
@@ -142,6 +141,23 @@ class Texam:
             executor: Executor object.
         """
         command_str = " ".join(shlex.quote(arg) for arg in executor.command)
+
+        # Create directories for stdin, stdout, and stderr if specified
+        mkdir_commands = []
+        if executor.stdin:
+            stdin_dir = os.path.dirname(executor.stdin) or "."
+            mkdir_commands.append(f"mkdir -p {shlex.quote(stdin_dir)}")
+        if executor.stdout:
+            stdout_dir = os.path.dirname(executor.stdout) or "."
+            mkdir_commands.append(f"mkdir -p {shlex.quote(stdout_dir)}")
+        if executor.stderr:
+            stderr_dir = os.path.dirname(executor.stderr) or "."
+            mkdir_commands.append(f"mkdir -p {shlex.quote(stderr_dir)}")
+
+        # Combine mkdir commands if any
+        if mkdir_commands:
+            command_str = f"{' && '.join(mkdir_commands)} && {command_str}"
+
         # Handle stdin redirection from a file
         if executor.stdin:
             command_str = f"{command_str} < {shlex.quote(executor.stdin)}"
@@ -248,16 +264,38 @@ class Texam:
         #   This way the executor can access the data from PVC at the correct
         #   location, that will be `{split_path_for_mounting(input.path)[1]}/
         #   {split_path_for_mounting(input.path)[2]}` directory.
-        _volume_pvc_mount = []
+        _seen_mounts: set[str] = set()
+        _volume_pvc_mount: list[V1VolumeMount] = []
         for input in self.task.inputs or []:
             _mount_path = split_path_for_mounting(input.path)[0].rstrip("/")
             _volume_mount = V1VolumeMount(
                 name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
                 mount_path=_mount_path,
+                sub_path=_mount_path.strip("/"),
             )
             # Check if the volume mount is already in the list else
             #   K8s won't process and throw 422 error.
-            if input.path and _volume_mount not in _volume_pvc_mount:
+            if _mount_path not in _seen_mounts:
+                _volume_pvc_mount.append(_volume_mount)
+                _seen_mounts.add(_mount_path)
+
+        for output in self.task.outputs or []:
+            _mount_path = split_path_for_mounting(output.path)[0].rstrip("/")
+            _volume_mount = V1VolumeMount(
+                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                mount_path=_mount_path,
+                sub_path=_mount_path.strip("/"),
+            )
+            if _mount_path not in _seen_mounts:
+                _volume_pvc_mount.append(_volume_mount)
+                _seen_mounts.add(_mount_path)
+
+        for volume in self.task.volumes or []:
+            _volume_mount = V1VolumeMount(
+                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                mount_path=volume,
+            )
+            if volume not in _seen_mounts:
                 _volume_pvc_mount.append(_volume_mount)
 
         return V1Job(
@@ -310,15 +348,7 @@ class Texam:
                                     limits=resource,
                                     requests=resource,
                                 ),
-                                volume_mounts=[
-                                    V1VolumeMount(
-                                        name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
-                                        mount_path=volume,
-                                    )
-                                    for volume in self.task.volumes or []
-                                ]
-                                + _volume_pvc_mount
-                                + get_executor_security_volume_mount(),
+                                volume_mounts=_volume_pvc_mount,
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                                 security_context=get_executor_container_security_context(),
                             )
