@@ -83,7 +83,6 @@ class TorcExecutionTemplate(ABC):
         commands: list[str],
         args: list[str],
         metadata: V1ObjectMeta,
-        volume_mounts: list[V1VolumeMount] | None = None,
     ) -> None:
         """Create the K8s filer job.
 
@@ -95,7 +94,6 @@ class TorcExecutionTemplate(ABC):
             commands: The filer commands to run.
             args: The arguments to pass to the filer commands.
             metadata: The metadata for the job to be used in K8s manifest.
-            volume_mounts: The volume mounts for the job.
         """
         try:
             _ttl = (
@@ -142,7 +140,12 @@ class TorcExecutionTemplate(ABC):
                                         ),
                                     ),
                                 ],
-                                volume_mounts=volume_mounts,
+                                volume_mounts=[
+                                    V1VolumeMount(
+                                        name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                                        mount_path=core_constants.K8s.FILER_PVC_PATH,
+                                    )
+                                ],
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                                 security_context=get_infrastructure_container_security_context(),
                             ),

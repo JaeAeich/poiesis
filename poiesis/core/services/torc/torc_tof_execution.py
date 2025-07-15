@@ -5,7 +5,6 @@ import logging
 
 from kubernetes.client import (
     V1ObjectMeta,
-    V1VolumeMount,
 )
 
 from poiesis.api.tes.models import TesOutput
@@ -83,12 +82,4 @@ class TorcTofExecution(TorcExecutionTemplate):
         )
         commands: list[str] = ["poiesis", "tof", "run"]
         args: list[str] = ["--name", task_id, "--outputs", outputs]
-        volume_mounts: list[V1VolumeMount] = [
-            V1VolumeMount(
-                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
-                mount_path=core_constants.K8s.FILER_PVC_PATH,
-            )
-        ]
-        await self.create_job(
-            task_id, tof_job_name, commands, args, metadata, volume_mounts
-        )
+        await self.create_job(task_id, tof_job_name, commands, args, metadata)
