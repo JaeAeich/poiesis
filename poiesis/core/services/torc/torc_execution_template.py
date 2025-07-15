@@ -76,7 +76,7 @@ class TorcExecutionTemplate(ABC):
         self.wait()
         await self.log()
 
-    async def create_job(  # noqa: PLR0913
+    async def create_job(
         self,
         task_id: str,
         job_name: str,

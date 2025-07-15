@@ -97,7 +97,6 @@ class FilerStrategy(ABC):
         Returns:
             str: Path of the file as it was in the executor path.
         """
-        # Remove the FILER_PVC_PATH prefix from the path, if present
         pvc_base = core_constants.K8s.FILER_PVC_PATH
         if path.startswith(pvc_base):
             return "/" + path[len(pvc_base) :].lstrip("/")
