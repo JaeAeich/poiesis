@@ -96,7 +96,7 @@ class Torc:
                 await self.texam_execution(self.task)
 
                 logger.info(f"Task {self.id}: Starting TOF execution")
-                await self.tof_execution(self.id, self.task.outputs, self.task.volumes)
+                await self.tof_execution(self.id, self.task.outputs)
 
                 logger.info(f"Task {self.id}: Adding system logs")
                 await self.db.add_tes_task_system_logs(self.id)
@@ -255,14 +255,12 @@ class Torc:
         self,
         name: str,
         outputs: list[TesOutput] | None,
-        volumes: list[str] | None,
     ) -> None:
         """Execute the Tof job.
 
         Args:
             name: Name of the task, will be modified to create Tof job name.
             outputs: List of outputs given in the task.
-            volumes: List of volumes given in the task.
 
         Raises:
             Exception: If the Tof job fails.
@@ -279,7 +277,7 @@ class Torc:
             return
 
         try:
-            tof_executor = TorcTofExecution(name, outputs, volumes)
+            tof_executor = TorcTofExecution(name, outputs)
             await tof_executor.execute()
             logger.info(f"TOF execution completed successfully for task {name}")
         except Exception as e:

@@ -79,6 +79,8 @@ class TorcTifExecution(TorcExecutionTemplate):
 
         commands: list[str] = ["poiesis", "tif", "run"]
         args: list[str] = ["--name", self.id, "--inputs", inputs]
+        # Note: for TIF, it dumps all the files to PVC in the appropriate path,
+        # under `/transfer` path, ie /transfer/{tes_input_path}
         volume_mounts: list[V1VolumeMount] = [
             V1VolumeMount(
                 name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,

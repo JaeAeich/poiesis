@@ -38,14 +38,12 @@ class TorcTofExecution(TorcExecutionTemplate):
         self,
         id: str,
         outputs: list[TesOutput] | None,
-        volumes: list[str] | None,
     ) -> None:
         """Initialize the TOF execution class.
 
         Args:
             id: The id of the TES task.
             outputs: The list of outputs that Tof will create and monitor.
-            volumes: The list of volumes that Tof will use.
 
         Attributes:
             id: The id of the TES task.
@@ -57,7 +55,6 @@ class TorcTofExecution(TorcExecutionTemplate):
         super().__init__()
         self._task_id = id
         self.outputs = outputs
-        self.volumes = volumes
 
     @property
     def id(self) -> str:
@@ -85,27 +82,13 @@ class TorcTofExecution(TorcExecutionTemplate):
             },
         )
         commands: list[str] = ["poiesis", "tof", "run"]
-        args: list[str] = [
-            "--name",
-            task_id,
-            "--outputs",
-            outputs,
-            "--volumes",
-            json.dumps(self.volumes),
-        ]
+        args: list[str] = ["--name", task_id, "--outputs", outputs]
         volume_mounts: list[V1VolumeMount] = [
             V1VolumeMount(
                 name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
                 mount_path=core_constants.K8s.FILER_PVC_PATH,
             )
         ]
-        volume_mounts.extend(
-            V1VolumeMount(
-                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
-                mount_path=volume,
-            )
-            for volume in self.volumes or []
-        )
         await self.create_job(
             task_id, tof_job_name, commands, args, metadata, volume_mounts
         )

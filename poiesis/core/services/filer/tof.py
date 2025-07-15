@@ -23,15 +23,12 @@ class Tof(Filer):
         message_broker: Message broker
     """
 
-    def __init__(
-        self, name: str, outputs: list[TesOutput], volumes: list[str] | None
-    ) -> None:
+    def __init__(self, name: str, outputs: list[TesOutput]) -> None:
         """Task output filer.
 
         Args:
             name: Name of the task.
             outputs: List of task outputs.
-            volumes: List of task volumes.
 
         Attributes:
             name: Name of the task.
@@ -41,7 +38,6 @@ class Tof(Filer):
         super().__init__()
         self._name = name
         self.outputs = outputs
-        self.volumes = volumes
 
     @property
     def name(self) -> str:
@@ -58,7 +54,7 @@ class Tof(Filer):
             filer_strategy = FilerStrategyFactory.create_strategy(output.url, output)
             try:
                 logger.info(f"Uploading output: {output}")
-                await filer_strategy.upload(self.volumes)
+                await filer_strategy.upload()
             except Exception as e:
                 logger.error(f"TOF failed: {e}")
                 self.message(Message(f"TOF failed: {e}"))

@@ -197,20 +197,6 @@ class TesInput(BaseModel):
         """Serialize the type to a string."""
         return v.value
 
-    @field_validator("path")  # type: ignore[bad-argument-type]
-    @classmethod
-    def serialize_path(cls, path: str) -> str:
-        """Serialize path so that its not at root."""
-        if not path.startswith("/"):
-            raise ValueError("Path must be an absolute path.")
-        normalized_path = os.path.normpath(path)
-        path_obj = Path(normalized_path)
-        if len(path_obj.parts) < 3:  # noqa: PLR2004
-            raise ValueError(
-                "Path can't be at the root, it must be at least one level nested."
-            )
-        return normalized_path
-
 
 class TesOutput(BaseModel):
     """Output describes Task output files.
@@ -252,9 +238,14 @@ class TesOutput(BaseModel):
         """Serialize the type to a string."""
         return v.value
 
+    @field_serializer("path")
+    def serialize_path(self, v: str) -> str:
+        """Serialize the path to a string."""
+        return str(Path(v).resolve())
+
     @field_validator("path")  # type: ignore[bad-argument-type]
     @classmethod
-    def serialize_path(cls, path: str) -> str:
+    def validate_path(cls, path: str) -> str:
         """Serialize path so that its not at root."""
         if not path.startswith("/"):
             raise ValueError("Path must be an absolute path.")
