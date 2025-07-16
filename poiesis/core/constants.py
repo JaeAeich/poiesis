@@ -578,7 +578,6 @@ def get_labels(
     labels = {
         "app.kubernetes.io/name": "poiesis",
         "app.kubernetes.io/component": component,
-        "app.kubernetes.io/instance": task_id,
         "tes-task-id": task_id,
     }
     if name:
