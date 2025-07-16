@@ -9,6 +9,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   check-api-docs:
     runs-on: ubuntu-latest

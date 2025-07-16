@@ -9,7 +9,10 @@ on:
     branches:
       - main
   schedule:
-    - cron: '0 12 * * 1' # Runs every Monday at 12:00 PM UTC
+    - cron: "0 12 * * 1" # Runs every Monday at 12:00 PM UTC
+
+permissions:
+  contents: read
 
 jobs:
   integration-test:

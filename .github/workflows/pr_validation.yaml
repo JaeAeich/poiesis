@@ -11,6 +11,10 @@ on:
       - reopened
     branches: "**"
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   detect-unresolved-conflicts:
     name: Detect unresolved merge conflicts
