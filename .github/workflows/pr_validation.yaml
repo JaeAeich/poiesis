@@ -9,7 +9,8 @@ on:
       - ready_for_review
       - synchronize
       - reopened
-    branches: "**"
+    branches:
+      - "**"
 
 permissions:
   contents: read
