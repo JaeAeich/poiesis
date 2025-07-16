@@ -205,7 +205,7 @@ class KubernetesAdapter(KubernetesPort):
                 name=name,
                 namespace=self.namespace,
             )
-            logger.info(f"Deleted job {name} from namespace {self.namespace}")
+            logger.debug(f"Deleted job {name} from namespace {self.namespace}")
         except ApiException as e:
             if e.status != HTTPStatus.NOT_FOUND:
                 logger.error(f"Error deleting job: {e}")
@@ -225,7 +225,7 @@ class KubernetesAdapter(KubernetesPort):
                 label_selector=label_selector,
                 body=delete_options,
             )
-            logger.info(
+            logger.debug(
                 f"Deleted jobs with label selector '{label_selector}' from "
                 f"namespace {self.namespace}"
             )
@@ -246,11 +246,32 @@ class KubernetesAdapter(KubernetesPort):
                 namespace=self.namespace,
                 label_selector=label_selector,
             )
-            logger.info(
+            logger.debug(
                 f"Deleted PVCs with label selector '{label_selector}' from "
                 f"namespace {self.namespace}"
             )
         except ApiException as e:
             if e.status != HTTPStatus.NOT_FOUND:
                 logger.error(f"Error deleting PVCs by label: {e}")
+                raise
+
+    async def delete_pods_by_label(self, label_selector: str) -> None:
+        """Delete pods by label selector.
+
+        Args:
+            label_selector: The label selector.
+        """
+        try:
+            await asyncio.to_thread(
+                self.core_api.delete_collection_namespaced_pod,
+                namespace=self.namespace,
+                label_selector=label_selector,
+            )
+            logger.debug(
+                f"Deleted pods with label selector '{label_selector}' from "
+                f"namespace {self.namespace}"
+            )
+        except ApiException as e:
+            if e.status != HTTPStatus.NOT_FOUND:
+                logger.error(f"Error deleting pods by label: {e}")
                 raise

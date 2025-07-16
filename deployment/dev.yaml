@@ -26,10 +26,18 @@ rules:
   - apiGroups: [""]
     resources:
       ["pods", "pods/log", "persistentvolumeclaims", "secrets", "configmaps"]
-    verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
+    verbs:
+      [
+        "create",
+        "get",
+        "list",
+        "watch",
+        "delete",
+        "deletecollection",
+      ]
   - apiGroups: ["batch"]
     resources: ["jobs"]
-    verbs: ["create", "get", "list", "watch", "delete"]
+    verbs: ["create", "get", "list", "watch", "delete", "deletecollection"]
 ...
 ---
 # ROLE BINDING: Binds the namespaced Role to our ServiceAccount
