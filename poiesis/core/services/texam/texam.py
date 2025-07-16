@@ -317,7 +317,7 @@ class Texam:
         )
 
         if self.task_id is None:
-            raise ValueError("task_id cannot be None")
+            raise ValueError(f"task_id cannot be None for executor '{executor_name}'")
 
         _parent = f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"
 

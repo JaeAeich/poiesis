@@ -576,12 +576,11 @@ def get_labels(
         The labels for the resource.
     """
     labels = {
-        "app.kubernetes.io/name": "poiesis",
         "app.kubernetes.io/component": component,
         "tes-task-id": task_id,
     }
     if name:
-        labels["app.kubernetes.io/name"] = name
+        labels["app.kubernetes.io/resource-name"] = name
     if parent:
         labels["app.kubernetes.io/part-of"] = parent
 

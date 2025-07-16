@@ -218,12 +218,10 @@ class KubernetesAdapter(KubernetesPort):
             label_selector: The label selector.
         """
         try:
-            delete_options = client.V1DeleteOptions(propagation_policy="Foreground")
             await asyncio.to_thread(
                 self.batch_api.delete_collection_namespaced_job,
                 namespace=self.namespace,
                 label_selector=label_selector,
-                body=delete_options,
             )
             logger.debug(
                 f"Deleted jobs with label selector '{label_selector}' from "
@@ -239,12 +237,17 @@ class KubernetesAdapter(KubernetesPort):
 
         Args:
             label_selector: The label selector.
+
+        Notes:
+            Uses 'Foreground' propagation policy to ensure dependent resources are
+            deleted before the PVC is removed.
         """
         try:
             await asyncio.to_thread(
                 self.core_api.delete_collection_namespaced_persistent_volume_claim,
                 namespace=self.namespace,
                 label_selector=label_selector,
+                propagation_policy="Foreground",
             )
             logger.debug(
                 f"Deleted PVCs with label selector '{label_selector}' from "
