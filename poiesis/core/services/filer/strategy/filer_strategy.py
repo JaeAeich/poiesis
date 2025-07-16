@@ -3,11 +3,9 @@
 import os
 from abc import ABC, abstractmethod
 from glob import glob
-from pathlib import Path
 
 from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
 from poiesis.core.constants import get_poiesis_core_constants
-from poiesis.core.services.utils import split_path_for_mounting
 
 core_constants = get_poiesis_core_constants()
 
@@ -82,7 +80,7 @@ class FilerStrategy(ABC):
         """
         container_path = os.path.join(
             core_constants.K8s.FILER_PVC_PATH,
-            split_path_for_mounting(path)[1].lstrip("/"),
+            path.lstrip("/"),
         )
         os.makedirs(os.path.dirname(container_path), exist_ok=True)
         return container_path
@@ -99,13 +97,10 @@ class FilerStrategy(ABC):
         Returns:
             str: Path of the file as it was in the executor path.
         """
-        _path_without_pvc_base: str = path.removeprefix(
-            core_constants.K8s.FILER_PVC_PATH
-        )
-        _reconstructed_path_as_in_exec_pod = Path(
-            split_path_for_mounting(self.payload.path)[0]
-        ).joinpath(_path_without_pvc_base.lstrip("/"))
-        return str(_reconstructed_path_as_in_exec_pod)
+        pvc_base = core_constants.K8s.FILER_PVC_PATH
+        if path.startswith(pvc_base):
+            return "/" + path[len(pvc_base) :].lstrip("/")
+        return path
 
     async def download(self):
         """Download file from storage and mount to PVC.

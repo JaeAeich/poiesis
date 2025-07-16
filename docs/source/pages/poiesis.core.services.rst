@@ -22,14 +22,6 @@ poiesis.core.services.models module
    :show-inheritance:
    :undoc-members:
 
-poiesis.core.services.utils module
-----------------------------------
-
-.. automodule:: poiesis.core.services.utils
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 Module contents
 ---------------
 

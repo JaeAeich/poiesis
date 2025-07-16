@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import shlex
+from pathlib import Path
 
 from kubernetes import watch  # type: ignore
 from kubernetes.client import (
@@ -20,19 +21,21 @@ from kubernetes.client import (
     V1VolumeMount,
 )
 
-from poiesis.api.tes.models import TesExecutor, TesTask
+from poiesis.api.tes.models import (
+    TesExecutor,
+    TesFileType,
+    TesTask,
+)
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
 from poiesis.core.adaptors.message_broker.redis_adaptor import RedisMessageBroker
 from poiesis.core.constants import (
     get_executor_container_security_context,
     get_executor_pod_security_context,
     get_executor_security_volume,
-    get_executor_security_volume_mount,
     get_poiesis_core_constants,
 )
 from poiesis.core.ports.message_broker import Message, MessageStatus
 from poiesis.core.services.models import PodPhase
-from poiesis.core.services.utils import split_path_for_mounting
 from poiesis.repository.mongo import MongoDBClient
 
 core_constants = get_poiesis_core_constants()
@@ -53,6 +56,7 @@ class Texam:
         message_broker: Message broker.
         failed: Flag defining if TE failed.
         db: MongoDB client.
+        _mounts_cache: Cache for volume mounts.
     """
 
     def __init__(
@@ -70,6 +74,7 @@ class Texam:
         self.message_broker = RedisMessageBroker()
         self.failed = False
         self.db = MongoDBClient()
+        self._mounts_cache: list[V1VolumeMount] | None = None
 
     async def execute(self) -> None:
         """Execute TExAM.
@@ -142,6 +147,7 @@ class Texam:
             executor: Executor object.
         """
         command_str = " ".join(shlex.quote(arg) for arg in executor.command)
+
         # Handle stdin redirection from a file
         if executor.stdin:
             command_str = f"{command_str} < {shlex.quote(executor.stdin)}"
@@ -213,6 +219,77 @@ class Texam:
         logger.error(f"Job {executor_name} failed to be created after all retries")
         return False
 
+    def _is_covered(self, path: str, mounted_set: set) -> bool:
+        """Check if any mounted path is a prefix of this path."""
+        parts = Path(path).parts
+        for i in range(1, len(parts) + 1):
+            prefix = Path(*parts[:i])
+            if str(prefix) in mounted_set:
+                return True
+        return False
+
+    def _get_mounts(
+        self,
+    ) -> list[V1VolumeMount]:
+        """Get the mounts for the executor."""
+        if self._mounts_cache is not None:
+            return self._mounts_cache
+
+        # Volumes – mount all directly, as they will be dirs
+        volume_mounts = set(self.task.volumes or [])
+
+        # Outputs – derive parent dirs and pick minimal set (no nested ones)
+        # as output mount wont be file, and the path will always be at least
+        # nested 1 level
+        output_dirs = set()
+        for o in self.task.outputs or []:
+            if str(o.type) == str(TesFileType.FILE):
+                output_dirs.add(str(Path(o.path).parent))
+            else:
+                output_dirs.add(o.path)
+
+        # Remove subdirectories if parent is present
+        output_mounts = set()
+        for d in sorted(output_dirs, key=lambda x: x.count("/")):
+            if not self._is_covered(d, output_mounts):
+                output_mounts.add(d)
+
+        # Inputs – only add if not covered by volumes or output mounts,
+        # inputs can be a file, if the parent is root then mount as is
+        # because we can't mount root.
+        input_mounts = set()
+        for inp in self.task.inputs or []:
+            inp_path = inp.path
+            if str(inp.type) == str(TesFileType.DIRECTORY):
+                mount_target = inp_path
+            else:
+                parent_path = Path(inp_path).parent
+                mount_target = (
+                    inp_path if parent_path == parent_path.root else str(parent_path)
+                )
+
+            if not self._is_covered(mount_target, volume_mounts | output_mounts):
+                input_mounts.add(
+                    mount_target
+                    if str(inp.type) == str(TesFileType.DIRECTORY)
+                    else inp_path
+                )
+
+        # Combine all
+        final_mounts = volume_mounts | output_mounts | input_mounts
+        self._mounts_cache = [
+            V1VolumeMount(
+                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
+                mount_path=p,
+                sub_path=p.strip("/"),
+            )
+            for p in sorted(final_mounts)
+        ]
+
+        logger.debug(f"Mounts: {[m.to_dict() for m in self._mounts_cache]}")
+
+        return self._mounts_cache
+
     def _create_executor_job_manifest(self, executor: TesExecutor, idx: int) -> V1Job:
         """Create a k8s Job for the executor.
 
@@ -239,26 +316,6 @@ class Texam:
         )
 
         _parent = f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"
-
-        # Note: Here we create mount paths for each input, since the PVC
-        #   all the data in downloaded in PVC at
-        #   `/transfer/{split_path_for_mounting(input.path)[1]}` directory.
-        #   So we need to mount the PVC at
-        #   `/transfer/{split_path_for_mounting(input.path)[0]}` directory.
-        #   This way the executor can access the data from PVC at the correct
-        #   location, that will be `{split_path_for_mounting(input.path)[1]}/
-        #   {split_path_for_mounting(input.path)[2]}` directory.
-        _volume_pvc_mount = []
-        for input in self.task.inputs or []:
-            _mount_path = split_path_for_mounting(input.path)[0].rstrip("/")
-            _volume_mount = V1VolumeMount(
-                name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
-                mount_path=_mount_path,
-            )
-            # Check if the volume mount is already in the list else
-            #   K8s won't process and throw 422 error.
-            if input.path and _volume_mount not in _volume_pvc_mount:
-                _volume_pvc_mount.append(_volume_mount)
 
         return V1Job(
             api_version="batch/v1",
@@ -310,15 +367,7 @@ class Texam:
                                     limits=resource,
                                     requests=resource,
                                 ),
-                                volume_mounts=[
-                                    V1VolumeMount(
-                                        name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
-                                        mount_path=volume,
-                                    )
-                                    for volume in self.task.volumes or []
-                                ]
-                                + _volume_pvc_mount
-                                + get_executor_security_volume_mount(),
+                                volume_mounts=self._get_mounts(),
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                                 security_context=get_executor_container_security_context(),
                             )
