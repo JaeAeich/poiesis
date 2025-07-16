@@ -556,3 +556,34 @@ def get_executor_security_volume_mount() -> list[V1VolumeMount]:
             read_only=True,
         )
     ]
+
+
+def get_labels(
+    component: str,
+    task_id: str,
+    name: str | None = None,
+    parent: str | None = None,
+) -> dict[str, str]:
+    """Get the labels for a job or a PVC.
+
+    Args:
+        component: The component that is creating the resource.
+        task_id: The id of the task.
+        name: The name of the resource.
+        parent: The parent of the resource.
+
+    Returns:
+        The labels for the resource.
+    """
+    labels = {
+        "app.kubernetes.io/name": "poiesis",
+        "app.kubernetes.io/component": component,
+        "app.kubernetes.io/instance": task_id,
+        "tes-task-id": task_id,
+    }
+    if name:
+        labels["app.kubernetes.io/name"] = name
+    if parent:
+        labels["app.kubernetes.io/part-of"] = parent
+
+    return labels

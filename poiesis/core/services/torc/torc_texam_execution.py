@@ -23,6 +23,7 @@ from poiesis.core.constants import (
     get_infrastructure_pod_security_context,
     get_infrastructure_security_volume,
     get_infrastructure_security_volume_mount,
+    get_labels,
     get_message_broker_envs,
     get_mongo_envs,
     get_poiesis_core_constants,
@@ -97,14 +98,23 @@ class TorcTexamExecution(TorcExecutionTemplate):
             kind="Job",
             metadata=V1ObjectMeta(
                 name=texam_name,
-                labels={
-                    "service": core_constants.K8s.TEXAM_PREFIX,
-                    "parent": f"{core_constants.K8s.TORC_PREFIX}-{self.id}",
-                    "name": texam_name,
-                },
+                labels=get_labels(
+                    component=core_constants.K8s.TEXAM_PREFIX,
+                    task_id=self.id,
+                    name=texam_name,
+                    parent=f"{core_constants.K8s.TORC_PREFIX}-{self.id}",
+                ),
             ),
             spec=V1JobSpec(
                 template=V1PodTemplateSpec(
+                    metadata=V1ObjectMeta(
+                        labels=get_labels(
+                            component=core_constants.K8s.TEXAM_PREFIX,
+                            name=texam_name,
+                            task_id=self.id,
+                            parent=f"{core_constants.K8s.TORC_PREFIX}-{self.id}",
+                        ),
+                    ),
                     spec=V1PodSpec(
                         service_account_name=core_constants.K8s.SERVICE_ACCOUNT_NAME,
                         security_context=get_infrastructure_pod_security_context(),
@@ -199,7 +209,7 @@ class TorcTexamExecution(TorcExecutionTemplate):
                         ],
                         restart_policy=core_constants.K8s.RESTART_POLICY,
                         volumes=get_infrastructure_security_volume(),
-                    )
+                    ),
                 ),
                 ttl_seconds_after_finished=_ttl,
             ),

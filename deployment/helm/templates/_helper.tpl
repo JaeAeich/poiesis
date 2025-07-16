@@ -96,7 +96,7 @@ Namespaced RBAC rules (include Jobs - they are namespace-scoped, not cluster-sco
         "verbs" (list "get"))
     (dict "apiGroups" (list "batch")
         "resources" (list "jobs")
-        "verbs" (list "create" "get" "list" "watch" "delete"))
+        "verbs" (list "create" "get" "list" "watch" "delete" "deletecollection"))
 }}
 {{ toYaml $namespacedRules | indent 2 }}
 {{- end }}

@@ -1,6 +1,9 @@
 """Controller for canceling tasks."""
 
+import logging
 from typing import Any
+
+from kubernetes.client.exceptions import ApiException
 
 from poiesis.api.controllers.interface import InterfaceController
 from poiesis.api.exceptions import BadRequestException, NotFoundException
@@ -10,6 +13,8 @@ from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.repository.mongo import MongoDBClient
 
 core_constants = get_poiesis_core_constants()
+
+logger = logging.getLogger(__name__)
 
 
 class CancelTaskController(InterfaceController):
@@ -64,27 +69,20 @@ class CancelTaskController(InterfaceController):
         elif task.state == TesState.CANCELING:
             raise BadRequestException(f"Task {self.task_id} is already being canceled")
 
-        jobs = [
-            f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}",
-            f"{core_constants.K8s.TOF_PREFIX}-{self.task_id}",
-            f"{core_constants.K8s.TIF_PREFIX}-{self.task_id}",
-        ]
-
         await self.db.update_task_state(self.task_id, TesState.CANCELING)
 
-        pvc_name = f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"
-        executor_pod_label_selector = (
-            f"parent={core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"
-        )
+        label_selector = f"tes-task-id={self.task_id}"
+        logger.debug(f"Cancelling all the jobs with label selector: {label_selector}")
+        try:
+            await self.kubernetes_client.delete_jobs_by_label(label_selector)
+        except ApiException as e:
+            logger.warning(f"Error deleting jobs for task {self.task_id}: {e}")
 
-        for job in jobs:
-            await self.kubernetes_client.delete_job(job)
-
-        await self.kubernetes_client.delete_pod_by_label_selector(
-            executor_pod_label_selector
-        )
-
-        await self.kubernetes_client.delete_pvc(pvc_name)
+        logger.debug(f"Cancelling all the PVCs with label selector: {label_selector}")
+        try:
+            await self.kubernetes_client.delete_pvcs_by_label(label_selector)
+        except ApiException as e:
+            logger.warning(f"Error deleting PVCs for task {self.task_id}: {e}")
 
         await self.db.update_task_state(self.task_id, TesState.CANCELED)
 
