@@ -148,22 +148,6 @@ class Texam:
         """
         command_str = " ".join(shlex.quote(arg) for arg in executor.command)
 
-        # Create directories for stdin, stdout, and stderr if specified
-        mkdir_commands = []
-        if executor.stdin:
-            stdin_dir = os.path.dirname(executor.stdin) or "."
-            mkdir_commands.append(f"mkdir -p {shlex.quote(stdin_dir)} || true")
-        if executor.stdout:
-            stdout_dir = os.path.dirname(executor.stdout) or "."
-            mkdir_commands.append(f"mkdir -p {shlex.quote(stdout_dir)} || true")
-        if executor.stderr:
-            stderr_dir = os.path.dirname(executor.stderr) or "."
-            mkdir_commands.append(f"mkdir -p {shlex.quote(stderr_dir)} || true")
-
-        # Combine mkdir commands if any
-        if mkdir_commands:
-            command_str = f"{' && '.join(mkdir_commands)} && {command_str}"
-
         # Handle stdin redirection from a file
         if executor.stdin:
             command_str = f"{command_str} < {shlex.quote(executor.stdin)}"
@@ -237,7 +221,7 @@ class Texam:
 
     def _is_covered(self, path: str, mounted_set: set) -> bool:
         """Check if any mounted path is a prefix of this path."""
-        parts = Path(path).resolve().parts
+        parts = Path(path).parts
         for i in range(1, len(parts) + 1):
             prefix = Path(*parts[:i])
             if str(prefix) in mounted_set:
@@ -247,14 +231,16 @@ class Texam:
     def _get_mounts(
         self,
     ) -> list[V1VolumeMount]:
-        """Get the mounts for the executor. The result is cached."""
+        """Get the mounts for the executor."""
         if self._mounts_cache is not None:
             return self._mounts_cache
 
-        # Step 1: Volumes – mount all directly
+        # Volumes – mount all directly, as they will be dirs
         volume_mounts = set(self.task.volumes or [])
 
-        # Step 2: Outputs – derive parent dirs and pick minimal set (no nested ones)
+        # Outputs – derive parent dirs and pick minimal set (no nested ones)
+        # as output mount wont be file, and the path will always be at least
+        # nested 1 level
         output_dirs = set()
         for o in self.task.outputs or []:
             if str(o.type) == str(TesFileType.FILE):
@@ -268,15 +254,19 @@ class Texam:
             if not self._is_covered(d, output_mounts):
                 output_mounts.add(d)
 
-        # Step 3: Inputs – only add if not covered by volumes or output mounts
+        # Inputs – only add if not covered by volumes or output mounts,
+        # inputs can be a file, if the parent is root then mount as is
+        # because we can't mount root.
         input_mounts = set()
         for inp in self.task.inputs or []:
             inp_path = inp.path
             if str(inp.type) == str(TesFileType.DIRECTORY):
                 mount_target = inp_path
             else:
-                _parent = str(Path(inp_path).parent)
-                mount_target = inp_path if _parent == "/" else _parent
+                parent_path = Path(inp_path).parent
+                mount_target = (
+                    inp_path if parent_path == parent_path.root else str(parent_path)
+                )
 
             if not self._is_covered(mount_target, volume_mounts | output_mounts):
                 input_mounts.add(
@@ -295,6 +285,9 @@ class Texam:
             )
             for p in sorted(final_mounts)
         ]
+
+        logger.debug(f"Mounts: {[m.to_dict() for m in self._mounts_cache]}")
+
         return self._mounts_cache
 
     def _create_executor_job_manifest(self, executor: TesExecutor, idx: int) -> V1Job:

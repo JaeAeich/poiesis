@@ -197,6 +197,11 @@ class TesInput(BaseModel):
         """Serialize the type to a string."""
         return v.value
 
+    @field_serializer("path")
+    def serialize_path(self, v: str) -> str:
+        """Serialize the path to a string."""
+        return str(Path(v).absolute())
+
 
 class TesOutput(BaseModel):
     """Output describes Task output files.
@@ -241,7 +246,7 @@ class TesOutput(BaseModel):
     @field_serializer("path")
     def serialize_path(self, v: str) -> str:
         """Serialize the path to a string."""
-        return str(Path(v).resolve())
+        return str(Path(v).absolute())
 
     @field_validator("path")  # type: ignore[bad-argument-type]
     @classmethod
