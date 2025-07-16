@@ -72,19 +72,19 @@ class CancelTaskController(InterfaceController):
         await self.db.update_task_state(self.task_id, TesState.CANCELING)
 
         label_selector = f"tes-task-id={self.task_id}"
-        logger.debug(f"Cancelling all the jobs with label selector: {label_selector}")
+        logger.debug(f"Deleting all the jobs with label selector: {label_selector}")
         try:
             await self.kubernetes_client.delete_jobs_by_label(label_selector)
         except ApiException as e:
             logger.warning(f"Error deleting jobs for task {self.task_id}: {e}")
 
-        logger.debug(f"Cancelling all the pods with label selector: {label_selector}")
+        logger.debug(f"Deleting all the pods with label selector: {label_selector}")
         try:
             await self.kubernetes_client.delete_pods_by_label(label_selector)
         except ApiException as e:
             logger.warning(f"Error deleting pods for task {self.task_id}: {e}")
 
-        logger.debug(f"Cancelling all the PVCs with label selector: {label_selector}")
+        logger.debug(f"Deleting all the PVCs with label selector: {label_selector}")
         try:
             await self.kubernetes_client.delete_pvcs_by_label(label_selector)
         except ApiException as e:
