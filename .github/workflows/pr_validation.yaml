@@ -9,7 +9,12 @@ on:
       - ready_for_review
       - synchronize
       - reopened
-    branches: "**"
+    branches:
+      - "**"
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   detect-unresolved-conflicts:
