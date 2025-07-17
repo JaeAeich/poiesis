@@ -90,13 +90,13 @@ Namespaced RBAC rules (include Jobs - they are namespace-scoped, not cluster-sco
 {{- $namespacedRules := list
     (dict "apiGroups" (list "")
         "resources" (list "pods" "persistentvolumeclaims")
-        "verbs" (list "create" "get" "list" "watch" "delete"))
+        "verbs" (list "create" "get" "list" "watch" "delete" "deletecollection"))
     (dict "apiGroups" (list "")
         "resources" (list "pods/log")
         "verbs" (list "get"))
     (dict "apiGroups" (list "batch")
         "resources" (list "jobs")
-        "verbs" (list "create" "get" "list" "watch" "delete"))
+        "verbs" (list "create" "get" "list" "watch" "delete" "deletecollection"))
 }}
 {{ toYaml $namespacedRules | indent 2 }}
 {{- end }}

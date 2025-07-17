@@ -8,7 +8,7 @@ from kubernetes.client import (
 )
 
 from poiesis.api.tes.models import TesInput
-from poiesis.core.constants import get_poiesis_core_constants
+from poiesis.core.constants import get_labels, get_poiesis_core_constants
 from poiesis.core.services.torc.torc_execution_template import TorcExecutionTemplate
 
 core_constants = get_poiesis_core_constants()
@@ -69,11 +69,12 @@ class TorcTifExecution(TorcExecutionTemplate):
 
         metadata = V1ObjectMeta(
             name=tif_job_name,
-            labels={
-                "service": core_constants.K8s.TIF_PREFIX,
-                "name": tif_job_name,
-                "parent": f"{core_constants.K8s.TORC_PREFIX}-{self.id}",
-            },
+            labels=get_labels(
+                component=core_constants.K8s.TIF_PREFIX,
+                task_id=self.id,
+                name=tif_job_name,
+                parent=f"{core_constants.K8s.TORC_PREFIX}-{self.id}",
+            ),
         )
 
         commands: list[str] = ["poiesis", "tif", "run"]

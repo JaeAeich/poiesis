@@ -112,6 +112,7 @@ class TorcExecutionTemplate(ABC):
             spec=V1JobSpec(
                 backoff_limit=int(core_constants.K8s.BACKOFF_LIMIT),
                 template=V1PodTemplateSpec(
+                    metadata=metadata,
                     spec=V1PodSpec(
                         security_context=get_infrastructure_pod_security_context(),
                         containers=[

@@ -177,6 +177,62 @@ class KubernetesAdapter(KubernetesPort):
             logger.error(f"Error listing pods: {e}")
             raise
 
+    async def list_pods_by_label(self, label_selector: str) -> list[client.V1Pod]:
+        """List pods by label selector.
+
+        Args:
+            label_selector: The label selector.
+        """
+        try:
+            api_response = await asyncio.to_thread(
+                self.core_api.list_namespaced_pod,
+                namespace=self.namespace,
+                label_selector=label_selector,
+            )
+            pods: list[client.V1Pod] = api_response.items
+            return pods
+        except ApiException as e:
+            logger.error(f"Error listing pods by label: {e}")
+            raise
+
+    async def list_jobs_by_label(self, label_selector: str) -> list[client.V1Job]:
+        """List jobs by label selector.
+
+        Args:
+            label_selector: The label selector.
+        """
+        try:
+            api_response = await asyncio.to_thread(
+                self.batch_api.list_namespaced_job,
+                namespace=self.namespace,
+                label_selector=label_selector,
+            )
+            jobs: list[client.V1Job] = api_response.items
+            return jobs
+        except ApiException as e:
+            logger.error(f"Error listing jobs by label: {e}")
+            raise
+
+    async def list_pvcs_by_label(
+        self, label_selector: str
+    ) -> list[client.V1PersistentVolumeClaim]:
+        """List PVCs by label selector.
+
+        Args:
+            label_selector: The label selector.
+        """
+        try:
+            api_response = await asyncio.to_thread(
+                self.core_api.list_namespaced_persistent_volume_claim,
+                namespace=self.namespace,
+                label_selector=label_selector,
+            )
+            pvcs: list[client.V1PersistentVolumeClaim] = api_response.items
+            return pvcs
+        except ApiException as e:
+            logger.error(f"Error listing PVCs by label: {e}")
+            raise
+
     async def get_pod_log(self, name: str) -> str:
         """Get log of a pod.
 
@@ -193,44 +249,6 @@ class KubernetesAdapter(KubernetesPort):
             logger.error(f"Error getting pod logs: {e}")
             raise
 
-    async def delete_pod(self, name: str) -> None:
-        """Delete a pod.
-
-        Args:
-            name: The name of the pod.
-            label_selector: The label selector.
-        """
-        try:
-            await asyncio.to_thread(
-                self.core_api.delete_namespaced_pod,
-                name=name,
-                namespace=self.namespace,
-            )
-            logger.info(f"Deleted pod {name} from namespace {self.namespace}")
-        except ApiException as e:
-            if e.status != HTTPStatus.NOT_FOUND:
-                logger.error(f"Error deleting pod: {e}")
-                raise
-
-    async def delete_pod_by_label_selector(self, label_selector: str) -> None:
-        """Delete a pod by label selector.
-
-        Args:
-            label_selector: The label selector.
-        """
-        try:
-            pods = await self.get_pods(label_selector)
-            for pod in pods:
-                if pod.metadata and pod.metadata.name:
-                    await self.delete_pod(pod.metadata.name)
-            logger.info(
-                f"Deleted pods with label selector '{label_selector}' from "
-                f"namespace {self.namespace}"
-            )
-        except ApiException as e:
-            logger.error(f"Error deleting pods: {e}")
-            raise
-
     async def delete_job(self, name: str) -> None:
         """Delete a job.
 
@@ -243,8 +261,76 @@ class KubernetesAdapter(KubernetesPort):
                 name=name,
                 namespace=self.namespace,
             )
-            logger.info(f"Deleted job {name} from namespace {self.namespace}")
+            logger.debug(f"Deleted job {name} from namespace {self.namespace}")
         except ApiException as e:
             if e.status != HTTPStatus.NOT_FOUND:
                 logger.error(f"Error deleting job: {e}")
+                raise
+
+    async def delete_jobs_by_label(self, label_selector: str) -> None:
+        """Delete jobs by label selector.
+
+        Args:
+            label_selector: The label selector.
+        """
+        try:
+            await asyncio.to_thread(
+                self.batch_api.delete_collection_namespaced_job,
+                namespace=self.namespace,
+                label_selector=label_selector,
+            )
+            logger.debug(
+                f"Deleted jobs with label selector '{label_selector}' from "
+                f"namespace {self.namespace}"
+            )
+        except ApiException as e:
+            if e.status != HTTPStatus.NOT_FOUND:
+                logger.error(f"Error deleting jobs by label: {e}")
+                raise
+
+    async def delete_pvcs_by_label(self, label_selector: str) -> None:
+        """Delete PVCs by label selector.
+
+        Args:
+            label_selector: The label selector.
+
+        Notes:
+            Uses 'Foreground' propagation policy to ensure dependent resources are
+            deleted before the PVC is removed.
+        """
+        try:
+            await asyncio.to_thread(
+                self.core_api.delete_collection_namespaced_persistent_volume_claim,
+                namespace=self.namespace,
+                label_selector=label_selector,
+                propagation_policy="Foreground",
+            )
+            logger.debug(
+                f"Deleted PVCs with label selector '{label_selector}' from "
+                f"namespace {self.namespace}"
+            )
+        except ApiException as e:
+            if e.status != HTTPStatus.NOT_FOUND:
+                logger.error(f"Error deleting PVCs by label: {e}")
+                raise
+
+    async def delete_pods_by_label(self, label_selector: str) -> None:
+        """Delete pods by label selector.
+
+        Args:
+            label_selector: The label selector.
+        """
+        try:
+            await asyncio.to_thread(
+                self.core_api.delete_collection_namespaced_pod,
+                namespace=self.namespace,
+                label_selector=label_selector,
+            )
+            logger.debug(
+                f"Deleted pods with label selector '{label_selector}' from "
+                f"namespace {self.namespace}"
+            )
+        except ApiException as e:
+            if e.status != HTTPStatus.NOT_FOUND:
+                logger.error(f"Error deleting pods by label: {e}")
                 raise

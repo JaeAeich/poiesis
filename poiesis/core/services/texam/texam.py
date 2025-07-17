@@ -32,6 +32,7 @@ from poiesis.core.constants import (
     get_executor_container_security_context,
     get_executor_pod_security_context,
     get_executor_security_volume,
+    get_labels,
     get_poiesis_core_constants,
 )
 from poiesis.core.ports.message_broker import Message, MessageStatus
@@ -315,6 +316,9 @@ class Texam:
             {k: v for k, v in _resource.items() if v is not None} if _resource else {}
         )
 
+        if self.task_id is None:
+            raise ValueError(f"task_id cannot be None for executor '{executor_name}'")
+
         _parent = f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}"
 
         return V1Job(
@@ -322,11 +326,12 @@ class Texam:
             kind="Job",
             metadata=V1ObjectMeta(
                 name=executor_name,
-                labels={
-                    "service": core_constants.K8s.TE_PREFIX,
-                    "parent": _parent,
-                    "name": executor_name,
-                },
+                labels=get_labels(
+                    component=core_constants.K8s.TE_PREFIX,
+                    task_id=self.task_id,
+                    name=executor_name,
+                    parent=f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}",
+                ),
             ),
             spec=V1JobSpec(
                 # Note: Backoff limit is set to 0 to fail immediately when pod fails.
@@ -340,11 +345,12 @@ class Texam:
                 ),
                 template=V1PodTemplateSpec(
                     metadata=V1ObjectMeta(
-                        labels={
-                            "service": core_constants.K8s.TE_PREFIX,
-                            "parent": _parent,
-                            "name": executor_name,
-                        }
+                        labels=get_labels(
+                            component=core_constants.K8s.TE_PREFIX,
+                            task_id=self.task_id,
+                            name=executor_name,
+                            parent=f"{core_constants.K8s.TEXAM_PREFIX}-{self.task_id}",
+                        )
                     ),
                     spec=V1PodSpec(
                         security_context=get_executor_pod_security_context(),

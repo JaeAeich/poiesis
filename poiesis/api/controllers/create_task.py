@@ -34,6 +34,7 @@ from poiesis.core.constants import (
     get_infrastructure_pod_security_context,
     get_infrastructure_security_volume,
     get_infrastructure_security_volume_mount,
+    get_labels,
     get_message_broker_envs,
     get_mongo_envs,
     get_poiesis_core_constants,
@@ -98,15 +99,24 @@ class CreateTaskController(InterfaceController):
             metadata=V1ObjectMeta(
                 name=torc_job_name,
                 namespace=core_constants.K8s.K8S_NAMESPACE,
-                labels={
-                    "service": core_constants.K8s.TORC_PREFIX,
-                    "name": torc_job_name,
-                    "parent": "poiesis-api",
-                },
+                labels=get_labels(
+                    component=core_constants.K8s.TORC_PREFIX,
+                    name=torc_job_name,
+                    task_id=str(self.task.id),
+                    parent="poiesis-api",
+                ),
             ),
             spec=V1JobSpec(
                 backoff_limit=int(core_constants.K8s.BACKOFF_LIMIT),
                 template=V1PodTemplateSpec(
+                    metadata=V1ObjectMeta(
+                        labels=get_labels(
+                            component=core_constants.K8s.TORC_PREFIX,
+                            name=torc_job_name,
+                            task_id=str(self.task.id),
+                            parent="poiesis-api",
+                        ),
+                    ),
                     spec=V1PodSpec(
                         service_account_name=core_constants.K8s.SERVICE_ACCOUNT_NAME,
                         security_context=get_infrastructure_pod_security_context(),

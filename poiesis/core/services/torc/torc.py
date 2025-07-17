@@ -17,7 +17,7 @@ from poiesis.api.tes.models import (
     TesTask,
 )
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
-from poiesis.core.constants import get_poiesis_core_constants
+from poiesis.core.constants import get_labels, get_poiesis_core_constants
 from poiesis.core.services.torc.torc_texam_execution import TorcTexamExecution
 from poiesis.core.services.torc.torc_tif_execution import TorcTifExecution
 from poiesis.core.services.torc.torc_tof_execution import TorcTofExecution
@@ -164,11 +164,12 @@ class Torc:
             kind="PersistentVolumeClaim",
             metadata=V1ObjectMeta(
                 name=pvc_name,
-                labels={
-                    "service": core_constants.K8s.PVC_PREFIX,
-                    "name": pvc_name,
-                    "parent": core_constants.K8s.TORC_PREFIX,
-                },
+                labels=get_labels(
+                    component=core_constants.K8s.PVC_PREFIX,
+                    task_id=name,
+                    name=pvc_name,
+                    parent=f"{core_constants.K8s.TORC_PREFIX}-{name}",
+                ),
             ),
             spec=V1PersistentVolumeClaimSpec(
                 access_modes=[core_constants.K8s.PVC_ACCESS_MODE]
