@@ -177,6 +177,62 @@ class KubernetesAdapter(KubernetesPort):
             logger.error(f"Error listing pods: {e}")
             raise
 
+    async def list_pods_by_label(self, label_selector: str) -> list[client.V1Pod]:
+        """List pods by label selector.
+
+        Args:
+            label_selector: The label selector.
+        """
+        try:
+            api_response = await asyncio.to_thread(
+                self.core_api.list_namespaced_pod,
+                namespace=self.namespace,
+                label_selector=label_selector,
+            )
+            pods: list[client.V1Pod] = api_response.items
+            return pods
+        except ApiException as e:
+            logger.error(f"Error listing pods by label: {e}")
+            raise
+
+    async def list_jobs_by_label(self, label_selector: str) -> list[client.V1Job]:
+        """List jobs by label selector.
+
+        Args:
+            label_selector: The label selector.
+        """
+        try:
+            api_response = await asyncio.to_thread(
+                self.batch_api.list_namespaced_job,
+                namespace=self.namespace,
+                label_selector=label_selector,
+            )
+            jobs: list[client.V1Job] = api_response.items
+            return jobs
+        except ApiException as e:
+            logger.error(f"Error listing jobs by label: {e}")
+            raise
+
+    async def list_pvcs_by_label(
+        self, label_selector: str
+    ) -> list[client.V1PersistentVolumeClaim]:
+        """List PVCs by label selector.
+
+        Args:
+            label_selector: The label selector.
+        """
+        try:
+            api_response = await asyncio.to_thread(
+                self.core_api.list_namespaced_persistent_volume_claim,
+                namespace=self.namespace,
+                label_selector=label_selector,
+            )
+            pvcs: list[client.V1PersistentVolumeClaim] = api_response.items
+            return pvcs
+        except ApiException as e:
+            logger.error(f"Error listing PVCs by label: {e}")
+            raise
+
     async def get_pod_log(self, name: str) -> str:
         """Get log of a pod.
 
