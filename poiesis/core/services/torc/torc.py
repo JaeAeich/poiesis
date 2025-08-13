@@ -1,6 +1,5 @@
 """Task orchestrator (Torc)."""
 
-import asyncio
 import logging
 
 from kubernetes.client import (
@@ -68,67 +67,45 @@ class Torc:
             disk_gb = self.task.resources.disk_gb
             logger.debug(f"Task {self.id} requested disk size: {disk_gb}GB")
 
-        max_retries = 3  # TODO: Make this configurable
-        base_delay = 1  # TODO: Make this configurable
-        logger.info(
-            f"Starting execution of task {self.id} with max_retries={max_retries}"
-        )
-
         assert self.id is not None  # Already checked in execute()
 
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"Task {self.id}: Attempt {attempt + 1}/{max_retries}")
-                # Create PVC
-                logger.info(f"Task {self.id}: Creating PVC")
-                await self.create_pvc(self.id, disk_gb)
+        try:
+            # Create PVC
+            logger.info(f"Task {self.id}: Creating PVC")
+            await self.create_pvc(self.id, disk_gb)
 
-                # Update task state
-                logger.info(f"Task {self.id}: Updating task state to RUNNING")
-                await self.db.update_task_state(self.id, TesState.RUNNING)
-                await self.db.add_task_log(self.id)
+            # Update task state
+            logger.info(f"Task {self.id}: Updating task state to RUNNING")
+            await self.db.update_task_state(self.id, TesState.RUNNING)
+            await self.db.add_task_log(self.id)
 
-                # Execute pipeline stages
-                logger.info(f"Task {self.id}: Starting TIF execution")
-                await self.tif_execution(self.id, self.task.inputs)
+            # Execute pipeline stages
+            logger.info(f"Task {self.id}: Starting TIF execution")
+            await self.tif_execution(self.id, self.task.inputs)
 
-                logger.info(f"Task {self.id}: Starting TExAM execution")
-                await self.texam_execution(self.task)
+            logger.info(f"Task {self.id}: Starting TExAM execution")
+            await self.texam_execution(self.task)
 
-                logger.info(f"Task {self.id}: Starting TOF execution")
-                await self.tof_execution(self.id, self.task.outputs)
+            logger.info(f"Task {self.id}: Starting TOF execution")
+            await self.tof_execution(self.id, self.task.outputs)
 
-                logger.info(f"Task {self.id}: Adding system logs")
-                await self.db.add_tes_task_system_logs(self.id)
-                await self.db.add_tes_task_log_end_time(self.id)
+            logger.info(f"Task {self.id}: Adding system logs")
+            await self.db.add_tes_task_system_logs(self.id)
+            await self.db.add_tes_task_log_end_time(self.id)
 
-                # If we get here, everything succeeded
-                logger.info(f"Task {self.id}: Execution completed successfully")
-                await self.db.update_task_state(self.id, TesState.COMPLETE)
+            # If we get here, everything succeeded
+            logger.info(f"Task {self.id}: Execution completed successfully")
+            await self.db.update_task_state(self.id, TesState.COMPLETE)
 
-                # Clean up PVC after successful completion
-                await self.kubernetes_client.delete_pvc(self.pvc_name)
-                logger.info(f"Task {self.id}: PVC {self.pvc_name} deleted successfully")
-
-                break
-            except Exception as e:
-                logger.error(
-                    f"Task {self.id}: Execution failed on attempt {attempt + 1}: "
-                    f"{str(e)}"
-                )
-                await self.db.add_tes_task_system_logs(self.id)
-                await self.db.add_tes_task_log_end_time(self.id)
-                await self.kubernetes_client.delete_pvc(self.pvc_name)
-                if attempt == max_retries - 1:
-                    # On final attempt, let the error propagate
-                    logger.error(
-                        f"Task {self.id}: All {max_retries} attempts failed, giving up"
-                    )
-                    raise
-                # Otherwise backoff and retry
-                delay = base_delay * (2**attempt)  # exponential backoff
-                logger.info(f"Task {self.id}: Retrying in {delay} seconds")
-                await asyncio.sleep(delay)
+            # Clean up PVC after successful completion
+            await self.kubernetes_client.delete_pvc(self.pvc_name)
+            logger.info(f"Task {self.id}: PVC {self.pvc_name} deleted successfully")
+        except Exception as e:
+            logger.error(f"Task {self.id}: Execution failed: {str(e)}")
+            await self.db.add_tes_task_system_logs(self.id)
+            await self.db.add_tes_task_log_end_time(self.id)
+            await self.kubernetes_client.delete_pvc(self.pvc_name)
+            raise
 
     async def create_pvc(self, name: str, size: float | None) -> None:
         """Create a PVC for the task.

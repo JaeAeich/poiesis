@@ -110,6 +110,10 @@ class KubernetesAdapter(KubernetesPort):
 
     async def delete_pvc(self, name: str) -> None:
         """Delete a Persistent Volume Claim."""
+        if not name or not name.strip():
+            logger.warning("Attempted to delete PVC with empty name, skipping")
+            return
+
         try:
             await asyncio.to_thread(
                 self.core_api.delete_namespaced_persistent_volume_claim,
