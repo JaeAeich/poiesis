@@ -65,6 +65,7 @@ class LocalFilerStrategy(FilerStrategy):
         assert self.output is not None
 
         for file_path, relative_path, is_directory in glob_files:
+            assert self.output and self.output.url
             destination_base = urlparse(self.output.url).path
             destination_path = os.path.join(destination_base, relative_path)
 
