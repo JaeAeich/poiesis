@@ -93,7 +93,7 @@ class PoiesisCoreConstants:
         S3_SECRET_NAME = os.getenv("POIESIS_S3_SECRET_NAME")
         MONGODB_SECRET_NAME = os.getenv("POIESIS_MONGO_SECRET_NAME")
         SERVICE_ACCOUNT_NAME = os.getenv("POIESIS_SERVICE_ACCOUNT_NAME")
-        BACKOFF_LIMIT = os.getenv("BACKOFF_LIMIT", "1")
+        BACKOFF_LIMIT = 0
         CONFIGMAP_NAME = os.getenv("POIESIS_CORE_CONFIGMAP_NAME")
         RESTART_POLICY = os.getenv("POIESIS_RESTART_POLICY", "Never")
         IMAGE_PULL_POLICY = os.getenv("POIESIS_IMAGE_PULL_POLICY", "IfNotPresent")
