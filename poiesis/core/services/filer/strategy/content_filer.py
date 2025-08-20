@@ -80,7 +80,7 @@ class ContentFilerStrategy(FilerStrategy):
             "Content filer does not support uploads according to TES spec."
         )
 
-    async def upload_glob(self, glob_files: list[tuple[str, str]]):
+    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
         """Upload output dir.
 
         Raises:

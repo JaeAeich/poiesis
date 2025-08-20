@@ -1,11 +1,14 @@
 """Filer strategy module."""
 
+import logging
 import os
 from abc import ABC, abstractmethod
 from glob import glob
 
 from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
 from poiesis.core.constants import get_poiesis_core_constants
+
+logger = logging.getLogger(__name__)
 
 core_constants = get_poiesis_core_constants()
 
@@ -62,8 +65,13 @@ class FilerStrategy(ABC):
         pass
 
     @abstractmethod
-    async def upload_glob(self, glob_files: list[tuple[str, str]]):
-        """Upload files when wildcards are present."""
+    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
+        """Upload files and directories when wildcards are present.
+
+        Args:
+            glob_files: List of tuples containing (file_path, relative_path,
+                is_directory)
+        """
         pass
 
     def _get_container_path(self, path: str) -> str:
@@ -113,31 +121,35 @@ class FilerStrategy(ABC):
         else:
             await self.download_input_directory(container_path)
 
-    def _get_glob_files(self, container_path: str) -> list[tuple[str, str]]:
-        """Get the list of the files from wildcards.
+    def _get_glob_files(self, container_path: str) -> list[tuple[str, str, bool]]:
+        """Get the list of the files and directories from wildcards.
 
-        Note: tuple[0] is the path of the file, while tuple[1] is the path
-            from which the prefix `path_prefix` have been removed, since each
-            protocol might handle that URL differently, hence each `upload_glob`
-            method should take care of this URL based on its own implementation and
-            requirement.
+        Note: tuple[0] is the path of the file/directory, tuple[1] is the path
+            from which the prefix `path_prefix` have been removed, and tuple[2] is
+            a boolean indicating if the item is a directory. Each protocol might
+            handle that URL differently, hence each `upload_glob` method should
+            take care of this URL based on its own implementation and requirement.
 
         Returns:
-            list[tuple[str, str]]: List of tuple of file path of and its prefix removed
-                path that needs to be appended to url.
+            list[tuple[str, str, bool]]: List of tuple of file/directory path, its
+                prefix removed path that needs to be appended to url, and whether it's
+                a directory.
         """
         assert isinstance(self.payload, TesOutput)
         assert self.payload.path_prefix is not None
-        _ret: list[tuple[str, str]] = []
-        files = glob(container_path)
-        for file in files:
+        _ret: list[tuple[str, str, bool]] = []
+        matched_items = glob(container_path)
+
+        for item in matched_items:
             path_prefix = self.payload.path_prefix
             _file_path = (
-                self._get_path_as_in_exec_pod(file)
+                self._get_path_as_in_exec_pod(item)
                 .removeprefix(path_prefix)
                 .lstrip("/")
             )
-            _ret.append((file, _file_path))
+
+            is_directory = os.path.isdir(item)
+            _ret.append((item, _file_path, is_directory))
 
         return _ret
 

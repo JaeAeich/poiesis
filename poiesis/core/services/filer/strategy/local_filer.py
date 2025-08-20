@@ -55,24 +55,33 @@ class LocalFilerStrategy(FilerStrategy):
         destination_path = urlparse(self.output.url).path
         self._copy_directory(container_path, destination_path)
 
-    async def upload_glob(self, glob_files: list[tuple[str, str]]):
-        """Upload file using wildcard pattern.
+    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
+        """Upload files and directories using wildcard pattern.
 
         Args:
-            glob_files: List of tuple of file path of and its prefix removed
-                path that needs to be appended to url.
+            glob_files: List of tuples containing (file_path, relative_path,
+                is_directory)
         """
         assert self.output is not None
 
-        for file_path, relative_path in glob_files:
+        for file_path, relative_path, is_directory in glob_files:
             destination_base = urlparse(self.output.url).path
             destination_path = os.path.join(destination_base, relative_path)
 
-            # Ensure the destination directory exists
-            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-
-            logger.info(f"Uploading file {file_path} to {destination_path}")
-            self._copy_file(file_path, destination_path)
+            if is_directory:
+                logger.warning(
+                    f"Glob pattern matched directory '{file_path}' - uploading as"
+                    f"directory (this may not be the intended behavior)"
+                )
+                # Ensure the destination directory exists
+                os.makedirs(destination_path, exist_ok=True)
+                # Copy directory contents recursively
+                self._copy_directory(file_path, destination_path)
+            else:
+                # Ensure the destination directory exists
+                os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+                logger.info(f"Uploading file {file_path} to {destination_path}")
+                self._copy_file(file_path, destination_path)
 
     def _copy_file(self, src: str, dst: str):
         """Copy a file from src to dst with validation."""

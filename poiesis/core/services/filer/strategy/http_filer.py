@@ -63,6 +63,6 @@ class HttpFilerStrategy(FilerStrategy):
         """
         raise NotImplementedError("Uploading to HTTP or HTTPS is not supported")
 
-    async def upload_glob(self, glob_files: list[tuple[str, str]]):
+    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
         """Upload files using glob patterns."""
         raise NotImplementedError("Uploading to HTTP or HTTPS is not supported")

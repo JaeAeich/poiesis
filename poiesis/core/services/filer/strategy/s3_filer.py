@@ -254,22 +254,49 @@ class S3FilerStrategy(FilerStrategy):
             logger.error("Error uploading directory: %s", e)
             raise
 
-    async def upload_glob(self, glob_files: list[tuple[str, str]]):
-        """Upload file using wildcard pattern.
+    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
+        """Upload files and directories using wildcard pattern.
 
         Args:
-            glob_files: List of tuple of file path of and its prefix removed
-                path that needs to be appended to url.
+            glob_files: List of tuples containing (file_path, relative_path,
+                is_directory)
         """
         assert self.output is not None
-        for file_path, relative_path in glob_files:
+        for file_path, relative_path, is_directory in glob_files:
             prefix = self.key if self.key.endswith("/") else f"{self.key}/"
             _s3_key = prefix + relative_path
 
-            logger.info(
-                "Uploading %s to s3://%s/%s",
-                file_path,
-                self.bucket,
-                str(_s3_key),
-            )
-            self.client.upload_file(file_path, self.bucket, _s3_key)
+            if is_directory:
+                logger.warning(
+                    f"Glob pattern matched directory '{file_path}' - uploading as"
+                    f"directory (this may not be the intended behavior)"
+                )
+                # Upload directory contents recursively
+                for root, _, files in os.walk(file_path):
+                    for file in files:
+                        local_file_path = os.path.join(root, file)
+                        # Get relative path from the matched directory
+                        relative_file_path = os.path.relpath(local_file_path, file_path)
+                        # Construct the destination key in S3
+                        file_s3_key = f"{_s3_key}/" + relative_file_path.replace(
+                            "\\", "/"
+                        )
+
+                        logger.debug(
+                            "Uploading %s to s3://%s/%s",
+                            local_file_path,
+                            self.bucket,
+                            file_s3_key,
+                        )
+                        self.client.upload_file(
+                            local_file_path, self.bucket, file_s3_key
+                        )
+            else:
+                # Upload single file
+                logger.debug(
+                    "Uploading %s to s3://%s/%s",
+                    file_path,
+                    self.bucket,
+                    str(_s3_key),
+                )
+                self.client.upload_file(file_path, self.bucket, _s3_key)
