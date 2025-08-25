@@ -34,20 +34,33 @@ class MongoDBClient:
             database: Default database name
             max_pool_size: Maximum number of connections in the pool
         """
-        if not all(
-            [
-                poiesis_constants.Database.MongoDB.HOST,
-                poiesis_constants.Database.MongoDB.PORT,
-            ]
-        ):
-            raise InternalServerException("Database not configured.")
-        mongodb_user = os.getenv("MONGODB_USER")
-        mongodb_password = os.getenv("MONGODB_PASSWORD")
-
-        if mongodb_user and mongodb_password:
-            self.connection_string = f"mongodb://{mongodb_user}:{mongodb_password}@{poiesis_constants.Database.MongoDB.HOST}:{poiesis_constants.Database.MongoDB.PORT}"
+        if mongo_uri := os.getenv("MONGODB_URI"):
+            self.connection_string = mongo_uri
         else:
-            self.connection_string = f"mongodb://{poiesis_constants.Database.MongoDB.HOST}:{poiesis_constants.Database.MongoDB.PORT}"
+            logger.debug("MONGODB_URI not set, falling back to host and port.")
+            # Fall back to building from components
+            if not all(
+                [
+                    poiesis_constants.Database.MongoDB.HOST,
+                    poiesis_constants.Database.MongoDB.PORT,
+                ]
+            ):
+                raise InternalServerException("Database not configured.")
+
+            mongodb_user = os.getenv("MONGODB_USER")
+            mongodb_password = os.getenv("MONGODB_PASSWORD")
+
+            if mongodb_user and mongodb_password:
+                self.connection_string = (
+                    f"mongodb://{mongodb_user}:{mongodb_password}"
+                    f"@{poiesis_constants.Database.MongoDB.HOST}:"
+                    f"{poiesis_constants.Database.MongoDB.PORT}"
+                )
+            else:
+                self.connection_string = (
+                    f"mongodb://{poiesis_constants.Database.MongoDB.HOST}:"
+                    f"{poiesis_constants.Database.MongoDB.PORT}"
+                )
 
         self.database = poiesis_constants.Database.MongoDB.DATABASE
         self.max_pool_size = poiesis_constants.Database.MongoDB.MAX_POOL_SIZE
