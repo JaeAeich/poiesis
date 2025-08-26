@@ -203,6 +203,10 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                             )
                                         ),
                                     ),
+                                    V1EnvVar(
+                                        name="POIESIS_MONGODB_URI_SECRET_KEY",
+                                        value=core_constants.K8s.POIESIS_MONGODB_URI_SECRET_KEY,
+                                    ),
                                 ],
                                 volume_mounts=get_infrastructure_security_volume_mount(),
                             )
