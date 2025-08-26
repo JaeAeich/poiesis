@@ -194,11 +194,22 @@ def get_mongo_envs() -> tuple[V1EnvVar, ...]:
     """
     common = (
         V1EnvVar(
+            name="MONGODB_URI",
+            value_from=V1EnvVarSource(
+                config_map_key_ref=V1ConfigMapKeySelector(
+                    name=core_constants.K8s.CONFIGMAP_NAME,
+                    key="MONGODB_URI",
+                    optional=True,
+                )
+            ),
+        ),
+        V1EnvVar(
             name="MONGODB_HOST",
             value_from=V1EnvVarSource(
                 config_map_key_ref=V1ConfigMapKeySelector(
                     name=core_constants.K8s.CONFIGMAP_NAME,
                     key="MONGODB_HOST",
+                    optional=True,
                 )
             ),
         ),
@@ -208,6 +219,7 @@ def get_mongo_envs() -> tuple[V1EnvVar, ...]:
                 config_map_key_ref=V1ConfigMapKeySelector(
                     name=core_constants.K8s.CONFIGMAP_NAME,
                     key="MONGODB_PORT",
+                    optional=True,
                 )
             ),
         ),
