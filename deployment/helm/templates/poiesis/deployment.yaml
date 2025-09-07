@@ -59,8 +59,12 @@ spec:
               value: {{ .Values.poiesis.auth.type }}
             - name: POIESIS_CORE_CONFIGMAP_NAME
               value: {{ include "poiesis.coreConfigMapName" . }}
-            - name: POIESIS_MONGODB_AUTH_ENABLED
-              value: {{eq (include "poiesis.mongodb.authEnabled" .) "true" | quote }}
+            - name: MONGODB_SECRET_NAME
+              value: {{ include "poiesis.mongodb.secretName" . }}
+            - name: POIESIS_MONGODB_URI_SECRET_KEY
+              value: MONGODB_URI
+            - name: MONGODB_URI
+              value: {{ .Values.poiesis.externalDependencies.mongodb.connectionString | quote }}
             - name: POIESIS_SECURITY_CONTEXT_CONFIGMAP_NAME
               value: {{ include "poiesis.securityConfigMapName" . }}
             - name: POIESIS_SECURITY_CONTEXT_PATH
@@ -84,35 +88,11 @@ spec:
                 configMapKeyRef:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_JOB_TTL
-            {{- if eq (include "poiesis.mongodb.authEnabled" .) "true" }}
-            - name: POIESIS_MONGO_SECRET_NAME
-              value: {{ include "poiesis.mongodb.secretName" . }}
-            - name: MONGODB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "poiesis.mongodb.secretName" . }}
-                  key: MONGODB_USER
-            - name: MONGODB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "poiesis.mongodb.secretName" . }}
-                  key: MONGODB_PASSWORD
-            {{- end }}
             - name: LOG_LEVEL
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: LOG_LEVEL
-            - name: MONGODB_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "poiesis.coreConfigMapName" . }}
-                  key: MONGODB_HOST
-            - name: MONGODB_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "poiesis.coreConfigMapName" . }}
-                  key: MONGODB_PORT
             - name: MESSAGE_BROKER_HOST
               valueFrom:
                 configMapKeyRef:
@@ -123,7 +103,7 @@ spec:
                 configMapKeyRef:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: MESSAGE_BROKER_PORT
-            {{- if eq (include "poiesis.redis.authEnabled" .) "true" }}
+            {{- if .Values.poiesis.externalDependencies.redis.auth.enabled }}
             - name: MESSAGE_BROKER_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -146,7 +126,7 @@ spec:
                   name: {{ include "poiesis.auth.secretName" . }}
                   key: OIDC_CLIENT_SECRET
             {{- end }}
-            {{- if eq (include "poiesis.minio.enabled" .) "true" }}
+            {{- if .Values.poiesis.externalDependencies.minio.enabled }}
             - name: POIESIS_S3_SECRET_NAME
               valueFrom:
                 configMapKeyRef:

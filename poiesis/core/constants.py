@@ -66,6 +66,7 @@ class PoiesisCoreConstants:
             S3_SECRET_NAME: The S3 K8s secret name.
             REDIS_SECRET_NAME: The redis K8s secret name.
             MONGODB_SECRET_NAME: The mongo K8s secret name.
+            POIESIS_MONGODB_URI_SECRET_KEY: The mongo K8s secret key.
             SERVICE_ACCOUNT_NAME: The K8s service account name that allows core
                 component to interact with K8s API and create, list and delete pods.
             BACKOFF_LIMIT: The backoff limit for Job.

@@ -20,18 +20,13 @@ data:
   POIESIS_PVC_ACCESS_MODE: {{ .Values.poiesis.storage.accessMode | default "ReadWriteOnce" | quote }}
   POIESIS_PVC_STORAGE_CLASS: {{ .Values.poiesis.storage.className | default "standard" | quote }}
   # --- Message broker (Redis)
-  MESSAGE_BROKER_HOST: {{ include "poiesis.redis.host" . }}
-  MESSAGE_BROKER_PORT: {{ include "poiesis.redis.port" . }}
-  {{- if eq (include "poiesis.redis.authEnabled" .) "true" }}
+  MESSAGE_BROKER_HOST: {{ .Values.poiesis.externalDependencies.redis.host }}
+  MESSAGE_BROKER_PORT: {{ .Values.poiesis.externalDependencies.redis.port }}
+  POIESIS_MONGO_SECRET_NAME: {{ include "poiesis.mongodb.secretName" . }}
+  {{- if .Values.poiesis.externalDependencies.redis.auth.enabled }}
   POIESIS_REDIS_SECRET_NAME: {{include "poiesis.redis.secretName" . }}
   {{- end }}
-  # --- MongoDB
-  MONGODB_HOST: {{ include "poiesis.mongodb.host" . }}
-  MONGODB_PORT: {{ include "poiesis.mongodb.port" . }}
-  {{- if eq (include "poiesis.mongodb.authEnabled" .) "true" }}
-  POIESIS_MONGO_SECRET_NAME: {{ include "poiesis.mongodb.secretName" . }}
-  {{- end }}
-  {{- if eq (include "poiesis.minio.enabled" .) "true" }}
-  S3_URL: {{ include "poiesis.minio.url" . }}
+  {{- if .Values.poiesis.externalDependencies.minio.enabled }}
+  S3_URL: {{ .Values.poiesis.externalDependencies.minio.url }}
   POIESIS_S3_SECRET_NAME: {{include "poiesis.s3.secretName" . }}
   {{- end }}
