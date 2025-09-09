@@ -30,22 +30,6 @@ crucial. Best practices include:
     from cloud providers (e.g., GKE, EKS) as they handle much of the
     underlying infrastructure management, scaling, and maintenance.
 
-:::warning ARM Architecture Compatibility (e.g., Apple Silicon Macs)
-
-As of your last update, some third-party components, notably certain versions
-or configurations of `bitnami/mongodb`, may have limitations or lack full
-support for ARM-based architectures (like those found in Apple Silicon Macs).
-
-If you are developing on an ARM-based machine, you might encounter issues with
-these specific subcharts. Potential workarounds include:
-
-- Using an alternative MongoDB deployment (e.g., a cloud-hosted MongoDB instance
-or a self-managed instance compiled for ARM).
-
-- Checking the Bitnami charts repository and MongoDB documentation for the
-latest updates on ARM compatibility, as the situation may evolve.
-:::
-
 ## Helm
 
 Helm is the package manager for Kubernetes and is the recommended way to deploy
@@ -58,21 +42,3 @@ it up on your client machine.
 
 You can find Helm charts for `Poiesis` in its repository:
 [Poiesis Helm Charts on GitHub](https://github.com/JaeAeich/poiesis/tree/main/deployment/helm).
-
-## Subcharts (Dependencies)
-
-Poiesis relies on several essential backend services to function correctly.
-These services are managed as "subcharts" within the main Poiesis Helm chart.
-This means that when you deploy Poiesis using Helm, these dependencies can be
-deployed and configured automatically.
-
-The primary subcharts used by Poiesis include:
-
-- **MongoDB:** A NoSQL database used for data persistence.
-- **MinIO:** An S3-compatible object storage service.
-- **Keycloak:** An open-source identity and access management solution.
-- **Redis:** An in-memory data structure store, used as a message broker.
-
-The Helm charts for these components are primarily sourced from the
-[Bitnami Helm charts repository](https://github.com/bitnami/charts), which
-provides pre-packaged, validated, and secure applications for Kubernetes.

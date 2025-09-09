@@ -196,7 +196,7 @@ poiesis:
       auth:
         enabled: true
         # Password for authenticating with the external Redis server. Use secrets management for production.
-        rootPassword: "" # <-- IMPORTANT: Secure this value.
+        Password: "" # <-- IMPORTANT: Secure this value.
     # Configuration for connecting to an external Minio (S3-compatible) object storage instance.
     minio:
       # If true, Poiesis will use the connection details specified below instead of deploying the minio sub-chart.

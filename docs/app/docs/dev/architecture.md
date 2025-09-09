@@ -1,37 +1,5 @@
 # Poiesis Architecture
 
-## Database
-
-`Poiesis` uses MongoDB to store task data, instead of storing the data directly in
-the database, it adds extra fields and redundancy to the data to make it easier
-to query and analyze.
-
-```json
-{
-    "id": "123",
-    "task_name": "test",
-    "task_status": "RUNNING",
-    "data": {
-        "task_id": "123",
-        "task_name": "test",
-        "task_status": "RUNNING"
-    }
-}
-```
-
-:::info
-
-The fields like `task_name`, `task_status` are redundant, but they are useful
-as they are used to filter tasks in the database.
-:::
-
-`Poiesis` also then stores extra info per task such as `user_id` which is the unique
-id from OIDC provider, `service_hash` which is the hash of the service document
-when the task is created etc. To know more about the fields, please refer to the
-[TaskSchema](https://github.com/jaeaeich/poiesis/blob/main/poiesis/repository/schemas.py).
-
-## Task creation
-
 ![Task creation](/task-creation.png)
 
 :::info

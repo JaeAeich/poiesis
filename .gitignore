@@ -181,3 +181,4 @@ SquareX Safe File Viewer
 .vscode/
 docs/app/.vitepress/cache/
 docs/app/public/openapi.yaml
+docs/app/node_modules/
