@@ -17,7 +17,7 @@ export POIESIS_EXECUTOR_SECURITY_CONTEXT_ENABLED="false"
 
 # --- Secret & ConfigMap Names ---
 # These tell the API which secrets to mount into the worker jobs it creates.
-export POIESIS_MONGO_SECRET_NAME="poiesis-mongodb-secret"
+export POIESIS_MONGODB_SECRET_NAME="poiesis-mongodb-secret"
 export POIESIS_REDIS_SECRET_NAME="poiesis-redis-secret"
 export POIESIS_S3_SECRET_NAME="poiesis-s3-secret"
 export POIESIS_CORE_CONFIGMAP_NAME="poiesis-core-configmap"

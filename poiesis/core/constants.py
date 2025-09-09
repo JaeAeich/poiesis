@@ -295,11 +295,11 @@ def get_secret_names() -> tuple[V1EnvVar, ...]:
             ),
         ),
         V1EnvVar(
-            name="POIESIS_MONGO_SECRET_NAME",
+            name="POIESIS_MONGODB_SECRET_NAME",
             value_from=V1EnvVarSource(
                 config_map_key_ref=V1ConfigMapKeySelector(
                     name=core_constants.K8s.CONFIGMAP_NAME,
-                    key="POIESIS_MONGO_SECRET_NAME",
+                    key="POIESIS_MONGODB_SECRET_NAME",
                 )
             ),
         ),
