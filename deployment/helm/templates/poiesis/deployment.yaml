@@ -64,7 +64,10 @@ spec:
             - name: POIESIS_MONGODB_URI_SECRET_KEY
               value: MONGODB_URI
             - name: MONGODB_URI
-              value: {{ .Values.poiesis.externalDependencies.mongodb.connectionString | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "poiesis.mongodb.secretName" . }}
+                  key: MONGODB_URI
             - name: POIESIS_SECURITY_CONTEXT_CONFIGMAP_NAME
               value: {{ include "poiesis.securityConfigMapName" . }}
             - name: POIESIS_SECURITY_CONTEXT_PATH
