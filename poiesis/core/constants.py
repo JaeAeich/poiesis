@@ -66,7 +66,7 @@ class PoiesisCoreConstants:
             S3_SECRET_NAME: The S3 K8s secret name.
             REDIS_SECRET_NAME: The redis K8s secret name.
             MONGODB_SECRET_NAME: The mongo K8s secret name.
-            POIESIS_MONGODB_URI_SECRET_KEY: The mongo K8s secret key.
+            MONGODB_URI_SECRET_KEY: The mongo K8s secret key.
             SERVICE_ACCOUNT_NAME: The K8s service account name that allows core
                 component to interact with K8s API and create, list and delete pods.
             BACKOFF_LIMIT: The backoff limit for Job.
@@ -93,7 +93,7 @@ class PoiesisCoreConstants:
         REDIS_SECRET_NAME = os.getenv("POIESIS_REDIS_SECRET_NAME")
         S3_SECRET_NAME = os.getenv("POIESIS_S3_SECRET_NAME")
         MONGODB_SECRET_NAME = os.getenv("POIESIS_MONGODB_SECRET_NAME")
-        POIESIS_MONGODB_URI_SECRET_KEY = os.getenv(
+        MONGODB_URI_SECRET_KEY = os.getenv(
             "POIESIS_MONGODB_URI_SECRET_KEY", "MONGODB_URI"
         )
         SERVICE_ACCOUNT_NAME = os.getenv("POIESIS_SERVICE_ACCOUNT_NAME")
@@ -196,7 +196,17 @@ def get_mongo_envs() -> tuple[V1EnvVar, ...]:
 
     Used in k8s manifest for `tif`, `torc` etc.
     """
-    auth = (
+    envs = (
+        V1EnvVar(
+            name="POIESIS_MONGODB_SECRET_NAME",
+            value_from=V1EnvVarSource(
+                config_map_key_ref=V1ConfigMapKeySelector(
+                    name=core_constants.K8s.CONFIGMAP_NAME,
+                    key="POIESIS_MONGODB_SECRET_NAME",
+                    optional=True,
+                )
+            ),
+        ),
         V1EnvVar(
             name="POIESIS_MONGODB_URI_SECRET_KEY",
             value_from=V1EnvVarSource(
@@ -208,11 +218,11 @@ def get_mongo_envs() -> tuple[V1EnvVar, ...]:
             ),
         ),
         V1EnvVar(
-            name=core_constants.K8s.POIESIS_MONGODB_URI_SECRET_KEY,
+            name=core_constants.K8s.MONGODB_URI_SECRET_KEY,
             value_from=V1EnvVarSource(
                 secret_key_ref=V1SecretKeySelector(
                     name=core_constants.K8s.MONGODB_SECRET_NAME,
-                    key=core_constants.K8s.POIESIS_MONGODB_URI_SECRET_KEY,
+                    key=core_constants.K8s.MONGODB_URI_SECRET_KEY,
                     optional=True,
                 )
             ),

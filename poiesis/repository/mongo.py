@@ -35,7 +35,7 @@ class MongoDBClient:
             max_pool_size: Maximum number of connections in the pool
         """
         self.connection_string = os.getenv(
-            poiesis_core_constants.K8s.POIESIS_MONGODB_URI_SECRET_KEY
+            poiesis_core_constants.K8s.MONGODB_URI_SECRET_KEY
         )
         logger.debug(f"MongoDB connection string: {self.connection_string}")
         self.database = poiesis_constants.Database.MongoDB.DATABASE
