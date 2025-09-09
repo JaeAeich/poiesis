@@ -31,7 +31,7 @@ class PoesisConstants:
         """Constants for the database.
 
         Attributes:
-            MONGO_DB: The MongoDB database.
+            MONGODB: The MongoDB database.
         """
 
         @dataclass(frozen=True)
@@ -49,8 +49,6 @@ class PoesisConstants:
 
             TASK_COLLECTION: str = "tasks"
             SERVICE_COLLECTION: str = "services"
-            HOST: str = os.getenv("MONGODB_HOST", "")
-            PORT: str = os.getenv("MONGODB_PORT", "")
             DATABASE: str = os.environ.get("MONGODB_DATABASE", "poiesis")
             MAX_POOL_SIZE: int = int(os.environ.get("MONGODB_MAX_POOL_SIZE", "10"))
 

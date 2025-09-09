@@ -21,7 +21,7 @@ data:
   POIESIS_PVC_STORAGE_CLASS: {{ .Values.poiesis.storage.className | default "standard" | quote }}
   MESSAGE_BROKER_HOST: {{ .Values.poiesis.externalDependencies.redis.host | quote }}
   MESSAGE_BROKER_PORT: {{ .Values.poiesis.externalDependencies.redis.port | quote }}
-  POIESIS_MONGO_SECRET_NAME: {{ include "poiesis.mongodb.secretName" . }}
+  POIESIS_MONGODB_SECRET_NAME: {{ include "poiesis.mongodb.secretName" . }}
   {{- if .Values.poiesis.externalDependencies.redis.auth.enabled }}
   POIESIS_REDIS_SECRET_NAME: {{ include "poiesis.redis.secretName" . }}
   {{- end }}

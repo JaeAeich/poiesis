@@ -233,7 +233,7 @@ def get_mongo_envs() -> tuple[V1EnvVar, ...]:
         logger.error("MongoDB secret name is not set")
         raise ValueError("MongoDB secret name is not set")
 
-    return auth
+    return envs
 
 
 @lru_cache
