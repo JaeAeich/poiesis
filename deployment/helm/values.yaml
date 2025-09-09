@@ -11,8 +11,7 @@ fullnameOverride: ""
 
 # Common annotations to add to all resources created by this chart.
 # Useful for adding metadata like ownership, contact info, or integration points.
-commonAnnotations:
-  {}
+commonAnnotations: {}
   # Example:
   # my-annotation: "my-value"
 
@@ -181,26 +180,23 @@ poiesis:
       clientSecret: "my-secret"
 
   # -- External Dependency Configuration --
-  # Use this section IF you are connecting Poiesis to ALREADY EXISTING instances
-  # of its dependencies (MongoDB, Minio, Redis) running outside of this Helm chart deployment.
-  # Enabling a dependency here (e.g., `externalDependencies.mongodb.enabled: true`) will typically
-  # DISABLE the deployment of the corresponding sub-chart (e.g., `mongodb.enabled` will be ignored or should be false).
   externalDependencies:
     # Configuration for connecting to an external MongoDB instance.
     mongodb:
-      # If true, Poiesis will use the connection details specified below instead of deploying the mongodb sub-chart.
-      enabled: false
-      # Hostname or IP address of the external MongoDB server.
+      # MongoDB connection string needs to be provided in the format:
+      # mongodb://<username>:<password>@<host>:<port>
+      connectionString: ""
+    # Configuration for connecting to an external Redis instance.
+    redis:
+      # Hostname or IP address of the external Redis server.
       host: ""
-      # Port number of the external MongoDB server.
+      # Port number of the external Redis server.
       port: ""
-      # Auth for mongoDB
+      # Auth configs
       auth:
         enabled: true
-        # Username for authenticating with the external MongoDB.
-        rootUser: ""
-        # Password for authenticating with the external MongoDB. Use secrets management for production.
-        rootPassword: "" # <-- IMPORTANT: Secure this value.
+        # Password for authenticating with the external Redis server. Use secrets management for production.
+        password: "" # <-- IMPORTANT: Secure this value.
     # Configuration for connecting to an external Minio (S3-compatible) object storage instance.
     minio:
       # If true, Poiesis will use the connection details specified below instead of deploying the minio sub-chart.
@@ -213,84 +209,3 @@ poiesis:
         rootUser: ""
         # Secret key (password) for the external Minio instance. Use secrets management for production.
         rootPassword: "" # <-- IMPORTANT: Secure this value.
-    # Configuration for connecting to an external Redis instance.
-    redis:
-      # If true, Poiesis will use the connection details specified below instead of deploying the redis sub-chart.
-      enabled: false
-      # Hostname or IP address of the external Redis server.
-      host: ""
-      # Port number of the external Redis server.
-      port: ""
-      # Auth configs
-      auth:
-        enabled: true
-        # Password for authenticating with the external Redis server. Use secrets management for production.
-        rootPassword: "" # <-- IMPORTANT: Secure this value.
-
-# --- Sub-chart Configurations ---
-# These sections configure dependencies that can be deployed AS PART of this Helm chart release.
-# Each dependency is managed by its own Helm chart (sub-chart), likely sourced from repositories like Bitnami.
-# If you enable a dependency under `externalDependencies` above, you should generally disable the corresponding sub-chart here.
-
-# --- Bitnami Sub-charts -------------
-# These sub-charts provide convenient deployments of common dependencies, managed by Bitnami.
-# They are tested to work with Poiesis.
-# To customize these further beyond the options exposed here, refer to the original Bitnami chart's `values.yaml`.
-# Example: `helm show values bitnami/minio`
-
-# Configuration for the MongoDB sub-chart (Database).
-mongodb:
-  # If true, deploy MongoDB using the Bitnami MongoDB sub-chart. Disable if using `externalDependencies.mongodb`.
-  enabled: true
-  # Override the full name generated for the MongoDB deployment.
-  fullnameOverride: "poiesis-mongodb"
-  # Authentication settings for the deployed MongoDB instance.
-  auth:
-    # If true, enable authentication for MongoDB. Highly recommended.
-    enabled: true
-    # Root username for MongoDB.
-    rootUser: mongodbUser123
-    # Root password for MongoDB. **CHANGE THIS IN PRODUCTION**.
-    rootPassword: "mongodbPassword123" # <-- IMPORTANT: Secure this value.
-  # Service configuration for MongoDB.
-  service:
-    # Port mapping for the MongoDB service.
-    ports:
-      mongodb: 27017 # Standard MongoDB port
-
-# Configuration for the Redis sub-chart (In-memory data store).
-redis:
-  # If true, deploy Redis using the Bitnami Redis sub-chart. Disable if using `externalDependencies.redis`.
-  enabled: true
-  # Override the full name generated for the Redis deployment.
-  fullnameOverride: "poiesis-redis"
-  # Authentication settings for the deployed Redis instance.
-  auth:
-    # If true, enable password authentication for Redis.
-    enabled: true
-    # Password for Redis authentication. **CHANGE THIS IN PRODUCTION**.
-    password: "poiesisRedis123" # <-- IMPORTANT: Secure this value.
-  # Replica configuration - reduce from default 3 to 1 for message broker use case
-  replica:
-    # Number of Redis replicas (reduced from default 3)
-    replicaCount: 1
-  # Service configuration for Redis.
-  service:
-    # Port mapping for the Redis service.
-    ports:
-      redis: "6379" # Standard Redis port
-
-# Configuration for the Minio sub-chart (Object Storage).
-minio:
-  # If true, deploy Minio using the Bitnami Minio sub-chart. Disable if using `externalDependencies.minio`.
-  enabled: false
-  # Override the full name generated for the Minio deployment (useful for consistent naming).
-  fullnameOverride: "poiesis-minio"
-  # Authentication settings for the deployed Minio instance.
-  auth:
-    # Root user (access key) for Minio.
-    rootUser: minioUser123
-    # Root password (secret key) for Minio. **CHANGE THIS IN PRODUCTION**.
-    rootPassword: "minioPassword123" # <-- IMPORTANT: Secure this value.
-  # Specifies buckets to be created automatically upon Minio startup.
-  defaultBuckets: "poiesis"

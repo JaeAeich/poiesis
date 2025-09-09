@@ -3,7 +3,7 @@ import { defineConfig } from "vitepress";
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
     title: "Poiesis",
-    head: [['link', { rel: 'icon', href: '/logo/favicon.ico' }]],
+    head: [["link", { rel: "icon", href: "/logo/favicon.ico" }]],
     description: "TES on Kubernetes",
     themeConfig: {
         // https://vitepress.dev/reference/default-theme-config
@@ -11,7 +11,7 @@ export default defineConfig({
         nav: [
             { text: "Home", link: "/" },
             { text: "Team", link: "/team" },
-            { text: "Swagger UI", link: '/docs/intro/api-reference' }
+            { text: "Swagger UI", link: "/docs/intro/api-reference" },
         ],
         sidebar: [
             {
@@ -27,9 +27,18 @@ export default defineConfig({
             {
                 text: "Usage",
                 items: [
-                    { text: "Poiesis, TES and usage", link: "/docs/usage/usage" },
-                    { text: "Running Nextflow with Poiesis", link: "/docs/usage/nextflow" },
-                    { text: "Training ML models", link: "/docs/usage/training" },
+                    {
+                        text: "Poiesis, TES and usage",
+                        link: "/docs/usage/usage",
+                    },
+                    {
+                        text: "Running Nextflow with Poiesis",
+                        link: "/docs/usage/nextflow",
+                    },
+                    {
+                        text: "Training ML models",
+                        link: "/docs/usage/training",
+                    },
                 ],
             },
             {
@@ -38,10 +47,6 @@ export default defineConfig({
                     {
                         text: "Architecture",
                         link: "/docs/dev/architecture",
-                    },
-                    {
-                        text: "Starting locally",
-                        link: "/docs/dev/starting-locally",
                     },
                 ],
             },
@@ -97,7 +102,7 @@ export default defineConfig({
         // ignore all localhost links
         /^https?:\/\/localhost/,
         (url) => {
-        return url.toLowerCase().includes('ignore')
-        }
-    ]
+            return url.toLowerCase().includes("ignore");
+        },
+    ],
 });

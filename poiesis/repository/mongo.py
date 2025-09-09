@@ -9,7 +9,7 @@ from typing import Any
 import motor.motor_asyncio
 from bson.objectid import ObjectId
 
-from poiesis.api.exceptions import DBException, InternalServerException
+from poiesis.api.exceptions import DBException
 from poiesis.api.tes.models import TesExecutorLog, TesState, TesTask, TesTaskLog
 from poiesis.constants import get_poiesis_constants
 from poiesis.core.adaptors.kubernetes.kubernetes import KubernetesAdapter
@@ -34,21 +34,10 @@ class MongoDBClient:
             database: Default database name
             max_pool_size: Maximum number of connections in the pool
         """
-        if not all(
-            [
-                poiesis_constants.Database.MongoDB.HOST,
-                poiesis_constants.Database.MongoDB.PORT,
-            ]
-        ):
-            raise InternalServerException("Database not configured.")
-        mongodb_user = os.getenv("MONGODB_USER")
-        mongodb_password = os.getenv("MONGODB_PASSWORD")
-
-        if mongodb_user and mongodb_password:
-            self.connection_string = f"mongodb://{mongodb_user}:{mongodb_password}@{poiesis_constants.Database.MongoDB.HOST}:{poiesis_constants.Database.MongoDB.PORT}"
-        else:
-            self.connection_string = f"mongodb://{poiesis_constants.Database.MongoDB.HOST}:{poiesis_constants.Database.MongoDB.PORT}"
-
+        self.connection_string = os.getenv(
+            poiesis_core_constants.K8s.MONGODB_URI_SECRET_KEY
+        )
+        logger.debug(f"MongoDB connection string: {self.connection_string}")
         self.database = poiesis_constants.Database.MongoDB.DATABASE
         self.max_pool_size = poiesis_constants.Database.MongoDB.MAX_POOL_SIZE
         self.client: motor.motor_asyncio.AsyncIOMotorClient = (

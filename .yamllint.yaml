@@ -8,9 +8,6 @@ rules:
       - .github/**/*.yaml
   document-start:
     level: error
-  document-end:
-    level: error
   line-length:
     ignore:
       - poiesis/api/tes/spec/**/*.yaml
-...

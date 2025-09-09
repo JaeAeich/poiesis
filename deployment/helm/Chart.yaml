@@ -33,17 +33,3 @@ sources:
 maintainers:
   - name: "Javed Habib"
     email: "jh4official@gmail.com"
-
-dependencies:
-  - name: minio
-    version: 16.0.10
-    repository: https://charts.bitnami.com/bitnami
-    condition: minio.enabled
-  - name: redis
-    version: 21.0.2
-    repository: https://charts.bitnami.com/bitnami
-    condition: redis.enabled
-  - name: mongodb
-    version: 16.5.6
-    repository: https://charts.bitnami.com/bitnami
-    condition: mongodb.enabled

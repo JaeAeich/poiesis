@@ -66,6 +66,7 @@ class PoiesisCoreConstants:
             S3_SECRET_NAME: The S3 K8s secret name.
             REDIS_SECRET_NAME: The redis K8s secret name.
             MONGODB_SECRET_NAME: The mongo K8s secret name.
+            MONGODB_URI_SECRET_KEY: The mongo K8s secret key.
             SERVICE_ACCOUNT_NAME: The K8s service account name that allows core
                 component to interact with K8s API and create, list and delete pods.
             BACKOFF_LIMIT: The backoff limit for Job.
@@ -91,7 +92,10 @@ class PoiesisCoreConstants:
         FILER_PVC_PATH = "/transfer"
         REDIS_SECRET_NAME = os.getenv("POIESIS_REDIS_SECRET_NAME")
         S3_SECRET_NAME = os.getenv("POIESIS_S3_SECRET_NAME")
-        MONGODB_SECRET_NAME = os.getenv("POIESIS_MONGO_SECRET_NAME")
+        MONGODB_SECRET_NAME = os.getenv("POIESIS_MONGODB_SECRET_NAME")
+        MONGODB_URI_SECRET_KEY = os.getenv(
+            "POIESIS_MONGODB_URI_SECRET_KEY", "MONGODB_URI"
+        )
         SERVICE_ACCOUNT_NAME = os.getenv("POIESIS_SERVICE_ACCOUNT_NAME")
         BACKOFF_LIMIT = 0
         CONFIGMAP_NAME = os.getenv("POIESIS_CORE_CONFIGMAP_NAME")
@@ -192,50 +196,44 @@ def get_mongo_envs() -> tuple[V1EnvVar, ...]:
 
     Used in k8s manifest for `tif`, `torc` etc.
     """
-    common = (
+    envs = (
         V1EnvVar(
-            name="MONGODB_HOST",
+            name="POIESIS_MONGODB_SECRET_NAME",
             value_from=V1EnvVarSource(
                 config_map_key_ref=V1ConfigMapKeySelector(
                     name=core_constants.K8s.CONFIGMAP_NAME,
-                    key="MONGODB_HOST",
-                )
-            ),
-        ),
-        V1EnvVar(
-            name="MONGODB_PORT",
-            value_from=V1EnvVarSource(
-                config_map_key_ref=V1ConfigMapKeySelector(
-                    name=core_constants.K8s.CONFIGMAP_NAME,
-                    key="MONGODB_PORT",
-                )
-            ),
-        ),
-    )
-    auth = (
-        V1EnvVar(
-            name="MONGODB_USER",
-            value_from=V1EnvVarSource(
-                secret_key_ref=V1SecretKeySelector(
-                    name=core_constants.K8s.MONGODB_SECRET_NAME,
-                    key="MONGODB_USER",
+                    key="POIESIS_MONGODB_SECRET_NAME",
                     optional=True,
                 )
             ),
         ),
         V1EnvVar(
-            name="MONGODB_PASSWORD",
+            name="POIESIS_MONGODB_URI_SECRET_KEY",
+            value_from=V1EnvVarSource(
+                config_map_key_ref=V1ConfigMapKeySelector(
+                    name=core_constants.K8s.CONFIGMAP_NAME,
+                    key="POIESIS_MONGODB_URI_SECRET_KEY",
+                    optional=True,
+                )
+            ),
+        ),
+        V1EnvVar(
+            name=core_constants.K8s.MONGODB_URI_SECRET_KEY,
             value_from=V1EnvVarSource(
                 secret_key_ref=V1SecretKeySelector(
                     name=core_constants.K8s.MONGODB_SECRET_NAME,
-                    key="MONGODB_PASSWORD",
+                    key=core_constants.K8s.MONGODB_URI_SECRET_KEY,
                     optional=True,
                 )
             ),
         ),
     )
 
-    return common + auth if core_constants.K8s.MONGODB_SECRET_NAME else common
+    if not core_constants.K8s.MONGODB_SECRET_NAME:
+        logger.error("MongoDB secret name is not set")
+        raise ValueError("MongoDB secret name is not set")
+
+    return envs
 
 
 @lru_cache
@@ -297,12 +295,11 @@ def get_secret_names() -> tuple[V1EnvVar, ...]:
             ),
         ),
         V1EnvVar(
-            name="POIESIS_MONGO_SECRET_NAME",
+            name="POIESIS_MONGODB_SECRET_NAME",
             value_from=V1EnvVarSource(
                 config_map_key_ref=V1ConfigMapKeySelector(
                     name=core_constants.K8s.CONFIGMAP_NAME,
-                    key="POIESIS_MONGO_SECRET_NAME",
-                    optional=True,
+                    key="POIESIS_MONGODB_SECRET_NAME",
                 )
             ),
         ),
