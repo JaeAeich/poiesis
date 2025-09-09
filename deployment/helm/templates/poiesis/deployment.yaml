@@ -63,7 +63,7 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "poiesis.coreConfigMapName" . }}
-                  key: POIESIS_RESTART_POLICY
+                  key: POIESIS_MONGODB_SECRET_NAME
             - name: POIESIS_MONGODB_URI_SECRET_KEY
               value: MONGODB_URI
             - name: MONGODB_URI
