@@ -19,14 +19,13 @@ data:
   POIESIS_JOB_TTL: {{ .Values.poiesis.config.jobTtl | quote }}
   POIESIS_PVC_ACCESS_MODE: {{ .Values.poiesis.storage.accessMode | default "ReadWriteOnce" | quote }}
   POIESIS_PVC_STORAGE_CLASS: {{ .Values.poiesis.storage.className | default "standard" | quote }}
-  # --- Message broker (Redis)
-  MESSAGE_BROKER_HOST: {{ .Values.poiesis.externalDependencies.redis.host }}
-  MESSAGE_BROKER_PORT: {{ .Values.poiesis.externalDependencies.redis.port }}
+  MESSAGE_BROKER_HOST: {{ .Values.poiesis.externalDependencies.redis.host | quote }}
+  MESSAGE_BROKER_PORT: {{ .Values.poiesis.externalDependencies.redis.port | quote }}
   POIESIS_MONGO_SECRET_NAME: {{ include "poiesis.mongodb.secretName" . }}
   {{- if .Values.poiesis.externalDependencies.redis.auth.enabled }}
-  POIESIS_REDIS_SECRET_NAME: {{include "poiesis.redis.secretName" . }}
+  POIESIS_REDIS_SECRET_NAME: {{ include "poiesis.redis.secretName" . }}
   {{- end }}
   {{- if .Values.poiesis.externalDependencies.minio.enabled }}
-  S3_URL: {{ .Values.poiesis.externalDependencies.minio.url }}
+  S3_URL: {{ .Values.poiesis.externalDependencies.minio.url | quote }}
   POIESIS_S3_SECRET_NAME: {{include "poiesis.s3.secretName" . }}
   {{- end }}
