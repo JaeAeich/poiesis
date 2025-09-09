@@ -59,7 +59,7 @@ spec:
               value: {{ .Values.poiesis.auth.type }}
             - name: POIESIS_CORE_CONFIGMAP_NAME
               value: {{ include "poiesis.coreConfigMapName" . }}
-            - name: MONGODB_SECRET_NAME
+            - name: POIESIS_MONGODB_SECRET_NAME
               value: {{ include "poiesis.mongodb.secretName" . }}
             - name: POIESIS_MONGODB_URI_SECRET_KEY
               value: MONGODB_URI

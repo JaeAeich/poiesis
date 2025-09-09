@@ -92,7 +92,7 @@ class PoiesisCoreConstants:
         FILER_PVC_PATH = "/transfer"
         REDIS_SECRET_NAME = os.getenv("POIESIS_REDIS_SECRET_NAME")
         S3_SECRET_NAME = os.getenv("POIESIS_S3_SECRET_NAME")
-        MONGODB_SECRET_NAME = os.getenv("POIESIS_MONGO_SECRET_NAME")
+        MONGODB_SECRET_NAME = os.getenv("POIESIS_MONGODB_SECRET_NAME")
         POIESIS_MONGODB_URI_SECRET_KEY = os.getenv(
             "POIESIS_MONGODB_URI_SECRET_KEY", "MONGODB_URI"
         )
@@ -219,7 +219,11 @@ def get_mongo_envs() -> tuple[V1EnvVar, ...]:
         ),
     )
 
-    return auth if core_constants.K8s.MONGODB_SECRET_NAME else ()
+    if not core_constants.K8s.MONGODB_SECRET_NAME:
+        logger.error("MongoDB secret name is not set")
+        raise ValueError("MongoDB secret name is not set")
+
+    return auth
 
 
 @lru_cache

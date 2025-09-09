@@ -199,10 +199,6 @@ class CreateTaskController(InterfaceController):
                                         name="POIESIS_PVC_STORAGE_CLASS",
                                         value=core_constants.K8s.PVC_STORAGE_CLASS,
                                     ),
-                                    V1EnvVar(
-                                        name="POIESIS_MONGODB_URI_SECRET_KEY",
-                                        value=core_constants.K8s.POIESIS_MONGODB_URI_SECRET_KEY,
-                                    ),
                                 ],
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                                 volume_mounts=get_infrastructure_security_volume_mount(),

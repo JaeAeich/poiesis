@@ -11,8 +11,7 @@ fullnameOverride: ""
 
 # Common annotations to add to all resources created by this chart.
 # Useful for adding metadata like ownership, contact info, or integration points.
-commonAnnotations:
-  {}
+commonAnnotations: {}
   # Example:
   # my-annotation: "my-value"
 
@@ -181,10 +180,6 @@ poiesis:
       clientSecret: "my-secret"
 
   # -- External Dependency Configuration --
-  # Use this section IF you are connecting Poiesis to ALREADY EXISTING instances
-  # of its dependencies (MongoDB, Minio, Redis) running outside of this Helm chart deployment.
-  # Enabling a dependency here (e.g., `externalDependencies.mongodb.enabled: true`) will typically
-  # DISABLE the deployment of the corresponding sub-chart (e.g., `mongodb.enabled` will be ignored or should be false).
   externalDependencies:
     # Configuration for connecting to an external MongoDB instance.
     mongodb:
