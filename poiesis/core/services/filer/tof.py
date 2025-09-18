@@ -3,7 +3,8 @@
 import logging
 
 from poiesis.api.tes.models import TesOutput
-from poiesis.core.ports.message_broker import Message
+
+# from poiesis.core.ports.message_broker import Message
 from poiesis.core.services.filer.filer import Filer
 from poiesis.core.services.filer.filer_strategy_factory import FilerStrategyFactory
 
@@ -57,5 +58,5 @@ class Tof(Filer):
                 await filer_strategy.upload()
             except Exception as e:
                 logger.error(f"TOF failed: {e}")
-                self.message(Message(f"TOF failed: {e}"))
-                raise
+                # self.message(Message(f"TOF failed: {e}"))
+                continue

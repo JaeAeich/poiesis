@@ -3,7 +3,6 @@
 import logging
 
 from poiesis.api.tes.models import TesInput
-from poiesis.core.ports.message_broker import Message, MessageStatus
 from poiesis.core.services.filer.filer import Filer
 from poiesis.core.services.filer.filer_strategy_factory import FilerStrategyFactory
 
@@ -58,7 +57,7 @@ class Tif(Filer):
                 await filer_strategy.download()
             except Exception as e:
                 logger.error(f"Error downloading {input.url}: {str(e)}")
-                self.message(
-                    Message(status=MessageStatus.ERROR, message=f"TIF failed: {str(e)}")
-                )
-                raise
+                continue
+                # self.message(
+                #     Message(status=MessageStatus.ERROR, message=f"TIF failed: {str(e)}")
+                # )

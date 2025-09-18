@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -76,6 +77,35 @@ class S3FilerStrategy(FilerStrategy):
             logger.error("Error creating S3 client: %s", e)
             raise
 
+    def _sanitize_s3_key(self, key: str) -> str:
+        """Derives a base S3 prefix from a key that may contain glob patterns.
+
+        This is crucial for handling non-compliant engines that embed patterns
+        in the destination URL. The correct behavior is to treat the URL as a
+        destination folder (prefix).
+
+        Example: 'path/to/results/SRR2838702.{fna,fna.gz}' -> 'path/to/results/'
+        """
+        # A simple regex to find common glob characters.
+        glob_pattern = re.compile(r"[\*\?\[\{]")
+        match = glob_pattern.search(key)
+
+        if not match:
+            # This is a standard, valid key.
+            return key
+
+        # Find the last directory separator before the start of the pattern.
+        # This defines the boundary of the base prefix.
+        pattern_start_index = match.start()
+        last_slash_index = key.rfind("/", 0, pattern_start_index)
+
+        if last_slash_index == -1:
+            # Pattern is at the root, so the prefix is the root.
+            return ""
+
+        # The prefix is everything up to and including the last slash.
+        return key[: last_slash_index + 1]
+
     def _set_host_bucket_key(self, url: str):
         """Get the bucket name and key from the URL.
 
@@ -85,6 +115,7 @@ class S3FilerStrategy(FilerStrategy):
             - `s3://bucket_name/dir_name`
             - `s3://host/bucket_name/dir_name/`
             - `s3://bucket_name/`
+            - `s3://host/bucket_name/file_name*{extension1, extension2}`
         """
         parsed = urlparse(url)
 
@@ -100,17 +131,20 @@ class S3FilerStrategy(FilerStrategy):
                 self.bucket = path_parts[0]
             else:
                 raise ValueError("Bucket not found in URL.")
-            self.key = "/".join(path_parts[1:]) if len(path_parts) > 1 else ""
+            raw_key = "/".join(path_parts[1:]) if len(path_parts) > 1 else ""
         else:
             # Case: s3://bucket/key
             self.s3_host = os.getenv("S3_URL")
             self.bucket = parsed.netloc
-            self.key = "/".join(path_parts) if path_parts else ""
+            raw_key = "/".join(path_parts) if path_parts else ""
 
         if not self.bucket:
             raise ValueError("Bucket name could not be determined from S3 URL.")
         if not self.s3_host:
             raise ValueError("S3 host is not defined and could not be inferred.")
+
+        self.key = self._sanitize_s3_key(raw_key)
+        logger.debug("Raw S3 key '%s' sanitized to prefix '%s'", raw_key, self.key)
 
     async def download_input_file(self, container_path: str) -> None:
         """Download file from S3 or Minio and mount to PVC.
@@ -262,10 +296,15 @@ class S3FilerStrategy(FilerStrategy):
                 is_directory)
         """
         assert self.output is not None
+        logger.info(
+            "Uploading %d glob-matched items to s3://%s/%s",
+            len(glob_files),
+            self.bucket,
+            self.key,
+        )
         for file_path, relative_path, is_directory in glob_files:
             prefix = self.key if self.key.endswith("/") else f"{self.key}/"
             _s3_key = prefix + relative_path
-
             if is_directory:
                 logger.warning(
                     f"Glob pattern matched directory '{file_path}' - uploading as"
@@ -292,7 +331,6 @@ class S3FilerStrategy(FilerStrategy):
                             local_file_path, self.bucket, file_s3_key
                         )
             else:
-                # Upload single file
                 logger.debug(
                     "Uploading %s to s3://%s/%s",
                     file_path,
