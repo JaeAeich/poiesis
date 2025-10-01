@@ -1,6 +1,5 @@
 """Create Tif Job and monitor it."""
 
-import json
 import logging
 
 from kubernetes.client import (
@@ -61,11 +60,6 @@ class TorcTifExecution(TorcExecutionTemplate):
     async def start_job(self) -> None:
         """Create the K8s job for Tif."""
         tif_job_name = f"{core_constants.K8s.TIF_PREFIX}-{self.id}"
-        inputs = (
-            json.dumps([input.model_dump() for input in self.inputs])
-            if self.inputs
-            else "[]"
-        )
 
         metadata = V1ObjectMeta(
             name=tif_job_name,
@@ -78,5 +72,5 @@ class TorcTifExecution(TorcExecutionTemplate):
         )
 
         commands: list[str] = ["poiesis", "tif", "run"]
-        args: list[str] = ["--name", self.id, "--inputs", inputs]
+        args: list[str] = ["--name", self.id]
         await self.create_job(self.id, tif_job_name, commands, args, metadata)

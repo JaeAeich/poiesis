@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 from kubernetes.client.models import (
+    V1ConfigMap,
     V1ConfigMapKeySelector,
     V1Container,
     V1EnvVar,
@@ -14,6 +15,7 @@ from kubernetes.client.models import (
     V1Job,
     V1JobSpec,
     V1ObjectMeta,
+    V1OwnerReference,
     V1PodSpec,
     V1PodTemplateSpec,
 )
@@ -40,6 +42,8 @@ from poiesis.core.constants import (
     get_poiesis_core_constants,
     get_secret_names,
     get_security_context_envs,
+    get_tes_task_request_volume,
+    get_tes_task_request_volume_mounts,
 )
 from poiesis.repository.mongo import MongoDBClient
 from poiesis.repository.schemas import TaskSchema
@@ -80,8 +84,26 @@ class CreateTaskController(InterfaceController):
         asyncio.create_task(self._create_torc_job())
         return TesCreateTaskResponse(id=str(_task.task_id))
 
+    async def _create_tes_task_config_map(self) -> V1ConfigMap:
+        task_configmap_name = f"{core_constants.K8s.TES_TASK_PREFIX}-{self.task.id}"
+        configmap = V1ConfigMap(
+            metadata=V1ObjectMeta(
+                name=task_configmap_name,
+                namespace=core_constants.K8s.K8S_NAMESPACE,
+            ),
+            data={
+                core_constants.K8s.TES_TASK_CONFIGMAP_KEY: json.dumps(
+                    self.task.model_dump()
+                )
+            },
+        )
+        _ = await self.kubernetes_client.create_config_map(configmap)
+        return configmap
+
     async def _create_torc_job(self) -> None:
+        configmap_to_patch = await self._create_tes_task_config_map()
         torc_job_name = f"{core_constants.K8s.TORC_PREFIX}-{self.task.id}"
+        assert self.task.id is not None, "Task ID should already be assigned"
         try:
             _ttl = (
                 int(core_constants.K8s.JOB_TTL) if core_constants.K8s.JOB_TTL else None
@@ -126,7 +148,6 @@ class CreateTaskController(InterfaceController):
                                 image=core_constants.K8s.POIESIS_IMAGE,
                                 command=["poiesis", "torc", "run"],
                                 security_context=get_infrastructure_container_security_context(),
-                                args=["--task", json.dumps(self.task.model_dump())],
                                 env=list(get_message_broker_envs())
                                 + list(get_mongo_envs())
                                 + list(get_secret_names())
@@ -201,11 +222,13 @@ class CreateTaskController(InterfaceController):
                                     ),
                                 ],
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
-                                volume_mounts=get_infrastructure_security_volume_mount(),
+                                volume_mounts=get_infrastructure_security_volume_mount()
+                                + get_tes_task_request_volume_mounts(),
                             ),
                         ],
                         restart_policy=core_constants.K8s.RESTART_POLICY,
-                        volumes=get_infrastructure_security_volume(),
+                        volumes=get_infrastructure_security_volume()
+                        + get_tes_task_request_volume(self.task.id),
                     ),
                 ),
                 ttl_seconds_after_finished=_ttl,
@@ -213,7 +236,29 @@ class CreateTaskController(InterfaceController):
         )
         logger.debug(job)
         try:
-            await self.kubernetes_client.create_job(job)
+            job: V1Job = await self.kubernetes_client.create_job(job)
+
+            assert job.metadata is not None
+            assert job.metadata.name is not None
+            assert job.metadata.uid is not None
+
+            owner_ref = V1OwnerReference(
+                api_version="batch/v1",
+                kind="Job",
+                name=job.metadata.name,
+                uid=job.metadata.uid,
+                controller=True,
+                block_owner_deletion=True,
+            )
+
+            configmap_to_patch.metadata.owner_references = [owner_ref]
+
+            assert configmap_to_patch.metadata is not None
+            assert configmap_to_patch.metadata.name is not None
+
+            await self.kubernetes_client.patch_config_map(
+                configmap_to_patch.metadata.name, configmap_to_patch
+            )
         except Exception as e:
             logger.error(f"Failed to create TORC job: {str(e)}")
             _id = str(self.task.id)  # This will be str as we are using uuid4

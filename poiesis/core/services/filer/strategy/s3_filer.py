@@ -38,7 +38,7 @@ class S3FilerStrategy(FilerStrategy):
 
         assert self.payload.url is not None, "URL is required"
         self._set_host_bucket_key(self.payload.url)
-        assert self.key is not None and self.key != "", (
+        assert self.key is not None, (  # MODIFIED: Allow empty key for root access
             "S3 key must be set after parsing URL"
         )
         assert self.bucket is not None and self.bucket != "", (
@@ -56,67 +56,55 @@ class S3FilerStrategy(FilerStrategy):
                 "AWS credentials are not set, ask your administrator to set them."
             )
 
-        if self.s3_host is None:
-            raise ValueError(
-                "Host URL is required, either as part of the URL or as an "
-                "environment variable."
-            )
         try:
-            if not self.s3_host.startswith(("http://", "https://")):
-                _endpoint_url = f"http://{self.s3_host}"
-            else:
-                _endpoint_url = self.s3_host
-            self.client: Any = boto3.client(
-                "s3",
-                endpoint_url=_endpoint_url,
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-                config=Config(signature_version="s3v4"),
+            client_args: dict[str, Any] = {
+                "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID"),
+                "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
+                "config": Config(signature_version="s3v4"),
+            }
+
+            if os.getenv("AWS_REGION"):
+                client_args["region_name"] = os.getenv("AWS_REGION")
+
+            if self.s3_host:
+                endpoint_url = self.s3_host
+                if not endpoint_url.startswith(("http://", "https://")):
+                    logger.warning(
+                        "S3 host '%s' does not have a scheme, defaulting to 'http://'",
+                        endpoint_url,
+                    )
+                    endpoint_url = f"http://{endpoint_url}"
+                client_args["endpoint_url"] = endpoint_url
+
+            self.client: Any = boto3.client("s3", **client_args)
+            logger.info(
+                "S3 client created. Endpoint: %s, Region: %s",
+                client_args.get("endpoint_url", "Default AWS"),
+                client_args.get("region_name", "Default"),
             )
+
         except Exception as e:
             logger.error("Error creating S3 client: %s", e)
             raise
 
     def _sanitize_s3_key(self, key: str) -> str:
-        """Derives a base S3 prefix from a key that may contain glob patterns.
-
-        This is crucial for handling non-compliant engines that embed patterns
-        in the destination URL. The correct behavior is to treat the URL as a
-        destination folder (prefix).
-
-        Example: 'path/to/results/SRR2838702.{fna,fna.gz}' -> 'path/to/results/'
-        """
-        # A simple regex to find common glob characters.
+        """Derives a base S3 prefix from a key that may contain glob patterns."""
         glob_pattern = re.compile(r"[\*\?\[\{]")
         match = glob_pattern.search(key)
 
         if not match:
-            # This is a standard, valid key.
             return key
 
-        # Find the last directory separator before the start of the pattern.
-        # This defines the boundary of the base prefix.
         pattern_start_index = match.start()
         last_slash_index = key.rfind("/", 0, pattern_start_index)
 
         if last_slash_index == -1:
-            # Pattern is at the root, so the prefix is the root.
             return ""
 
-        # The prefix is everything up to and including the last slash.
         return key[: last_slash_index + 1]
 
     def _set_host_bucket_key(self, url: str):
-        """Get the bucket name and key from the URL.
-
-        Example:
-            - `s3://host:port/bucket_name/`
-            - `s3://host/bucket_name/file_path`
-            - `s3://bucket_name/dir_name`
-            - `s3://host/bucket_name/dir_name/`
-            - `s3://bucket_name/`
-            - `s3://host/bucket_name/file_name*{extension1, extension2}`
-        """
+        """Get the bucket name and key from the URL."""
         parsed = urlparse(url)
 
         if parsed.scheme != "s3":
@@ -124,24 +112,25 @@ class S3FilerStrategy(FilerStrategy):
 
         path_parts = parsed.path.lstrip("/").split("/")
 
-        if parsed.netloc and parsed.netloc.count(".") > 0 or ":" in parsed.netloc:
-            # Case: s3://host[:port]/bucket/key
-            self.s3_host = f"http://{parsed.netloc}"  # Add scheme
-            if len(path_parts) >= 1:
+        is_host_in_netloc = parsed.netloc and (
+            "." in parsed.netloc or ":" in parsed.netloc
+        )
+
+        if is_host_in_netloc:
+            self.s3_host = parsed.netloc
+            if path_parts and path_parts[0]:
                 self.bucket = path_parts[0]
+                raw_key = "/".join(path_parts[1:])
             else:
-                raise ValueError("Bucket not found in URL.")
-            raw_key = "/".join(path_parts[1:]) if len(path_parts) > 1 else ""
+                raise ValueError("Bucket not found in URL path after host.")
         else:
-            # Case: s3://bucket/key
+            # The host might be set via an environment variable for other S3-compatibles
             self.s3_host = os.getenv("S3_URL")
             self.bucket = parsed.netloc
-            raw_key = "/".join(path_parts) if path_parts else ""
+            raw_key = parsed.path.lstrip("/")
 
         if not self.bucket:
             raise ValueError("Bucket name could not be determined from S3 URL.")
-        if not self.s3_host:
-            raise ValueError("S3 host is not defined and could not be inferred.")
 
         self.key = self._sanitize_s3_key(raw_key)
         logger.debug("Raw S3 key '%s' sanitized to prefix '%s'", raw_key, self.key)

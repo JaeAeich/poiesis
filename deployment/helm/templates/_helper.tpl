@@ -89,8 +89,8 @@ Namespaced RBAC rules (include Jobs - they are namespace-scoped, not cluster-sco
 {{- define "poiesis.rbac.namespacedRules" }}
 {{- $namespacedRules := list
     (dict "apiGroups" (list "")
-        "resources" (list "pods" "persistentvolumeclaims")
-        "verbs" (list "create" "get" "list" "watch" "delete" "deletecollection"))
+        "resources" (list "pods" "persistentvolumeclaims" "configmaps")
+        "verbs" (list "create" "get" "list" "watch" "delete" "deletecollection" "patch" "update"))
     (dict "apiGroups" (list "")
         "resources" (list "pods/log")
         "verbs" (list "get"))

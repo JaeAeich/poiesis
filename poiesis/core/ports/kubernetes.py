@@ -9,7 +9,7 @@ class KubernetesPort(ABC):
     """Container orchestrator port."""
 
     @abstractmethod
-    async def create_job(self, job: V1Job) -> str:
+    async def create_job(self, job: V1Job) -> V1Job:
         """Create a Kubernetes Job.
 
         Args:

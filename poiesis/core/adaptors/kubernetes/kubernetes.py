@@ -46,7 +46,7 @@ class KubernetesAdapter(KubernetesPort):
         self.batch_api = client.BatchV1Api()
         self.namespace = core_constants.K8s.K8S_NAMESPACE
 
-    async def create_job(self, job: client.V1Job) -> str:
+    async def create_job(self, job: client.V1Job) -> client.V1Job:
         """Create a Kubernetes Job.
 
         Args:
@@ -64,7 +64,7 @@ class KubernetesAdapter(KubernetesPort):
             assert api_response.metadata is not None, (
                 "API response should have metadata"
             )
-            return str(api_response.metadata.name)
+            return api_response
         except ApiException as e:
             logger.error(f"Error creating job: {e}")
             raise
@@ -81,6 +81,54 @@ class KubernetesAdapter(KubernetesPort):
             )
         except ApiException as e:
             logger.error(f"Error getting job: {e}")
+            raise
+
+    async def create_config_map(self, configmap: client.V1ConfigMap) -> str:
+        """Create a config map.
+
+        Args:
+            configmap: The ConfigMap object.
+        """
+        try:
+            api_response = await asyncio.to_thread(
+                self.core_api.create_namespaced_config_map,
+                namespace=self.namespace,
+                body=configmap,
+            )
+            assert configmap.metadata is not None, "ConfigMap should have metadata"
+            assert configmap.metadata.name is not None, "ConfigMap name is None"
+            logger.info(
+                f"Created ConfigMap {configmap.metadata.name} in namespace {self.namespace}"
+            )
+            assert api_response.metadata is not None, (
+                "Create ConfigMap API response should have metadata"
+            )
+            return str(api_response.metadata.name)
+        except ApiException as e:
+            logger.error(f"Error creating ConfigMap: {e}")
+            raise
+
+    async def patch_config_map(self, name: str, configmap: client.V1ConfigMap) -> str:
+        """Patch a ConfigMap.
+
+        Args:
+            name: The name of the ConfigMap to patch.
+            configmap: The updated ConfigMap object (with changes such as ownerReferences).
+        """
+        try:
+            api_response = await asyncio.to_thread(
+                self.core_api.patch_namespaced_config_map,
+                name=name,
+                namespace=self.namespace,
+                body=configmap,
+            )
+            assert api_response.metadata is not None, (
+                "Patch ConfigMap API response should have metadata"
+            )
+            logger.info(f"Patched ConfigMap {name} in namespace {self.namespace}")
+            return str(api_response.metadata.name)
+        except ApiException as e:
+            logger.error(f"Error patching ConfigMap {name}: {e}")
             raise
 
     async def create_pvc(self, pvc: client.V1PersistentVolumeClaim) -> str:

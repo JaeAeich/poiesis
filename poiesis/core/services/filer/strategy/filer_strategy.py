@@ -191,11 +191,10 @@ class FilerStrategy(ABC):
         """
         assert isinstance(self.payload, TesOutput)
         is_glob_like = self._path_contains_glob(self.payload.path)
+        container_path = self._get_container_path(self.payload.path)
 
         # A. Handle all glob-related operations first.
         if self.payload.path_prefix or is_glob_like:
-            container_path = self._get_container_path(self.payload.path)
-
             # A.1. Ensure a path_prefix exists, inferring if necessary for non-compliant clients.
             if is_glob_like and not self.payload.path_prefix:
                 inferred_prefix = self._infer_base_path(self.payload.path)
@@ -237,17 +236,24 @@ class FilerStrategy(ABC):
                 await self.upload_output_directory(parent_dir_container_path)
 
         # B. Handle standard file uploads.
-        elif self.payload.type == TesFileType.FILE:
-            container_path = self._get_container_path(self.payload.path)
+        elif (
+            self.payload.type == TesFileType.FILE
+            and os.path.exists(container_path)
+            and os.path.isfile(container_path)
+        ):
             if not os.path.exists(container_path):
                 logger.error(
-                    "Output file specified but not found at path: %s. "
+                    f"Output file specified but not found at path: {container_path}. "
                     "This may indicate a task failure.",
-                    container_path,
                 )
             await self.upload_output_file(container_path)
 
         # C. Handle standard directory uploads.
         else:
-            container_path = self._get_container_path(self.payload.path)
+            if self.payload.type == TesFileType.FILE:
+                logger.warning(
+                    "Output specified as file but not found at"
+                    f"path: {container_path}. Assuming it to be"
+                    "a directory",
+                )
             await self.upload_output_directory(container_path)

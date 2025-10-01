@@ -13,6 +13,7 @@ from kubernetes.client.models import (
     V1ConfigMapVolumeSource,
     V1EnvVar,
     V1EnvVarSource,
+    V1KeyToPath,
     V1PodSecurityContext,
     V1SecretKeySelector,
     V1SecurityContext,
@@ -46,6 +47,7 @@ class PoiesisCoreConstants:
 
         Attributes:
             K8S_NAMESPACE: The namespace in Kubernetes.
+            TES_TASK_PREFIX: The prefix for configmap holding the tes task request.
             TORC_PREFIX: The prefix for the Task Orchestrator job name.
             TIF_PREFIX: The prefix for the Task Input Filer job name.
             TE_PREFIX: The prefix for the Task Executor pod name.
@@ -78,6 +80,9 @@ class PoiesisCoreConstants:
         """
 
         K8S_NAMESPACE = os.getenv("POIESIS_K8S_NAMESPACE", "poiesis")
+        TES_TASK_PREFIX = "tes-task"
+        TES_TASK_CONFIGMAP_KEY = "task.json"
+        TES_TASK_REQUEST_MOUNT_PATH = "/mnt/poiesis/tes"
         TORC_PREFIX = "torc"
         TIF_PREFIX = "tif"
         TE_PREFIX = "te"
@@ -270,6 +275,16 @@ def get_s3_envs() -> tuple[V1EnvVar, ...]:
                     secret_key_ref=V1SecretKeySelector(
                         name=core_constants.K8s.S3_SECRET_NAME,
                         key="AWS_SECRET_ACCESS_KEY",
+                        optional=True,
+                    )
+                ),
+            ),
+            V1EnvVar(
+                name="AWS_REGION",
+                value_from=V1EnvVarSource(
+                    secret_key_ref=V1SecretKeySelector(
+                        name=core_constants.K8s.S3_SECRET_NAME,
+                        key="AWS_REGION",
                         optional=True,
                     )
                 ),
@@ -553,6 +568,48 @@ def get_executor_security_volume_mount() -> list[V1VolumeMount]:
             read_only=True,
         )
     ]
+
+
+def get_tes_task_request_volume_mounts() -> list[V1VolumeMount]:
+    """Returns the volume mounts for the TES task request."""
+    return [
+        V1VolumeMount(
+            name="tes-task-request",
+            mount_path=core_constants.K8s.TES_TASK_REQUEST_MOUNT_PATH,
+            read_only=True,
+        )
+    ]
+
+
+def get_tes_task_request_volume(tes_task_id: str) -> list[V1Volume]:
+    """Returns the volume for the TES task request."""
+    return [
+        V1Volume(
+            name="tes-task-request",
+            config_map=V1ConfigMapVolumeSource(
+                name=f"{core_constants.K8s.TES_TASK_PREFIX}-{tes_task_id}",
+                items=[
+                    V1KeyToPath(
+                        key=core_constants.K8s.TES_TASK_CONFIGMAP_KEY,
+                        path=core_constants.K8s.TES_TASK_CONFIGMAP_KEY,
+                    )
+                ],
+            ),
+        ),
+    ]
+
+
+@lru_cache
+def get_tes_task_request_path() -> Path:
+    """Returns the full path to the TES task request file.
+
+    Returns:
+        Path: The complete file path combining the mount path and config key.
+    """
+    return (
+        Path(core_constants.K8s.TES_TASK_REQUEST_MOUNT_PATH)
+        / core_constants.K8s.TES_TASK_CONFIGMAP_KEY
+    )
 
 
 def get_labels(
