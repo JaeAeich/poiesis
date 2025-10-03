@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from poiesis.api.tes.models import TesTask
 from poiesis.cli.commands.poiesis.base import BaseCommand
+from poiesis.core.constants import get_tes_task_request_path
 from poiesis.core.services.torc.torc import Torc
 
 
@@ -27,11 +28,11 @@ class TorcCommand(BaseCommand):
         """
 
         @group.command(name="run", help="Execute a Torc task")
-        @click.option("--task", required=True, help="Task JSON string")
-        def run(task: str):
+        def run():
             """Execute a Torc task with the provided task JSON."""
             try:
-                task_json = json.loads(task)
+                with open(get_tes_task_request_path()) as f:
+                    task_json: dict[str, Any] = json.load(f)
                 tes_task = TesTask(**task_json)
 
                 click.echo("--- Executing Torc Task ---")

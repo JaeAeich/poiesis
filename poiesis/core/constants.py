@@ -13,6 +13,7 @@ from kubernetes.client.models import (
     V1ConfigMapVolumeSource,
     V1EnvVar,
     V1EnvVarSource,
+    V1KeyToPath,
     V1PodSecurityContext,
     V1SecretKeySelector,
     V1SecurityContext,
@@ -46,15 +47,20 @@ class PoiesisCoreConstants:
 
         Attributes:
             K8S_NAMESPACE: The namespace in Kubernetes.
+            TES_TASK_PREFIX: The prefix for configmap holding the tes task request.
             TORC_PREFIX: The prefix for the Task Orchestrator job name.
             TIF_PREFIX: The prefix for the Task Input Filer job name.
             TE_PREFIX: The prefix for the Task Executor pod name.
             TOF_PREFIX: The prefix for the Task Output Filer job name.
             PVC_PREFIX: The prefix for the Persistent Volume Claim name.
+            TES_TASK_PREFIX: The prefix for configmap holding the tes task request.
+            TES_TASK_CONFIGMAP_KEY: The key for configmap holding the tes task request.
+            TES_TASK_REQUEST_MOUNT_PATH: The path in the pods where the tes task request
+                is mounted.
             TEXAM_PREFIX: The prefix for the Texam job name.
             PVC_DEFAULT_DISK_SIZE: The default disk size for the Persistent Volume
                 Claim.
-                        PVC_ACCESS_MODE: The access mode for PVCs (e.g., ReadWriteOnce,
+            PVC_ACCESS_MODE: The access mode for PVCs (e.g., ReadWriteOnce,
                 ReadWriteMany). Defaults to ReadWriteOnce for compatibility with
                 most storage providers.
             PVC_STORAGE_CLASS: The storage class name for PVCs. Defaults to
@@ -84,6 +90,9 @@ class PoiesisCoreConstants:
         TOF_PREFIX = "tof"
         PVC_PREFIX = "pvc"
         TEXAM_PREFIX = "texam"
+        TES_TASK_PREFIX = "tes-task"
+        TES_TASK_CONFIGMAP_KEY = "task.json"
+        TES_TASK_REQUEST_MOUNT_PATH = "/mnt/poiesis/tes"
         PVC_DEFAULT_DISK_SIZE = "1Gi"
         PVC_ACCESS_MODE = os.getenv("POIESIS_PVC_ACCESS_MODE")
         PVC_STORAGE_CLASS = os.getenv("POIESIS_PVC_STORAGE_CLASS")
@@ -553,6 +562,48 @@ def get_executor_security_volume_mount() -> list[V1VolumeMount]:
             read_only=True,
         )
     ]
+
+
+def get_tes_task_request_volume_mounts() -> list[V1VolumeMount]:
+    """Returns the volume mounts for the TES task request."""
+    return [
+        V1VolumeMount(
+            name="tes-task-request",
+            mount_path=core_constants.K8s.TES_TASK_REQUEST_MOUNT_PATH,
+            read_only=True,
+        )
+    ]
+
+
+def get_tes_task_request_volume(tes_task_id: str) -> list[V1Volume]:
+    """Returns the volume for the TES task request."""
+    return [
+        V1Volume(
+            name="tes-task-request",
+            config_map=V1ConfigMapVolumeSource(
+                name=f"{core_constants.K8s.TES_TASK_PREFIX}-{tes_task_id}",
+                items=[
+                    V1KeyToPath(
+                        key=core_constants.K8s.TES_TASK_CONFIGMAP_KEY,
+                        path=core_constants.K8s.TES_TASK_CONFIGMAP_KEY,
+                    )
+                ],
+            ),
+        ),
+    ]
+
+
+@lru_cache
+def get_tes_task_request_path() -> Path:
+    """Returns the full path to the TES task request file.
+
+    Returns:
+        Path: The complete file path combining the mount path and config key.
+    """
+    return (
+        Path(core_constants.K8s.TES_TASK_REQUEST_MOUNT_PATH)
+        / core_constants.K8s.TES_TASK_CONFIGMAP_KEY
+    )
 
 
 def get_labels(

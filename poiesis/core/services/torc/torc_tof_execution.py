@@ -1,6 +1,5 @@
 """Create TOF Job and monitor it."""
 
-import json
 import logging
 
 from kubernetes.client import (
@@ -64,14 +63,7 @@ class TorcTofExecution(TorcExecutionTemplate):
 
     async def start_job(self) -> None:
         """Create the K8s job for Tof."""
-        task_id = self.id
-        tof_job_name = f"{core_constants.K8s.TOF_PREFIX}-{task_id}"
-        outputs = (
-            json.dumps([output.model_dump() for output in self.outputs])
-            if self.outputs
-            else "[]"
-        )
-
+        tof_job_name = f"{core_constants.K8s.TOF_PREFIX}-{self.id}"
         metadata = V1ObjectMeta(
             name=tof_job_name,
             labels=get_labels(
@@ -82,5 +74,4 @@ class TorcTofExecution(TorcExecutionTemplate):
             ),
         )
         commands: list[str] = ["poiesis", "tof", "run"]
-        args: list[str] = ["--name", task_id, "--outputs", outputs]
-        await self.create_job(task_id, tof_job_name, commands, args, metadata)
+        await self.create_job(self.id, tof_job_name, commands, metadata)
