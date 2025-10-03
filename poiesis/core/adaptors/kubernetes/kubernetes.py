@@ -83,7 +83,9 @@ class KubernetesAdapter(KubernetesPort):
             logger.error(f"Error getting job: {e}")
             raise
 
-    async def create_config_map(self, configmap: client.V1ConfigMap) -> str:
+    async def create_config_map(
+        self, configmap: client.V1ConfigMap
+    ) -> client.V1ConfigMap:
         """Create a config map.
 
         Args:
@@ -101,10 +103,8 @@ class KubernetesAdapter(KubernetesPort):
                 f"Created ConfigMap {configmap.metadata.name} "
                 f"in namespace {self.namespace}"
             )
-            assert api_response.metadata is not None, (
-                "Create ConfigMap API response should have metadata"
-            )
-            return str(api_response.metadata.name)
+
+            return api_response
         except ApiException as e:
             logger.error(f"Error creating ConfigMap: {e}")
             raise
