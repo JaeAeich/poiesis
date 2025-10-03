@@ -97,8 +97,7 @@ class CreateTaskController(InterfaceController):
                 )
             },
         )
-        _ = await self.kubernetes_client.create_config_map(configmap)
-        return configmap
+        return await self.kubernetes_client.create_config_map(configmap)
 
     async def _create_torc_job(self) -> None:
         configmap_to_patch = await self._create_tes_task_config_map()
@@ -247,8 +246,8 @@ class CreateTaskController(InterfaceController):
                 kind="Job",
                 name=job.metadata.name,
                 uid=job.metadata.uid,
+                block_owner_deletion=False,
                 controller=True,
-                block_owner_deletion=True,
             )
 
             configmap_to_patch.metadata.owner_references = [owner_ref]  # type: ignore
