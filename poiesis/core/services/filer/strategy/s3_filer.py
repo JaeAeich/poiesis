@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -37,9 +38,7 @@ class S3FilerStrategy(FilerStrategy):
 
         assert self.payload.url is not None, "URL is required"
         self._set_host_bucket_key(self.payload.url)
-        assert self.key is not None and self.key != "", (
-            "S3 key must be set after parsing URL"
-        )
+        assert self.key is not None, "S3 key must be set after parsing URL"
         assert self.bucket is not None and self.bucket != "", (
             "S3 bucket must be set after parsing URL"
         )
@@ -55,37 +54,54 @@ class S3FilerStrategy(FilerStrategy):
                 "AWS credentials are not set, ask your administrator to set them."
             )
 
-        if self.s3_host is None:
-            raise ValueError(
-                "Host URL is required, either as part of the URL or as an "
-                "environment variable."
-            )
         try:
-            if not self.s3_host.startswith(("http://", "https://")):
-                _endpoint_url = f"http://{self.s3_host}"
-            else:
-                _endpoint_url = self.s3_host
-            self.client: Any = boto3.client(
-                "s3",
-                endpoint_url=_endpoint_url,
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-                config=Config(signature_version="s3v4"),
+            client_args: dict[str, Any] = {
+                "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID"),
+                "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
+                "config": Config(signature_version="s3v4"),
+            }
+
+            if os.getenv("AWS_REGION"):
+                client_args["region_name"] = os.getenv("AWS_REGION")
+
+            if self.s3_host:
+                endpoint_url = self.s3_host
+                if not endpoint_url.startswith(("http://", "https://")):
+                    logger.warning(
+                        f"S3 host '{endpoint_url}' does not have a scheme, "
+                        "defaulting to 'http://'",
+                    )
+                    endpoint_url = f"http://{endpoint_url}"
+                client_args["endpoint_url"] = endpoint_url
+
+            self.client: Any = boto3.client("s3", **client_args)
+            logger.info(
+                f"S3 Endpoint: {client_args.get('endpoint_url', 'Default AWS')}, "
+                f"S3 Region: {client_args.get('region_name', 'Default')}",
             )
+
         except Exception as e:
-            logger.error("Error creating S3 client: %s", e)
+            logger.error(f"Error creating S3 client: {e}")
             raise
 
-    def _set_host_bucket_key(self, url: str):
-        """Get the bucket name and key from the URL.
+    def _sanitize_s3_key(self, key: str) -> str:
+        """Derives a base S3 prefix from a key that may contain glob patterns."""
+        glob_pattern = re.compile(r"[\*\?\[\{]")
+        match = glob_pattern.search(key)
 
-        Example:
-            - `s3://host:port/bucket_name/`
-            - `s3://host/bucket_name/file_path`
-            - `s3://bucket_name/dir_name`
-            - `s3://host/bucket_name/dir_name/`
-            - `s3://bucket_name/`
-        """
+        if not match:
+            return key
+
+        pattern_start_index = match.start()
+        last_slash_index = key.rfind("/", 0, pattern_start_index)
+
+        if last_slash_index == -1:
+            return ""
+
+        return key[: last_slash_index + 1]
+
+    def _set_host_bucket_key(self, url: str):
+        """Get the bucket name and key from the URL."""
         parsed = urlparse(url)
 
         if parsed.scheme != "s3":
@@ -93,24 +109,28 @@ class S3FilerStrategy(FilerStrategy):
 
         path_parts = parsed.path.lstrip("/").split("/")
 
-        if parsed.netloc and parsed.netloc.count(".") > 0 or ":" in parsed.netloc:
-            # Case: s3://host[:port]/bucket/key
-            self.s3_host = f"http://{parsed.netloc}"  # Add scheme
-            if len(path_parts) >= 1:
+        is_host_in_netloc = parsed.netloc and (
+            "." in parsed.netloc or ":" in parsed.netloc
+        )
+
+        if is_host_in_netloc:
+            self.s3_host = parsed.netloc
+            if path_parts and path_parts[0]:
                 self.bucket = path_parts[0]
+                raw_key = "/".join(path_parts[1:])
             else:
-                raise ValueError("Bucket not found in URL.")
-            self.key = "/".join(path_parts[1:]) if len(path_parts) > 1 else ""
+                raise ValueError("Bucket not found in URL path after host.")
         else:
-            # Case: s3://bucket/key
+            # The host might be set via an environment variable for other S3-compatibles
             self.s3_host = os.getenv("S3_URL")
             self.bucket = parsed.netloc
-            self.key = "/".join(path_parts) if path_parts else ""
+            raw_key = parsed.path.lstrip("/")
 
         if not self.bucket:
             raise ValueError("Bucket name could not be determined from S3 URL.")
-        if not self.s3_host:
-            raise ValueError("S3 host is not defined and could not be inferred.")
+
+        self.key = self._sanitize_s3_key(raw_key)
+        logger.debug(f"Raw S3 key '{raw_key}' sanitized to prefix '{self.key}'")
 
     async def download_input_file(self, container_path: str) -> None:
         """Download file from S3 or Minio and mount to PVC.
@@ -127,12 +147,11 @@ class S3FilerStrategy(FilerStrategy):
         try:
             self.client.download_file(self.bucket, self.key, container_path)
             logger.info(
-                "Successfully downloaded file from %s to %s",
-                self.input.url,
-                container_path,
+                "Successfully downloaded file from "
+                f"{self.input.url} to {container_path}"
             )
         except Exception as e:
-            logger.error("Error downloading file: %s", e)
+            logger.error(f"Error downloading file: {e}")
             raise
 
     async def download_input_directory(self, container_path: str) -> None:
@@ -171,7 +190,7 @@ class S3FilerStrategy(FilerStrategy):
                     Path(local_path).parent.mkdir(parents=True, exist_ok=True)
 
                     logger.info(
-                        "Downloading s3://%s/%s to %s", self.bucket, s3_key, local_path
+                        f"Downloading s3://{self.bucket}/{s3_key} to {local_path}"
                     )
                     self.client.download_file(self.bucket, s3_key, local_path)
 
@@ -179,13 +198,12 @@ class S3FilerStrategy(FilerStrategy):
             assert self.input.url is not None
 
             logger.info(
-                "Successfully downloaded directory from %s to %s",
-                self.input.url,
-                container_path,
+                "Successfully downloaded directory from "
+                f"{self.input.url} to {container_path}",
             )
 
         except Exception as e:
-            logger.error("Error downloading directory: %s", e)
+            logger.error(f"Error downloading directory: {e}")
             raise
 
     async def upload_output_file(self, container_path: str) -> None:
@@ -199,13 +217,13 @@ class S3FilerStrategy(FilerStrategy):
 
         try:
             if not os.path.exists(container_path):
-                logger.error("Output file not found: %s", container_path)
+                logger.error(f"Output file not found: {container_path}")
                 raise FileNotFoundError(f"Output file not found: {container_path}")
 
             self.client.upload_file(container_path, self.bucket, self.key)
-            logger.info("Uploaded %s to %s", container_path, self.output.url)
+            logger.info(f"Uploaded {container_path} to {self.output.url}")
         except Exception as e:
-            logger.error("Error uploading file: %s", e)
+            logger.error(f"Error uploading file: {e}")
             raise
 
     async def upload_output_directory(self, container_path: str) -> None:
@@ -217,7 +235,7 @@ class S3FilerStrategy(FilerStrategy):
         """
         try:
             if not os.path.exists(container_path):
-                logger.error("Output directory not found: %s", container_path)
+                logger.error(f"Output directory not found: {container_path}")
                 raise FileNotFoundError(f"Output directory not found: {container_path}")
 
             for root, _, files in os.walk(container_path):
@@ -234,10 +252,7 @@ class S3FilerStrategy(FilerStrategy):
                     )  # Ensure POSIX-style key
 
                     logger.info(
-                        "Uploading %s to s3://%s/%s",
-                        local_file_path,
-                        self.bucket,
-                        s3_key,
+                        f"Uploading {local_file_path} to s3://{self.bucket}/{s3_key}",
                     )
                     self.client.upload_file(local_file_path, self.bucket, s3_key)
 
@@ -245,13 +260,12 @@ class S3FilerStrategy(FilerStrategy):
             assert self.output.url is not None
 
             logger.info(
-                "Successfully uploaded directory from %s to %s",
-                container_path,
-                self.output.url,
+                f"Successfully uploaded directory from {container_path} "
+                f"to {self.output.url}",
             )
 
         except Exception as e:
-            logger.error("Error uploading directory: %s", e)
+            logger.error(f"Error uploading directory: {e}")
             raise
 
     async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
@@ -262,10 +276,12 @@ class S3FilerStrategy(FilerStrategy):
                 is_directory)
         """
         assert self.output is not None
+        logger.info(
+            f"Uploading {len(glob_files)} glob-matched items to s3://{self.bucket}/{self.key}",
+        )
         for file_path, relative_path, is_directory in glob_files:
             prefix = self.key if self.key.endswith("/") else f"{self.key}/"
             _s3_key = prefix + relative_path
-
             if is_directory:
                 logger.warning(
                     f"Glob pattern matched directory '{file_path}' - uploading as"
@@ -283,20 +299,13 @@ class S3FilerStrategy(FilerStrategy):
                         )
 
                         logger.debug(
-                            "Uploading %s to s3://%s/%s",
-                            local_file_path,
-                            self.bucket,
-                            file_s3_key,
+                            f"Uploading {local_file_path} to s3://{self.bucket}/{file_s3_key}",
                         )
                         self.client.upload_file(
                             local_file_path, self.bucket, file_s3_key
                         )
             else:
-                # Upload single file
                 logger.debug(
-                    "Uploading %s to s3://%s/%s",
-                    file_path,
-                    self.bucket,
-                    str(_s3_key),
+                    f"Uploading {file_path} to s3://{self.bucket}/{_s3_key}",
                 )
                 self.client.upload_file(file_path, self.bucket, _s3_key)

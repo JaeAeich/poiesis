@@ -203,6 +203,8 @@ poiesis:
       enabled: false
       # URL of the external Minio server (e.g., "http://minio.example.com:9000").
       url: ""
+      # Region of the external Minio server.
+      region: "Auto"
       # Auth configs
       auth:
         # Access key (username) for the external Minio instance.
