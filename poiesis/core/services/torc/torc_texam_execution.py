@@ -1,6 +1,5 @@
 """Create Texam Job and monitor it."""
 
-import json
 import logging
 
 from kubernetes.client import (
@@ -29,6 +28,8 @@ from poiesis.core.constants import (
     get_poiesis_core_constants,
     get_secret_names,
     get_security_context_envs,
+    get_tes_task_request_volume,
+    get_tes_task_request_volume_mounts,
 )
 from poiesis.core.services.torc.torc_execution_template import TorcExecutionTemplate
 
@@ -92,7 +93,6 @@ class TorcTexamExecution(TorcExecutionTemplate):
                 "(None).",
             )
             _ttl = None
-        task = json.dumps(self.task.model_dump())
         job = V1Job(
             api_version="batch/v1",
             kind="Job",
@@ -123,10 +123,6 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                 name=core_constants.K8s.TIF_PREFIX,
                                 image=core_constants.K8s.POIESIS_IMAGE,
                                 command=["poiesis", "texam", "run"],
-                                args=[
-                                    "--task",
-                                    task,
-                                ],
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                                 security_context=get_infrastructure_container_security_context(),
                                 env=list(get_mongo_envs())
@@ -204,11 +200,13 @@ class TorcTexamExecution(TorcExecutionTemplate):
                                         ),
                                     ),
                                 ],
-                                volume_mounts=get_infrastructure_security_volume_mount(),
+                                volume_mounts=get_infrastructure_security_volume_mount()
+                                + get_tes_task_request_volume_mounts(),
                             )
                         ],
                         restart_policy=core_constants.K8s.RESTART_POLICY,
-                        volumes=get_infrastructure_security_volume(),
+                        volumes=get_infrastructure_security_volume()
+                        + get_tes_task_request_volume(self.id),
                     ),
                 ),
                 ttl_seconds_after_finished=_ttl,

@@ -7,8 +7,9 @@ from typing import Any
 import click
 from pydantic import ValidationError
 
-from poiesis.api.tes.models import TesInput
+from poiesis.api.tes.models import TesTask
 from poiesis.cli.commands.poiesis.base import BaseCommand
+from poiesis.core.constants import get_tes_task_request_path
 from poiesis.core.services.filer.filer_strategy_factory import STRATEGY_MAP
 from poiesis.core.services.filer.tif import Tif
 
@@ -31,22 +32,22 @@ class TifCommand(BaseCommand):
             name="run",
             help="Execute a TIF task to download input files",
         )
-        @click.option("--name", required=True, help="Name of the task")
-        @click.option("--inputs", required=True, help="List of task inputs as JSON")
-        def run(name: str, inputs: str):
+        def run():
             """Execute a TIF task with the provided parameters."""
             try:
-                inputs_json = json.loads(inputs)
-                _inputs = [TesInput(**input_) for input_ in inputs_json]
+                with open(get_tes_task_request_path()) as f:
+                    task_json: dict[str, Any] = json.load(f)
+                tes_task = TesTask(**task_json)
+                _inputs = tes_task.inputs or []
 
-                file_count = len(_inputs)
+                assert tes_task.id, "Task ID is required"
+
                 click.echo("--- TIF Task Information ---")
-                click.echo(f"Task: {name}")
-                click.echo(f"Input files: {file_count}")
+                click.echo(f"Task: {tes_task.id}")
                 click.echo("--------------------------")
 
                 click.echo("Downloading input files...")
-                asyncio.run(Tif(name, _inputs).execute())
+                asyncio.run(Tif(tes_task.id, _inputs).execute())
 
             except json.JSONDecodeError as e:
                 raise click.ClickException(f"JSON parsing error: {str(e)}") from e

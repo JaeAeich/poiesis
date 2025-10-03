@@ -9,6 +9,8 @@ from pydantic import ValidationError
 
 from poiesis.api.tes.models import TesTask
 from poiesis.cli.commands.poiesis.base import BaseCommand
+from poiesis.core.constants import get_tes_task_request_path
+from poiesis.core.services.texam.texam import Texam
 
 
 class TexamCommand(BaseCommand):
@@ -26,13 +28,12 @@ class TexamCommand(BaseCommand):
         """
 
         @group.command(name="run", help="Execute a TExAM task")
-        @click.option("--task", required=True, help="TES task request as JSON")
-        def run(task: str):
+        def run():
             """Execute a TExAM task with the provided parameters."""
-            from poiesis.core.services.texam.texam import Texam
-
             try:
-                _task = TesTask(**json.loads(task))
+                with open(get_tes_task_request_path()) as f:
+                    task_json: dict[str, Any] = json.load(f)
+                _task = TesTask(**task_json)
             except ValidationError as e:
                 raise click.ClickException(f"Validation Error: {e}") from e
             except json.JSONDecodeError as e:

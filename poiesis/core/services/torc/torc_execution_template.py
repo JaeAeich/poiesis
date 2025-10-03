@@ -30,6 +30,8 @@ from poiesis.core.constants import (
     get_poiesis_core_constants,
     get_s3_envs,
     get_secret_names,
+    get_tes_task_request_volume,
+    get_tes_task_request_volume_mounts,
 )
 from poiesis.core.ports.message_broker import Message, MessageStatus
 from poiesis.repository.mongo import MongoDBClient
@@ -81,7 +83,6 @@ class TorcExecutionTemplate(ABC):
         task_id: str,
         job_name: str,
         commands: list[str],
-        args: list[str],
         metadata: V1ObjectMeta,
     ) -> None:
         """Create the K8s filer job.
@@ -120,7 +121,6 @@ class TorcExecutionTemplate(ABC):
                                 name=job_name,
                                 image=core_constants.K8s.POIESIS_IMAGE,
                                 command=commands,
-                                args=args,
                                 env=list(get_message_broker_envs())
                                 + list(get_mongo_envs())
                                 + list(get_s3_envs())
@@ -146,7 +146,8 @@ class TorcExecutionTemplate(ABC):
                                         name=core_constants.K8s.COMMON_PVC_VOLUME_NAME,
                                         mount_path=core_constants.K8s.FILER_PVC_PATH,
                                     )
-                                ],
+                                ]
+                                + get_tes_task_request_volume_mounts(),
                                 image_pull_policy=core_constants.K8s.IMAGE_PULL_POLICY,
                                 security_context=get_infrastructure_container_security_context(),
                             ),
@@ -158,7 +159,8 @@ class TorcExecutionTemplate(ABC):
                                     claim_name=f"{core_constants.K8s.PVC_PREFIX}-{task_id}"
                                 ),
                             )
-                        ],
+                        ]
+                        + get_tes_task_request_volume(task_id),
                         restart_policy=core_constants.K8s.RESTART_POLICY,
                     ),
                 ),

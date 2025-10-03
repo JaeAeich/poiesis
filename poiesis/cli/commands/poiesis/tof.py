@@ -7,8 +7,9 @@ from typing import Any
 import click
 from pydantic import ValidationError
 
-from poiesis.api.tes.models import TesOutput
+from poiesis.api.tes.models import TesTask
 from poiesis.cli.commands.poiesis.base import BaseCommand
+from poiesis.core.constants import get_tes_task_request_path
 from poiesis.core.services.filer.filer_strategy_factory import STRATEGY_MAP
 from poiesis.core.services.filer.tof import Tof
 
@@ -28,22 +29,24 @@ class TofCommand(BaseCommand):
         """
 
         @group.command(name="run", help="Execute a TOF task")
-        @click.option("--name", required=True, help="Name of the task")
-        @click.option("--outputs", required=True, help="List of task outputs as JSON")
-        def run(name: str, outputs: str):
+        def run():
             """Execute a TOF task with the provided parameters."""
             try:
-                outputs_json = json.loads(outputs)
-                _outputs = [TesOutput(**output) for output in outputs_json]
+                with open(get_tes_task_request_path()) as f:
+                    task_json: dict[str, Any] = json.load(f)
+                tes_task = TesTask(**task_json)
+                _outputs = tes_task.outputs or []
+
+                assert tes_task.id is not None, "Task ID is missing"
 
                 file_count = len(_outputs)
                 click.echo("--- TOF Task Information ---")
-                click.echo(f"Task: {name}")
+                click.echo(f"Task: {tes_task.id}")
                 click.echo(f"Output files: {file_count}")
                 click.echo("--------------------------")
 
                 click.echo("Uploading output files...")
-                asyncio.run(Tof(name, _outputs).execute())
+                asyncio.run(Tof(tes_task.id, _outputs).execute())
 
             except json.JSONDecodeError as e:
                 raise click.ClickException(f"JSON parsing error: {str(e)}") from e
