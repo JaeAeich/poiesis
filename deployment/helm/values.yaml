@@ -11,7 +11,7 @@ fullnameOverride: ""
 
 # Common annotations to add to all resources created by this chart.
 # Useful for adding metadata like ownership, contact info, or integration points.
-commonAnnotations: {}
+commonAnnotations:
   # Example:
   # my-annotation: "my-value"
 
@@ -32,7 +32,7 @@ poiesis:
     # The Kubernetes image pull policy (e.g., Always, Never, IfNotPresent).
     pullPolicy: IfNotPresent
     # The tag of the Docker image to use (e.g., "latest", "v0.1.0"). "latest" is generally not recommended for production.
-    tag: "latest"
+    tag: "v0.1.0"
 
   # Configuration for the Kubernetes Service exposing the Poiesis application.
   service:
@@ -199,11 +199,12 @@ poiesis:
         password: "" # <-- IMPORTANT: Secure this value.
     # Configuration for connecting to an external Minio (S3-compatible) object storage instance.
     minio:
-      # If true, Poiesis will use the connection details specified below instead of deploying the minio sub-chart.
+      # If true, Poiesis will use the connection details specified.
       enabled: false
       # URL of the external Minio server (e.g., "http://minio.example.com:9000").
+      # This might not be needed for AWS S3.
       url: ""
-      # Region of the external Minio server.
+      # S3 region. This might not be needed for some S3 compatible object store.
       region: "Auto"
       # Auth configs
       auth:

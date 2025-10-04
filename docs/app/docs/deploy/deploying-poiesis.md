@@ -49,7 +49,7 @@ If not installed, install MongoDB, Redis, and MinIO via dev.yaml, we will use
 namespace for the Poiesis deployment.
 
 ```bash
-kubectl apply -f ../dev.yaml -n deps --create-namespace
+kubectl apply -f ../dev.yaml -n deps
 ```
 
 ## Install Poiesis
@@ -57,11 +57,11 @@ kubectl apply -f ../dev.yaml -n deps --create-namespace
 ```bash
 helm install poiesis . \
   -n poiesis --create-namespace \
-  --set externalDependencies.mongodb.connectionString="mongodb://admin:password@mongodb.deps.svc.cluster.local:27017/poiesis?authSource=admin" \
-  --set externalDependencies.redis.host="redis.deps.svc.cluster.local" \
-  --set externalDependencies.redis.port="6379" \
-  --set externalDependencies.redis.auth.enabled=true \
-  --set externalDependencies.redis.auth.password="password"
+  --set poiesis.externalDependencies.mongodb.connectionString="mongodb://admin:password@mongodb.deps.svc.cluster.local:27017/poiesis?authSource=admin" \
+  --set poiesis.externalDependencies.redis.host="redis.deps.svc.cluster.local" \
+  --set poiesis.externalDependencies.redis.port="6379" \
+  --set poiesis.externalDependencies.redis.auth.enabled=true \
+  --set poiesis.externalDependencies.redis.auth.password="password"
 ```
 
 :::warning change the above settings as needed
@@ -124,15 +124,15 @@ include MinIO.
 ```bash
 helm upgrade --install poiesis . \
   -n poiesis --create-namespace \
-  --set externalDependencies.mongodb.connectionString="mongodb://admin:password@mongodb.deps.svc.cluster.local:27017/poiesis?authSource=admin" \
-  --set externalDependencies.redis.host="redis.deps.svc.cluster.local" \
-  --set externalDependencies.redis.port="6379" \
-  --set externalDependencies.redis.auth.enabled=true \
-  --set externalDependencies.redis.auth.password="password" \
-  --set externalDependencies.minio.enabled=true \
-  --set externalDependencies.minio.url="http://minio.deps.svc.cluster.local:9000" \
-  --set externalDependencies.minio.auth.rootUser="admin" \
-  --set externalDependencies.minio.auth.rootPassword="password"
+  --set poiesis.externalDependencies.mongodb.connectionString="mongodb://admin:password@mongodb.deps.svc.cluster.local:27017/poiesis?authSource=admin" \
+  --set poiesis.externalDependencies.redis.host="redis.deps.svc.cluster.local" \
+  --set poiesis.externalDependencies.redis.port="6379" \
+  --set poiesis.externalDependencies.redis.auth.enabled=true \
+  --set poiesis.externalDependencies.redis.auth.password="password" \
+  --set poiesis.externalDependencies.minio.enabled=true \
+  --set poiesis.externalDependencies.minio.url="http://minio.deps.svc.cluster.local:9000" \
+  --set poiesis.externalDependencies.minio.auth.rootUser="admin" \
+  --set poiesis.externalDependencies.minio.auth.rootPassword="password"
 ```
 
 Now Poiesis will be configured with MinIO.
@@ -232,15 +232,15 @@ values (either in `values.yaml` or via `helm upgrade --set ...`):
 ```bash
 helm upgrade \
     -n poiesis --create-namespace \
-    --set externalDependencies.mongodb.connectionString="mongodb://admin:password@mongodb.deps.svc.cluster.local:27017/poiesis?authSource=admin" \
-    --set externalDependencies.redis.host="redis.deps.svc.cluster.local" \
-    --set externalDependencies.redis.port="6379" \
-    --set externalDependencies.redis.auth.enabled=true \
-    --set externalDependencies.redis.auth.password="password" \
-    --set externalDependencies.minio.enabled=true \
-    --set externalDependencies.minio.url="http://minio.deps.svc.cluster.local:9000" \
-    --set externalDependencies.minio.auth.rootUser="admin" \
-    --set externalDependencies.minio.auth.rootPassword="password" \
+    --set poiesis.externalDependencies.mongodb.connectionString="mongodb://admin:password@mongodb.deps.svc.cluster.local:27017/poiesis?authSource=admin" \
+    --set poiesis.externalDependencies.redis.host="redis.deps.svc.cluster.local" \
+    --set poiesis.externalDependencies.redis.port="6379" \
+    --set poiesis.externalDependencies.redis.auth.enabled=true \
+    --set poiesis.externalDependencies.redis.auth.password="password" \
+    --set poiesis.externalDependencies.minio.enabled=true \
+    --set poiesis.externalDependencies.minio.url="http://minio.deps.svc.cluster.local:9000" \
+    --set poiesis.externalDependencies.minio.auth.rootUser="admin" \
+    --set poiesis.externalDependencies.minio.auth.rootPassword="password" \
     --set poiesis.auth.type=oidc \
     --set poiesis.auth.oidc.issuer=http://keycloak.poiesis.svc.cluster.local/realms/poiesis \
     --set poiesis.auth.oidc.clientId=poiesis \

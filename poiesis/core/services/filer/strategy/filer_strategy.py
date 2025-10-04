@@ -181,10 +181,7 @@ class FilerStrategy(ABC):
         # Find the last directory separator before the pattern.
         last_slash_index = path.rfind("/", 0, pattern_start_index)
 
-        if last_slash_index == -1:
-            return "/"
-
-        return path[: last_slash_index + 1]
+        return "/" if last_slash_index == -1 else path[: last_slash_index + 1]
 
     async def upload(self):
         """Upload file to storage created by executors, mounted to PVC.
@@ -256,6 +253,6 @@ class FilerStrategy(ABC):
                 logger.warning(
                     "Output specified as file but not found at"
                     f"path: {container_path}. Assuming it to be"
-                    "a directory",
+                    "a directory.",
                 )
             await self.upload_output_directory(container_path)
