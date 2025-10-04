@@ -240,11 +240,6 @@ class FilerStrategy(ABC):
             and os.path.exists(container_path)
             and os.path.isfile(container_path)
         ):
-            if not os.path.exists(container_path):
-                logger.error(
-                    f"Output file specified but not found at path: {container_path}. "
-                    "This may indicate a task failure.",
-                )
             await self.upload_output_file(container_path)
 
         # Handle standard directory uploads.
