@@ -283,6 +283,16 @@ def get_s3_envs() -> tuple[V1EnvVar, ...]:
                     )
                 ),
             ),
+            V1EnvVar(
+                name="AWS_REGION",
+                value_from=V1EnvVarSource(
+                    secret_key_ref=V1SecretKeySelector(
+                        name=core_constants.K8s.S3_SECRET_NAME,
+                        key="AWS_REGION",
+                        optional=True,
+                    )
+                ),
+            ),
         )
         if core_constants.K8s.S3_SECRET_NAME
         else ()

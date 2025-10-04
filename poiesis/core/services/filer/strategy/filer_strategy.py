@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from abc import ABC, abstractmethod
 from glob import glob
 
@@ -153,15 +154,100 @@ class FilerStrategy(ABC):
 
         return _ret
 
+    def _path_contains_glob(self, path: str) -> bool:
+        """Checks if a path string contains glob-like characters."""
+        return any(char in path for char in "*?[]{}")
+
+    def _infer_base_path(self, path: str) -> str:
+        """Infers the base directory from a glob path.
+
+        This is used as the 'path_prefix' for calculating
+        relative upload paths. Fallback in case TES client
+        doesn't provide path_prefix but still has a glob pattern.
+
+        Example: '/work/results/SRR*.fna' -> '/work/results/'
+        """
+        if not self._path_contains_glob(path):
+            return os.path.dirname(path)
+
+        # Find the part of the path before the first wildcard.
+        glob_pattern = re.compile(r"[\*\?\[\{]")
+        match = glob_pattern.search(path)
+        if not match:
+            # Should be unreachable if _path_contains_glob is true, but defensive.
+            return os.path.dirname(path)
+
+        pattern_start_index = match.start()
+        # Find the last directory separator before the pattern.
+        last_slash_index = path.rfind("/", 0, pattern_start_index)
+
+        return "/" if last_slash_index == -1 else path[: last_slash_index + 1]
+
     async def upload(self):
         """Upload file to storage created by executors, mounted to PVC.
 
-        Get the appropriate secrets, check permissions and upload the file.
+        This method correctly dispatches to glob, file, or directory handlers
+        and includes robust logging and fallback mechanisms.
         """
+        assert isinstance(self.payload, TesOutput)
+        is_glob_like = self._path_contains_glob(self.payload.path)
         container_path = self._get_container_path(self.payload.path)
-        if isinstance(self.payload, TesOutput) and self.payload.path_prefix:
-            await self.upload_glob(self._get_glob_files(container_path))
-        elif self.payload.type == TesFileType.FILE:
+
+        # Handle all glob-related operations first.
+        if self.payload.path_prefix or is_glob_like:
+            # Ensure a path_prefix exists, inferring if necessary for
+            # non-compliant clients.
+            if is_glob_like and not self.payload.path_prefix:
+                inferred_prefix = self._infer_base_path(self.payload.path)
+                logger.debug(
+                    f"Inferred path_prefix '{inferred_prefix}' from "
+                    f"path '{self.payload.path}'",
+                )
+                self.payload.path_prefix = inferred_prefix
+
+            assert self.payload.path_prefix is not None, (
+                "path_prefix is required for glob operations but was not found "
+                "or inferred."
+            )
+
+            # Execute the glob and evaluate results.
+            globbed_files = self._get_glob_files(container_path)
+
+            if globbed_files:
+                logger.info(
+                    f"Found {len(globbed_files)} file(s) matching glob "
+                    f"pattern '{self.payload.path}'.",
+                )
+                logger.debug(
+                    "Glob matched files: %s", [item[0] for item in globbed_files]
+                )
+                await self.upload_glob(globbed_files)
+            else:
+                logger.warning(
+                    f"Output glob pattern '{self.payload.path}' did not match any "
+                    "files. Falling back to uploading the entire parent directory"
+                    f"'{self.payload.path_prefix}'. This may indicate a "
+                    "misconfiguration in the workflow definition.",
+                )
+                parent_dir_container_path = self._get_container_path(
+                    self.payload.path_prefix
+                )
+                await self.upload_output_directory(parent_dir_container_path)
+
+        # Handle standard file uploads.
+        elif (
+            self.payload.type == TesFileType.FILE
+            and os.path.exists(container_path)
+            and os.path.isfile(container_path)
+        ):
             await self.upload_output_file(container_path)
+
+        # Handle standard directory uploads.
         else:
+            if self.payload.type == TesFileType.FILE:
+                logger.warning(
+                    "Output specified as file but not found at"
+                    f"path: {container_path}. Assuming it to be"
+                    "a directory.",
+                )
             await self.upload_output_directory(container_path)
