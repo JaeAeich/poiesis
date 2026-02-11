@@ -25,7 +25,12 @@ data:
   {{- if .Values.poiesis.externalDependencies.redis.auth.enabled }}
   POIESIS_REDIS_SECRET_NAME: {{ include "poiesis.redis.secretName" . }}
   {{- end }}
-  {{- if .Values.poiesis.externalDependencies.minio.enabled }}
+  {{- if and (.Values.poiesis.externalDependencies.minio.enabled) (not .Values.poiesis.externalDependencies.s3.enabled) }}
   S3_URL: {{ .Values.poiesis.externalDependencies.minio.url | quote }}
   POIESIS_S3_SECRET_NAME: {{include "poiesis.s3.secretName" . }}
+  {{- else if and (.Values.poiesis.externalDependencies.s3.enabled) (not .Values.poiesis.externalDependencies.minio.enabled) }}
+  S3_URL: {{ .Values.poiesis.externalDependencies.s3.endpoint | quote }}
+  POIESIS_S3_SECRET_NAME: {{include "poiesis.s3.secretName" . }}
+  AWS_REQUEST_CHECKSUM_CALCULATION: {{ .Values.poiesis.externalDependencies.s3.awsRequest.checksumCalculation | quote }}
+  AWS_REQUEST_CHECKSUM_VALIDATION: {{ .Values.poiesis.externalDependencies.s3.awsRequest.checksumValidation | quote }}
   {{- end }}

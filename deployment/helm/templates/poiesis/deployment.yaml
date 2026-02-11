@@ -132,13 +132,14 @@ spec:
                   name: {{ include "poiesis.auth.secretName" . }}
                   key: OIDC_CLIENT_SECRET
             {{- end }}
-            {{- if .Values.poiesis.externalDependencies.minio.enabled }}
+            {{- if or (.Values.poiesis.externalDependencies.minio.enabled) (.Values.poiesis.externalDependencies.s3.enabled) }}
             - name: POIESIS_S3_SECRET_NAME
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_S3_SECRET_NAME
             {{- end }}
+          resources: {{- toYaml .Values.poiesis.resources | nindent 12 }}
           {{- if or .Values.poiesis.securityContext.infrastructure.enabled .Values.poiesis.securityContext.executors.enabled }}
           volumeMounts:
             - name: {{ include "poiesis.securityConfigMapName" . }}

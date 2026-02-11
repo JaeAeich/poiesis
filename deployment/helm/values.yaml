@@ -21,7 +21,20 @@ poiesis:
   # Controls whether the Poiesis application itself is deployed.
   # Note: Useful during development, disable poiesis but enable all its components
   #   expose them and run hot loaded poiesis.
+  #   If deployed on OpenShift and ingress.enabled is false, then route will be created instead of ingress.
   enabled: true
+  ingress:
+    enabled: false
+    hostname: ""
+    tls:
+      enabled: false
+      secretName: ""
+      # For route configuration
+      insecureEdgeTerminationPolicy: Redirect
+      termination: edge
+    path: /
+    pathType: Prefix
+
   # Specifies the number of Poiesis application pods to run.
   replicaCount: 1
 
@@ -40,6 +53,17 @@ poiesis:
     type: ClusterIP
     # The port on which the Service will expose the Poiesis application within the cluster.
     port: "8000" # Corresponds to the target port on the Poiesis container.
+
+  # Configuration for resource requests and limits for the Poiesis API pod.
+  resources:
+    # Resource requests and limits for the Poiesis API pod.
+    # Adjust these values based on your cluster's capacity and application needs.
+    requests:
+      memory: "2Gi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "500m"
 
   # Poiesis application-specific runtime configuration.
   # These values are typically passed as environment variables or configuration files to the application.
@@ -212,3 +236,20 @@ poiesis:
         rootUser: ""
         # Secret key (password) for the external Minio instance. Use secrets management for production.
         rootPassword: "" # <-- IMPORTANT: Secure this value.
+    s3:
+      # If true, Poiesis will use the connection details specified.
+      enabled: false
+      # URL of the external S3 server (e.g., "https://s3.amazonaws.com").
+      endpoint: ""
+      # S3 region. This might not be needed for some S3 compatible object store.
+      region: ""
+      awsRequest:
+        # AWS request checksum calculation setting. Options: "NEVER", "WHEN_REQUIRED", "ALWAYS".
+        checksumCalculation: "WHEN_REQUIRED"
+        # AWS request checksum validation setting. Options: "NEVER", "WHEN_REQUIRED", "ALWAYS".
+        checksumValidation: "WHEN_REQUIRED"
+      auth:
+        # Access key (username) for the external S3 instance.
+        accessKey: ""
+        # Secret key (password) for the external S3 instance. Use secrets management for production.
+        secretKey: "" # <-- IMPORTANT: Secure this value.
