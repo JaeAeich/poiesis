@@ -25,7 +25,7 @@ poiesis:
   enabled: true
   ingress:
     enabled: false
-    hostname: ""
+    hostname: "poiesis.example.com"
     tls:
       enabled: false
       secretName: ""
