@@ -12,7 +12,7 @@ description: |
   and cross-institutional research by standardizing task execution across different
   compute backends.
 
-version: 0.1.5
+version: 0.2.0
 appVersion: latest
 icon: https://raw.githubusercontent.com/JaeAeich/poiesis/refs/heads/main/docs/app/public/logo/logo.png
 

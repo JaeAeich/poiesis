@@ -139,7 +139,9 @@ spec:
                   name: {{ include "poiesis.coreConfigMapName" . }}
                   key: POIESIS_S3_SECRET_NAME
             {{- end }}
-          resources: {{- toYaml .Values.poiesis.resources | nindent 12 }}
+          {{- with .Values.poiesis.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if or .Values.poiesis.securityContext.infrastructure.enabled .Values.poiesis.securityContext.executors.enabled }}
           volumeMounts:
             - name: {{ include "poiesis.securityConfigMapName" . }}

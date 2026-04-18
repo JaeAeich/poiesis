@@ -6,15 +6,20 @@ metadata:
   labels:
     {{- include "poiesis.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
-  {{- with .Values.commonAnnotations }}
+  {{- if or .Values.poiesis.ingress.annotations .Values.commonAnnotations }}
   annotations:
+    {{- with .Values.poiesis.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   {{- end }}
 spec:
   {{- if .Values.poiesis.ingress.tls.enabled }}
   tls:
     - hosts:
-      - {{ .Values.poiesis.ingress.hostname | quote }}
+        - {{ .Values.poiesis.ingress.hostname | quote }}
       secretName: {{ .Values.poiesis.ingress.tls.secretName }}
   {{- end }}
   rules:
@@ -30,7 +35,8 @@ spec:
                   number: {{ .Values.poiesis.service.port }}
 {{- end }}
 
-{{- if and (.Capabilities.APIVersions.Has "route.openshift.io/v1") (eq .Values.poiesis.ingress.enabled false) }}
+{{- if and (.Capabilities.APIVersions.Has "route.openshift.io/v1") .Values.poiesis.route.enabled }}
+---
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
@@ -43,12 +49,12 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  host: {{ .Values.poiesis.ingress.hostname | quote }}
+  host: {{ .Values.poiesis.route.hostname | default .Values.poiesis.ingress.hostname | quote }}
   port:
     targetPort: {{ .Values.poiesis.service.port }}
   tls:
-    insecureEdgeTerminationPolicy: {{ .Values.poiesis.ingress.tls.insecureEdgeTerminationPolicy }}
-    termination: {{ .Values.poiesis.ingress.tls.termination }}
+    insecureEdgeTerminationPolicy: {{ .Values.poiesis.route.tls.insecureEdgeTerminationPolicy }}
+    termination: {{ .Values.poiesis.route.tls.termination }}
   to:
     kind: Service
     name: {{ include "poiesis.api.componentName" . }}
