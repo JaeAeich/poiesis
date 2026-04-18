@@ -64,7 +64,7 @@ license = "Apache-2.0"
 maintainers = [{email = "jh4official@gmail.com", name = "Javed Habib"}]
 name = "poiesis"
 readme = "README.md"
-requires-python = ">=3.13.0,<4.0.0"
+requires-python = ">=3.13.0,<3.14"
 version = "0.1.0"
 
 [project.scripts]
