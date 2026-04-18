@@ -293,6 +293,26 @@ def get_s3_envs() -> tuple[V1EnvVar, ...]:
                     )
                 ),
             ),
+            V1EnvVar(
+                name="AWS_REQUEST_CHECKSUM_CALCULATION",
+                value_from=V1EnvVarSource(
+                    config_map_key_ref=V1ConfigMapKeySelector(
+                        name=core_constants.K8s.CONFIGMAP_NAME,
+                        key="AWS_REQUEST_CHECKSUM_CALCULATION",
+                        optional=True,
+                    )
+                ),
+            ),
+            V1EnvVar(
+                name="AWS_REQUEST_CHECKSUM_VALIDATION",
+                value_from=V1EnvVarSource(
+                    config_map_key_ref=V1ConfigMapKeySelector(
+                        name=core_constants.K8s.CONFIGMAP_NAME,
+                        key="AWS_REQUEST_CHECKSUM_VALIDATION",
+                        optional=True,
+                    )
+                ),
+            ),
         )
         if core_constants.K8s.S3_SECRET_NAME
         else ()

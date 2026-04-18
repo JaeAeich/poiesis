@@ -168,6 +168,17 @@ Redis Secret name
 {{- end }}
 
 
+{{/* ----------------------------- Validation ----------------------------- */}}
+
+{{/*
+Validate that minio and s3 are not both enabled
+*/}}
+{{- define "poiesis.validateStorageBackend" -}}
+{{- if and .Values.poiesis.externalDependencies.minio.enabled .Values.poiesis.externalDependencies.s3.enabled -}}
+{{- fail "Both minio and s3 cannot be enabled at the same time. Please enable only one storage backend." -}}
+{{- end -}}
+{{- end -}}
+
 {{/* -----------------------------  S3/Minio ----------------------------- */}}
 
 {{/*

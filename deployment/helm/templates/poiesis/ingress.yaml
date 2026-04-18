@@ -1,0 +1,63 @@
+{{- if .Values.poiesis.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "poiesis.fullname" . }}-ingress
+  labels:
+    {{- include "poiesis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- if or .Values.poiesis.ingress.annotations .Values.commonAnnotations }}
+  annotations:
+    {{- with .Values.poiesis.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+spec:
+  {{- if .Values.poiesis.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.poiesis.ingress.hostname | quote }}
+      secretName: {{ .Values.poiesis.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.poiesis.ingress.hostname | quote }}
+      http:
+        paths:
+          - path: {{ .Values.poiesis.ingress.path }}
+            pathType: {{ .Values.poiesis.ingress.pathType }}
+            backend:
+              service:
+                name: {{ include "poiesis.api.componentName" . }}
+                port:
+                  number: {{ .Values.poiesis.service.port }}
+{{- end }}
+
+{{- if and (.Capabilities.APIVersions.Has "route.openshift.io/v1") .Values.poiesis.route.enabled }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "poiesis.fullname" . }}-route
+  labels:
+    {{- include "poiesis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  host: {{ .Values.poiesis.route.hostname | default .Values.poiesis.ingress.hostname | quote }}
+  port:
+    targetPort: {{ .Values.poiesis.service.port }}
+  tls:
+    insecureEdgeTerminationPolicy: {{ .Values.poiesis.route.tls.insecureEdgeTerminationPolicy }}
+    termination: {{ .Values.poiesis.route.tls.termination }}
+  to:
+    kind: Service
+    name: {{ include "poiesis.api.componentName" . }}
+    weight: 100
+  wildcardPolicy: None
+{{- end }}
