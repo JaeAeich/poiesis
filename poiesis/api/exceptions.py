@@ -10,7 +10,7 @@ from connexion.lifecycle import ConnexionRequest, ConnexionResponse
 logger = logging.getLogger(__name__)
 
 
-class APIException(Exception):
+class APIError(Exception):
     """Base exception for all API errors."""
 
     status_code = HTTPStatus.INTERNAL_SERVER_ERROR.value
@@ -33,12 +33,12 @@ class APIException(Exception):
 def handle_api_exception(
     request: ConnexionRequest, exc: Exception
 ) -> ConnexionResponse:
-    """Handler for our custom APIException hierarchy."""
-    # Cast to APIException since we know this handler is only called for APIException
-    exc = exc if isinstance(exc, APIException) else APIException(str(exc))
+    """Handler for our custom APIError hierarchy."""
+    # Cast to APIError since we know this handler is only called for APIError
+    exc = exc if isinstance(exc, APIError) else APIError(str(exc))
 
     if exc.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR.value:
-        logger.error(f"Server error: {exc.message}", exc_info=True)
+        logger.error(f"Server error: {exc.message}")
     else:
         logger.warning(f"Client error: {exc.message}")
 
@@ -53,7 +53,7 @@ def handle_unexpected_exception(
     request: ConnexionRequest, exc: Exception
 ) -> ConnexionResponse:
     """Handler for unexpected exceptions."""
-    logger.error(f"Unexpected error processing request: {request.path}", exc_info=True)
+    logger.error(f"Unexpected error processing request: {request.path}")
 
     error_response = {
         "error": "internal_error",
@@ -65,35 +65,35 @@ def handle_unexpected_exception(
     )
 
 
-class BadRequestException(APIException):
+class BadRequestError(APIError):
     """The request was invalid or cannot be served."""
 
     status_code = 400
     error_code = "bad_request"
 
 
-class UnauthorizedException(APIException):
+class UnauthorizedError(APIError):
     """The request is unauthorized."""
 
     status_code = 401
     error_code = "unauthorized"
 
 
-class NotFoundException(APIException):
+class NotFoundError(APIError):
     """The requested resource was not found."""
 
     status_code = 404
     error_code = "not_found"
 
 
-class InternalServerException(APIException):
+class InternalServerError(APIError):
     """An unexpected condition was encountered."""
 
     status_code = 500
     error_code = "internal_error"
 
 
-class DBException(APIException):
+class DBError(APIError):
     """An error occurred with the database."""
 
     status_code = 500

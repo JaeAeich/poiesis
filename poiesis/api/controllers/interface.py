@@ -12,4 +12,3 @@ class InterfaceController(ABC):
     @abstractmethod
     async def execute(self, *args: Any, **kwargs: Any) -> BaseModel:
         """Execute the interface controller."""
-        pass

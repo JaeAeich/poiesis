@@ -50,11 +50,11 @@ class TifCommand(BaseCommand):
                 asyncio.run(Tif(tes_task.id, _inputs).execute())
 
             except json.JSONDecodeError as e:
-                raise click.ClickException(f"JSON parsing error: {str(e)}") from e
+                raise click.ClickException(f"JSON parsing error: {e!s}") from e
             except ValidationError as e:
-                raise click.ClickException(f"Validation error: {str(e)}") from e
+                raise click.ClickException(f"Validation error: {e!s}") from e
             except Exception as e:
-                raise click.ClickException(f"Error: {str(e)}") from e
+                raise click.ClickException(f"Error: {e!s}") from e
 
     def get_info(self) -> dict[str, Any]:
         """Get TIF service information.

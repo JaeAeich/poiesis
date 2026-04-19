@@ -39,9 +39,8 @@ class S3FilerStrategy(FilerStrategy):
         assert self.payload.url is not None, "URL is required"
         self._set_host_bucket_key(self.payload.url)
         assert self.key is not None, "S3 key must be set after parsing URL"
-        assert self.bucket is not None and self.bucket != "", (
-            "S3 bucket must be set after parsing URL"
-        )
+        assert self.bucket is not None, "S3 bucket must be set after parsing URL"
+        assert self.bucket != "", "S3 bucket must not be empty"
 
         if not all(
             [
@@ -68,8 +67,7 @@ class S3FilerStrategy(FilerStrategy):
                 endpoint_url = self.s3_host
                 if not endpoint_url.startswith(("http://", "https://")):
                     logger.warning(
-                        f"S3 host '{endpoint_url}' does not have a scheme, "
-                        "defaulting to 'http://'",
+                        f"S3 host '{endpoint_url}' does not have a scheme, defaulting to 'http://'",
                     )
                     endpoint_url = f"http://{endpoint_url}"
                 client_args["endpoint_url"] = endpoint_url
@@ -147,8 +145,7 @@ class S3FilerStrategy(FilerStrategy):
         try:
             self.client.download_file(self.bucket, self.key, container_path)
             logger.info(
-                "Successfully downloaded file from "
-                f"{self.input.url} to {container_path}"
+                f"Successfully downloaded file from {self.input.url} to {container_path}"
             )
         except Exception as e:
             logger.error(f"Error downloading file: {e}")
@@ -198,8 +195,7 @@ class S3FilerStrategy(FilerStrategy):
             assert self.input.url is not None
 
             logger.info(
-                "Successfully downloaded directory from "
-                f"{self.input.url} to {container_path}",
+                f"Successfully downloaded directory from {self.input.url} to {container_path}",
             )
 
         except Exception as e:
@@ -260,8 +256,7 @@ class S3FilerStrategy(FilerStrategy):
             assert self.output.url is not None
 
             logger.info(
-                f"Successfully uploaded directory from {container_path} "
-                f"to {self.output.url}",
+                f"Successfully uploaded directory from {container_path} to {self.output.url}",
             )
 
         except Exception as e:

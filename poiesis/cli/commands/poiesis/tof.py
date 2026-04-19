@@ -49,11 +49,11 @@ class TofCommand(BaseCommand):
                 asyncio.run(Tof(tes_task.id, _outputs).execute())
 
             except json.JSONDecodeError as e:
-                raise click.ClickException(f"JSON parsing error: {str(e)}") from e
+                raise click.ClickException(f"JSON parsing error: {e!s}") from e
             except ValidationError as e:
-                raise click.ClickException(f"Validation error: {str(e)}") from e
+                raise click.ClickException(f"Validation error: {e!s}") from e
             except Exception as e:
-                raise click.ClickException(f"Error: {str(e)}") from e
+                raise click.ClickException(f"Error: {e!s}") from e
 
     def get_info(self) -> dict[str, Any]:
         """Get TOF service information.
@@ -65,8 +65,7 @@ class TofCommand(BaseCommand):
 
         info.update(
             {
-                "description": "Task Output Filer service for handling task output "
-                "files",
+                "description": "Task Output Filer service for handling task output files",
                 "supported_protocols": ", ".join(
                     [
                         v.name if v.output else ""

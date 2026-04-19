@@ -3,41 +3,17 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [dependency-groups]
-code_quality = [
-  "pyrefly>=0.21.0",
-  "ruff>=0.4.10",
-  "typos>=1.22.8",
-]
-docs = [
-  "added-value>=0.24.0",
-  "docutils>=0.20.1",
-  "furo>=2024.5.6",
-  "m2r2>=0.3.3.post2",
-  "sphinx-autodoc-typehints>=2.1.0",
-  "sphinx>=7.3.7",
-]
-misc = [
-  "pre-commit>=3.7.1",
-]
-test = [
-  "pytest-cov>=5.0.0,<=6.0.0",
-  "pytest>=8.2.2,<9.0.0",
-]
+code_quality = ["deptry", "ruff", "ty", "typos"]
 types = [
-  "boto3-stubs>=1.36.26,<2",
-  "kubernetes-stubs>=22.6.0.post1,<23",
-  "types-authlib>=1.5.0.20250608",
-  "types-botocore>=1.0.2,<2",
-  "types-pyyaml>=6.0.12.20250402,<7",
-  "types-requests>=2.32.0.20250328,<3",
-]
-vulnerability = [
-  "bandit>=1.7.8,<2.0.0",
-  "safety>=3.2.0,<4.0.0",
+  "boto3-stubs",
+  "kubernetes-stubs",
+  "types-botocore",
+  "types-pyyaml",
+  "types-requests",
 ]
 
 [project]
-authors = [{email = "jh4official@gmail.com", name = "Javed Habib"}]
+authors = [{ email = "jh4official@gmail.com", name = "Javed Habib" }]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: Apache Software License",
@@ -45,27 +21,32 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-  "authlib>=1.6.0",
-  "boto3>=1.36.26,<2",
-  "botocore>=1.36.26,<2",
-  "connexion[swagger-ui, uvicorn]>=3.2.0,<4",
-  "gunicorn>=23.0.0,<24",
-  "kubernetes>=32.0.1,<33",
-  "motor>=3.7.0,<4",
-  "pydantic>=2.10.6,<3",
-  "pyjwt>=2.10.1,<3",
-  "redis>=5.2.1,<6",
-  "rich>=14.0.0",
-  "tomli>=2.2.1,<3",
+  "boto3",
+  "botocore",
+  "click",
+  "connexion[swagger-ui, uvicorn]",
+  "gunicorn",
+  "kubernetes",
+  "pydantic",
+  "requests",
+  "tomli",
 ]
 description = "TES on kubernetes"
-keywords = ["automation", "cloud", "devops", "ga4gh", "infrastructure", "kubernetes", "tes"]
+keywords = [
+  "automation",
+  "cloud",
+  "devops",
+  "ga4gh",
+  "infrastructure",
+  "kubernetes",
+  "tes",
+]
 license = "Apache-2.0"
-maintainers = [{email = "jh4official@gmail.com", name = "Javed Habib"}]
+maintainers = [{ email = "jh4official@gmail.com", name = "Javed Habib" }]
 name = "poiesis"
 readme = "README.md"
 requires-python = ">=3.13.0,<3.14"
-version = "0.1.0"
+version = "0.2.0"
 
 [project.scripts]
 poiesis = "poiesis.cli.main:main"
@@ -75,15 +56,12 @@ Documentation = "https://poiesis.vercel.app"
 Issues = "https://github.com/jaeaeich/poiesis/issues"
 Repository = "https://github.com/jaeaeich/poiesis"
 
-[tool.bandit]
-skips = ["B101"]
-
-[tool.pyrefly]
-project-excludes = ["**/*venv/**/*"]
-project-includes = ["**/*"]
+[tool.deptry]
+known_first_party = ["poiesis"]
 
 [tool.ruff]
 indent-width = 4
+line-length = 88
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -92,20 +70,79 @@ line-ending = "lf"
 quote-style = "double"
 
 [tool.ruff.lint]
-select = [
-  "B", # flake8-bugbear
-  "C90", # mccabe
-  "D", # pydocstyle
-  "E", # pycodestyle
-  "F", # Pyflakes
-  "I", # isort
-  "PL", # pylint
-  "SIM", # flake8-simplify
-  "UP", # pyupgrade
+ignore = [
+  "A001",
+  "A002", # TES spec uses `type`, `id`, `input` — builtin shadows are intentional
+  # Annotation rules — aspirational; revisit after v2 lands
+  "ANN001",
+  "ANN002",
+  "ANN003",
+  "ANN201",
+  "ANN202",
+  "ANN204",
+  "ANN205",
+  "ANN206",
+  "ANN401", # Any in annotations — sometimes intentional
+  "ARG001",
+  "ARG002", # unused args — connexion handler signatures (FastAPI rewrite)
+  "ASYNC",  # asyncio patterns — revisit during TRec/API rewrites
+  "COM812", # conflicts with formatter
+  # Style preferences we don't share
+  "D203", # one-blank-line-before-class (we use D211)
+  "D213", # multi-line-summary-second-line (we use D212)
+  "D401", # imperative-mood docstrings — too prescriptive
+  # Format-owned
+  "E501",  # line length is enforced by ruff-format
+  "EM101",
+  "EM102", # exception literal/f-string — same
+  # TODO / fixme metadata rules — pedantic for a small team
+  "FIX002",
+  # Cosmetic / opinionated rules that don't pay for themselves
+  "G004",   # f-strings in logging — readability > theoretical perf
+  "ISC001", # conflicts with formatter
+  # Naming exceptions driven by external schemas
+  "N802",
+  "N815",   # TES spec field names (camelCase from OpenAPI)
+  "PGH003", # blanket type: ignore — kubernetes-stubs gaps drive these
+  # Deferred to the v2 slices that rewrite the affected modules.
+  # Drop these once the filer-strategy / K8s-adapter / API rewrites land.
+  "PTH", # os.path → pathlib — bulk migration in filer-strategy rewrite
+  # CLI / script ergonomics
+  "S101",   # asserts — used as invariants in dev code
+  "SLF001", # private member access — kubernetes client internals
+  "TD002",
+  "TD003",
+  "TRY003", # long messages outside exception class — bulk noise
+  "TRY300",
+  "TRY301", # try/except restructuring — incremental in v2
+  "TRY400", # logger.exception vs logger.error — covered by review
 ]
+select = ["ALL"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ty.src]
+exclude = ["**/.venv/**", "**/__pycache__/**"]
+
 [tool.typos.default.extend-words]
+mis = 'mis'
 ser = 'ser'
+
+[tool.typos.files]
+extend-exclude = [
+  "*.gif",
+  "*.ico",
+  "*.jpeg",
+  "*.jpg",
+  "*.lock",
+  "*.png",
+  "*.svg",
+  "*.ttf",
+  "*.woff",
+  "*.woff2",
+  ".venv/",
+  "docs/app/node_modules/",
+  "docs/app/public/",
+  "uv.lock",
+]

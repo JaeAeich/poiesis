@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: ruff format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: uv sync --all-extras --all-groups
+      - run: uv run ruff format --check poiesis
+
+  lint:
+    name: ruff check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: uv sync --all-extras --all-groups
+      - run: uv run ruff check poiesis
+
+  deptry:
+    name: deptry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: uv sync --all-extras --all-groups
+      - run: uv run deptry poiesis
+
+  typecheck:
+    name: ty (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true  # ty is pre-1.0 and kubernetes-stubs is incomplete; advisory until the v2 rewrite lands clean types
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: uv sync --all-extras --all-groups
+      - run: uv run ty check poiesis
+
+  typos:
+    name: typos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: mise x -- typos .
+
+  markdownlint:
+    name: markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: mise x -- markdownlint '**/*.md' --ignore node_modules --ignore .venv --ignore 'docs/app/**'
+
+  editorconfig:
+    name: eclint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: mise x -- eclint check $(git ls-files '*.py' '*.toml' '*.yaml' '*.yml' '*.json' '*.md' '*.sh' | grep -v '^docs/app/')
+
+  toml-hygiene:
+    name: toml-sort + taplo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: mise x -- toml-sort --check --all --trailing-comma-inline-array $(git ls-files '*.toml' | grep -v '^uv\.lock$')
+      - run: mise x -- taplo format --check $(git ls-files '*.toml' | grep -v '^uv\.lock$')
+
+  commitlint:
+    name: commitlint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+      - run: |
+          NODE_PATH="$(mise where 'npm:@commitlint/config-conventional')/lib/node_modules" \
+          "$(mise where 'npm:@commitlint/cli')/bin/commitlint" \
+            --from "${{ github.event.pull_request.base.sha }}" \
+            --to "${{ github.event.pull_request.head.sha }}"

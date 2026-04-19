@@ -30,28 +30,32 @@ class LocalFilerStrategy(FilerStrategy):
     async def download_input_file(self, container_path: str):
         """Download file from storage and mount to PVC."""
         logger.info(f"Starting local file download to {container_path}")
-        assert self.input and self.input.url
+        assert self.input
+        assert self.input.url
         source_path = urlparse(self.input.url).path
         self._copy_file(source_path, container_path)
 
     async def download_input_directory(self, container_path: str):
         """Download input directory from a local path."""
         logger.info(f"Starting local directory download to {container_path}")
-        assert self.input and self.input.url
+        assert self.input
+        assert self.input.url
         source_path = urlparse(self.input.url).path
         self._copy_directory(source_path, container_path)
 
     async def upload_output_file(self, container_path: str):
         """Dummy upload output (local)."""
         logger.info(f"Starting local file upload from {container_path}")
-        assert self.output and self.output.url
+        assert self.output
+        assert self.output.url
         destination_path = urlparse(self.output.url).path
         self._copy_file(container_path, destination_path)
 
     async def upload_output_directory(self, container_path: str):
         """Upload output directory to a local path."""
         logger.info(f"Starting local directory upload from {container_path}")
-        assert self.output and self.output.url
+        assert self.output
+        assert self.output.url
         destination_path = urlparse(self.output.url).path
         self._copy_directory(container_path, destination_path)
 
@@ -65,7 +69,8 @@ class LocalFilerStrategy(FilerStrategy):
         assert self.output is not None
 
         for file_path, relative_path, is_directory in glob_files:
-            assert self.output and self.output.url
+            assert self.output
+            assert self.output.url
             destination_base = urlparse(self.output.url).path
             destination_path = os.path.join(destination_base, relative_path)
 

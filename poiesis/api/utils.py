@@ -1,14 +1,11 @@
 """Utility functions for the API."""
 
 from collections.abc import Callable
-from functools import lru_cache, wraps
+from functools import wraps
 from typing import Any, TypeVar, cast
 
-import httpx
 from pydantic import BaseModel
 
-from poiesis.api.constants import get_poiesis_api_constants
-from poiesis.api.exceptions import InternalServerException
 from poiesis.api.tes.models import TesTask
 
 T = TypeVar("T")
@@ -52,7 +49,7 @@ def pydantic_to_dict_response(func: Callable[..., Any]) -> Callable[..., Any]:
             return result.model_dump(mode="json", exclude_none=True)
         return result
 
-    return cast(Callable[..., Any], wrapper)
+    return cast("Callable[..., Any]", wrapper)
 
 
 def task_to_minimal_task(task: TesTask) -> TesTask:
@@ -86,52 +83,7 @@ def task_to_basic_task(task: TesTask) -> TesTask:
                     logs.stderr = None
             log.system_logs = None
     if task.inputs:
-        for input in task.inputs:
-            input.content = None
+        for tes_input in task.inputs:
+            tes_input.content = None
 
     return task
-
-
-@lru_cache
-def get_oidc_introspect_url() -> str:
-    """Get the OIDC introspect URL.
-
-    Returns:
-        str: The OIDC introspect URL.
-    """
-    discovery_url = get_poiesis_api_constants().Auth.OIDC.DISCOVERY_URL
-
-    try:
-        with httpx.Client() as client:
-            resp = client.get(discovery_url, timeout=10)
-            resp.raise_for_status()
-            metadata = resp.json()
-            if introspect_url := metadata.get("introspection_endpoint"):
-                return cast(str, introspect_url)
-            else:
-                raise InternalServerException(
-                    "OIDC discovery document does not contain 'introspection_endpoint'."
-                )
-    except Exception as e:
-        raise InternalServerException(
-            f"Failed to fetch OIDC introspect URL: {e}"
-        ) from e
-
-
-@lru_cache
-def get_oidc_jwks_uri() -> str:
-    """Get the OIDC JWKS URI from the discovery document."""
-    discovery_url = get_poiesis_api_constants().Auth.OIDC.DISCOVERY_URL
-    try:
-        with httpx.Client() as client:
-            resp = client.get(discovery_url, timeout=10)
-            resp.raise_for_status()
-            metadata = resp.json()
-            if jwks_uri := metadata.get("jwks_uri"):
-                return cast(str, jwks_uri)
-            else:
-                raise InternalServerException(
-                    "OIDC discovery document does not contain 'jwks_uri'."
-                )
-    except Exception as e:
-        raise InternalServerException(f"Failed to fetch OIDC JWKS URI: {e}") from e

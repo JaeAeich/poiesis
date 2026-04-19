@@ -1,0 +1,38 @@
+[env]
+_.python.venv = { create = true, path = ".venv" }
+
+[tasks.checks]
+description = "Run all pre-commit hooks + deptry + ty (advisory)"
+run = [
+  "mise x -- lefthook run pre-commit --all-files",
+  "uv run deptry poiesis",
+  "uv run ty check poiesis || echo '(ty diagnostics are advisory; see CI policy in ci.yml)'",
+]
+
+[tasks.format]
+description = "Run ruff format"
+run = "uv run ruff format poiesis"
+
+[tasks.lint]
+description = "Run ruff check + typos + deptry"
+run = [
+  "mise x -- typos .",
+  "uv run deptry poiesis",
+  "uv run ruff check poiesis",
+]
+
+[tasks.typecheck]
+description = "Type-check with ty (Astral)"
+run = "uv run ty check poiesis"
+
+[tools]
+lefthook = "2.1.6"
+"npm:@commitlint/cli" = "20.4.1"
+"npm:@commitlint/config-conventional" = "20.4.1"
+"npm:eclint" = "2.8.1"
+"npm:markdownlint-cli" = "0.47.0"
+"pipx:toml-sort" = "0.23.1"
+python = "3.13.13"
+taplo = "0.10.0"
+typos = "1.43.4"
+uv = "0.9.28"

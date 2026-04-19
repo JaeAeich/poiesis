@@ -1,0 +1,48 @@
+pre-commit:
+  parallel: true
+  commands:
+    editorconfig:
+      glob: "**/*.{toml,yaml,yml,json,md,py,sh}"
+      exclude: "docs/app/**"
+      run: mise x -- eclint fix {staged_files}
+      stage_fixed: true
+
+    toml-hygiene:
+      glob:
+        - "*.toml"
+        - "**/*.toml"
+      exclude:
+        - "uv.lock"
+      run: >
+        mise x -- toml-sort --in-place --all --trailing-comma-inline-array {staged_files}
+        && mise x -- taplo format {staged_files}
+      stage_fixed: true
+
+    markdownlint:
+      glob:
+        - "*.md"
+        - "**/*.md"
+      exclude:
+        - "docs/app/**"
+      run: mise x -- markdownlint --fix {staged_files}
+      stage_fixed: true
+
+    ruff-format:
+      glob: "poiesis/**/*.py"
+      run: uv run ruff format {staged_files}
+      stage_fixed: true
+
+    ruff-check:
+      glob: "poiesis/**/*.py"
+      run: uv run ruff check {staged_files}
+
+    typos:
+      exclude: "docs/app/public/**"
+      run: mise x -- typos {staged_files}
+
+commit-msg:
+  commands:
+    commitlint:
+      run: >
+        NODE_PATH="$(mise where 'npm:@commitlint/config-conventional')/lib/node_modules"
+        "$(mise where 'npm:@commitlint/cli')/bin/commitlint" --edit {1}

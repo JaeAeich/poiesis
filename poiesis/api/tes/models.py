@@ -17,8 +17,6 @@ from pydantic import (
 class TesCancelTaskResponse(BaseModel):
     """CancelTaskResponse describes a response from the CancelTask endpoint."""
 
-    pass
-
 
 class TesCreateTaskResponse(BaseModel):
     """CreateTaskResponse describes a response from the CreateTask endpoint.
@@ -330,7 +328,7 @@ class TesResources(BaseModel):
     disk_gb: float | None = None
     zones: list[str] | None = None
     backend_parameters: dict[str, str] | None = None
-    backend_parameters_strict: bool | None = Field(False)
+    backend_parameters_strict: bool | None = Field(default=False)
 
 
 class Artifact(Enum):

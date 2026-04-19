@@ -1,7 +1,7 @@
 """Base classes and utilities for CLI commands."""
 
 from abc import abstractmethod
-from typing import Any, TypeVar
+from typing import Any, Self, TypeVar
 
 import click
 
@@ -23,7 +23,7 @@ class BaseCommand:
     description: str = "Base command description"
 
     @classmethod
-    def register(cls: type[T], group: click.Group) -> T:
+    def register(cls, group: click.Group) -> Self:
         """Register the command with a Click group.
 
         Args:
@@ -102,4 +102,3 @@ class BaseCommand:
         Args:
             group: Click group to add the command to
         """
-        pass

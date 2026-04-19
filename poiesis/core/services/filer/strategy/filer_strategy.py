@@ -33,7 +33,6 @@ class FilerStrategy(ABC):
             container_path: The path inside the container from where the file needs to
                 be downloaded to the storage.
         """
-        pass
 
     @abstractmethod
     async def download_input_directory(self, container_path: str):
@@ -43,7 +42,6 @@ class FilerStrategy(ABC):
             container_path: The path inside the container from where the file needs to
                 be downloaded to the storage.
         """
-        pass
 
     @abstractmethod
     async def upload_output_file(self, container_path: str):
@@ -53,7 +51,6 @@ class FilerStrategy(ABC):
             container_path: The path inside the container from where the file needs to
                 be uploaded to the storage.
         """
-        pass
 
     @abstractmethod
     async def upload_output_directory(self, container_path: str):
@@ -63,7 +60,6 @@ class FilerStrategy(ABC):
             container_path: The path inside the container from where the file needs to
                 be uploaded to the storage.
         """
-        pass
 
     @abstractmethod
     async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
@@ -73,7 +69,6 @@ class FilerStrategy(ABC):
             glob_files: List of tuples containing (file_path, relative_path,
                 is_directory)
         """
-        pass
 
     def _get_container_path(self, path: str) -> str:
         """Get the container path for the file.
@@ -200,14 +195,12 @@ class FilerStrategy(ABC):
             if is_glob_like and not self.payload.path_prefix:
                 inferred_prefix = self._infer_base_path(self.payload.path)
                 logger.debug(
-                    f"Inferred path_prefix '{inferred_prefix}' from "
-                    f"path '{self.payload.path}'",
+                    f"Inferred path_prefix '{inferred_prefix}' from path '{self.payload.path}'",
                 )
                 self.payload.path_prefix = inferred_prefix
 
             assert self.payload.path_prefix is not None, (
-                "path_prefix is required for glob operations but was not found "
-                "or inferred."
+                "path_prefix is required for glob operations but was not found or inferred."
             )
 
             # Execute the glob and evaluate results.

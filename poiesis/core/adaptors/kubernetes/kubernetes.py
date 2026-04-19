@@ -100,8 +100,7 @@ class KubernetesAdapter(KubernetesPort):
             assert configmap.metadata is not None, "ConfigMap should have metadata"
             assert configmap.metadata.name is not None, "ConfigMap name is None"
             logger.info(
-                f"Created ConfigMap {configmap.metadata.name} "
-                f"in namespace {self.namespace}"
+                f"Created ConfigMap {configmap.metadata.name} in namespace {self.namespace}"
             )
 
             return api_response

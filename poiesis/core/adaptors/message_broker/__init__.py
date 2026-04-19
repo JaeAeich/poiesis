@@ -1,1 +1,0 @@
-"""Adaptor for message brokers."""

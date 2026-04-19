@@ -19,8 +19,7 @@ def get_version() -> str:
     if pyproject_data := get_pyproject_data():
         version: str = pyproject_data.get("project", {}).get("version", "UNKNOWN")
         return version
-    else:
-        return "UNKNOWN"
+    return "UNKNOWN"
 
 
 @lru_cache
@@ -42,7 +41,7 @@ def get_pyproject_data() -> dict[str, Any]:
                     return tomli.load(f)
 
         return {}
-    except Exception:
+    except (OSError, tomli.TOMLDecodeError):
         return {}
 
 

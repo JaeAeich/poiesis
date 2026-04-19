@@ -1,28 +1,25 @@
-# EditorConfig is a file format that helps maintain consistent coding styles
-# https://editorconfig.org/
-
-# top-most EditorConfig file
 root = true
 
-# Unix-style newlines with a newline ending every file
 [*]
-end_of_line = lf
-insert_final_newline = true
 charset = utf-8
-trim_trailing_whitespace = true
+end_of_line = lf
+indent_size = 2
 indent_style = space
-indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
 
-# Python files
 [*.py]
-max_line_length = 80
-quote_type = double
+indent_size = 4
+max_line_length = 88
 
-[*.md]
-max_line_length = 80
-
-[*.{json,yml,yaml}]
+[*.toml]
 indent_size = 2
 
-[Makefile]
-indent_style = tab
+[*.{yaml,yml}]
+indent_size = 2
+
+[*.{sh,bash,zsh}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

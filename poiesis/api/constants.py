@@ -3,7 +3,6 @@
 import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Literal, cast
 
 from poiesis.constants import get_poiesis_constants
 
@@ -44,38 +43,10 @@ class PoiesisApiConstants:
             TIMEOUT: The timeout for the Gunicorn server.
         """
 
-        HOST = "0.0.0.0" if constants.ENVIRONMENT == "prod" else "127.0.0.1"  # nosec B104
+        HOST = "0.0.0.0" if constants.ENVIRONMENT == "prod" else "127.0.0.1"  # noqa: S104
         PORT = os.getenv("POIESIS_API_SERVER_PORT", "8000")
         WORKERS = os.getenv("POIESIS_UVICORN_WORKERS")
         TIMEOUT = os.getenv("POIESIS_UVICORN_TIMEOUT", "120")
-
-    @dataclass(frozen=True)
-    class Auth:
-        """Constants used in the authentication.
-
-        Attributes:
-            AUTH: The authentication method.
-        """
-
-        AUTH: Literal["oidc", "dummy"] = cast(
-            Literal["oidc", "dummy"], os.getenv("AUTH_TYPE", "dummy")
-        )
-
-        @dataclass(frozen=True)
-        class OIDC:
-            """Constants used in the generic OpenID Connect client.
-
-            Attributes:
-                ISSUER: The OpenID Connect issuer URL.
-                CLIENT_ID: The OpenID Connect client identifier.
-                INTROSPECT_ENDPOINT: URL to validate tokens (optional).
-            """
-
-            ISSUER = os.getenv("OIDC_ISSUER")
-            CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
-            DISCOVERY_URL = (
-                f"{str(ISSUER).rstrip('/')}/.well-known/openid-configuration"
-            )
 
 
 @lru_cache
