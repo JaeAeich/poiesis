@@ -1,11 +1,11 @@
-"""Exceptions and their handlers for the platform backend."""
+"""Exceptions and their handlers for the API layer."""
 
-import json
 import logging
 from http import HTTPStatus
 from typing import Any
 
-from connexion.lifecycle import ConnexionRequest, ConnexionResponse
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class APIError(Exception):
     status_code = HTTPStatus.INTERNAL_SERVER_ERROR.value
     error_code = "internal_error"
 
-    def __init__(self, message=None, details=None):
+    def __init__(self, message: str | None = None, details: Any | None = None) -> None:
         """Initialize the exception with an optional message and details."""
         self.message = message or self.__doc__
         self.details = details
@@ -24,77 +24,65 @@ class APIError(Exception):
 
     def to_dict(self) -> dict[str, Any]:
         """Convert exception to a dict representation."""
-        result = {"error": self.error_code, "message": self.message}
+        result: dict[str, Any] = {"error": self.error_code, "message": self.message}
         if self.details:
             result["details"] = self.details
         return result
 
 
-def handle_api_exception(
-    request: ConnexionRequest, exc: Exception
-) -> ConnexionResponse:
+async def handle_api_exception(request: Request, exc: APIError) -> JSONResponse:
     """Handler for our custom APIError hierarchy."""
-    # Cast to APIError since we know this handler is only called for APIError
-    exc = exc if isinstance(exc, APIError) else APIError(str(exc))
-
     if exc.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR.value:
-        logger.error(f"Server error: {exc.message}")
+        logger.error("Server error: %s", exc.message)
     else:
-        logger.warning(f"Client error: {exc.message}")
+        logger.warning("Client error: %s", exc.message)
 
-    return ConnexionResponse(
-        status_code=exc.status_code,
-        body=json.dumps(exc.to_dict()),
-        mimetype="application/json",
-    )
+    return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
 
 
-def handle_unexpected_exception(
-    request: ConnexionRequest, exc: Exception
-) -> ConnexionResponse:
+async def handle_unexpected_exception(request: Request, exc: Exception) -> JSONResponse:
     """Handler for unexpected exceptions."""
-    logger.error(f"Unexpected error processing request: {request.path}")
+    logger.exception("Unexpected error processing %s", request.url.path)
 
-    error_response = {
-        "error": "internal_error",
-        "message": "An unexpected error occurred",
-    }
-
-    return ConnexionResponse(
-        status_code=500, body=json.dumps(error_response), mimetype="application/json"
+    return JSONResponse(
+        status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+        content={
+            "error": "internal_error",
+            "message": "An unexpected error occurred",
+        },
     )
 
 
 class BadRequestError(APIError):
     """The request was invalid or cannot be served."""
 
-    status_code = 400
+    status_code = HTTPStatus.BAD_REQUEST.value
     error_code = "bad_request"
 
 
 class UnauthorizedError(APIError):
     """The request is unauthorized."""
 
-    status_code = 401
+    status_code = HTTPStatus.UNAUTHORIZED.value
     error_code = "unauthorized"
 
 
 class NotFoundError(APIError):
     """The requested resource was not found."""
 
-    status_code = 404
+    status_code = HTTPStatus.NOT_FOUND.value
     error_code = "not_found"
 
 
 class InternalServerError(APIError):
     """An unexpected condition was encountered."""
 
-    status_code = 500
+    status_code = HTTPStatus.INTERNAL_SERVER_ERROR.value
     error_code = "internal_error"
 
 
 class DBError(APIError):
     """An error occurred with the database."""
 
-    status_code = 500
+    status_code = HTTPStatus.INTERNAL_SERVER_ERROR.value
     error_code = "db_error"

@@ -24,12 +24,13 @@ dependencies = [
   "boto3",
   "botocore",
   "click",
-  "connexion[swagger-ui, uvicorn]",
+  "fastapi",
   "gunicorn",
   "kubernetes",
   "pydantic",
   "requests",
   "tomli",
+  "uvicorn",
 ]
 description = "TES on kubernetes"
 keywords = [
@@ -58,6 +59,11 @@ Repository = "https://github.com/jaeaeich/poiesis"
 
 [tool.deptry]
 known_first_party = ["poiesis"]
+
+[tool.deptry.per_rule_ignores]
+# uvicorn is loaded by gunicorn via the worker_class string
+# "uvicorn.workers.UvicornWorker" in asgi.py — deptry can't see it.
+DEP002 = ["uvicorn"]
 
 [tool.ruff]
 indent-width = 4

@@ -1,19 +1,41 @@
-"""Poiesis API entrypoint placeholder.
+"""Poiesis API entrypoint.
 
-The v1 API (connexion + Mongo handlers) was removed during the v2 cleanup.
-The v2 API will be rebuilt on FastAPI + the asyncpg persistence layer; see
-the v2 issue tracker for the slice that delivers it.
-
-Importing this module currently raises so that any accidental wiring is loud.
+Builds the FastAPI application. Routes for `CreateTask`, `GetTask`,
+`ListTasks`, and `CancelTask` are added in later slices of the v0.2.0
+redesign; this module owns app construction and global wiring only.
 """
 
-from typing import Any
+import logging
+
+from fastapi import FastAPI
+
+from poiesis.api.constants import get_poiesis_api_constants
+from poiesis.api.exceptions import (
+    APIError,
+    handle_api_exception,
+    handle_unexpected_exception,
+)
+from poiesis.constants import get_poiesis_constants
+
+constants = get_poiesis_constants()
+api_constants = get_poiesis_api_constants()
 
 
-def create_app() -> Any:
-    """Placeholder until the FastAPI rewrite lands."""
-    msg = (
-        "Poiesis API is being rewritten on FastAPI as part of the v2 redesign. "
-        "See the v2 issue tracker for the slice that delivers it."
+def create_app() -> FastAPI:
+    """Build and return the FastAPI app."""
+    logging.basicConfig(level=getattr(logging, constants.LOG_LEVEL))
+
+    app = FastAPI(
+        title="Poiesis",
+        description="GA4GH TES (Task Execution Service) on Kubernetes",
+        version=api_constants.TES_VERSION,
+        root_path=f"/{api_constants.BASE_PATH}",
     )
-    raise NotImplementedError(msg)
+
+    app.add_exception_handler(APIError, handle_api_exception)
+    app.add_exception_handler(Exception, handle_unexpected_exception)
+
+    return app
+
+
+app = create_app()
