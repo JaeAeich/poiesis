@@ -1,6 +1,9 @@
 [env]
 _.python.venv = { create = true, path = ".venv" }
 
+[shell_alias]
+mr = "mise run"
+
 [tasks.checks]
 description = "Run all pre-commit hooks + deptry + ty (advisory)"
 run = [
@@ -8,6 +11,18 @@ run = [
   "uv run deptry poiesis",
   "uv run ty check poiesis || echo '(ty diagnostics are advisory; see CI policy in ci.yml)'",
 ]
+
+[tasks."db:down"]
+description = "Roll back one migration against $POSTGRES_DSN"
+run = 'mise x -- migrate -path ./migrations -database "$POSTGRES_DSN" down 1'
+
+[tasks."db:new"]
+description = "Scaffold a new migration pair: mise run db:new <name>"
+run = 'mise x -- migrate create -ext sql -dir ./migrations -seq -digits 6 {{arg(name="name")}}'
+
+[tasks."db:up"]
+description = "Apply all pending migrations against $POSTGRES_DSN"
+run = 'mise x -- migrate -path ./migrations -database "$POSTGRES_DSN" up'
 
 [tasks.format]
 description = "Run ruff format"
@@ -26,6 +41,7 @@ description = "Type-check with ty (Astral)"
 run = "uv run ty check poiesis"
 
 [tools]
+gomigrate = "4.19.1"
 lefthook = "2.1.6"
 "npm:@commitlint/cli" = "20.4.1"
 "npm:@commitlint/config-conventional" = "20.4.1"
