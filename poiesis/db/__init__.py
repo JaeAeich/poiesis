@@ -11,7 +11,7 @@ The function signatures here are the SQL contract that the planned Rust
 rewrite must re-implement. Keep them narrow and stable.
 """
 
-from poiesis.db import tasks
+from poiesis.db import state, tasks
 from poiesis.db.pool import create_pool
 
-__all__ = ["create_pool", "tasks"]
+__all__ = ["create_pool", "state", "tasks"]
