@@ -30,19 +30,26 @@ class APIError(Exception):
         return result
 
 
-async def handle_api_exception(request: Request, exc: APIError) -> JSONResponse:
-    """Handler for our custom APIError hierarchy."""
-    if exc.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR.value:
-        logger.error("Server error: %s", exc.message)
-    else:
-        logger.warning("Client error: %s", exc.message)
+async def handle_api_exception(request: Request, exc: Exception) -> JSONResponse:
+    """Handler for our custom APIError hierarchy.
 
-    return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
+    The signature takes the broader `Exception` type to satisfy Starlette's
+    handler protocol; the registration call binds this only to `APIError`,
+    so the cast is safe at runtime.
+    """
+    err = exc if isinstance(exc, APIError) else APIError(str(exc))
+    if err.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR.value:
+        logger.error("Server error: %s", err.message)
+    else:
+        logger.warning("Client error: %s", err.message)
+
+    return JSONResponse(status_code=err.status_code, content=err.to_dict())
 
 
 async def handle_unexpected_exception(request: Request, exc: Exception) -> JSONResponse:
     """Handler for unexpected exceptions."""
     logger.exception("Unexpected error processing %s", request.url.path)
+    _ = exc  # signature required by Starlette; not used directly
 
     return JSONResponse(
         status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
