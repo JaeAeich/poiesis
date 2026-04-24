@@ -176,37 +176,118 @@ async def create_task(conn: asyncpg.Connection, task: TesTask) -> str:
 
 async def get_task(conn: asyncpg.Connection, task_id: str) -> TesTask | None:
     """Fetch a task by id, fully reconstructed. Returns None if not found."""
-    row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", uuid.UUID(task_id))
-    if row is None:
+    task_uuid = uuid.UUID(task_id)
+    task_row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_uuid)
+    if task_row is None:
         return None
 
-    inputs = await conn.fetch(
-        "SELECT * FROM task_inputs WHERE task_id = $1 ORDER BY ordinal", row["id"]
+    input_rows = await conn.fetch(
+        "SELECT * FROM task_inputs WHERE task_id = $1 ORDER BY ordinal", task_uuid
     )
-    outputs = await conn.fetch(
-        "SELECT * FROM task_outputs WHERE task_id = $1 ORDER BY ordinal", row["id"]
+    output_rows = await conn.fetch(
+        "SELECT * FROM task_outputs WHERE task_id = $1 ORDER BY ordinal", task_uuid
     )
-    executors = await conn.fetch(
-        "SELECT * FROM task_executors WHERE task_id = $1 ORDER BY ordinal", row["id"]
+    executor_rows = await conn.fetch(
+        "SELECT * FROM task_executors WHERE task_id = $1 ORDER BY ordinal", task_uuid
     )
-    logs = await conn.fetch(
-        "SELECT * FROM task_logs WHERE task_id = $1 ORDER BY ordinal", row["id"]
+    log_rows = await conn.fetch(
+        "SELECT * FROM task_logs WHERE task_id = $1 ORDER BY ordinal", task_uuid
     )
 
     executor_logs_by_log: dict[int, list[asyncpg.Record]] = {}
-    if logs:
-        rows = await conn.fetch(
+    if log_rows:
+        for r in await conn.fetch(
             """
             SELECT * FROM executor_logs
             WHERE task_log_id = ANY($1::int[])
             ORDER BY task_log_id, ordinal
             """,
-            [log["id"] for log in logs],
-        )
-        for r in rows:
+            [log["id"] for log in log_rows],
+        ):
             executor_logs_by_log.setdefault(r["task_log_id"], []).append(r)
 
-    return _row_to_task(row, inputs, outputs, executors, logs, executor_logs_by_log)
+    return TesTask(
+        id=str(task_row["id"]),
+        state=TesState(task_row["state"]),
+        name=task_row["name"],
+        description=task_row["description"],
+        inputs=[
+            TesInput(
+                name=r["name"],
+                description=r["description"],
+                url=r["url"],
+                path=r["path"],
+                type=TesFileType(r["type"]),
+                content=r["content"],
+                streamable=r["streamable"],
+            )
+            for r in input_rows
+        ]
+        or None,
+        outputs=[
+            TesOutput(
+                name=r["name"],
+                description=r["description"],
+                url=r["url"],
+                path=r["path"],
+                path_prefix=r["path_prefix"],
+                type=TesFileType(r["type"]),
+            )
+            for r in output_rows
+        ]
+        or None,
+        resources=TesResources(
+            cpu_cores=task_row["cpu_cores"],
+            preemptible=task_row["preemptible"],
+            ram_gb=task_row["ram_gb"],
+            disk_gb=task_row["disk_gb"],
+            zones=list(task_row["zones"]) if task_row["zones"] is not None else None,
+            backend_parameters=_load_jsonb(task_row["backend_parameters"]),
+            backend_parameters_strict=task_row["backend_parameters_strict"],
+        ),
+        executors=[
+            TesExecutor(
+                image=r["image"],
+                command=list(r["command"]),
+                workdir=r["workdir"],
+                stdin=r["stdin"],
+                stdout=r["stdout"],
+                stderr=r["stderr"],
+                env=_load_jsonb(r["env"]),
+                ignore_error=r["ignore_error"],
+            )
+            for r in executor_rows
+        ],
+        volumes=list(task_row["volumes"]) if task_row["volumes"] is not None else None,
+        tags=_load_jsonb(task_row["tags"]),
+        logs=[
+            TesTaskLog(
+                logs=[
+                    TesExecutorLog(
+                        start_time=_format_dt(exr["start_time"]),
+                        end_time=_format_dt(exr["end_time"]),
+                        stdout=exr["stdout"],
+                        stderr=exr["stderr"],
+                        exit_code=exr["exit_code"],
+                    )
+                    for exr in executor_logs_by_log.get(log_row["id"], [])
+                ],
+                metadata=_load_jsonb(log_row["metadata"]),
+                start_time=_format_dt(log_row["start_time"]),
+                end_time=_format_dt(log_row["end_time"]),
+                outputs=[
+                    TesOutputFileLog(**o)
+                    for o in (_load_jsonb(log_row["outputs"]) or [])
+                ],
+                system_logs=list(log_row["system_logs"])
+                if log_row["system_logs"] is not None
+                else None,
+            )
+            for log_row in log_rows
+        ]
+        or None,
+        creation_time=_format_dt(task_row["creation_time"]),
+    )
 
 
 # -- internal mapping helpers ------------------------------------------------
@@ -238,99 +319,3 @@ def _load_jsonb(value: Any) -> Any:
     if isinstance(value, str):
         return json.loads(value)
     return value
-
-
-def _row_to_task(  # noqa: PLR0913 - private assembler; one caller; row sets are intentionally separate fetches
-    task_row: asyncpg.Record,
-    input_rows: list[asyncpg.Record],
-    output_rows: list[asyncpg.Record],
-    executor_rows: list[asyncpg.Record],
-    log_rows: list[asyncpg.Record],
-    executor_logs_by_log: dict[int, list[asyncpg.Record]],
-) -> TesTask:
-    """Reconstruct a TesTask from its relational rows."""
-    resources = TesResources(
-        cpu_cores=task_row["cpu_cores"],
-        preemptible=task_row["preemptible"],
-        ram_gb=task_row["ram_gb"],
-        disk_gb=task_row["disk_gb"],
-        zones=list(task_row["zones"]) if task_row["zones"] is not None else None,
-        backend_parameters=_load_jsonb(task_row["backend_parameters"]),
-        backend_parameters_strict=task_row["backend_parameters_strict"],
-    )
-
-    inputs = [
-        TesInput(
-            name=r["name"],
-            description=r["description"],
-            url=r["url"],
-            path=r["path"],
-            type=TesFileType(r["type"]),
-            content=r["content"],
-            streamable=r["streamable"],
-        )
-        for r in input_rows
-    ]
-    outputs = [
-        TesOutput(
-            name=r["name"],
-            description=r["description"],
-            url=r["url"],
-            path=r["path"],
-            path_prefix=r["path_prefix"],
-            type=TesFileType(r["type"]),
-        )
-        for r in output_rows
-    ]
-    executors = [
-        TesExecutor(
-            image=r["image"],
-            command=list(r["command"]),
-            workdir=r["workdir"],
-            stdin=r["stdin"],
-            stdout=r["stdout"],
-            stderr=r["stderr"],
-            env=_load_jsonb(r["env"]),
-            ignore_error=r["ignore_error"],
-        )
-        for r in executor_rows
-    ]
-    logs = [
-        TesTaskLog(
-            logs=[
-                TesExecutorLog(
-                    start_time=_format_dt(exr["start_time"]),
-                    end_time=_format_dt(exr["end_time"]),
-                    stdout=exr["stdout"],
-                    stderr=exr["stderr"],
-                    exit_code=exr["exit_code"],
-                )
-                for exr in executor_logs_by_log.get(log_row["id"], [])
-            ],
-            metadata=_load_jsonb(log_row["metadata"]),
-            start_time=_format_dt(log_row["start_time"]),
-            end_time=_format_dt(log_row["end_time"]),
-            outputs=[
-                TesOutputFileLog(**o) for o in (_load_jsonb(log_row["outputs"]) or [])
-            ],
-            system_logs=list(log_row["system_logs"])
-            if log_row["system_logs"] is not None
-            else None,
-        )
-        for log_row in log_rows
-    ]
-
-    return TesTask(
-        id=str(task_row["id"]),
-        state=TesState(task_row["state"]),
-        name=task_row["name"],
-        description=task_row["description"],
-        inputs=inputs or None,
-        outputs=outputs or None,
-        resources=resources,
-        executors=executors,
-        volumes=list(task_row["volumes"]) if task_row["volumes"] is not None else None,
-        tags=_load_jsonb(task_row["tags"]),
-        logs=logs or None,
-        creation_time=_format_dt(task_row["creation_time"]),
-    )

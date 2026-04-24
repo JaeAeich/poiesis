@@ -16,7 +16,6 @@ async def create_pool(
     """Open a connection pool against the given DSN.
 
     Schema migrations are applied out-of-band by `golang-migrate/migrate`
-    against `./migrations/`, typically by an init container before the API
-    replicas start. This factory does not run DDL.
+    against `./migrations/`. This factory does not run DDL.
     """
     return await asyncpg.create_pool(dsn, min_size=min_size, max_size=max_size)

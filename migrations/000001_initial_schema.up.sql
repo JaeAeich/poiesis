@@ -1,10 +1,9 @@
--- 0001: initial schema for the Poiesis Task store.
+-- Initial schema for the Poiesis Task store.
 --
 -- Mirrors the GA4GH TES task shape (TesTask + nested arrays) as a fully
--- relational tree. JSONB is reserved for opaque user metadata only
--- (`tasks.tags`, `tasks.backend_parameters`).
---
--- See docs/adr/0004 for the modelling decisions.
+-- relational tree. JSONB is reserved for opaque user metadata
+-- (`tasks.tags`, `tasks.backend_parameters`) and for runtime-emitted log
+-- payloads where queryability by individual field is not needed.
 
 CREATE TYPE tes_state AS ENUM (
   'UNKNOWN',
@@ -27,7 +26,7 @@ CREATE TABLE tasks (
   state                       tes_state    NOT NULL DEFAULT 'UNKNOWN',
   name                        TEXT,
   description                 TEXT,
-  -- Resources (task-level; per-executor overrides deferred per ADR-0001).
+  -- Resources requested by the task (task-level only).
   cpu_cores                   INTEGER,
   preemptible                 BOOLEAN,
   ram_gb                      DOUBLE PRECISION,
@@ -40,10 +39,8 @@ CREATE TABLE tasks (
   -- Opaque user metadata.
   tags                        JSONB,
   creation_time               TIMESTAMPTZ NOT NULL DEFAULT now(),
-  -- Lifecycle bookkeeping (written by TRec / TCtl as per ADR-0003).
   ended_at                    TIMESTAMPTZ,
   termination_reason          TEXT,
-  -- K8s linkage (populated by the API when the Job is submitted).
   pod_name                    TEXT
 );
 

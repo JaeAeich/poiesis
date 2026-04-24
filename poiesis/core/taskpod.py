@@ -107,18 +107,18 @@ def build_taskpod_job(
 ) -> tuple[V1PersistentVolumeClaim, V1Job]:
     """Build the PVC + Job pair for a TES task.
 
-    Returns the two manifests the caller should submit. The PVC must be created
-    first (the Job references it as a volume). The PVC's `ownerReferences` are
-    populated after the Job is submitted with the returned Job's UID — typical
-    flow:
+    Returns the two manifests the caller should submit. The Pod can be
+    submitted before the PVC exists (it will sit Pending until the PVC is
+    ready), so the recommended order is:
 
         pvc, job = build_taskpod_job(task, config)
+        created_job = await k8s.create_job(job)
+        attach_pvc_owner(pvc, created_job.metadata.uid, created_job.metadata.name)
         await k8s.create_pvc(pvc)
-        job = await k8s.create_job(job)
-        await k8s.set_pvc_owner(pvc, job)
 
-    Or callers can set ownerReferences before submission if they have the
-    Job UID (e.g. server-side apply).
+    With the ownerReference set on creation, `kube-controller-manager` will
+    garbage-collect the PVC when the Job is deleted. Poiesis itself never
+    deletes a PVC.
     """
     if task.id is None:
         msg = "TesTask.id must be set before manifest construction"
@@ -140,7 +140,7 @@ def _reject_unsupported_features(task: TesTask) -> None:
     for idx, ex in enumerate(task.executors):
         if ex.ignore_error:
             msg = (
-                f"executor[{idx}].ignore_error=True is not supported in Poiesis v0.2.0: "
+                f"executor[{idx}].ignore_error=True is not supported: "
                 "Kubernetes init containers abort on first failure with no per-container override"
             )
             raise ValueError(msg)
@@ -255,14 +255,9 @@ def _build_init_containers(task: TesTask, config: RuntimeConfig) -> list[V1Conta
 def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
     """Recorder native sidecar.
 
-    Init container with `restartPolicy: Always` — this is the K8s 1.29+
-    native-sidecar form. The container stays alive for the lifetime of the
-    Pod and observes init-phase container transitions.
-
-    `restart_policy` is set via attribute assignment rather than the
-    constructor because the current `kubernetes-stubs` package does not
-    list it on `V1Container.__init__`; the runtime field exists and is
-    serialised correctly.
+    Init container with `restartPolicy: Always` — the K8s 1.29+ native-sidecar
+    form. The container stays alive for the lifetime of the Pod and observes
+    init-phase container transitions.
     """
     container = V1Container(
         name=TREC_NAME,
@@ -273,9 +268,7 @@ def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
         volume_mounts=[_pvc_mount(config)],
         resources=config.recorder_resources,
     )
-    # kubernetes-stubs is missing `restart_policy` on V1Container; the runtime
-    # field exists and is the K8s 1.29+ native-sidecar marker.
-    container.restart_policy = "Always"  # ty: ignore[unresolved-attribute]
+    object.__setattr__(container, "restart_policy", "Always")
     return container
 
 

@@ -38,7 +38,6 @@ def info():
 
 def main():
     """Main entry point for the CLI."""
-    # Poiesis services. TRec + TCtl will be added in v2 slices.
     ApiCommand.register(cli)
     TifCommand.register(cli)
     TofCommand.register(cli)
