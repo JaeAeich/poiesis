@@ -31,9 +31,11 @@ from typing import TYPE_CHECKING
 from kubernetes.client import (
     V1Container,
     V1EnvVar,
+    V1EnvVarSource,
     V1Job,
     V1JobSpec,
     V1LabelSelector,
+    V1ObjectFieldSelector,
     V1ObjectMeta,
     V1OwnerReference,
     V1PersistentVolumeClaim,
@@ -263,8 +265,8 @@ def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
         name=TREC_NAME,
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
-        command=["poiesis", "trec", "--task-id", _require_id(task)],
-        env=list(config.extra_env),
+        command=["poiesis", "trec", "run", "--task-id", _require_id(task)],
+        env=_downward_api_env() + list(config.extra_env),
         volume_mounts=[_pvc_mount(config)],
         resources=config.recorder_resources,
     )
@@ -272,13 +274,32 @@ def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
     return container
 
 
+def _downward_api_env() -> list[V1EnvVar]:
+    """Env vars TRec needs from the downward API to identify its own Pod."""
+    return [
+        V1EnvVar(
+            name="POIESIS_POD_NAME",
+            value_from=V1EnvVarSource(
+                field_ref=V1ObjectFieldSelector(field_path="metadata.name"),
+            ),
+        ),
+        V1EnvVar(
+            name="POIESIS_POD_NAMESPACE",
+            value_from=V1EnvVarSource(
+                field_ref=V1ObjectFieldSelector(field_path="metadata.namespace"),
+            ),
+        ),
+    ]
+
+
 def _build_tif(task: TesTask, config: RuntimeConfig) -> V1Container:
     """Input filer container."""
+    _require_id(task)
     return V1Container(
         name=TIF_NAME,
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
-        command=["poiesis", "tif", "--task-id", _require_id(task)],
+        command=["poiesis", "tif", "run"],
         env=list(config.extra_env),
         volume_mounts=[_pvc_mount(config)],
         resources=config.filer_resources,
@@ -287,11 +308,12 @@ def _build_tif(task: TesTask, config: RuntimeConfig) -> V1Container:
 
 def _build_tof(task: TesTask, config: RuntimeConfig) -> V1Container:
     """Output filer container."""
+    _require_id(task)
     return V1Container(
         name=TOF_NAME,
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
-        command=["poiesis", "tof", "--task-id", _require_id(task)],
+        command=["poiesis", "tof", "run"],
         env=list(config.extra_env),
         volume_mounts=[_pvc_mount(config)],
         resources=config.filer_resources,
