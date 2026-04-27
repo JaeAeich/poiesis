@@ -79,6 +79,7 @@ class TaskEvent:
         executor_index: Set for EXECUTOR_* events; the zero-indexed executor ordinal.
         exit_code: Set for *_FINISHED and POD_TERMINATED events when known.
         reason: Set for *_FINISHED with non-zero exit and for POD_TERMINATED.
+        started_at: ISO-8601 timestamp string, when known.
         finished_at: ISO-8601 timestamp string, when known.
     """
 
@@ -86,6 +87,7 @@ class TaskEvent:
     executor_index: int | None = None
     exit_code: int | None = None
     reason: str | None = None
+    started_at: str | None = None
     finished_at: str | None = None
 
 
@@ -242,17 +244,24 @@ def _container_finished_event(
         if exit_code is None:
             exit_code = terminated.get("exit_code")
         reason = terminated.get("reason")
+        started_at = terminated.get("startedAt") or terminated.get("started_at")
         finished_at = terminated.get("finishedAt") or terminated.get("finished_at")
         return TaskEvent(
             kind=finished_kind,
             executor_index=executor_index,
             exit_code=exit_code,
             reason=reason if exit_code != 0 else None,
+            started_at=str(started_at) if started_at is not None else None,
             finished_at=str(finished_at) if finished_at is not None else None,
         )
     running = state.get("running")
     if running is not None:
-        return TaskEvent(kind=started_kind, executor_index=executor_index)
+        started_at = running.get("startedAt") or running.get("started_at")
+        return TaskEvent(
+            kind=started_kind,
+            executor_index=executor_index,
+            started_at=str(started_at) if started_at is not None else None,
+        )
     return None
 
 
