@@ -7,9 +7,12 @@ multi-table insert tree is a single atomic unit.
 
 from __future__ import annotations
 
+import base64
 import json
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -27,6 +30,27 @@ from poiesis.api.tes.models import (
     TesTask,
     TesTaskLog,
 )
+
+
+class TaskView(StrEnum):
+    """TES view level controlling which fields are populated on read."""
+
+    MINIMAL = "MINIMAL"
+    BASIC = "BASIC"
+    FULL = "FULL"
+
+
+@dataclass(slots=True)
+class ListFilters:
+    """Filters and pagination cursor for `list_tasks`."""
+
+    name_prefix: str | None = None
+    state: TesState | None = None
+    tag_key: list[str] = field(default_factory=list)
+    tag_value: list[str] = field(default_factory=list)
+    page_size: int = 256
+    page_token: str | None = None
+
 
 # -- writes ------------------------------------------------------------------
 
@@ -111,6 +135,15 @@ async def create_task(conn: asyncpg.Connection, task: TesTask) -> str:
                 (out.type or TesFileType.FILE).value,
             )
 
+        if not task.logs:
+            await conn.execute(
+                """
+                INSERT INTO task_logs (task_id, ordinal, start_time)
+                VALUES ($1, 0, now())
+                """,
+                uuid.UUID(task_id),
+            )
+
         for idx, ex in enumerate(task.executors):
             await conn.execute(
                 """
@@ -174,12 +207,23 @@ async def create_task(conn: asyncpg.Connection, task: TesTask) -> str:
 # -- reads -------------------------------------------------------------------
 
 
-async def get_task(conn: asyncpg.Connection, task_id: str) -> TesTask | None:
-    """Fetch a task by id, fully reconstructed. Returns None if not found."""
+async def get_task(
+    conn: asyncpg.Connection,
+    task_id: str,
+    view: TaskView = TaskView.FULL,
+) -> TesTask | None:
+    """Fetch a task by id at the requested view level. Returns None if not found."""
     task_uuid = uuid.UUID(task_id)
     task_row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_uuid)
     if task_row is None:
         return None
+
+    if view is TaskView.MINIMAL:
+        return TesTask(
+            id=str(task_row["id"]),
+            state=TesState(task_row["state"]),
+            executors=[],
+        )
 
     input_rows = await conn.fetch(
         "SELECT * FROM task_inputs WHERE task_id = $1 ORDER BY ordinal", task_uuid
@@ -206,6 +250,7 @@ async def get_task(conn: asyncpg.Connection, task_id: str) -> TesTask | None:
         ):
             executor_logs_by_log.setdefault(r["task_log_id"], []).append(r)
 
+    basic = view is TaskView.BASIC
     return TesTask(
         id=str(task_row["id"]),
         state=TesState(task_row["state"]),
@@ -218,7 +263,7 @@ async def get_task(conn: asyncpg.Connection, task_id: str) -> TesTask | None:
                 url=r["url"],
                 path=r["path"],
                 type=TesFileType(r["type"]),
-                content=r["content"],
+                content=None if basic else r["content"],
                 streamable=r["streamable"],
             )
             for r in input_rows
@@ -266,8 +311,8 @@ async def get_task(conn: asyncpg.Connection, task_id: str) -> TesTask | None:
                     TesExecutorLog(
                         start_time=_format_dt(exr["start_time"]),
                         end_time=_format_dt(exr["end_time"]),
-                        stdout=exr["stdout"],
-                        stderr=exr["stderr"],
+                        stdout=None if basic else exr["stdout"],
+                        stderr=None if basic else exr["stderr"],
                         exit_code=exr["exit_code"],
                     )
                     for exr in executor_logs_by_log.get(log_row["id"], [])
@@ -279,15 +324,104 @@ async def get_task(conn: asyncpg.Connection, task_id: str) -> TesTask | None:
                     TesOutputFileLog(**o)
                     for o in (_load_jsonb(log_row["outputs"]) or [])
                 ],
-                system_logs=list(log_row["system_logs"])
-                if log_row["system_logs"] is not None
-                else None,
+                system_logs=None
+                if basic
+                else (
+                    list(log_row["system_logs"])
+                    if log_row["system_logs"] is not None
+                    else None
+                ),
             )
             for log_row in log_rows
         ]
         or None,
         creation_time=_format_dt(task_row["creation_time"]),
     )
+
+
+async def list_tasks(
+    conn: asyncpg.Connection,
+    filters: ListFilters,
+    view: TaskView = TaskView.MINIMAL,
+) -> tuple[list[TesTask], str | None]:
+    """Return a page of tasks plus a `next_page_token` (or None at end-of-list).
+
+    Page ordering is `creation_time DESC, id DESC`. The token is a base64url-
+    encoded `"<rfc3339>|<uuid>"` pair pointing at the last row of the previous
+    page; rows are returned strictly after that pair.
+    """
+    clauses, params = _build_filter_clauses(filters)
+    params.append(filters.page_size + 1)
+
+    sql_parts = ["SELECT id, state, name, creation_time FROM tasks"]
+    if clauses:
+        sql_parts.append("WHERE " + " AND ".join(clauses))
+    sql_parts.append("ORDER BY creation_time DESC, id DESC")
+    sql_parts.append(f"LIMIT ${len(params)}")
+    rows = await conn.fetch(" ".join(sql_parts), *params)
+
+    next_token: str | None = None
+    if len(rows) > filters.page_size:
+        last = rows[filters.page_size - 1]
+        next_token = _encode_page_token(last["creation_time"], last["id"])
+        rows = rows[: filters.page_size]
+
+    if view is TaskView.MINIMAL:
+        return [
+            TesTask(id=str(r["id"]), state=TesState(r["state"]), executors=[])
+            for r in rows
+        ], next_token
+
+    tasks: list[TesTask] = []
+    for r in rows:
+        full = await get_task(conn, str(r["id"]), view=view)
+        if full is not None:
+            tasks.append(full)
+    return tasks, next_token
+
+
+def _build_filter_clauses(filters: ListFilters) -> tuple[list[str], list[Any]]:
+    """Materialise positional WHERE clauses + parameters for `list_tasks`."""
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if filters.name_prefix is not None:
+        params.append(f"{filters.name_prefix}%")
+        clauses.append(f"name LIKE ${len(params)}")
+    if filters.state is not None:
+        params.append(filters.state.value)
+        clauses.append(f"state = ${len(params)}")
+    for i, key in enumerate(filters.tag_key):
+        params.append(key)
+        value = filters.tag_value[i] if i < len(filters.tag_value) else ""
+        if value:
+            params.append(value)
+            clauses.append(f"tags ->> ${len(params) - 1} = ${len(params)}")
+        else:
+            clauses.append(f"tags ? ${len(params)}")
+    cursor = _decode_page_token(filters.page_token)
+    if cursor is not None:
+        params.extend([cursor[0], cursor[1]])
+        clauses.append(f"(creation_time, id) < (${len(params) - 1}, ${len(params)})")
+    return clauses, params
+
+
+def _encode_page_token(creation_time: datetime, task_id: uuid.UUID) -> str:
+    raw = f"{creation_time.isoformat()}|{task_id}".encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _decode_page_token(token: str | None) -> tuple[datetime, uuid.UUID] | None:
+    if not token:
+        return None
+    padded = token + "=" * (-len(token) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(padded.encode()).decode()
+        ts, tid = raw.split("|", 1)
+        return datetime.fromisoformat(ts), uuid.UUID(tid)
+    except (ValueError, UnicodeDecodeError) as exc:
+        msg = "invalid page_token"
+        raise ValueError(msg) from exc
 
 
 # -- internal mapping helpers ------------------------------------------------

@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING
 from poiesis.api.tes.models import TesState
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     import asyncpg
 
 
@@ -118,6 +120,9 @@ async def write_terminal_state(
             reason,
         )
         if canceled is not None:
+            await _update_latest_task_log(
+                conn, task_uuid, message=reason or "Cancelled", stamp_end=True
+            )
             return TerminalWriteResult.CANCELED_INSTEAD
 
         # Otherwise: the normal non-terminal → terminal transition.
@@ -136,9 +141,110 @@ async def write_terminal_state(
             reason,
             list(NON_TERMINAL_STATES),
         )
+        if applied is not None:
+            await _update_latest_task_log(
+                conn, task_uuid, message=reason, stamp_end=True
+            )
 
     return (
         TerminalWriteResult.APPLIED
         if applied is not None
         else TerminalWriteResult.NO_OP
     )
+
+
+async def append_system_log(
+    conn: asyncpg.Connection,
+    task_id: str,
+    message: str,
+) -> None:
+    """Append a free-form system-log line to the task's active log row.
+
+    Used by recorders to surface observations (image-pull failures, init
+    container errors, TIF/TOF stderr) that don't themselves change state.
+    """
+    await _update_latest_task_log(conn, uuid.UUID(task_id), message=message)
+
+
+async def append_executor_log(
+    conn: asyncpg.Connection,
+    task_id: str,
+    *,
+    ordinal: int,
+    exit_code: int,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+) -> None:
+    """Append one `executor_logs` row under the task's active log row."""
+    await conn.execute(
+        """
+        INSERT INTO executor_logs (
+            task_log_id, ordinal, start_time, end_time, exit_code
+        )
+        SELECT id, $2, $3, $4, $5
+        FROM task_logs
+        WHERE task_id = $1
+        ORDER BY ordinal DESC
+        LIMIT 1
+        """,
+        uuid.UUID(task_id),
+        ordinal,
+        start_time,
+        end_time,
+        exit_code,
+    )
+
+
+_UPDATE_APPEND_MESSAGE = """
+    UPDATE task_logs
+        SET system_logs = array_append(COALESCE(system_logs, '{}'), $2)
+    WHERE id = (
+        SELECT id FROM task_logs
+        WHERE task_id = $1
+        ORDER BY ordinal DESC
+        LIMIT 1
+    )
+"""
+
+_UPDATE_APPEND_MESSAGE_AND_STAMP_END = """
+    UPDATE task_logs
+        SET system_logs = array_append(COALESCE(system_logs, '{}'), $2),
+            end_time    = now()
+    WHERE id = (
+        SELECT id FROM task_logs
+        WHERE task_id = $1
+        ORDER BY ordinal DESC
+        LIMIT 1
+    )
+"""
+
+_UPDATE_STAMP_END = """
+    UPDATE task_logs
+        SET end_time = now()
+    WHERE id = (
+        SELECT id FROM task_logs
+        WHERE task_id = $1
+        ORDER BY ordinal DESC
+        LIMIT 1
+    )
+"""
+
+
+async def _update_latest_task_log(
+    conn: asyncpg.Connection,
+    task_uuid: uuid.UUID,
+    *,
+    message: str | None = None,
+    stamp_end: bool = False,
+) -> None:
+    """Update the highest-ordinal `task_logs` row for `task_uuid`.
+
+    Appends `message` to `system_logs` when given, stamps `end_time = now()`
+    when `stamp_end`. A no-op when both are absent.
+    """
+    if message is not None and stamp_end:
+        await conn.execute(_UPDATE_APPEND_MESSAGE_AND_STAMP_END, task_uuid, message)
+    elif message is not None:
+        await conn.execute(_UPDATE_APPEND_MESSAGE, task_uuid, message)
+    elif stamp_end:
+        await conn.execute(_UPDATE_STAMP_END, task_uuid)
