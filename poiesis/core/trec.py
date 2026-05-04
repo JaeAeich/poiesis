@@ -17,6 +17,7 @@ import asyncio
 import logging
 import signal
 import uuid
+from datetime import datetime
 
 import asyncpg
 import kubernetes
@@ -166,13 +167,43 @@ async def _apply_event(
         await state_db.write_terminal_state(conn, task_id, proposed, reason=reason)
         return
 
-    if event.kind is EventKind.EXECUTOR_FINISHED and (event.exit_code or 0) != 0:
-        await state_db.write_terminal_state(
-            conn,
-            task_id,
-            TesState.EXECUTOR_ERROR,
-            reason=event.reason or "executor exited non-zero",
+    if event.kind is EventKind.EXECUTOR_FINISHED:
+        if event.executor_index is not None and event.exit_code is not None:
+            await state_db.append_executor_log(
+                conn,
+                task_id,
+                ordinal=event.executor_index,
+                exit_code=event.exit_code,
+                start_time=_parse_iso(event.started_at),
+                end_time=_parse_iso(event.finished_at),
+            )
+        if (event.exit_code or 0) != 0:
+            await state_db.write_terminal_state(
+                conn,
+                task_id,
+                TesState.EXECUTOR_ERROR,
+                reason=event.reason or "executor exited non-zero",
+            )
+        return
+
+    if event.kind in _FILER_FINISHED_KINDS and (event.exit_code or 0) != 0:
+        await state_db.append_system_log(
+            conn, task_id, event.reason or _FILER_DEFAULT_REASON[event.kind]
         )
+
+
+_FILER_DEFAULT_REASON = {
+    EventKind.TIF_FINISHED: "input filer exited non-zero",
+    EventKind.TOF_FINISHED: "output filer exited non-zero",
+}
+_FILER_FINISHED_KINDS = frozenset(_FILER_DEFAULT_REASON)
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    """Parse a kubelet ISO-8601 timestamp into a datetime; None passes through."""
+    if value is None:
+        return None
+    return datetime.fromisoformat(value)
 
 
 def _pod_terminated_terminal(
