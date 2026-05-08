@@ -1,27 +1,29 @@
-"""TES Task routes.
-
-Implements `POST /tasks` (CreateTask).
-"""
+"""TES Task routes."""
 
 import logging
 import uuid
 from http import HTTPStatus
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from kubernetes.client.exceptions import ApiException
 
 from poiesis.api.deps import get_db_conn, get_k8s, get_runtime_config
-from poiesis.api.exceptions import BadRequestError, InternalServerError
+from poiesis.api.exceptions import BadRequestError, InternalServerError, NotFoundError
 from poiesis.api.tes.models import (
     TesCreateTaskResponse,
+    TesListTasksResponse,
     TesState,
     TesTask,
 )
 from poiesis.core.taskpod import RuntimeConfig, attach_pvc_owner, build_taskpod_job
 from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
+from poiesis.db.tasks import ListFilters, TaskView
 from poiesis.k8s import K8sClient
+
+_MAX_PAGE_SIZE = 2048
+_DEFAULT_PAGE_SIZE = 256
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,65 @@ async def create_task(
 
     logger.info("TaskPod submitted for task %s (job=%s)", task_id, job_name)
     return TesCreateTaskResponse(id=task_id)
+
+
+@router.get(
+    "/tasks/{id}",
+    status_code=HTTPStatus.OK,
+    operation_id="GetTask",
+)
+async def get_task(
+    id: str,
+    conn: Annotated[Any, Depends(get_db_conn)],
+    view: Annotated[TaskView, Query()] = TaskView.MINIMAL,
+) -> TesTask:
+    """Return a single task at the requested view level."""
+    try:
+        task_uuid = str(uuid.UUID(id))
+    except ValueError as exc:
+        raise BadRequestError(f"invalid task id: {id}") from exc
+
+    task = await tasks_db.get_task(conn, task_uuid, view=view)
+    if task is None:
+        raise NotFoundError(f"task {id} not found")
+    return task
+
+
+def _list_filters(
+    name_prefix: Annotated[str | None, Query()] = None,
+    state: Annotated[TesState | None, Query()] = None,
+    tag_key: Annotated[list[str] | None, Query()] = None,
+    tag_value: Annotated[list[str] | None, Query()] = None,
+    page_size: Annotated[int, Query(ge=1, le=_MAX_PAGE_SIZE)] = _DEFAULT_PAGE_SIZE,
+    page_token: Annotated[str | None, Query()] = None,
+) -> ListFilters:
+    """Bind the TES list-tasks query string into a `ListFilters` value."""
+    return ListFilters(
+        name_prefix=name_prefix,
+        state=state,
+        tag_key=tag_key or [],
+        tag_value=tag_value or [],
+        page_size=page_size,
+        page_token=page_token,
+    )
+
+
+@router.get(
+    "/tasks",
+    status_code=HTTPStatus.OK,
+    operation_id="ListTasks",
+)
+async def list_tasks(
+    conn: Annotated[Any, Depends(get_db_conn)],
+    filters: Annotated[ListFilters, Depends(_list_filters)],
+    view: Annotated[TaskView, Query()] = TaskView.MINIMAL,
+) -> TesListTasksResponse:
+    """Return a paginated list of tasks, newest first."""
+    try:
+        tasks, next_token = await tasks_db.list_tasks(conn, filters, view=view)
+    except ValueError as exc:
+        raise BadRequestError(str(exc)) from exc
+    return TesListTasksResponse(tasks=tasks, next_page_token=next_token)
 
 
 def _server_assigned_meta(obj: Any) -> tuple[str, str]:

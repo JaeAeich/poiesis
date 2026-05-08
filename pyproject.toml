@@ -130,6 +130,9 @@ select = ["ALL"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.lint.pylint]
+max-args = 8
+
 [tool.ty.src]
 exclude = ["**/.venv/**", "**/__pycache__/**"]
 
