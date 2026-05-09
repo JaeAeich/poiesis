@@ -128,13 +128,18 @@ def build_taskpod_job(
     _reject_unsupported_features(task)
 
     task_id = task.id
-    job_name = f"task-{task_id}"
+    job_name = job_name_for(task_id)
     pvc_name = f"task-{task_id}-data"
 
     labels = _labels(task_id)
     pvc = _build_pvc(pvc_name, labels, task, config)
     job = _build_job(job_name, pvc_name, labels, task, config)
     return pvc, job
+
+
+def job_name_for(task_id: str) -> str:
+    """Return the Kubernetes Job name that wraps `task_id`'s TaskPod."""
+    return f"task-{task_id}"
 
 
 def _reject_unsupported_features(task: TesTask) -> None:

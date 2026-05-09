@@ -11,12 +11,18 @@ from kubernetes.client.exceptions import ApiException
 from poiesis.api.deps import get_db_conn, get_k8s, get_runtime_config
 from poiesis.api.exceptions import BadRequestError, InternalServerError, NotFoundError
 from poiesis.api.tes.models import (
+    TesCancelTaskResponse,
     TesCreateTaskResponse,
     TesListTasksResponse,
     TesState,
     TesTask,
 )
-from poiesis.core.taskpod import RuntimeConfig, attach_pvc_owner, build_taskpod_job
+from poiesis.core.taskpod import (
+    RuntimeConfig,
+    attach_pvc_owner,
+    build_taskpod_job,
+    job_name_for,
+)
 from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
 from poiesis.db.tasks import ListFilters, TaskView
@@ -78,6 +84,46 @@ async def create_task(
 
     logger.info("TaskPod submitted for task %s (job=%s)", task_id, job_name)
     return TesCreateTaskResponse(id=task_id)
+
+
+@router.post(
+    "/tasks/{id}:cancel",
+    status_code=HTTPStatus.OK,
+    operation_id="CancelTask",
+)
+async def cancel_task(
+    id: str,
+    conn: Annotated[Any, Depends(get_db_conn)],
+    k8s: Annotated[K8sClient, Depends(get_k8s)],
+    runtime_config: Annotated[RuntimeConfig, Depends(get_runtime_config)],
+) -> TesCancelTaskResponse:
+    """Mark the task CANCELING and delete its wrapping Kubernetes Job.
+
+    TES treats cancel on a terminal task as a no-op success. The TaskPod
+    self-finalises to CANCELED via TRec's SIGTERM handler; if TRec is dead,
+    TCtl writes CANCELED when it observes the Pod terminate.
+    """
+    try:
+        task_uuid = str(uuid.UUID(id))
+    except ValueError as exc:
+        raise BadRequestError(f"invalid task id: {id}") from exc
+
+    if await tasks_db.get_task(conn, task_uuid, view=TaskView.MINIMAL) is None:
+        raise NotFoundError(f"task {id} not found")
+
+    transitioned = await state_db.mark_canceling(conn, task_uuid)
+    if not transitioned:
+        # Already terminal (or already CANCELING) — TES spec says return success.
+        return TesCancelTaskResponse()
+
+    try:
+        await k8s.delete_job(runtime_config.namespace, job_name_for(task_uuid))
+    except ApiException as exc:
+        if exc.status != HTTPStatus.NOT_FOUND:
+            logger.exception("Job delete failed for task %s", task_uuid)
+            raise InternalServerError("Failed to delete task Job") from exc
+
+    return TesCancelTaskResponse()
 
 
 @router.get(
