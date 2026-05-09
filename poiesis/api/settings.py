@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 
+from kubernetes.client import V1EnvVar
 from pydantic import BaseModel, Field
 
 from poiesis.core.taskpod import RuntimeConfig
@@ -52,6 +53,7 @@ class Settings(BaseModel):
             pvc_storage_class=self.pvc_storage_class,
             pvc_access_mode=self.pvc_access_mode,
             taskpod_service_account=self.taskpod_service_account,
+            extra_env=[V1EnvVar(name="POSTGRES_DSN", value=self.postgres_dsn)],
         )
 
 

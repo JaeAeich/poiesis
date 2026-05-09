@@ -13,7 +13,6 @@ from kubernetes.client.models import (
     V1ConfigMapVolumeSource,
     V1EnvVar,
     V1EnvVarSource,
-    V1KeyToPath,
     V1PodSecurityContext,
     V1SecretKeySelector,
     V1SecurityContext,
@@ -395,48 +394,6 @@ def get_executor_security_volume_mount() -> list[V1VolumeMount]:
             read_only=True,
         )
     ]
-
-
-def get_tes_task_request_volume_mounts() -> list[V1VolumeMount]:
-    """Returns the volume mounts for the TES task request."""
-    return [
-        V1VolumeMount(
-            name="tes-task-request",
-            mount_path=core_constants.K8s.TES_TASK_REQUEST_MOUNT_PATH,
-            read_only=True,
-        )
-    ]
-
-
-def get_tes_task_request_volume(tes_task_id: str) -> list[V1Volume]:
-    """Returns the volume for the TES task request."""
-    return [
-        V1Volume(
-            name="tes-task-request",
-            config_map=V1ConfigMapVolumeSource(
-                name=f"{core_constants.K8s.TES_TASK_PREFIX}-{tes_task_id}",
-                items=[
-                    V1KeyToPath(
-                        key=core_constants.K8s.TES_TASK_CONFIGMAP_KEY,
-                        path=core_constants.K8s.TES_TASK_CONFIGMAP_KEY,
-                    )
-                ],
-            ),
-        ),
-    ]
-
-
-@lru_cache
-def get_tes_task_request_path() -> Path:
-    """Returns the full path to the TES task request file.
-
-    Returns:
-        Path: The complete file path combining the mount path and config key.
-    """
-    return (
-        Path(core_constants.K8s.TES_TASK_REQUEST_MOUNT_PATH)
-        / core_constants.K8s.TES_TASK_CONFIGMAP_KEY
-    )
 
 
 def get_labels(

@@ -299,12 +299,12 @@ def _downward_api_env() -> list[V1EnvVar]:
 
 def _build_tif(task: TesTask, config: RuntimeConfig) -> V1Container:
     """Input filer container."""
-    _require_id(task)
+    task_id = _require_id(task)
     return V1Container(
         name=TIF_NAME,
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
-        command=["poiesis", "tif", "run"],
+        command=["poiesis", "tif", "run", "--task-id", task_id],
         env=list(config.extra_env),
         volume_mounts=[_pvc_mount(config)],
         resources=config.filer_resources,
@@ -313,12 +313,12 @@ def _build_tif(task: TesTask, config: RuntimeConfig) -> V1Container:
 
 def _build_tof(task: TesTask, config: RuntimeConfig) -> V1Container:
     """Output filer container."""
-    _require_id(task)
+    task_id = _require_id(task)
     return V1Container(
         name=TOF_NAME,
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
-        command=["poiesis", "tof", "run"],
+        command=["poiesis", "tof", "run", "--task-id", task_id],
         env=list(config.extra_env),
         volume_mounts=[_pvc_mount(config)],
         resources=config.filer_resources,

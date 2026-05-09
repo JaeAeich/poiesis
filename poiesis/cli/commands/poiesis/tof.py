@@ -1,17 +1,17 @@
-"""TOF service CLI commands."""
+"""TOF service CLI command."""
 
 import asyncio
-import json
+import os
+import sys
 from typing import Any
 
+import asyncpg
 import click
-from pydantic import ValidationError
 
-from poiesis.api.tes.models import TesTask
 from poiesis.cli.commands.poiesis.base import BaseCommand
-from poiesis.core.constants import get_tes_task_request_path
 from poiesis.core.services.filer.filer_strategy_factory import STRATEGY_MAP
 from poiesis.core.services.filer.tof import Tof
+from poiesis.db import tasks as tasks_db
 
 
 class TofCommand(BaseCommand):
@@ -19,63 +19,63 @@ class TofCommand(BaseCommand):
 
     name = "tof"
     help = "Task Output Filer service"
-    description = "Task Output Filer service for handling task output files."
+    description = "Upload TES task outputs from the shared task volume."
 
     def add_run_command(self, group: click.Group) -> None:
-        """Add TOF run command.
+        """Wire `poiesis tof run --task-id <id>`."""
 
-        Args:
-            group: Click group to add the command to
-        """
-
-        @group.command(name="run", help="Execute a TOF task")
-        def run():
-            """Execute a TOF task with the provided parameters."""
-            try:
-                with open(get_tes_task_request_path()) as f:
-                    task_json: dict[str, Any] = json.load(f)
-                tes_task = TesTask(**task_json)
-                _outputs = tes_task.outputs or []
-
-                assert tes_task.id is not None, "Task ID is missing"
-
-                file_count = len(_outputs)
-                click.echo("--- TOF Task Information ---")
-                click.echo(f"Task: {tes_task.id}")
-                click.echo(f"Output files: {file_count}")
-                click.echo("--------------------------")
-
-                click.echo("Uploading output files...")
-                asyncio.run(Tof(tes_task.id, _outputs).execute())
-
-            except json.JSONDecodeError as e:
-                raise click.ClickException(f"JSON parsing error: {e!s}") from e
-            except ValidationError as e:
-                raise click.ClickException(f"Validation error: {e!s}") from e
-            except Exception as e:
-                raise click.ClickException(f"Error: {e!s}") from e
+        @group.command(name="run", help="Upload a task's declared outputs")
+        @click.option(
+            "--task-id",
+            required=True,
+            help="UUID of the task whose outputs should be uploaded.",
+        )
+        def run_cmd(task_id: str) -> None:
+            dsn = _required_env("POSTGRES_DSN")
+            click.echo(f"--- TOF --- task={task_id}")
+            sys.exit(asyncio.run(_run(task_id, dsn)))
 
     def get_info(self) -> dict[str, Any]:
-        """Get TOF service information.
-
-        Returns:
-            Dictionary with TOF service information
-        """
+        """Service information for `poiesis tof info`."""
         info = super().get_info()
-
         info.update(
             {
-                "description": "Task Output Filer service for handling task output files",
+                "description": self.description,
                 "supported_protocols": ", ".join(
-                    [
-                        v.name if v.output else ""
-                        for v in STRATEGY_MAP.values()
-                        if v.output
-                    ]
+                    v.name for v in STRATEGY_MAP.values() if v.output
                 ),
             }
         )
-
         return dict(
             sorted({k.replace("_", " ").title(): v for k, v in info.items()}.items())
         )
+
+
+async def _run(task_id: str, dsn: str) -> int:
+    """Fetch the task from Postgres and upload its outputs."""
+    conn = await asyncpg.connect(dsn)
+    try:
+        task = await tasks_db.get_task(conn, task_id, view=tasks_db.TaskView.FULL)
+    finally:
+        await conn.close()
+
+    if task is None:
+        click.echo(f"task {task_id} not found", err=True)
+        return 1
+
+    outputs = task.outputs or []
+    if not outputs:
+        click.echo("no outputs declared; nothing to upload")
+        return 0
+
+    await Tof(task_id, outputs).execute()
+    return 0
+
+
+def _required_env(name: str) -> str:
+    """Read an env var or fail loud."""
+    value = os.environ.get(name)
+    if not value:
+        msg = f"environment variable {name} must be set"
+        raise click.ClickException(msg)
+    return value
