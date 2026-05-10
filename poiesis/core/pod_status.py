@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from poiesis.api.tes.models import TesState
+
 _EXECUTOR_RE = re.compile(r"^exec-(\d+)$")
 
 TREC_NAME = "trec"
@@ -304,6 +306,23 @@ def _pod_terminated_event(pod_status: dict[str, Any]) -> TaskEvent | None:
         reason = PodTerminationReason.ERROR.value
 
     return TaskEvent(kind=EventKind.POD_TERMINATED, reason=reason)
+
+
+def pod_terminated_terminal(
+    pod_reason: str | None,
+) -> tuple[TesState, str | None]:
+    """Map a Pod-termination reason to a terminal TES state + reason string."""
+    if pod_reason == PodTerminationReason.COMPLETED.value:
+        return TesState.COMPLETE, None
+    if pod_reason in {
+        PodTerminationReason.OOM_KILLED.value,
+        PodTerminationReason.EVICTED.value,
+        PodTerminationReason.NODE_LOST.value,
+        PodTerminationReason.DEADLINE_EXCEEDED.value,
+        PodTerminationReason.PVC_BIND_FAILURE.value,
+    }:
+        return TesState.SYSTEM_ERROR, pod_reason
+    return TesState.EXECUTOR_ERROR, pod_reason
 
 
 def _collect_container_reasons(pod_status: dict[str, Any]) -> set[str]:

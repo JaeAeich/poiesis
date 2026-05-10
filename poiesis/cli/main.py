@@ -3,6 +3,7 @@
 import click
 
 from poiesis.cli.commands.poiesis.api import ApiCommand
+from poiesis.cli.commands.poiesis.tctl import TctlCommand
 from poiesis.cli.commands.poiesis.tif import TifCommand
 from poiesis.cli.commands.poiesis.tof import TofCommand
 from poiesis.cli.commands.poiesis.trec import TrecCommand
@@ -43,5 +44,6 @@ def main():
     TifCommand.register(cli)
     TofCommand.register(cli)
     TrecCommand.register(cli)
+    TctlCommand.register(cli)
 
     cli()

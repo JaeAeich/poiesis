@@ -26,9 +26,9 @@ from kubernetes import client
 from poiesis.api.tes.models import TesState
 from poiesis.core.pod_status import (
     EventKind,
-    PodTerminationReason,
     TaskEvent,
     TaskStateSnapshot,
+    pod_terminated_terminal,
     translate,
 )
 from poiesis.db import state as state_db
@@ -163,7 +163,7 @@ async def _apply_event(
 ) -> None:
     """Persist a single task event."""
     if event.kind is EventKind.POD_TERMINATED:
-        proposed, reason = _pod_terminated_terminal(event.reason)
+        proposed, reason = pod_terminated_terminal(event.reason)
         await state_db.write_terminal_state(conn, task_id, proposed, reason=reason)
         return
 
@@ -204,23 +204,6 @@ def _parse_iso(value: str | None) -> datetime | None:
     if value is None:
         return None
     return datetime.fromisoformat(value)
-
-
-def _pod_terminated_terminal(
-    pod_reason: str | None,
-) -> tuple[TesState, str | None]:
-    """Map a Pod-termination reason to a terminal TES state + reason string."""
-    if pod_reason == PodTerminationReason.COMPLETED.value:
-        return TesState.COMPLETE, None
-    if pod_reason in {
-        PodTerminationReason.OOM_KILLED.value,
-        PodTerminationReason.EVICTED.value,
-        PodTerminationReason.NODE_LOST.value,
-        PodTerminationReason.DEADLINE_EXCEEDED.value,
-        PodTerminationReason.PVC_BIND_FAILURE.value,
-    }:
-        return TesState.SYSTEM_ERROR, pod_reason
-    return TesState.EXECUTOR_ERROR, pod_reason
 
 
 def _advance_snapshot(snapshot: TaskStateSnapshot, event: TaskEvent) -> None:
