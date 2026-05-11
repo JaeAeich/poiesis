@@ -48,7 +48,7 @@ from kubernetes.client import (
     V1VolumeMount,
 )
 
-from poiesis.core.pod_status import PAUSE_NAME, TIF_NAME, TOF_NAME, TREC_NAME
+from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
 
 if TYPE_CHECKING:
     from poiesis.api.tes.models import TesExecutor, TesTask
@@ -71,8 +71,7 @@ class RuntimeConfig:
 
     Attributes:
         namespace:               Kubernetes namespace to submit into.
-        poiesis_image:           Image for trec / tif / tof containers (one image, different commands).
-        pause_image:             Image for the placeholder main container.
+        poiesis_image:           Image for every poiesis-owned container (trec, tif, tof, ack).
         pvc_storage_class:       Storage class for the Task PVC. None defers to the cluster default.
         pvc_access_mode:         Access mode for the Task PVC. Defaults to ReadWriteOnce.
         filer_pvc_mount_path:    Path at which the PVC is mounted in every container.
@@ -83,13 +82,12 @@ class RuntimeConfig:
         grace_period_seconds:    terminationGracePeriodSeconds on the Pod.
         filer_resources:         Resource requests/limits for the TIF/TOF containers.
         recorder_resources:      Resource requests/limits for the TRec sidecar.
-        pause_resources:         Resource requests/limits for the pause main container.
+        ack_resources:           Resource requests/limits for the terminal `ack` main container.
         extra_env:               Extra env vars injected into every container (database DSN, S3 creds, etc.).
     """
 
     namespace: str
     poiesis_image: str
-    pause_image: str = "registry.k8s.io/pause:3.9"
     pvc_storage_class: str | None = None
     pvc_access_mode: str = "ReadWriteOnce"
     filer_pvc_mount_path: str = "/transfer"
@@ -100,7 +98,7 @@ class RuntimeConfig:
     grace_period_seconds: int = 30
     filer_resources: V1ResourceRequirements | None = None
     recorder_resources: V1ResourceRequirements | None = None
-    pause_resources: V1ResourceRequirements | None = None
+    ack_resources: V1ResourceRequirements | None = None
     extra_env: list[V1EnvVar] = field(default_factory=list)
 
 
@@ -203,7 +201,7 @@ def _build_job(
 ) -> V1Job:
     """Construct the Job that wraps the TaskPod."""
     init_containers = _build_init_containers(task, config)
-    main_containers = [_build_pause_container(config)]
+    main_containers = [_build_ack_container(task, config)]
     volumes = [
         V1Volume(
             name=PVC_VOLUME_NAME,
@@ -348,17 +346,21 @@ def _build_executor(
     )
 
 
-def _build_pause_container(config: RuntimeConfig) -> V1Container:
-    """Placeholder main container.
+def _build_ack_container(task: TesTask, config: RuntimeConfig) -> V1Container:
+    """Terminal main container — reuses the poiesis image to avoid a second pull.
 
-    K8s requires `containers:` to be non-empty. `pause` blocks until SIGTERM
-    and is essentially free at runtime.
+    K8s requires `containers:` to be non-empty. Init containers (TIF, the
+    executors, TOF) carry the real work; once they finish, `ack` runs,
+    exits 0, and the Pod reaches `Succeeded`. That terminal event is what
+    TRec/TCtl watch for to close the task out.
     """
+    task_id = _require_id(task)
     return V1Container(
-        name=PAUSE_NAME,
-        image=config.pause_image,
+        name=ACK_NAME,
+        image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
-        resources=config.pause_resources,
+        command=["poiesis", "ack", "run", "--task-id", task_id],
+        resources=config.ack_resources,
     )
 
 

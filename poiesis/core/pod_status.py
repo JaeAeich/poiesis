@@ -16,7 +16,8 @@ Container naming convention (also enforced by the spec builder):
     tif         the input filer
     exec-{N}    the N-th executor, zero-indexed
     tof         the output filer
-    pause       the regular main container (placeholder)
+    ack         the regular main container — runs after every init
+                container finishes and exits 0 so the Pod reaches Succeeded
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ _EXECUTOR_RE = re.compile(r"^exec-(\d+)$")
 TREC_NAME = "trec"
 TIF_NAME = "tif"
 TOF_NAME = "tof"
-PAUSE_NAME = "pause"
+ACK_NAME = "ack"
 
 
 class ContainerKind(Enum):
@@ -43,7 +44,7 @@ class ContainerKind(Enum):
     TIF = "tif"
     EXECUTOR = "executor"
     TOF = "tof"
-    PAUSE = "pause"
+    ACK = "ack"
     UNKNOWN = "unknown"
 
 
@@ -116,8 +117,8 @@ def classify_container(name: str) -> tuple[ContainerKind, int | None]:
         return ContainerKind.TIF, None
     if name == TOF_NAME:
         return ContainerKind.TOF, None
-    if name == PAUSE_NAME:
-        return ContainerKind.PAUSE, None
+    if name == ACK_NAME:
+        return ContainerKind.ACK, None
     m = _EXECUTOR_RE.match(name)
     if m:
         return ContainerKind.EXECUTOR, int(m.group(1))

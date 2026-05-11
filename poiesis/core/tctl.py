@@ -31,7 +31,7 @@ from kubernetes.client import CoordinationV1Api, CoreV1Api
 
 from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.pod_status import (
-    PAUSE_NAME,
+    ACK_NAME,
     PodTerminationReason,
     pod_terminated_terminal,
 )
@@ -215,7 +215,7 @@ def _derive_pod_reason(pod: dict[str, Any]) -> str | None:
         or []
     )
     for cs in (*init_statuses, *container_statuses):
-        if cs.get("name") == PAUSE_NAME:
+        if cs.get("name") == ACK_NAME:
             continue
         terminated = (cs.get("state") or {}).get("terminated") or {}
         cs_reason = terminated.get("reason")
