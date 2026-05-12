@@ -76,14 +76,15 @@ def create_app() -> FastAPI:
         title="Poiesis",
         description="GA4GH TES (Task Execution Service) on Kubernetes",
         version=api_constants.TES_VERSION,
-        root_path=f"/{api_constants.BASE_PATH}",
         lifespan=lifespan,
     )
 
     app.add_exception_handler(APIError, handle_api_exception)
     app.add_exception_handler(Exception, handle_unexpected_exception)
 
-    app.include_router(tasks_routes.router)
+    # Mount under the TES-canonical prefix so direct callers and the
+    # GA4GH compliance suite both hit `<host>/ga4gh/tes/v1/tasks`.
+    app.include_router(tasks_routes.router, prefix=f"/{api_constants.BASE_PATH}")
 
     return app
 
