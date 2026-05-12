@@ -34,7 +34,6 @@ from kubernetes.client import (
     V1EnvVarSource,
     V1Job,
     V1JobSpec,
-    V1LabelSelector,
     V1ObjectFieldSelector,
     V1ObjectMeta,
     V1OwnerReference,
@@ -140,6 +139,13 @@ def job_name_for(task_id: str) -> str:
     return f"task-{task_id}"
 
 
+#: Backend parameter keys this server knows how to honour. Empty until
+#: we ship a backend feature that consumes one. Per TES spec, any key
+#: not in this set is rejected with 400 when `backend_parameters_strict`
+#: is true; non-strict tasks silently ignore unknowns.
+_SUPPORTED_BACKEND_PARAMETERS: frozenset[str] = frozenset()
+
+
 def _reject_unsupported_features(task: TesTask) -> None:
     """Fail fast on TES features the single-Pod model cannot honour."""
     for idx, ex in enumerate(task.executors):
@@ -147,6 +153,22 @@ def _reject_unsupported_features(task: TesTask) -> None:
             msg = (
                 f"executor[{idx}].ignore_error=True is not supported: "
                 "Kubernetes init containers abort on first failure with no per-container override"
+            )
+            raise ValueError(msg)
+
+    resources = task.resources
+    if (
+        resources is not None
+        and resources.backend_parameters_strict
+        and resources.backend_parameters
+    ):
+        unknown = sorted(
+            set(resources.backend_parameters) - _SUPPORTED_BACKEND_PARAMETERS
+        )
+        if unknown:
+            msg = (
+                f"resources.backend_parameters contains unsupported keys "
+                f"under backend_parameters_strict=true: {unknown}"
             )
             raise ValueError(msg)
 
@@ -232,7 +254,6 @@ def _build_job(
             backoff_limit=0,
             ttl_seconds_after_finished=config.job_ttl_seconds,
             active_deadline_seconds=config.active_deadline_seconds,
-            selector=V1LabelSelector(match_labels=labels),
             template=V1PodTemplateSpec(
                 metadata=V1ObjectMeta(labels=labels),
                 spec=pod_spec,
