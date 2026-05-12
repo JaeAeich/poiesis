@@ -11,12 +11,9 @@ import boto3
 from botocore.config import Config
 
 from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
 
 logger = logging.getLogger(__name__)
-
-core_constants = get_poiesis_core_constants()
 
 
 class S3FilerStrategy(FilerStrategy):

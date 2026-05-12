@@ -3,10 +3,8 @@
 import logging
 
 from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.constants import get_poiesis_core_constants
 from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
 
-core_constants = get_poiesis_core_constants()
 logger = logging.getLogger(__name__)
 
 

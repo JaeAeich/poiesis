@@ -7,11 +7,9 @@ from abc import ABC, abstractmethod
 from glob import glob
 
 from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
-from poiesis.core.constants import get_poiesis_core_constants
+from poiesis.core.constants import FILER_PVC_PATH
 
 logger = logging.getLogger(__name__)
-
-core_constants = get_poiesis_core_constants()
 
 
 class FilerStrategy(ABC):
@@ -83,7 +81,7 @@ class FilerStrategy(ABC):
             path: The path of the file.
         """
         container_path = os.path.join(
-            core_constants.K8s.FILER_PVC_PATH,
+            FILER_PVC_PATH,
             path.lstrip("/"),
         )
         os.makedirs(os.path.dirname(container_path), exist_ok=True)
@@ -101,7 +99,7 @@ class FilerStrategy(ABC):
         Returns:
             str: Path of the file as it was in the executor path.
         """
-        pvc_base = core_constants.K8s.FILER_PVC_PATH
+        pvc_base = FILER_PVC_PATH
         if path.startswith(pvc_base):
             return "/" + path[len(pvc_base) :].lstrip("/")
         return path

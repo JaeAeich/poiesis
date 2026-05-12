@@ -492,7 +492,7 @@ class TesTaskLog(BaseModel):
 class TesServiceType(ServiceType):
     """Type of a TES service."""
 
-    artifact: Artifact  # type: ignore
+    artifact: Artifact
 
     @field_serializer("artifact")
     def serialize_artifact(self, v: Artifact) -> str:
@@ -518,7 +518,7 @@ class TesServiceInfo(Service):
 
     storage: list[str] | None = None
     tesResources_backend_parameters: list[str] | None = None
-    type: TesServiceType | None = None  # type: ignore
+    type: TesServiceType | None = None
 
 
 class TesTask(BaseModel):

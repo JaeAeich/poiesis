@@ -303,7 +303,7 @@ def _build_tif(task: TesTask, config: RuntimeConfig) -> V1Container:
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
         command=["poiesis", "tif", "run", "--task-id", task_id],
-        env=list(config.extra_env),
+        env=_filer_env(config),
         volume_mounts=[_pvc_mount(config)],
         resources=config.filer_resources,
     )
@@ -317,10 +317,18 @@ def _build_tof(task: TesTask, config: RuntimeConfig) -> V1Container:
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
         command=["poiesis", "tof", "run", "--task-id", task_id],
-        env=list(config.extra_env),
+        env=_filer_env(config),
         volume_mounts=[_pvc_mount(config)],
         resources=config.filer_resources,
     )
+
+
+def _filer_env(config: RuntimeConfig) -> list[V1EnvVar]:
+    """Env vars TIF/TOF need; pinned to match the spec builder's PVC mount."""
+    return [
+        V1EnvVar(name="POIESIS_FILER_PVC_PATH", value=config.filer_pvc_mount_path),
+        *config.extra_env,
+    ]
 
 
 def _build_executor(
