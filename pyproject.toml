@@ -137,6 +137,7 @@ max-args = 8
 exclude = ["**/.venv/**", "**/__pycache__/**"]
 
 [tool.typos.default.extend-words]
+AKS = 'AKS' # Azure Kubernetes Service
 mis = 'mis'
 ser = 'ser'
 

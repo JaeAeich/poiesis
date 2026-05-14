@@ -21,7 +21,6 @@ export default defineConfig({
                     { text: "Glossary", link: "/docs/intro/glossary" },
                     { text: "Poiesis", link: "/docs/intro/poiesis" },
                     { text: "API", link: "/docs/intro/api" },
-                    { text: "Authentication", link: "/docs/intro/auth" },
                 ],
             },
             {
@@ -34,10 +33,6 @@ export default defineConfig({
                     {
                         text: "Running Nextflow with Poiesis",
                         link: "/docs/usage/nextflow",
-                    },
-                    {
-                        text: "Training ML models",
-                        link: "/docs/usage/training",
                     },
                 ],
             },
@@ -72,18 +67,11 @@ export default defineConfig({
         ],
         footer: {
             message: "Released under the Apache License 2.0.",
-            copyright: "Copyright © 2025 jaeaeich (Javed Habib)",
+            copyright: "Copyright © 2026 jaeaeich (Javed Habib)",
         },
         outline: {
             level: "deep",
             label: "On this page",
-        },
-        lastUpdated: {
-            text: "Last updated",
-            formatOptions: {
-                dateStyle: "full",
-                timeStyle: "medium",
-            },
         },
         editLink: {
             pattern:

@@ -1,120 +1,89 @@
 # Glossary
 
-This glossary defines key terms and acronyms found in the Poiesis documentation.
-It covers both Poiesis-specific components and general concepts relevant to the
-[Task Execution Service (TES)](#task-execution-service-tes).
+## Poiesis components
 
-## Poiesis Components
+### TaskPod
 
-Core services and components that make up the Poiesis system.
-
-### Poiesis
-
-Poiesis is a [Kubernetes](#kubernetes-k8s)-native implementation of the
-[Task Execution Service (TES)](#task-execution-service-tes) specification.
-It's designed to efficiently run computational [tasks](#task) within
-[containerized](#container) environments on Kubernetes clusters.
-
-### Task Orchestrator (TOrc)
-
-*TOrc* is the Poiesis component that manages the setup and initialization
-phase of a [task](#task). It ensures all necessary Kubernetes resources
-(like [PVCs](#kubernetes-persistent-volume-claim-pvc)) and dependencies are
-correctly provisioned before the task execution begins.
+The single Kubernetes Pod that runs an entire TES [task](#task)
+end-to-end. Wrapped in a [Job](#kubernetes-job). Composed of init
+containers ([TIF](#task-input-filer-tif),
+[executors](#executor), [TOF](#task-output-filer-tof),
+[Ack](#ack)) plus a [TRec](#task-recorder-trec) native sidecar that
+records state to PostgreSQL.
 
 ### Task Input Filer (TIF)
 
-*TIF* is the Poiesis service responsible for importing input data required
-by a [task](#task). It fetches files from user-specified storage locations
-(supporting protocols like `S3`, `HTTPS`, direct `content`, local paths, etc.)
-and makes them available to the task executor.
-
-### Task Execution And Monitor (TExAM)
-
-*TExAM* oversees the lifecycle of computational [tasks](#task) within Poiesis.
-It handles submission, scheduling, resource allocation, monitoring execution
-progress and logs, and managing results. `TExAM` is responsible for launching
-the actual [Task Executor (TE)](#task-executor-te).
-
-### Task Executor (TE)
-
-*TE* is the component directly responsible for executing the commands defined
-within a [task](#task). It runs within a [Kubernetes Pod](#kubernetes-pod) and
-performs the actual computational work, utilizing the inputs prepared by
-[TIF](#task-input-filer-tif) and generating outputs handled by [TOF](#task-output-filer-tof).
+Init container that stages `TesTask.inputs` onto the shared
+[Task PVC](#task-pvc). Supports `s3://`, `http(s)://`, `file://`, and
+inline `content`.
 
 ### Task Output Filer (TOF)
 
-*TOF* is the Poiesis service that handles the export of output data generated
-by a [task](#task). After task completion, *TOF* uploads specified files to the
-user's desired storage location, using various supported protocols based on the
-user's request.
+Init container that uploads `TesTask.outputs` from the PVC after the
+last executor finishes. Supports `s3://` and `file://`.
 
-## General Concepts
+### Executor
 
-Fundamental terms related to container orchestration and task execution used in
-the context of `Poiesis` and `TES`.
+One step in a task's sequenced execution. Runs as an init container
+named `exec-{N}`. Failure of executor _i_ aborts executors _i+1..n_.
+
+### Ack
+
+Regular main container that exits 0 so the Pod reaches `Succeeded`.
+Reuses the Poiesis image — no second image pull.
+
+### Task Recorder (TRec)
+
+Native sidecar (K8s 1.29+: init container with `restartPolicy: Always`)
+that watches its own Pod and writes state to Postgres. On SIGTERM it
+does a final pod read so terminal state lands even when the watch hasn't
+yet delivered the `Succeeded` event.
+
+### Task Controller (TCtl)
+
+Leader-elected `Deployment` (default 3 replicas, `coordination.k8s.io`
+Leases). Backstop reconciler: writes terminal state for failures TRec
+cannot self-report — OOMKill before TRec started, eviction, node loss,
+PVC bind failure, `activeDeadlineSeconds` exceeded, pending timeout.
+
+### Task PVC
+
+`PersistentVolumeClaim` sized to `TesResources.disk_gb`, mounted at
+`/transfer` in every TaskPod container. Owned by the wrapping
+[Job](#kubernetes-job); kube-controller-manager GC handles cleanup.
+
+## General
 
 ### Task Execution Service (TES)
 
-*TES* is a standard specification developed by the Global Alliance for
-Genomics and Health (GA4GH) for a RESTful API to submit, manage, and monitor
-batch execution [tasks](#task). Poiesis implements this standard.
-
-::: tip More Information
-You can find the official TES specification on [GitHub](https://github.com/ga4gh/task-execution-schemas).
-:::
-
-### Container
-
-A *container* is a lightweight, standalone, executable package of software
-that includes everything needed to run it: code, runtime, system tools, system
-libraries, and settings. Containers isolate software from its environment,
-ensuring consistent operation. Popular containerization technology includes Docker.
+[GA4GH](https://www.ga4gh.org/) standard for a RESTful task-submission
+API. Poiesis implements TES `v1.1.0`.
+[Spec](https://github.com/ga4gh/task-execution-schemas).
 
 ### Task
 
-In the context of [TES](#task-execution-service-tes), a *task* represents a
-single unit of computational work. It's defined by its inputs (files, parameters),
-outputs (expected files, logs), execution commands (typically run inside a
-[container](#container)), and resource requirements (CPU, RAM, disk).
-
-::: tip More Information
-Check the task schema (`tesTask`) on the bottom section of the
-[API Reference](./api-reference.md) page.
-:::
+A single unit of computational work: inputs, sequenced
+[executors](#executor), outputs, resources. Terminal states:
+`COMPLETE`, `EXECUTOR_ERROR`, `SYSTEM_ERROR`, `CANCELED`.
 
 ### Kubernetes (K8s)
 
-*Kubernetes* (often abbreviated as *K8s*) is an open-source platform for
-automating the deployment, scaling, and management of [containerized](#container)
-applications. Poiesis leverages Kubernetes to manage its components and execute
-tasks efficiently.
-
-::: tip More Information
-Learn more at the [official Kubernetes website](https://kubernetes.io/).
-:::
+Container orchestration platform. Poiesis requires **1.29+** for native
+sidecar containers.
 
 ### Kubernetes Job
 
-A *Kubernetes Job* is a controller object that creates one or more
-[Pods](#kubernetes-pod) and ensures that a specified number of them
-successfully terminate. Jobs are ideal for running batch processes or finite
-[tasks](#task) to completion. `Poiesis` may use Jobs as part of its task execution
-mechanism.
+Controller that runs one or more [Pods](#kubernetes-pod) to completion.
+Poiesis wraps each TaskPod in a Job for `ttlSecondsAfterFinished`
+cleanup.
 
 ### Kubernetes Pod
 
-A *Pod* is the smallest and simplest deployable unit in the
-[Kubernetes](#kubernetes-k8s) object model. It represents a single instance of
-a running process in your cluster and can contain one or more
-[containers](#container), along with shared storage
-([Volumes](#kubernetes-persistent-volume-claim-pvc)) and network resources.
+Smallest deployable unit. One or more containers sharing network and
+storage. The TaskPod is a Pod composed of init containers plus a
+native sidecar.
 
 ### Kubernetes Persistent Volume Claim (PVC)
 
-A *Persistent Volume Claim* (*PVC*) is a request for storage by a user within
-[Kubernetes](#kubernetes-k8s). Pods can request specific storage resources
-(like size and access modes) through PVCs, which are then fulfilled by
-Persistent Volumes (PVs) available in the cluster. `Poiesis` uses PVCs to provide
-persistent storage for [tasks](#task) when needed.
+A request for storage, fulfilled by a `PersistentVolume`. One per
+task — see [Task PVC](#task-pvc).

@@ -1,14 +1,19 @@
 # API
 
-The OpenAPI specification are copied verbatim from the GA4GH repository and then
-made syntactic and implementor specific changes as long as they are in
-compliance with the specification.
+Poiesis serves the GA4GH TES `v1.1.0` REST API under `/ga4gh/tes/v1`.
 
-::: info Spec versioning
-Git hash is used to refer to the specific version of the specification that is
-used by the `Poiesis` implementation, though the openAPI spec used won't be as
-is due to changes mentioned above.
+| Method | Path | Operation |
+| --- | --- | --- |
+| `GET` | `/service-info` | `GetServiceInfo` |
+| `GET` | `/tasks` | `ListTasks` (filters, pagination, view levels) |
+| `POST` | `/tasks` | `CreateTask` |
+| `GET` | `/tasks/{id}` | `GetTask` (`MINIMAL` / `BASIC` / `FULL` view) |
+| `POST` | `/tasks/{id}:cancel` | `CancelTask` |
+
+The [API Reference](./api-reference.md) renders the full OpenAPI spec.
+
+::: info Source of truth
+The OpenAPI document is copied verbatim from the GA4GH repository at
+build time. Implementation-specific changes (if any) are syntactic and
+remain compliant with the spec.
 :::
-
-Check out the [swagger UI](./api-reference.md) for the version of the
-specification used by `Poiesis`.

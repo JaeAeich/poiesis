@@ -1,77 +1,37 @@
-# Poiesis: Kubernetes-Native Task Execution
+# Poiesis
 
-`Poiesis` is a robust Task Execution Service (TES) designed specifically for
-running computational tasks efficiently within containerized environments on
-Kubernetes. It offers a fully compliant implementation of the *GA4GH* `TES
-v1.1.0` specification, enhanced with cloud-native capabilities and security
-features tailored for modern infrastructure.
+A [GA4GH TES `v1.1.0`](https://github.com/ga4gh/task-execution-schemas)
+implementation for Kubernetes. One container image, one PostgreSQL
+schema, no broker.
 
-::: info Packaging
-`Poiesis` is distributed as a **single binary/image**. This approach simplifies
-both development workflows and deployment processes significantly. I plan to
-maintain this single artifact model as long as the benefits outweigh potential
-size considerations for individual components.
-:::
+![Poiesis high-level overview](/diagrams/overview.svg)
 
-## Architecture Overview
-
-`Poiesis` features a modular architecture built around distinct components that
-work together to manage the entire lifecycle of a task on Kubernetes. At a high
-level, it consists of:
-
-1.**API Endpoint:** Exposes the TES v1.1.0 compliant interface for clients.
-
-2.**Core Services:** The backend engine that interacts directly with the
-    Kubernetes API to orchestrate, execute, and monitor tasks.
-
-This architecture, packaged into a single deployable unit, provides a powerful
-yet manageable solution for task execution.
+Each TES task runs as **one Kubernetes Pod** wrapped in a `Job`. Init
+containers carry the work; a [native sidecar](./glossary.md#task-recorder-trec)
+records state. A leader-elected [controller](./glossary.md#task-controller-tctl)
+backstops failures the sidecar can't self-report.
 
 ## Components
 
-### API (TES v1.1.0 Compliant)
+| Component | Role |
+| --- | --- |
+| **API** | FastAPI service exposing TES under `/ga4gh/tes/v1`. No scheduler, no reconciler. |
+| **TaskPod** | One Pod per task: `trec` (sidecar) → `tif` → `exec-0..N` → `tof` → `ack`. |
+| **TRec** | In-pod recorder. Watches the surrounding Pod, writes state and logs. |
+| **TCtl** | Leader-elected Deployment. Reconciles OOMKill, eviction, node loss, unbindable PVC, pending timeout. |
+| **Postgres** | Relational store. Conditional-UPDATE writer makes TRec/TCtl race-correct. |
 
-The Poiesis API strictly adheres to the
-[GA4GH TES v1.1.0 specification](https://github.com/ga4gh/task-execution-schemas).
-It provides the standard RESTful endpoints for submitting tasks, querying their
-status, and retrieving results, ensuring compatibility with existing TES clients
-and workflows.
+## Filer protocols
 
-### Core Services
+`s3://`, `http://`, `https://`, `file://`, and inline `content`.
 
-These services form the operational backbone of `Poiesis`, directly managing
-task execution on the Kubernetes cluster. They typically run in sequence for
-each task:
+## What's yours vs what's ours
 
-1.**`TOrc` (Task Orchestrator):** Initializes the task run by setting up
-    necessary Kubernetes resources, such as creating a Persistent Volume
-    Claim (`PVC`) and starting the `TExAM` job.
+| You | Poiesis |
+| --- | --- |
+| Executor image + command | Pod composition, scheduling, lifecycle |
+| Input/output URLs | Filer staging and upload |
+| `TesResources` | PVC sizing, container resources |
+| Kubernetes 1.29+ | API, recorder, controller, schema |
 
-2.**`TIF` (Task Input Filer):** Prepares the execution environment by
-    downloading and staging all required input files into the task's workspace
-    (mounted PVC).
-
-3.**`TExAM` (Task Execution And Monitor):** Launches the actual **Task Executor
-    (`TE`)** container (defined by the user's task request) and continuously
-    monitors its status, resource usage, and logs.
-
-4.**`TOF` (Task Output Filer):** After the `TE` completes, `TOF` collects
-    specified output files from the task's workspace and uploads them to the
-    designated output storage location(s).
-
-::: info The Role of the Task Executor (TE)
-It's important to note that the **`TE` (Task Executor)** itself is *not* a
-static part of the `Poiesis` service infrastructure. Instead, it represents the
-**user-defined workload container** specified in the `TES` Task request.
-`Poiesis` (specifically `TExAM`) is responsible for *launching, managing, and
-monitoring* this `TE` container, but the container image, commands, and resource
-requests are defined by the user submitting the task.
-:::
-
-::: info Per-Task PVC
-`Poiesis` typically provisions a dedicated **Kubernetes Persistent Volume Claim
-(`PVC`)** for each task. This PVC serves as the isolated working directory where
-inputs are staged, computations occur, and outputs are generated before being
-collected by `TOF`. For privacy and security of sensitive data, PVCs are
-automatically deleted after task completion.
-:::
+Executor images run verbatim — no wrapping, no rewriting, no injection.

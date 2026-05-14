@@ -1,0 +1,28 @@
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: "#dddddd"
+    primaryTextColor: "#1f2937"
+    primaryBorderColor: "#6b7280"
+    lineColor: "#6b7280"
+    secondaryColor: "#dddddd"
+    tertiaryColor: "#f3f4f6"
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+---
+flowchart LR
+  client(["TES Client"]) -->|HTTP| api["Poiesis API"]
+  api -->|reads / writes| pg[("PostgreSQL")]
+  api -->|submits Job| pod
+  subgraph pod["TaskPod (one per task)"]
+    direction TB
+    tif["tif — input filer"]
+    exec["exec-0 .. exec-N"]
+    tof["tof — output filer"]
+    ack["ack — terminal main"]
+    trec["trec — native sidecar"]
+    tif --> exec --> tof --> ack
+  end
+  trec -->|writes state| pg
+  tctl["TCtl (leader-elected)"] -->|watches Pods| pod
+  tctl -->|backstop write| pg

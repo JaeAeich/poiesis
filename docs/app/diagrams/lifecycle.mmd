@@ -1,0 +1,60 @@
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: "#dddddd"
+    primaryTextColor: "#1f2937"
+    primaryBorderColor: "#6b7280"
+    lineColor: "#6b7280"
+    secondaryColor: "#dddddd"
+    tertiaryColor: "#f3f4f6"
+    actorBkg: "#dddddd"
+    actorBorder: "#6b7280"
+    actorTextColor: "#1f2937"
+    actorLineColor: "#6b7280"
+    signalColor: "#6b7280"
+    signalTextColor: "#1f2937"
+    noteBkgColor: "#f3f4f6"
+    noteBorderColor: "#6b7280"
+    noteTextColor: "#1f2937"
+    sequenceNumberColor: "#1f2937"
+    labelBoxBkgColor: "#dddddd"
+    labelBoxBorderColor: "#6b7280"
+    labelTextColor: "#1f2937"
+    loopTextColor: "#1f2937"
+    activationBkgColor: "#bbbbbb"
+    activationBorderColor: "#6b7280"
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+---
+sequenceDiagram
+  autonumber
+  participant Client
+  participant API as Poiesis API
+  participant K8s as Kubernetes
+  participant Pod as TaskPod
+  participant TRec as trec sidecar
+  participant TCtl
+  participant PG as PostgreSQL
+
+  Client->>API: POST /tasks
+  API->>API: validate, assign UUID
+  API->>PG: INSERT tasks (QUEUED)
+  API->>K8s: create Job (TaskPod)
+  API->>K8s: create PVC (owner=Job)
+  API-->>Client: 200 {id}
+
+  K8s->>Pod: schedule
+  Pod->>TRec: start native sidecar
+  TRec->>PG: state = RUNNING
+  Pod->>Pod: tif → exec-0..N → tof
+  TRec->>PG: executor_logs, system_logs
+  Pod->>Pod: ack (main) exits 0
+  K8s->>Pod: phase = Succeeded
+  TRec->>PG: state = COMPLETE
+
+  Note over TCtl,PG: Backstop reconciler runs continuously
+  TCtl-->>PG: terminal write only if<br/>TRec couldn't self-report
+
+  Client->>API: GET /tasks/{id}
+  API->>PG: SELECT from tasks
+  API-->>Client: 200 {state}

@@ -5,26 +5,23 @@ layout: home
 hero:
   name: Poiesis
   text: TES on Kubernetes
-  tagline: Scalable, secure task execution for computational workflows
+  tagline: A single-Pod GA4GH TES v1.1 implementation backed by PostgreSQL
   image:
     src: /logo/logo.png
     alt: Poiesis Logo
   actions:
     - theme: brand
-      text: Get Started
-      link: /docs/intro/glossary
+      text: Architecture
+      link: /docs/dev/architecture
+    - theme: alt
+      text: Deploy
+      link: /docs/deploy/deploying-poiesis
 
 features:
-  - title: Fully Compliant
-    details: Poiesis is fully compliant with the TES v1.1.0 specification.
-  - title: Open Source
-    details: Poiesis is open source, make it yours.
-  - title: Extensible
-    details: Poiesis is designed to be easily extended to support new features and integrations.
-  - title: Cloud Native
-    details: Poiesis is designed to be cloud native, running on Kubernetes.
-  - title: Authenticated
-    details: Poiesis supports OIDC (OAuth2) authentication out of the box (e.g., Keycloak, Auth0, Okta, Google) and can be extended to other authentication mechanisms.
-  - title: Private
-    details: Poiesis is designed to be private, with a focus on security and privacy, nothing is stored and is immediately deleted after the run is completed.
+  - title: GA4GH TES v1.1.0
+    details: Conformant with the Task Execution Service spec. Workflow engines like Nextflow that speak TES point at Poiesis and just work.
+  - title: Run anything as a task
+    details: Bring your own container image and command. Poiesis honours it verbatim — no entrypoint wrapping, no command rewriting, no library injection.
+  - title: Kubernetes-native, by design
+    details: One Pod per task. Inputs and outputs stage onto a per-task volume. Resources, lifecycle, and cleanup map directly to Kubernetes primitives.
 ---

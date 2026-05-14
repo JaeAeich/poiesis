@@ -1,39 +1,34 @@
-# Poiesis, TES, and Its Applications
+# Using Poiesis
 
-At its core, `Poiesis` allows you to describe *compute tasks over inputs* using
-a standard schema, then schedules and executes those tasks within a
-containerized environment.
+Poiesis is a TES server. Anything that speaks TES can drive it:
+workflow engines (Nextflow, Cromwell, Toil), client SDKs, or plain
+`curl`. This section covers two concrete scenarios.
 
-Think of it this way: if your problem can be reduced to "*run this command with
-these inputs and get the outputs*," then **Poiesis** can help you run it—at
-scale, across systems, and with Kubernetes-level isolation.
+## Pick your client
 
-## Why TES?
+- **`curl`** — fastest way to learn the API surface. The
+  [deployment guide](../deploy/deploying-poiesis.md#submit-a-task)
+  has working examples.
+- **Workflow engines** — see [Nextflow](./nextflow.md). Most TES
+  clients only need a base URL and (optionally) an S3 endpoint.
+- **Programmatic** — the
+  [TES OpenAPI spec](../intro/api-reference.md) is the contract.
 
-TES provides a **standard interface** to describe computational tasks, making
-it easier to plug into different infrastructure without having to rewrite
-execution logic. By implementing TES on Kubernetes, **Poiesis** brings this
-standard to the cloud-native world, enabling seamless integration with:
+## Common patterns
 
-- Bioinformatics pipelines
-- Federated and multi-tenant platforms
-- Workflow engines like `Cromwell`, `Nextflow`, or `Toil` etc
-- Custom UIs or APIs that trigger compute jobs
+- **No-IO task** — just executors. Useful for smoke testing image
+  pulls and Pod scheduling.
+- **S3 in, S3 out** — `inputs[]` and `outputs[]` point at object
+  storage; TIF stages onto `/transfer`, TOF uploads from `/transfer`.
+- **Inline content** — `inputs[].content` carries the file body
+  inline; no external storage needed.
+- **Multi-executor** — executors run strictly sequentially through
+  init-container ordering; the `/transfer` PVC persists between them.
 
-## Poiesis as a Federated Task Layer
+## What Poiesis doesn't do
 
-You can think of **Poiesis** as a **task execution abstraction** that sits
-between a requestor (user, workflow engine, or system) and the Kubernetes
-cluster. It decouples **who asks for the work** from **where and how it's run**.
-This is especially powerful for:
-
-- Multi-user scientific computing platforms
-- Shared infrastructure in research organizations
-- Data access governance (e.g., secure processing of protected datasets)
-- Workload bursting across clusters or cloud providers
-
-## What’s Ahead
-
-The following pages will walk through **real-world use cases** where Poiesis can
-serve as the intermediary layer to simplify compute orchestration in federated
-or scalable systems.
+- **Schedule across clusters.** One TaskPod, one cluster.
+- **Mutate your executor image.** Commands run exactly as submitted.
+- **Cache anything.** Each submission is independent.
+- **Authenticate.** Auth was deliberately removed in v0.2 pending a
+  rethink; deploy behind a gateway if you need it.

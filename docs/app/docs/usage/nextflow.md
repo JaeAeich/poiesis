@@ -1,32 +1,13 @@
-# Nextflow with Poiesis as Backend
+# Nextflow on Poiesis
 
-[Nextflow](https://www.nextflow.io/) is a workflow management system designed
-for running scientific data analysis pipelines. But more importantly,
-[Nextflow supports GA4GH TES (Task Execution Service)](https://github.com/nextflow-io/nf-ga4gh)
-as an execution backend. This means you can write workflows in `Nextflow` and
-execute individual tasks using `Poiesis` as the TES backend—on Kubernetes.
+[Nextflow](https://www.nextflow.io/) can dispatch process tasks through
+a TES backend via the
+[`nf-ga4gh`](https://github.com/nextflow-io/nf-ga4gh) plugin. Pointed
+at Poiesis, each process becomes a TaskPod on Kubernetes.
 
-Below is a step-by-step guide to running a simple workflow using `Nextflow` with
-`Poiesis`.
+Tested with Nextflow `25.04.2`.
 
-:::info 🧬 Nextflow Version
-This guide was tested with:
-
-```bash
-Nextflow version 25.04.2 build 5947
-```
-
-:::
-
-## Configuring Nextflow for TES
-
-Nextflow supports TES backends via the
-[`nf-ga4gh`](https://github.com/nextflow-io/nf-ga4gh) plugin.
-
-Before we begin, make sure you’ve deployed `Poiesis` with `MinIO` (or configured
-it to use external object storage). You can follow our [deployment guide here](../deploy/deploying-poiesis.md#step-2-add-object-storage-minio).
-
-Here’s a minimal `nextflow.config` to connect with Poiesis:
+## Minimal config
 
 ```groovy
 plugins {
@@ -35,33 +16,27 @@ plugins {
 
 process.executor = 'tes'
 tes.endpoint = 'http://localhost:8000/ga4gh/tes'
-tes.oauthToken = 'asdf'
 ```
 
-:::info 🔐 Auth & Endpoints
+The plugin appends `/v1` to the endpoint, so point it at
+`/ga4gh/tes` rather than `/ga4gh/tes/v1`.
 
-- No need to add `/v1` to the endpoint; the plugin does that automagically.
-- If your Poiesis deployment uses Keycloak, you’ll need a valid OAuth token here.
-:::
+## With S3 staging
 
-## Configuring S3/MinIO
-
-Since Poiesis executes tasks remotely, your local files aren't directly
-accessible once a task is launched. This means Nextflow needs to know how to
-stash and fetch data via S3.
-
-Let’s update the config to include AWS (S3) settings:
+Workflows that pass files between processes need an object store, since
+the TaskPod can't see your local filesystem. The dev stack runs MinIO
+in-cluster:
 
 ```groovy
 plugins {
   id 'nf-ga4gh'
 }
 
-workDir = 's3://poiesis/nextflow'
+workDir = 's3://poiesis-test/nextflow'
 
 aws {
-  accessKey = 'minioUser123'
-  secretKey = 'minioPassword123'
+  accessKey = 'admin'
+  secretKey = 'password'
   client {
     endpoint = 'http://localhost:9000'
     s3PathStyleAccess = true
@@ -70,20 +45,15 @@ aws {
 
 process.executor = 'tes'
 tes.endpoint = 'http://localhost:8000/ga4gh/tes'
-tes.oauthToken = 'asdf'
 ```
 
-:::info 🪣 Bucket Basics
-If you're using the built-in MinIO from Poiesis, it creates a default bucket
-named `poiesis`.
+Create the `workDir` bucket once before running anything. The
+[deployment guide](../deploy/deploying-poiesis.md#s3-inputs-and-outputs)
+shows the `mc mb` invocation.
 
-If you're using an external MinIO/S3 setup, make sure your `workDir` bucket
-exists beforehand.
-:::
+## A trivial workflow
 
-## Running a Workflow – `SAY_HI`
-
-Let’s start with a basic workflow called `SAY_HI`. Create a file named `main.nf`:
+`main.nf`:
 
 ```groovy
 process SAY_HI {
@@ -103,106 +73,82 @@ process SAY_HI {
 }
 
 workflow {
-  names_ch = Channel.of('Alice', 'Bob', 'Charlie')
-  greetings_ch = SAY_HI(names_ch)
-  greetings_ch.view { "Received: $it" }
+  Channel.of('Alice', 'Bob', 'Charlie')
+    | SAY_HI
+    | view { "Received: $it" }
 }
 ```
 
-Run it:
+Port-forward Poiesis and MinIO, then:
 
 ```bash
+kubectl -n poiesis port-forward svc/poiesis-api 8000:8000 &
+kubectl -n poiesis port-forward svc/minio 9000:9000 &
 nextflow run main.nf
 ```
 
-🎉 Boom! You just got a hey from `Poiesis`:
+Expected output:
 
-```bash
-N E X T F L O W  ~  version 25.04.2
-Launching `main.nf` [irreverent_heyrovsky] DSL2 - revision: 20fa9be87e
-
+```
 executor >  tes [http://localhost:8000/ga4gh/tes] (3)
-[a8/cfbbc9] SAY_HI (Greeting Bob)     | 3 of 3 ✔
+[xx/xxxxxx] SAY_HI (Greeting Bob) | 3 of 3 ✔
 Received: Hello Alice from the TES executor!
-Received: Hello Charlie from the TES executor!
 Received: Hello Bob from the TES executor!
+Received: Hello Charlie from the TES executor!
 ```
 
-## Workflow with Inputs
+## A workflow with inputs
 
-Let’s kick it up a notch. Suppose you’ve got a list of names stored in MinIO.
-Here’s how to feed it into a workflow.
+Upload a file and reference it via `s3://`:
 
-1. Create a file named `names.txt`:
+```bash
+echo -e "Alice\nBob\nCharlie" > names.txt
+mc cp ./names.txt local/poiesis-test/nextflow/inputs/names.txt
+```
 
-    ```bash
-    echo -e "Alice\nBob\nCharlie" > names.txt
-    ```
+```groovy
+params.names_file = 's3://poiesis-test/nextflow/inputs/names.txt'
 
-2. Upload it to MinIO:
+process SplitNames {
+  container 'ubuntu:latest'
 
-    ```bash
-    mc cp ./names.txt minio/poiesis/nextflow/inputs/names.txt
-    ```
+  input:
+  path names_txt
 
-3. Create a new workflow:
+  output:
+  stdout
 
-    ```groovy
-    params.names_file = 's3://poiesis/nextflow/inputs/names.txt'
+  script:
+  """
+  cat ${names_txt}
+  """
+}
 
-    process SplitNames {
-        container 'ubuntu:latest'
+process GreetName {
+  container 'ubuntu:latest'
 
-        input:
-        path names_txt
+  input:
+  val name
 
-        output:
-        stdout
+  output:
+  stdout
 
-        script:
-        """
-        cat ${names_txt}
-        """
-    }
+  script:
+  """
+  echo "Greetings from ${name}, from TES executor."
+  """
+}
 
-    process GreetName {
-        container 'ubuntu:latest'
+workflow {
+  Channel.fromPath(params.names_file)
+    | SplitNames
+    | splitText
+    | GreetName
+}
+```
 
-        input:
-        val name
-
-        output:
-        stdout
-
-        script:
-        """
-        echo "Greetings from ${name}, from TES executor."
-        """
-    }
-
-    workflow {
-        names_file_ch = Channel.fromPath(params.names_file)
-
-        name_lines_ch = SplitNames(names_file_ch)
-                            .splitText()
-
-        GreetName(name_lines_ch)
-    }
-    ```
-
-4. Run it:
+Submit:
 
 ```bash
 nextflow run main.nf
-```
-
-🎊 Voilà!
-
-```bash
-N E X T F L O W  ~  version 25.04.2
-Launching `main.nf` [stoic_leibniz] DSL2 - revision: 8d92889497
-
-executor >  tes [http://localhost:8000/ga4gh/tes] (5)
-[61/850ead] SplitNames (1) | 1 of 1 ✔
-[cb/f4c456] GreetName (2)  | 4 of 4 ✔
 ```

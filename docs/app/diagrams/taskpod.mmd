@@ -1,0 +1,32 @@
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: "#dddddd"
+    primaryTextColor: "#1f2937"
+    primaryBorderColor: "#6b7280"
+    lineColor: "#6b7280"
+    secondaryColor: "#dddddd"
+    tertiaryColor: "#f3f4f6"
+    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+---
+flowchart TB
+  subgraph taskpod["TaskPod"]
+    direction TB
+    subgraph init["init containers (sequential)"]
+      direction TB
+      trec["trec<br/>restartPolicy: Always"]
+      tif["tif"]
+      e0["exec-0"]
+      eN["exec-N"]
+      tof["tof"]
+    end
+    subgraph main["regular container"]
+      ack["ack<br/>exit 0 → Pod Succeeded"]
+    end
+  end
+  pvc[("Task PVC<br/>/transfer")]
+
+  trec -.-> tif --> e0 --> eN --> tof
+  tof --> ack
+  taskpod --- pvc
