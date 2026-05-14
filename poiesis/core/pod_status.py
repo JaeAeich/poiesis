@@ -25,9 +25,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from poiesis.api.tes.models import TesState
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 _EXECUTOR_RE = re.compile(r"^exec-(\d+)$")
 
@@ -126,7 +129,7 @@ def classify_container(name: str) -> tuple[ContainerKind, int | None]:
 
 
 def translate(
-    pod_status: dict[str, Any],
+    pod_status: Mapping[str, Any],
     previous: TaskStateSnapshot,
 ) -> list[TaskEvent]:
     """Translate a Pod.status snapshot into a list of new task events.
@@ -156,7 +159,7 @@ def translate(
 
 
 def _group_init_containers(
-    pod_status: dict[str, Any],
+    pod_status: Mapping[str, Any],
 ) -> dict[ContainerKind, list[tuple[int | None, dict[str, Any]]]]:
     """Group init container statuses by their classified role."""
     init_statuses = (
@@ -268,7 +271,7 @@ def _container_finished_event(
     return None
 
 
-def _pod_terminated_event(pod_status: dict[str, Any]) -> TaskEvent | None:
+def _pod_terminated_event(pod_status: Mapping[str, Any]) -> TaskEvent | None:
     """Detect a Pod-level termination event.
 
     Recognises:
@@ -326,7 +329,7 @@ def pod_terminated_terminal(
     return TesState.EXECUTOR_ERROR, pod_reason
 
 
-def _collect_container_reasons(pod_status: dict[str, Any]) -> set[str]:
+def _collect_container_reasons(pod_status: Mapping[str, Any]) -> set[str]:
     """Gather non-empty terminated reasons across all containers."""
     reasons: set[str] = set()
     for field in (

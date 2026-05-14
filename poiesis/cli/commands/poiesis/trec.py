@@ -9,6 +9,7 @@ import click
 
 from poiesis.cli.commands.poiesis.base import BaseCommand
 from poiesis.core.trec import run
+from poiesis.k8s.client import load_config
 
 
 class TrecCommand(BaseCommand):
@@ -34,6 +35,7 @@ class TrecCommand(BaseCommand):
             pod_name = _required_env("POIESIS_POD_NAME")
             namespace = _required_env("POIESIS_POD_NAMESPACE")
             dsn = _required_env("POSTGRES_DSN")
+            load_config()
             click.echo(f"--- TRec --- task={task_id} pod={pod_name}/{namespace}")
             exit_code = asyncio.run(run(task_id, pod_name, namespace, dsn))
             sys.exit(exit_code)

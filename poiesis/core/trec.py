@@ -18,6 +18,10 @@ import logging
 import signal
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 import asyncpg
 import kubernetes
@@ -84,7 +88,7 @@ async def _run_until_terminal(
             )
             if wait_for_signal in done:
                 wait_for_event.cancel()
-                await _on_signal(conn, task_id)
+                await _on_signal(conn, task_id, pod_name, namespace, snapshot)
                 return 0
             snap = wait_for_event.result()
             if snap is None:
@@ -102,7 +106,7 @@ class _PodSnap:
 
     __slots__ = ("status",)
 
-    def __init__(self, status: dict[str, object]) -> None:
+    def __init__(self, status: Mapping[str, object]) -> None:
         self.status = status
 
 
@@ -148,7 +152,7 @@ async def _apply_pod_snapshot(
 
     Returns True if the Pod has reached a terminal state.
     """
-    for event in translate(snap.status, snapshot):  # type: ignore[arg-type]
+    for event in translate(snap.status, snapshot):
         await _apply_event(conn, task_id, event)
         _advance_snapshot(snapshot, event)
         if event.kind is EventKind.POD_TERMINATED:
@@ -232,19 +236,63 @@ async def _mark_running(conn: asyncpg.Connection, task_id: str) -> None:
     )
 
 
-async def _on_signal(conn: asyncpg.Connection, task_id: str) -> None:
-    """Honour a pending CANCELING marker when the process is signalled."""
+async def _on_signal(
+    conn: asyncpg.Connection,
+    task_id: str,
+    pod_name: str,
+    namespace: str,
+    snapshot: TaskStateSnapshot,
+) -> None:
+    """Best-effort terminal write on shutdown.
+
+    Two cases the watch may have raced past:
+
+    * Pod was canceled — the API set CANCELING; we land CANCELED.
+    * Pod ran to terminal cleanly — kubelet is now stopping us; we do
+        one final pod read and apply the translator so we don't lose the
+        Succeeded/Failed observation.
+    """
+    logger.info("trec: shutdown signal received; checking task state")
     row = await conn.fetchrow(
         "SELECT state FROM tasks WHERE id = $1",
         uuid.UUID(task_id),
     )
-    if row is not None and row["state"] == TesState.CANCELING.value:
+    current = row["state"] if row is not None else None
+    logger.info("trec: shutdown — db state=%s", current)
+    if current == TesState.CANCELING.value:
         await state_db.write_terminal_state(
             conn,
             task_id,
             TesState.CANCELED,
             reason="Cancelled",
         )
+        logger.info("trec: wrote CANCELED on shutdown")
+        return
+    if current in {
+        TesState.COMPLETE.value,
+        TesState.EXECUTOR_ERROR.value,
+        TesState.SYSTEM_ERROR.value,
+        TesState.CANCELED.value,
+        TesState.PREEMPTED.value,
+    }:
+        logger.info("trec: already terminal; nothing to do")
+        return
+
+    # Watch hasn't observed the terminal phase yet; ask the K8s API directly.
+    logger.info("trec: doing final pod read")
+    try:
+        pod = await asyncio.to_thread(
+            client.CoreV1Api().read_namespaced_pod, pod_name, namespace
+        )
+    except Exception:
+        logger.exception("trec: final pod read failed during shutdown")
+        return
+    if pod.status is None:
+        logger.info("trec: final pod read returned no status")
+        return
+    snap = _PodSnap(pod.status.to_dict())
+    await _apply_pod_snapshot(conn, task_id, snap, snapshot)
+    logger.info("trec: applied final pod snapshot on shutdown")
 
 
 def _install_signal_handlers() -> asyncio.Event:
