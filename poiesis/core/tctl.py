@@ -29,6 +29,7 @@ import asyncpg
 import kubernetes
 from kubernetes.client import CoordinationV1Api, CoreV1Api
 
+from poiesis.api.tes.models import TesState
 from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.pod_status import (
     ACK_NAME,
@@ -94,7 +95,7 @@ async def _reconcile_while_leader(
     cancelled: asyncio.Event,
 ) -> None:
     """Run the Pod informer + lease renewal until lease is lost or signalled."""
-    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+    queue: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
     producer = loop.run_in_executor(None, _stream_pods, core_v1, namespace, queue, loop)
     try:
@@ -110,15 +111,16 @@ async def _reconcile_while_leader(
                 logger.warning("tctl: lost lease; standing down")
                 return
             try:
-                pod = await asyncio.wait_for(
+                item = await asyncio.wait_for(
                     queue.get(), timeout=_LEASE_RENEW_INTERVAL_SECONDS
                 )
             except TimeoutError:
                 continue
-            if pod is None:
+            if item is None:
                 logger.warning("tctl: pod stream ended; restarting")
                 return
-            await _handle_pod(pool, pod)
+            event_type, pod = item
+            await _handle_pod(pool, event_type, pod)
     finally:
         producer.cancel()
 
@@ -126,12 +128,13 @@ async def _reconcile_while_leader(
 def _stream_pods(
     core_v1: CoreV1Api,
     namespace: str,
-    queue: asyncio.Queue[dict[str, Any] | None],
+    queue: asyncio.Queue[tuple[str, dict[str, Any]] | None],
     loop: asyncio.AbstractEventLoop,
 ) -> None:
     """Run in a worker thread: stream Pod events onto the async queue.
 
-    A None sentinel is pushed when the stream ends or errors.
+    Each enqueued item is `(event_type, pod_dict)`. A None sentinel is
+    pushed when the stream ends or errors.
     """
     try:
         while True:
@@ -144,21 +147,48 @@ def _stream_pods(
                 timeout_seconds=_WATCH_STREAM_TIMEOUT_SECONDS,
             ):
                 pod = event["object"]
+                event_type = event.get("type", "MODIFIED")
+                pod_dict = pod.to_dict() if hasattr(pod, "to_dict") else dict(pod)
                 loop.call_soon_threadsafe(
                     queue.put_nowait,
-                    pod.to_dict() if hasattr(pod, "to_dict") else dict(pod),
+                    (event_type, pod_dict),
                 )
     except Exception:
         logger.exception("tctl: pod watch stream failed")
         loop.call_soon_threadsafe(queue.put_nowait, None)
 
 
-async def _handle_pod(pool: asyncpg.Pool, pod: dict[str, Any]) -> None:
+async def _handle_pod(
+    pool: asyncpg.Pool,
+    event_type: str,
+    pod: dict[str, Any],
+) -> None:
     """Inspect a Pod event and write terminal state if reconciliation is needed."""
     task_id = _task_id_from_pod(pod)
     if task_id is None:
         return
+
     phase = ((pod.get("status") or {}).get("phase") or "").lower()
+
+    # DELETED: pod is gone. If the task is still non-terminal, we have to
+    # synthesise a terminal write — kubelet won't ever publish Succeeded/Failed
+    # for a hard-deleted pod (the common path after CancelTask).
+    if event_type == "DELETED":
+        proposed = TesState.SYSTEM_ERROR
+        reason = "Pod deleted before reaching terminal phase"
+        # CANCELING precedence rule on the writer handles the cancel case.
+        async with pool.acquire() as conn:
+            result = await state_db.write_terminal_state(
+                cast("asyncpg.Connection", conn), task_id, proposed, reason=reason
+            )
+        if result is not state_db.TerminalWriteResult.NO_OP:
+            logger.info(
+                "tctl: pod-deleted reconciled task=%s (write=%s)",
+                task_id,
+                result.value,
+            )
+        return
+
     if phase not in {"succeeded", "failed"}:
         return
 
