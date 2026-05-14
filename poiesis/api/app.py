@@ -23,6 +23,7 @@ from poiesis.api.exceptions import (
     handle_api_exception,
     handle_unexpected_exception,
 )
+from poiesis.api.routes import service_info as service_info_routes
 from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.settings import load_settings
 from poiesis.constants import get_poiesis_constants
@@ -84,7 +85,9 @@ def create_app() -> FastAPI:
 
     # Mount under the TES-canonical prefix so direct callers and the
     # GA4GH compliance suite both hit `<host>/ga4gh/tes/v1/tasks`.
-    app.include_router(tasks_routes.router, prefix=f"/{api_constants.BASE_PATH}")
+    prefix = f"/{api_constants.BASE_PATH}"
+    app.include_router(tasks_routes.router, prefix=prefix)
+    app.include_router(service_info_routes.router, prefix=prefix)
 
     return app
 
