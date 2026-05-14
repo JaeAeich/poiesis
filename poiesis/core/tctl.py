@@ -23,11 +23,15 @@ import logging
 import signal
 import socket
 import uuid
-from typing import Any, cast
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, cast
 
 import asyncpg
 import kubernetes
 from kubernetes.client import CoordinationV1Api, CoreV1Api
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 from poiesis.api.tes.models import TesState
 from poiesis.core.leases import try_acquire_or_renew
@@ -45,6 +49,9 @@ _LEASE_NAME = "poiesis-tctl-leader"
 _LEASE_DURATION_SECONDS = 30
 _LEASE_RENEW_INTERVAL_SECONDS = 10
 _WATCH_STREAM_TIMEOUT_SECONDS = 300
+#: How long a TaskPod may sit in Pending before the controller times it out.
+#: Covers `ImagePullBackOff`, unbindable PVCs, no schedulable node, etc.
+_PENDING_TIMEOUT_SECONDS = 300
 
 
 async def run(
@@ -115,6 +122,10 @@ async def _reconcile_while_leader(
                     queue.get(), timeout=_LEASE_RENEW_INTERVAL_SECONDS
                 )
             except TimeoutError:
+                # No watch event this tick — sweep for stuck-Pending pods so a
+                # task that can't be scheduled (bad image, unbindable pvc) is
+                # eventually moved out of QUEUED/INITIALIZING.
+                await _sweep_pending(core_v1, pool, namespace)
                 continue
             if item is None:
                 logger.warning("tctl: pod stream ended; restarting")
@@ -210,14 +221,101 @@ async def _handle_pod(
         )
 
 
-def _task_id_from_pod(pod: dict[str, Any]) -> str | None:
+async def _sweep_pending(
+    core_v1: CoreV1Api,
+    pool: asyncpg.Pool,
+    namespace: str,
+) -> None:
+    """List Pending taskpods and time out any that have been stuck too long."""
+    try:
+        pod_list = await asyncio.to_thread(
+            core_v1.list_namespaced_pod,
+            namespace=namespace,
+            label_selector=_TASK_LABEL,
+            field_selector="status.phase=Pending",
+        )
+    except Exception:
+        logger.exception("tctl: pending sweep — list pods failed")
+        return
+
+    now = datetime.now(UTC)
+    for pod in pod_list.items:
+        pod_dict = pod.to_dict() if hasattr(pod, "to_dict") else dict(pod)
+        if not _pending_too_long(pod_dict, now):
+            continue
+        task_id = _task_id_from_pod(pod_dict)
+        if task_id is None:
+            continue
+        reason = _pending_failure_reason(pod_dict)
+        async with pool.acquire() as conn:
+            result = await state_db.write_terminal_state(
+                cast("asyncpg.Connection", conn),
+                task_id,
+                TesState.SYSTEM_ERROR,
+                reason=reason,
+            )
+        if result is not state_db.TerminalWriteResult.NO_OP:
+            logger.info(
+                "tctl: pending timeout reconciled task=%s (reason=%s, write=%s)",
+                task_id,
+                reason,
+                result.value,
+            )
+
+
+def _pending_too_long(pod: Mapping[str, Any], now: datetime) -> bool:
+    """True iff `pod` has been Pending longer than the configured threshold."""
+    status = pod.get("status") or {}
+    start_time = status.get("startTime") or status.get("start_time")
+    if start_time is None:
+        return False
+    if isinstance(start_time, datetime):
+        start = start_time
+    else:
+        try:
+            start = datetime.fromisoformat(str(start_time))
+        except ValueError:
+            return False
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)
+    return (now - start).total_seconds() > _PENDING_TIMEOUT_SECONDS
+
+
+def _pending_failure_reason(pod: Mapping[str, Any]) -> str:
+    """Best-effort human-readable cause for a stuck-Pending pod."""
+    status = pod.get("status") or {}
+
+    # Container-level waiting reasons (image pull, config, etc).
+    init_statuses = (
+        status.get("initContainerStatuses")
+        or status.get("init_container_statuses")
+        or []
+    )
+    container_statuses = (
+        status.get("containerStatuses") or status.get("container_statuses") or []
+    )
+    for cs in (*init_statuses, *container_statuses):
+        waiting = (cs.get("state") or {}).get("waiting") or {}
+        reason = waiting.get("reason")
+        if reason and reason not in {"PodInitializing", "ContainerCreating"}:
+            return str(reason)
+
+    # Pod-level scheduling failure (FailedScheduling, Unschedulable).
+    for cond in status.get("conditions") or []:
+        if cond.get("type") == "PodScheduled" and cond.get("status") == "False":
+            return str(cond.get("reason") or "Unschedulable")
+
+    return "Pending timeout"
+
+
+def _task_id_from_pod(pod: Mapping[str, Any]) -> str | None:
     """Return the task UUID this Pod represents, if labelled."""
     metadata = pod.get("metadata") or {}
     labels = metadata.get("labels") or {}
     return labels.get(_TASK_LABEL)
 
 
-def _derive_pod_reason(pod: dict[str, Any]) -> str | None:
+def _derive_pod_reason(pod: Mapping[str, Any]) -> str | None:
     """Map kubelet's Pod-level reason to one of `PodTerminationReason.*.value`.
 
     Most Pod terminations carry a `status.reason` we can pass through; we
