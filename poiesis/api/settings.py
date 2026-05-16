@@ -44,8 +44,8 @@ class Settings(BaseModel):
             os.environ.get("POIESIS_TASKPOD_SERVICE_ACCOUNT") or None
         ),
     )
-    s3_url: str | None = Field(
-        default_factory=lambda: os.environ.get("S3_URL") or None,
+    aws_endpoint_url: str | None = Field(
+        default_factory=lambda: os.environ.get("AWS_ENDPOINT_URL") or None,
     )
     aws_access_key_id: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_ACCESS_KEY_ID") or None,
@@ -62,7 +62,7 @@ class Settings(BaseModel):
         env = [V1EnvVar(name="DATABASE_URL", value=self.database_url)]
         # Propagate s3 creds only when set; tasks with no s3 i/o don't need them.
         for name, value in (
-            ("S3_URL", self.s3_url),
+            ("AWS_ENDPOINT_URL", self.aws_endpoint_url),
             ("AWS_ACCESS_KEY_ID", self.aws_access_key_id),
             ("AWS_SECRET_ACCESS_KEY", self.aws_secret_access_key),
             ("AWS_REGION", self.aws_region),

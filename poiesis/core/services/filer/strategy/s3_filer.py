@@ -32,56 +32,21 @@ class S3FilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         super().__init__(payload)
         self.input = self.payload if isinstance(self.payload, TesInput) else None
         self.output = self.payload if isinstance(self.payload, TesOutput) else None
-        self.s3_host: str | None = None
         self.key = ""
         self.bucket = ""
 
-        assert self.payload.url is not None, "URL is required"
-        self._set_host_bucket_key(self.payload.url)
-        assert self.key is not None, "S3 key must be set after parsing URL"
-        assert self.bucket is not None, "S3 bucket must be set after parsing URL"
-        assert self.bucket != "", "S3 bucket must not be empty"
+        if self.payload.url is None:
+            raise ValueError("S3 payload URL is required")
+        self._set_bucket_key(self.payload.url)
 
-        if not all(
-            [
-                os.getenv("AWS_ACCESS_KEY_ID"),
-                os.getenv("AWS_SECRET_ACCESS_KEY"),
-            ]
-        ):
-            logger.debug("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are not set")
+        if not (os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY")):
             raise ValueError(
                 "AWS credentials are not set, ask your administrator to set them."
             )
 
-        try:
-            client_args: dict[str, Any] = {
-                "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID"),
-                "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
-                "config": Config(signature_version="s3v4"),
-            }
-
-            if os.getenv("AWS_REGION"):
-                client_args["region_name"] = os.getenv("AWS_REGION")
-
-            if self.s3_host:
-                endpoint_url = self.s3_host
-                if not endpoint_url.startswith(("http://", "https://")):
-                    logger.warning(
-                        "S3 host '%s' has no scheme, defaulting to 'http://'",
-                        endpoint_url,
-                    )
-                    endpoint_url = f"http://{endpoint_url}"
-                client_args["endpoint_url"] = endpoint_url
-
-            self.client: Any = boto3.client("s3", **client_args)
-            logger.info(
-                f"S3 Endpoint: {client_args.get('endpoint_url', 'Default AWS')}, "
-                f"S3 Region: {client_args.get('region_name', 'Default')}",
-            )
-
-        except Exception as e:
-            logger.error(f"Error creating S3 client: {e}")
-            raise
+        # boto3 reads AWS_ENDPOINT_URL, AWS_REGION, and credentials from the
+        # environment natively — no manual plumbing here.
+        self.client: Any = boto3.client("s3", config=Config(signature_version="s3v4"))
 
     def _sanitize_s3_key(self, key: str) -> str:
         """Derives a base S3 prefix from a key that may contain glob patterns."""
@@ -99,37 +64,16 @@ class S3FilerStrategy(InputFilerStrategy, OutputFilerStrategy):
 
         return key[: last_slash_index + 1]
 
-    def _set_host_bucket_key(self, url: str):
-        """Get the bucket name and key from the URL."""
+    def _set_bucket_key(self, url: str):
+        """Parse `s3://bucket/key...` into bucket + sanitized key prefix."""
         parsed = urlparse(url)
-
         if parsed.scheme != "s3":
             raise ValueError(f"URL must start with s3://, got: {url}")
-
-        path_parts = parsed.path.lstrip("/").split("/")
-
-        is_host_in_netloc = parsed.netloc and (
-            "." in parsed.netloc or ":" in parsed.netloc
-        )
-
-        if is_host_in_netloc:
-            self.s3_host = parsed.netloc
-            if path_parts and path_parts[0]:
-                self.bucket = path_parts[0]
-                raw_key = "/".join(path_parts[1:])
-            else:
-                raise ValueError("Bucket not found in URL path after host.")
-        else:
-            # The host might be set via an environment variable for other S3-compatibles
-            self.s3_host = os.getenv("S3_URL")
-            self.bucket = parsed.netloc
-            raw_key = parsed.path.lstrip("/")
-
-        if not self.bucket:
+        if not parsed.netloc:
             raise ValueError("Bucket name could not be determined from S3 URL.")
-
+        self.bucket = parsed.netloc
+        raw_key = parsed.path.lstrip("/")
         self.key = self._sanitize_s3_key(raw_key)
-        logger.debug(f"Raw S3 key '{raw_key}' sanitized to prefix '{self.key}'")
 
     async def download_input_file(self, container_path: str) -> None:
         """Download file from S3 or MinIO onto the PVC at `container_path`."""
