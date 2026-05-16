@@ -67,13 +67,6 @@ class BadRequestError(APIError):
     error_code = "bad_request"
 
 
-class UnauthorizedError(APIError):
-    """The request is unauthorized."""
-
-    status_code = HTTPStatus.UNAUTHORIZED.value
-    error_code = "unauthorized"
-
-
 class NotFoundError(APIError):
     """The requested resource was not found."""
 
@@ -86,10 +79,3 @@ class InternalServerError(APIError):
 
     status_code = HTTPStatus.INTERNAL_SERVER_ERROR.value
     error_code = "internal_error"
-
-
-class DBError(APIError):
-    """An error occurred with the database."""
-
-    status_code = HTTPStatus.INTERNAL_SERVER_ERROR.value
-    error_code = "db_error"

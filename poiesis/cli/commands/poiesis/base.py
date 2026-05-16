@@ -1,18 +1,11 @@
 """Base classes and utilities for CLI commands."""
 
 from abc import abstractmethod
-from typing import Any, Self, TypeVar
+from typing import Any, Self
 
 import click
 
-from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.cli.utils import get_basic_info, get_version
-from poiesis.constants import get_poiesis_constants
-
-T = TypeVar("T", bound="BaseCommand")
-
-api_constants = get_poiesis_api_constants()
-constants = get_poiesis_constants()
 
 
 class BaseCommand:

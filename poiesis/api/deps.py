@@ -13,7 +13,6 @@ from typing import Any
 
 from fastapi import Request
 
-from poiesis.api.settings import Settings
 from poiesis.core.taskpod import RuntimeConfig
 from poiesis.k8s import K8sClient
 
@@ -33,11 +32,6 @@ async def get_db_conn(request: Request) -> AsyncIterator[Any]:
 def get_k8s(request: Request) -> K8sClient:
     """Return the process-wide K8s client wrapper."""
     return request.app.state.k8s
-
-
-def get_settings(request: Request) -> Settings:
-    """Return the loaded Settings object."""
-    return request.app.state.settings
 
 
 def get_runtime_config(request: Request) -> RuntimeConfig:
