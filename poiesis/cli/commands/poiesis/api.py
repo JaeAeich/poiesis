@@ -1,6 +1,5 @@
 """API service CLI commands."""
 
-import os
 from typing import Any
 
 import click
@@ -8,10 +7,8 @@ import click
 from poiesis.api.asgi import run as api_run
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.cli.commands.poiesis.base import BaseCommand
-from poiesis.constants import get_poiesis_constants
 
 api_constants = get_poiesis_api_constants()
-constants = get_poiesis_constants()
 
 
 class ApiCommand(BaseCommand):
@@ -31,11 +28,7 @@ class ApiCommand(BaseCommand):
         @group.command(name="run", help="Start the API server")
         def run():
             """Start the Poiesis API server."""
-            host = api_constants.Gunicorn.HOST
-            port = api_constants.Gunicorn.PORT
-            base_path = api_constants.BASE_PATH
-            url = f"http://{host}:{port}/{base_path}/ui"
-            click.echo(f"Starting Poiesis API server, checkout {url} ...")
+            click.echo("Starting Poiesis API server ...")
             api_run()
 
     def get_info(self) -> dict[str, Any]:
@@ -45,23 +38,12 @@ class ApiCommand(BaseCommand):
             Dictionary with API service information
         """
         info = super().get_info()
-
-        host = api_constants.Gunicorn.HOST
-        port = api_constants.Gunicorn.PORT
-        base_path = api_constants.BASE_PATH
-        url = f"http://{host}:{port}/{base_path}"
-        workers = api_constants.Gunicorn.WORKERS or f"{(os.cpu_count() or 1) * 2 + 1}"
-
         info.update(
             {
                 "description": "API service for GA4GH TES compliant task execution",
-                "api": url,
-                "swagger": f"{url}/ui",
-                "uvicorn_workers": workers,
-                "server_timeout": api_constants.Gunicorn.TIMEOUT,
+                "base_path": api_constants.BASE_PATH,
             }
         )
-
         return dict(
             sorted({k.replace("_", " ").title(): v for k, v in info.items()}.items())
         )

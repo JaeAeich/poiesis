@@ -7,10 +7,8 @@ from typing import Any
 import tomli
 
 from poiesis.api.constants import get_poiesis_api_constants
-from poiesis.constants import get_poiesis_constants
 
 api_constants = get_poiesis_api_constants()
-constants = get_poiesis_constants()
 
 
 @lru_cache
@@ -81,7 +79,6 @@ def get_basic_info() -> dict[str, Any]:
     info |= {
         "TES version": api_constants.TES_VERSION,
         "TES spec hash": api_constants.SPEC_GIT_HASH,
-        "environment": constants.ENVIRONMENT,
     }
 
     # Format keys (e.g., "tes version") and sort for display
