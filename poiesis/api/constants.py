@@ -43,7 +43,11 @@ class PoiesisApiConstants:
             TIMEOUT: The timeout for the Gunicorn server.
         """
 
-        HOST = "0.0.0.0" if constants.ENVIRONMENT == "prod" else "127.0.0.1"  # noqa: S104
+        HOST = (
+            "0.0.0.0"  # noqa: S104
+            if constants.ENVIRONMENT == "prod"
+            else "127.0.0.1"
+        )
         PORT = os.getenv("POIESIS_API_SERVER_PORT", "8000")
         WORKERS = os.getenv("POIESIS_UVICORN_WORKERS")
         TIMEOUT = os.getenv("POIESIS_UVICORN_TIMEOUT", "120")

@@ -14,7 +14,7 @@ types = [
 ]
 
 [project]
-authors = [{ email = "jh4official@gmail.com", name = "Javed Habib" }]
+authors = [{email = "jh4official@gmail.com", name = "Javed Habib"}]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: Apache Software License",
@@ -45,7 +45,7 @@ keywords = [
   "tes",
 ]
 license = "Apache-2.0"
-maintainers = [{ email = "jh4official@gmail.com", name = "Javed Habib" }]
+maintainers = [{email = "jh4official@gmail.com", name = "Javed Habib"}]
 name = "poiesis"
 readme = "README.md"
 requires-python = ">=3.13.0,<3.14"
@@ -93,30 +93,30 @@ ignore = [
   "ANN401", # Any in annotations — sometimes intentional
   "ARG001",
   "ARG002", # unused args — connexion handler signatures (FastAPI rewrite)
-  "ASYNC",  # asyncio patterns — revisit during TRec/API rewrites
+  "ASYNC", # asyncio patterns — revisit during TRec/API rewrites
   "COM812", # conflicts with formatter
   # Style preferences we don't share
   "D203", # one-blank-line-before-class (we use D211)
   "D213", # multi-line-summary-second-line (we use D212)
   "D401", # imperative-mood docstrings — too prescriptive
   # Format-owned
-  "E501",  # line length is enforced by ruff-format
+  "E501", # line length is enforced by ruff-format
   "EM101",
   "EM102", # exception literal/f-string — same
   # TODO / fixme metadata rules — pedantic for a small team
   "FIX002",
   # Cosmetic / opinionated rules that don't pay for themselves
-  "G004",   # f-strings in logging — readability > theoretical perf
+  "G004", # f-strings in logging — readability > theoretical perf
   "ISC001", # conflicts with formatter
   # Naming exceptions driven by external schemas
   "N802",
-  "N815",   # TES spec field names (camelCase from OpenAPI)
+  "N815", # TES spec field names (camelCase from OpenAPI)
   "PGH003", # blanket type: ignore — kubernetes-stubs gaps drive these
   # Deferred to the v2 slices that rewrite the affected modules.
   # Drop these once the filer-strategy / K8s-adapter / API rewrites land.
   "PTH", # os.path → pathlib — bulk migration in filer-strategy rewrite
   # CLI / script ergonomics
-  "S101",   # asserts — used as invariants in dev code
+  "S101", # asserts — used as invariants in dev code
   "SLF001", # private member access — kubernetes client internals
   "TD002",
   "TD003",

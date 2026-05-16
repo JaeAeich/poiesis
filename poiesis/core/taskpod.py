@@ -69,20 +69,28 @@ class RuntimeConfig:
     portable across deployments.
 
     Attributes:
-        namespace:               Kubernetes namespace to submit into.
-        poiesis_image:           Image for every poiesis-owned container (trec, tif, tof, ack).
-        pvc_storage_class:       Storage class for the Task PVC. None defers to the cluster default.
-        pvc_access_mode:         Access mode for the Task PVC. Defaults to ReadWriteOnce.
-        filer_pvc_mount_path:    Path at which the PVC is mounted in every container.
-        image_pull_policy:       imagePullPolicy for every container.
-        taskpod_service_account: SA bound to the TaskPod; needs RBAC for `get`/`watch`/`delete` on its own Pod.
-        job_ttl_seconds:         ttlSecondsAfterFinished on the Job.
-        active_deadline_seconds: activeDeadlineSeconds on the Job (covers stuck-Pending).
-        grace_period_seconds:    terminationGracePeriodSeconds on the Pod.
-        filer_resources:         Resource requests/limits for the TIF/TOF containers.
-        recorder_resources:      Resource requests/limits for the TRec sidecar.
-        ack_resources:           Resource requests/limits for the terminal `ack` main container.
-        extra_env:               Extra env vars injected into every container (database DSN, S3 creds, etc.).
+        namespace: Kubernetes namespace to submit into.
+        poiesis_image: Image for every poiesis-owned container
+            (trec, tif, tof, ack).
+        pvc_storage_class: Storage class for the Task PVC. None defers
+            to the cluster default.
+        pvc_access_mode: Access mode for the Task PVC. Defaults to
+            ReadWriteOnce.
+        filer_pvc_mount_path: Path at which the PVC is mounted in every
+            container.
+        image_pull_policy: imagePullPolicy for every container.
+        taskpod_service_account: SA bound to the TaskPod; needs RBAC for
+            `get`/`watch`/`delete` on its own Pod.
+        job_ttl_seconds: ttlSecondsAfterFinished on the Job.
+        active_deadline_seconds: activeDeadlineSeconds on the Job
+            (covers stuck-Pending).
+        grace_period_seconds: terminationGracePeriodSeconds on the Pod.
+        filer_resources: Resource requests/limits for TIF/TOF containers.
+        recorder_resources: Resource requests/limits for the TRec sidecar.
+        ack_resources: Resource requests/limits for the terminal `ack`
+            container.
+        extra_env: Extra env vars injected into every container
+            (database DSN, S3 creds, etc.).
     """
 
     namespace: str
@@ -152,7 +160,8 @@ def _reject_unsupported_features(task: TesTask) -> None:
         if ex.ignore_error:
             msg = (
                 f"executor[{idx}].ignore_error=True is not supported: "
-                "Kubernetes init containers abort on first failure with no per-container override"
+                "Kubernetes init containers abort on first failure with no "
+                "per-container override"
             )
             raise ValueError(msg)
 

@@ -220,7 +220,7 @@ class TesOutput(BaseModel):
             May contain pattern matching wildcards to select multiple outputs at once,
             but mind implications for `tesOutput.url` and `tesOutput.path_prefix`.
             Only wildcards defined in IEEE Std 1003.1-2017 (POSIX), 12.3 are supported;
-            see https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_13
+            see the POSIX shell specification, section 2.13 (pattern matching).
             Note: The path can't be at root, needs to be nested at least once.
         path_prefix: Prefix to be removed from matching outputs if `tesOutput.path`
             contains wildcards; output URLs are constructed by appending pruned paths

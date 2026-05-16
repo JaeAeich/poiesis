@@ -64,7 +64,8 @@ class S3FilerStrategy(FilerStrategy):
                 endpoint_url = self.s3_host
                 if not endpoint_url.startswith(("http://", "https://")):
                     logger.warning(
-                        f"S3 host '{endpoint_url}' does not have a scheme, defaulting to 'http://'",
+                        "S3 host '%s' has no scheme, defaulting to 'http://'",
+                        endpoint_url,
                     )
                     endpoint_url = f"http://{endpoint_url}"
                 client_args["endpoint_url"] = endpoint_url
@@ -141,9 +142,7 @@ class S3FilerStrategy(FilerStrategy):
 
         try:
             self.client.download_file(self.bucket, self.key, container_path)
-            logger.info(
-                f"Successfully downloaded file from {self.input.url} to {container_path}"
-            )
+            logger.info("Downloaded file from %s to %s", self.input.url, container_path)
         except Exception as e:
             logger.error(f"Error downloading file: {e}")
             raise
@@ -192,7 +191,9 @@ class S3FilerStrategy(FilerStrategy):
             assert self.input.url is not None
 
             logger.info(
-                f"Successfully downloaded directory from {self.input.url} to {container_path}",
+                "Downloaded directory from %s to %s",
+                self.input.url,
+                container_path,
             )
 
         except Exception as e:
@@ -253,7 +254,9 @@ class S3FilerStrategy(FilerStrategy):
             assert self.output.url is not None
 
             logger.info(
-                f"Successfully uploaded directory from {container_path} to {self.output.url}",
+                "Uploaded directory from %s to %s",
+                container_path,
+                self.output.url,
             )
 
         except Exception as e:
@@ -269,7 +272,10 @@ class S3FilerStrategy(FilerStrategy):
         """
         assert self.output is not None
         logger.info(
-            f"Uploading {len(glob_files)} glob-matched items to s3://{self.bucket}/{self.key}",
+            "Uploading %d glob-matched items to s3://%s/%s",
+            len(glob_files),
+            self.bucket,
+            self.key,
         )
         for file_path, relative_path, is_directory in glob_files:
             prefix = self.key if self.key.endswith("/") else f"{self.key}/"
@@ -291,7 +297,10 @@ class S3FilerStrategy(FilerStrategy):
                         )
 
                         logger.debug(
-                            f"Uploading {local_file_path} to s3://{self.bucket}/{file_s3_key}",
+                            "Uploading %s to s3://%s/%s",
+                            local_file_path,
+                            self.bucket,
+                            file_s3_key,
                         )
                         self.client.upload_file(
                             local_file_path, self.bucket, file_s3_key

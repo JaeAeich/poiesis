@@ -193,12 +193,15 @@ class FilerStrategy(ABC):
             if is_glob_like and not self.payload.path_prefix:
                 inferred_prefix = self._infer_base_path(self.payload.path)
                 logger.debug(
-                    f"Inferred path_prefix '{inferred_prefix}' from path '{self.payload.path}'",
+                    "Inferred path_prefix '%s' from path '%s'",
+                    inferred_prefix,
+                    self.payload.path,
                 )
                 self.payload.path_prefix = inferred_prefix
 
             assert self.payload.path_prefix is not None, (
-                "path_prefix is required for glob operations but was not found or inferred."
+                "path_prefix is required for glob operations "
+                "but was not found or inferred."
             )
 
             # Execute the glob and evaluate results.

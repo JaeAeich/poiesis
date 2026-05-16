@@ -31,7 +31,10 @@ class ApiCommand(BaseCommand):
         @group.command(name="run", help="Start the API server")
         def run():
             """Start the Poiesis API server."""
-            url = f"http://{api_constants.Gunicorn.HOST}:{api_constants.Gunicorn.PORT}/{api_constants.BASE_PATH}/ui"
+            host = api_constants.Gunicorn.HOST
+            port = api_constants.Gunicorn.PORT
+            base_path = api_constants.BASE_PATH
+            url = f"http://{host}:{port}/{base_path}/ui"
             click.echo(f"Starting Poiesis API server, checkout {url} ...")
             api_run()
 

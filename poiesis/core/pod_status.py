@@ -52,7 +52,7 @@ class ContainerKind(Enum):
 
 
 class PodTerminationReason(Enum):
-    """Why the Pod itself terminated, when termination is observed via the Pod object."""
+    """Why the Pod terminated, when termination is observed via the Pod object."""
 
     COMPLETED = "Completed"
     OOM_KILLED = "OOMKilled"

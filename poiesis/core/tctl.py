@@ -8,10 +8,10 @@ started, eviction, node loss, image-pull failure, PVC bind failure,
 
 Two race-correct guarantees from the writer:
 
-  * `state.write_terminal_state` is conditional on the row being non-terminal,
-    so whoever writes first (TCtl or TRec) wins — no overwrite.
-  * The CANCELING precedence rule means a SIGTERMed pod observed terminating
-    after a `CancelTask` still records as CANCELED.
+    * `state.write_terminal_state` is conditional on the row being
+        non-terminal, so whoever writes first (TCtl or TRec) wins.
+    * The CANCELING precedence rule means a SIGTERMed pod observed
+        terminating after a `CancelTask` still records as CANCELED.
 
 Leader election uses `coordination.k8s.io/v1` Leases (see `core/leases.py`).
 """

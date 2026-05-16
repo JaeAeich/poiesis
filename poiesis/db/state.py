@@ -6,11 +6,11 @@ race-correctly through Postgres row-level locking, not application-level locks.
 
 Two operations matter:
 
-  `mark_canceling`        moves a non-terminal task to CANCELING.
-  `write_terminal_state`  moves any non-terminal task (including CANCELING)
-                        to a terminal state, with one ordering rule:
-                        if the row is currently CANCELING, the write lands
-                        as CANCELED regardless of the proposed state.
+    `mark_canceling` — moves a non-terminal task to CANCELING.
+    `write_terminal_state` — moves any non-terminal task (including
+        CANCELING) to a terminal state. If the row is currently
+        CANCELING, the write lands as CANCELED regardless of the
+        proposed state.
 
 The CANCELING precedence rule is what guarantees a SIGTERMed executor
 exiting code 143 is recorded as a cancellation, not an executor error,
