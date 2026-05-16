@@ -23,6 +23,7 @@ from poiesis.api.exceptions import (
     handle_api_exception,
     handle_unexpected_exception,
 )
+from poiesis.api.routes import health as health_routes
 from poiesis.api.routes import service_info as service_info_routes
 from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.settings import load_settings
@@ -88,6 +89,8 @@ def create_app() -> FastAPI:
     prefix = f"/{api_constants.BASE_PATH}"
     app.include_router(tasks_routes.router, prefix=prefix)
     app.include_router(service_info_routes.router, prefix=prefix)
+    # Probes are unprefixed so kubelet hits /healthz, /readyz, /startupz directly.
+    app.include_router(health_routes.router)
 
     return app
 
