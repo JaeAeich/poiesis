@@ -33,7 +33,7 @@ class TifCommand(BaseCommand):
             help="UUID of the task whose inputs should be staged.",
         )
         def run_cmd(task_id: str) -> None:
-            dsn = _required_env("POSTGRES_DSN")
+            dsn = _required_env("DATABASE_URL")
             click.echo(f"--- TIF --- task={task_id}")
             sys.exit(asyncio.run(_run(task_id, dsn)))
 

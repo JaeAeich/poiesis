@@ -28,7 +28,7 @@ class TctlCommand(BaseCommand):
         @group.command(name="run", help="Run the TCtl reconciler")
         def run_cmd() -> None:
             namespace = _required_env("POIESIS_POD_NAMESPACE")
-            dsn = _required_env("POSTGRES_DSN")
+            dsn = _required_env("DATABASE_URL")
             identity = os.environ.get("POIESIS_POD_NAME") or None
             load_config()
             click.echo(

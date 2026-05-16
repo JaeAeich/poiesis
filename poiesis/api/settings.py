@@ -19,9 +19,9 @@ DEFAULT_POIESIS_IMAGE = "docker.io/jaeaeich/poiesis:latest"
 class Settings(BaseModel):
     """API runtime settings."""
 
-    postgres_dsn: str = Field(
+    database_url: str = Field(
         default_factory=lambda: os.environ.get(
-            "POSTGRES_DSN",
+            "DATABASE_URL",
             "postgresql://postgres:postgres@localhost:5432/poiesis",
         ),
     )
@@ -59,7 +59,7 @@ class Settings(BaseModel):
 
     def runtime_config(self) -> RuntimeConfig:
         """Materialise the TaskPod RuntimeConfig used by the spec builder."""
-        env = [V1EnvVar(name="POSTGRES_DSN", value=self.postgres_dsn)]
+        env = [V1EnvVar(name="DATABASE_URL", value=self.database_url)]
         # Propagate s3 creds only when set; tasks with no s3 i/o don't need them.
         for name, value in (
             ("S3_URL", self.s3_url),

@@ -34,7 +34,7 @@ class TrecCommand(BaseCommand):
         def run_cmd(task_id: str) -> None:
             pod_name = _required_env("POIESIS_POD_NAME")
             namespace = _required_env("POIESIS_POD_NAMESPACE")
-            dsn = _required_env("POSTGRES_DSN")
+            dsn = _required_env("DATABASE_URL")
             load_config()
             click.echo(f"--- TRec --- task={task_id} pod={pod_name}/{namespace}")
             exit_code = asyncio.run(run(task_id, pod_name, namespace, dsn))

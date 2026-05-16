@@ -43,8 +43,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.runtime_config = settings.runtime_config()
 
-    logger.info("Connecting to Postgres at %s", _redact_dsn(settings.postgres_dsn))
-    app.state.db_pool = await create_pool(settings.postgres_dsn)
+    logger.info("Connecting to Postgres at %s", _redact_dsn(settings.database_url))
+    app.state.db_pool = await create_pool(settings.database_url)
 
     load_config()
     app.state.k8s = K8sClient()
