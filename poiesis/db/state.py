@@ -153,6 +153,31 @@ async def write_terminal_state(
     )
 
 
+async def list_non_terminal_task_ids(
+    conn: asyncpg.Connection,
+    *,
+    older_than_seconds: int = 30,
+) -> list[str]:
+    """List non-terminal task ids older than the grace period.
+
+    Used by tctl to find orphan tasks — non-terminal rows whose pod has
+    disappeared without a Succeeded/Failed transition observable to the
+    reconciler. The grace period filters out tasks the API has just
+    submitted but whose pod hasn't yet appeared in a list call.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT id::text AS id
+        FROM tasks
+        WHERE state = ANY($1::tes_state[])
+        AND creation_time < now() - ($2 || ' seconds')::interval
+        """,
+        list(NON_TERMINAL_STATES),
+        str(older_than_seconds),
+    )
+    return [r["id"] for r in rows]
+
+
 async def append_system_log(
     conn: asyncpg.Connection,
     task_id: str,
@@ -175,7 +200,12 @@ async def append_executor_log(
     start_time: datetime | None = None,
     end_time: datetime | None = None,
 ) -> None:
-    """Append one `executor_logs` row under the task's active log row."""
+    """Append one `executor_logs` row under the task's active log row.
+
+    Idempotent: re-calling with the same `(task_id, ordinal)` is a no-op.
+    Trec writes these rows as executors finish; tctl backfills any the
+    sidecar didn't get to before its own shutdown.
+    """
     await conn.execute(
         """
         INSERT INTO executor_logs (
@@ -186,6 +216,7 @@ async def append_executor_log(
         WHERE task_id = $1
         ORDER BY ordinal DESC
         LIMIT 1
+        ON CONFLICT (task_log_id, ordinal) DO NOTHING
         """,
         uuid.UUID(task_id),
         ordinal,
