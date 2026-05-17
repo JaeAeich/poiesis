@@ -27,13 +27,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import asyncpg
-import kubernetes
 from kubernetes.client import CoordinationV1Api, CoreV1Api
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import AsyncGenerator, Mapping
 
 from poiesis.api.tes.models import TesState
+from poiesis.core.k8s_watch import PodEvent, PodSelector, watch_pods
 from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.pod_status import (
     extract_pending_failure_reason,
@@ -48,7 +48,6 @@ _TASK_LABEL = "poiesis.io/task"
 _LEASE_NAME = "poiesis-tctl-leader"
 _LEASE_DURATION_SECONDS = 30
 _LEASE_RENEW_INTERVAL_SECONDS = 10
-_WATCH_STREAM_TIMEOUT_SECONDS = 300
 #: How long a TaskPod may sit in Pending before the controller times it out.
 #: Covers `ImagePullBackOff`, unbindable PVCs, no schedulable node, etc.
 _PENDING_TIMEOUT_SECONDS = 300
@@ -102,9 +101,8 @@ async def _reconcile_while_leader(
     cancelled: asyncio.Event,
 ) -> None:
     """Run the Pod informer + lease renewal until lease is lost or signalled."""
-    queue: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
-    loop = asyncio.get_running_loop()
-    producer = loop.run_in_executor(None, _stream_pods, core_v1, namespace, queue, loop)
+    selector = PodSelector(namespace=namespace, label_selector=_TASK_LABEL)
+    events = watch_pods(core_v1, selector)
     try:
         while not cancelled.is_set():
             renewed = await try_acquire_or_renew(
@@ -118,8 +116,8 @@ async def _reconcile_while_leader(
                 logger.warning("tctl: lost lease; standing down")
                 return
             try:
-                item = await asyncio.wait_for(
-                    queue.get(), timeout=_LEASE_RENEW_INTERVAL_SECONDS
+                event = await asyncio.wait_for(
+                    _next(events), timeout=_LEASE_RENEW_INTERVAL_SECONDS
                 )
             except TimeoutError:
                 # No watch event this tick — sweep for stuck-Pending pods so a
@@ -127,46 +125,20 @@ async def _reconcile_while_leader(
                 # eventually moved out of QUEUED/INITIALIZING.
                 await _sweep_pending(core_v1, pool, namespace)
                 continue
-            if item is None:
+            if event is None:
                 logger.warning("tctl: pod stream ended; restarting")
                 return
-            event_type, pod = item
-            await _handle_pod(pool, event_type, pod)
+            await _handle_pod(pool, event.type, event.pod)
     finally:
-        producer.cancel()
+        await events.aclose()
 
 
-def _stream_pods(
-    core_v1: CoreV1Api,
-    namespace: str,
-    queue: asyncio.Queue[tuple[str, dict[str, Any]] | None],
-    loop: asyncio.AbstractEventLoop,
-) -> None:
-    """Run in a worker thread: stream Pod events onto the async queue.
-
-    Each enqueued item is `(event_type, pod_dict)`. A None sentinel is
-    pushed when the stream ends or errors.
-    """
+async def _next(events: AsyncGenerator[PodEvent]) -> PodEvent | None:
+    """Return the next watch event or None on stream end."""
     try:
-        while True:
-            # `kubernetes-stubs` does not export the `watch` submodule.
-            w = kubernetes.watch.Watch()  # ty: ignore[unresolved-attribute]
-            for event in w.stream(
-                core_v1.list_namespaced_pod,
-                namespace=namespace,
-                label_selector=_TASK_LABEL,
-                timeout_seconds=_WATCH_STREAM_TIMEOUT_SECONDS,
-            ):
-                pod = event["object"]
-                event_type = event.get("type", "MODIFIED")
-                pod_dict = pod.to_dict() if hasattr(pod, "to_dict") else dict(pod)
-                loop.call_soon_threadsafe(
-                    queue.put_nowait,
-                    (event_type, pod_dict),
-                )
-    except Exception:
-        logger.exception("tctl: pod watch stream failed")
-        loop.call_soon_threadsafe(queue.put_nowait, None)
+        return await events.__anext__()
+    except StopAsyncIteration:
+        return None
 
 
 async def _handle_pod(

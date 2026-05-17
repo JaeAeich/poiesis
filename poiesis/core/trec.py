@@ -18,16 +18,16 @@ import logging
 import signal
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import AsyncGenerator, Mapping
 
 import asyncpg
-import kubernetes
 from kubernetes import client
 
 from poiesis.api.tes.models import TesState
+from poiesis.core.k8s_watch import PodEvent, PodSelector, watch_pods
 from poiesis.core.pod_status import (
     EventKind,
     TaskEvent,
@@ -38,10 +38,6 @@ from poiesis.core.pod_status import (
 from poiesis.db import state as state_db
 
 logger = logging.getLogger(__name__)
-
-#: Per-event-stream timeout for the K8s watch. The stream is restarted
-#: on timeout — this caps how long a stale connection lingers.
-_WATCH_STREAM_TIMEOUT_SECONDS = 300
 
 
 async def run(task_id: str, pod_name: str, namespace: str, dsn: str) -> int:
@@ -63,24 +59,18 @@ async def _run_until_terminal(
     pod_name: str,
     namespace: str,
 ) -> int:
-    """Drive the watch-stream producer and apply each event to Postgres."""
+    """Drive the Pod watch and apply each event to Postgres."""
     snapshot = TaskStateSnapshot()
-    queue: asyncio.Queue[_PodSnap | None] = asyncio.Queue()
     cancelled = _install_signal_handlers()
 
-    loop = asyncio.get_running_loop()
-    producer = loop.run_in_executor(
-        None,
-        _stream_pod_status,
-        pod_name,
-        namespace,
-        queue,
-        loop,
+    core_v1 = client.CoreV1Api()
+    selector = PodSelector(
+        namespace=namespace, field_selector=f"metadata.name={pod_name}"
     )
-
+    events = watch_pods(core_v1, selector)
     try:
         while True:
-            wait_for_event = asyncio.create_task(queue.get())
+            wait_for_event = asyncio.create_task(_next(events))
             wait_for_signal = asyncio.create_task(cancelled.wait())
             done, _ = await asyncio.wait(
                 {wait_for_event, wait_for_signal},
@@ -90,69 +80,37 @@ async def _run_until_terminal(
                 wait_for_event.cancel()
                 await _on_signal(conn, task_id, pod_name, namespace, snapshot)
                 return 0
-            snap = wait_for_event.result()
-            if snap is None:
-                # Producer terminated unexpectedly — give up cleanly.
+            event = wait_for_event.result()
+            if event is None:
+                # Watch ended unexpectedly — give up cleanly.
                 return 1
-            terminal = await _apply_pod_snapshot(conn, task_id, snap, snapshot)
+            pod_status = (event.pod.get("status") or {}) if event.pod else {}
+            terminal = await _apply_pod_snapshot(conn, task_id, pod_status, snapshot)
             if terminal:
                 return 0
     finally:
-        producer.cancel()
+        await events.aclose()
 
 
-class _PodSnap:
-    """A single watch event reduced to its Pod.status dict."""
-
-    __slots__ = ("status",)
-
-    def __init__(self, status: Mapping[str, object]) -> None:
-        self.status = status
-
-
-def _stream_pod_status(
-    pod_name: str,
-    namespace: str,
-    queue: asyncio.Queue[_PodSnap | None],
-    loop: asyncio.AbstractEventLoop,
-) -> None:
-    """Run in a worker thread: stream Pod events onto the async queue.
-
-    A None sentinel is pushed when the stream ends or errors so the
-    consumer can detect termination.
-    """
-    core_v1 = client.CoreV1Api()
+async def _next(events: AsyncGenerator[PodEvent]) -> PodEvent | None:
+    """Return the next watch event or None on stream end."""
     try:
-        while True:
-            # `kubernetes-stubs` does not export the `watch` submodule that
-            # the runtime kubernetes client publishes.
-            w = kubernetes.watch.Watch()  # ty: ignore[unresolved-attribute]
-            for event in w.stream(
-                core_v1.list_namespaced_pod,
-                namespace=namespace,
-                field_selector=f"metadata.name={pod_name}",
-                timeout_seconds=_WATCH_STREAM_TIMEOUT_SECONDS,
-            ):
-                pod = event["object"]
-                status = pod.status.to_dict() if pod.status is not None else {}
-                loop.call_soon_threadsafe(queue.put_nowait, _PodSnap(status))
-            # Stream timed out; reconnect on the next loop iteration.
-    except Exception:
-        logger.exception("TRec watch stream failed")
-        loop.call_soon_threadsafe(queue.put_nowait, None)
+        return await events.__anext__()
+    except StopAsyncIteration:
+        return None
 
 
 async def _apply_pod_snapshot(
     conn: asyncpg.Connection,
     task_id: str,
-    snap: _PodSnap,
+    pod_status: Mapping[str, Any],
     snapshot: TaskStateSnapshot,
 ) -> bool:
     """Translate one Pod.status snapshot and apply each new event.
 
     Returns True if the Pod has reached a terminal state.
     """
-    for event in translate(snap.status, snapshot):
+    for event in translate(pod_status, snapshot):
         await _apply_event(conn, task_id, event)
         _advance_snapshot(snapshot, event)
         if event.kind is EventKind.POD_TERMINATED:
@@ -290,8 +248,7 @@ async def _on_signal(
     if pod.status is None:
         logger.info("trec: final pod read returned no status")
         return
-    snap = _PodSnap(pod.status.to_dict())
-    await _apply_pod_snapshot(conn, task_id, snap, snapshot)
+    await _apply_pod_snapshot(conn, task_id, pod.status.to_dict(), snapshot)
     logger.info("trec: applied final pod snapshot on shutdown")
 
 
