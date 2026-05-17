@@ -189,6 +189,67 @@ def _entries_to_envvars(entries: list[dict[str, Any]]) -> list[V1EnvVar]:
 DEFAULT_POIESIS_IMAGE = "docker.io/jaeaeich/poiesis:latest"
 
 
+class AuthSettings(BaseModel):
+    """OIDC resource-server settings.
+
+    Poiesis validates incoming JWTs directly against ``issuer``'s JWKS;
+    it is not an OAuth client. When ``enabled`` is true, ``issuer`` and
+    ``audience`` are required at startup — missing values fail loudly
+    rather than silently disabling auth. When ``enabled`` is false the
+    API serves all requests as a fixed anonymous principal.
+    """
+
+    enabled: bool = Field(
+        default_factory=lambda: (
+            os.environ.get("POIESIS_AUTH_ENABLED", "true").lower()
+            not in {"0", "false", "no", "off"}
+        ),
+    )
+    issuer: str = Field(
+        default_factory=lambda: os.environ.get("POIESIS_AUTH_OIDC_ISSUER", ""),
+    )
+    audience: str = Field(
+        default_factory=lambda: os.environ.get("POIESIS_AUTH_OIDC_AUDIENCE", ""),
+    )
+    jwks_cache_ttl: int = Field(
+        default_factory=lambda: (
+            _parse_int_env("POIESIS_AUTH_OIDC_JWKS_CACHE_TTL", 3600) or 3600
+        ),
+    )
+    clock_skew: int = Field(
+        default_factory=lambda: (
+            _parse_int_env("POIESIS_AUTH_OIDC_CLOCK_SKEW", 30) or 30
+        ),
+    )
+    principal_claim: str = Field(
+        default_factory=lambda: os.environ.get(
+            "POIESIS_AUTH_OIDC_PRINCIPAL_CLAIM", "sub"
+        ),
+    )
+    required_scopes: tuple[str, ...] = Field(
+        default_factory=lambda: _parse_csv_env("POIESIS_AUTH_OIDC_REQUIRED_SCOPES"),
+    )
+
+    def validate_required(self) -> None:
+        """Raise if mandatory fields are missing. Called at app startup.
+
+        No-op when auth is disabled — the validator is never built, so
+        issuer/audience are irrelevant.
+        """
+        if not self.enabled:
+            return
+        missing = [
+            name
+            for name, value in (("issuer", self.issuer), ("audience", self.audience))
+            if not value
+        ]
+        if missing:
+            raise ValueError(
+                "OIDC auth misconfigured: missing "
+                + ", ".join(f"POIESIS_AUTH_OIDC_{m.upper()}" for m in missing)
+            )
+
+
 class Settings(BaseModel):
     """API runtime settings."""
 
@@ -298,6 +359,7 @@ class Settings(BaseModel):
     aws_region: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_REGION") or None,
     )
+    auth: AuthSettings = Field(default_factory=AuthSettings)
 
     def runtime_config(self) -> RuntimeConfig:
         """Materialise the TaskPod RuntimeConfig used by the spec builder."""

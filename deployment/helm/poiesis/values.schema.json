@@ -3,7 +3,7 @@
   "title": "poiesis chart values",
   "type": "object",
   "additionalProperties": true,
-  "required": ["image", "migrations", "database", "api", "tctl", "taskpods"],
+  "required": ["image", "migrations", "database", "auth", "api", "tctl", "taskpods"],
   "properties": {
     "nameOverride":      { "type": "string" },
     "fullnameOverride":  { "type": "string" },
@@ -51,6 +51,42 @@
         "existingSecret":    { "type": "string", "minLength": 1 },
         "existingSecretKey": { "type": "string", "minLength": 1 },
         "caConfigmap":       { "type": "string" }
+      }
+    },
+
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "oidc"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "oidc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "issuer":         { "type": "string" },
+            "audience":       { "type": "string" },
+            "jwksCacheTtl":   { "type": "integer", "minimum": 1 },
+            "clockSkew":      { "type": "integer", "minimum": 0 },
+            "principalClaim": { "type": "string", "minLength": 1 },
+            "requiredScopes": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      },
+      "if": { "properties": { "enabled": { "const": true } } },
+      "then": {
+        "properties": {
+          "oidc": {
+            "required": ["issuer", "audience"],
+            "properties": {
+              "issuer":   { "minLength": 1, "format": "uri" },
+              "audience": { "minLength": 1 }
+            }
+          }
+        }
       }
     },
 

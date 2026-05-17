@@ -74,6 +74,20 @@ class BadRequestError(APIError):
     error_code = "bad_request"
 
 
+class UnauthorizedError(APIError):
+    """The request lacks a valid authentication credential."""
+
+    status_code = HTTPStatus.UNAUTHORIZED.value
+    error_code = "unauthorized"
+
+
+class ForbiddenError(APIError):
+    """The principal is authenticated but lacks the required permission."""
+
+    status_code = HTTPStatus.FORBIDDEN.value
+    error_code = "forbidden"
+
+
 class NotFoundError(APIError):
     """The requested resource was not found."""
 

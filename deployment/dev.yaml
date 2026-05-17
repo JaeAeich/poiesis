@@ -193,6 +193,10 @@ data:
   POIESIS_TASKPOD_SERVICE_ACCOUNT: poiesis-taskpod
   POIESIS_POD_SECURITY_ENFORCE: restricted
   LOG_LEVEL: INFO
+  POIESIS_AUTH_ENABLED: "true"
+  POIESIS_AUTH_OIDC_ISSUER: "http://keycloak.deps.svc:8080/realms/poiesis"
+  POIESIS_AUTH_OIDC_AUDIENCE: "poiesis"
+  POIESIS_AUTH_OIDC_PRINCIPAL_CLAIM: "sub"
 ---
 apiVersion: v1
 kind: ServiceAccount

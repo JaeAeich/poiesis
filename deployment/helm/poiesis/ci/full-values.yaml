@@ -18,6 +18,12 @@ database:
   existingSecret: poiesis-db
   existingSecretKey: DATABASE_URL
 
+auth:
+  enabled: true
+  oidc:
+    issuer: https://keycloak.example.org/realms/poiesis
+    audience: poiesis
+
 api:
   replicas: 1
   resources:

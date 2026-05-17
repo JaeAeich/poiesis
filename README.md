@@ -12,11 +12,6 @@
 
 A [GA4GH TES][tes] task execution service for Kubernetes.
 
-> ⚠️ **Notice — v2 redesign in progress.** Poiesis is being reworked into its
-> next major version for better stability, simpler operations, and audit-grade
-> behaviour. Expect **`main` to be broken or partially-broken at times** during
-> this work. If you need a known-good build, check out the latest release tag.
-
 ## Development
 
 ```sh

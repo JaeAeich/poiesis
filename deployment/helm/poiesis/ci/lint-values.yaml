@@ -3,3 +3,9 @@
 # database.existingSecret pointing at an operator-managed Secret.
 database:
   existingSecret: poiesis-db
+
+auth:
+  enabled: true
+  oidc:
+    issuer: https://keycloak.example.org/realms/poiesis
+    audience: poiesis

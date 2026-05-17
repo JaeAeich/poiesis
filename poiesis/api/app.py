@@ -17,6 +17,7 @@ from fastapi import FastAPI
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+from poiesis.api.auth import OIDCValidator
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.api.exceptions import (
     APIError,
@@ -47,9 +48,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Connecting to Postgres at %s", _redact_dsn(settings.database_url))
     app.state.db_pool = await create_pool(settings.database_url)
 
+    async with app.state.db_pool.acquire() as conn:
+        legacy_count = await conn.fetchval(
+            "SELECT count(*) FROM tasks WHERE principal = '__legacy__'"
+        )
+    if legacy_count:
+        logger.warning(
+            "%d task(s) carry the '__legacy__' principal — they pre-date the "
+            "auth migration and are invisible to every real owner. Reassign "
+            "via UPDATE tasks SET principal = ... WHERE principal = "
+            "'__legacy__' if needed.",
+            legacy_count,
+        )
+
     load_config()
     app.state.k8s = K8sClient()
     logger.info("Kubernetes client ready (namespace=%s)", settings.poiesis_namespace)
+
+    if settings.auth.enabled:
+        oidc = OIDCValidator(settings.auth)
+        await oidc.bootstrap()
+        app.state.oidc = oidc
+    else:
+        app.state.oidc = None
+        logger.warning("OIDC auth is DISABLED; all requests will run as anonymous")
 
     try:
         yield

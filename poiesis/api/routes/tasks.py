@@ -4,12 +4,13 @@ import logging
 import uuid
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Annotated, Any
+from typing import Annotated, Any, NoReturn
 
 import asyncpg
 from fastapi import APIRouter, Depends, Query
 from kubernetes.client.exceptions import ApiException
 
+from poiesis.api.auth import Principal, get_principal
 from poiesis.api.deps import get_db_conn, get_k8s, get_runtime_config
 from poiesis.api.exceptions import (
     APIError,
@@ -54,6 +55,7 @@ async def create_task(
     conn: Annotated[Any, Depends(get_db_conn)],
     k8s: Annotated[K8sClient, Depends(get_k8s)],
     runtime_config: Annotated[RuntimeConfig, Depends(get_runtime_config)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> TesCreateTaskResponse:
     """Accept a TES task, persist it, and submit its TaskPod to Kubernetes."""
     task.id = task.id or str(uuid.uuid4())
@@ -66,7 +68,7 @@ async def create_task(
     except ValueError as exc:
         raise BadRequestError(str(exc)) from exc
 
-    task_id = await tasks_db.create_task(conn, task)
+    task_id = await tasks_db.create_task(conn, task, principal.id)
     logger.info("Persisted task %s", task_id)
 
     # Submit the Job first; the Pod will wait Pending until the PVC exists.
@@ -108,7 +110,7 @@ async def _on_kubernetes_submit_failure(
     k8s: K8sClient | None,
     namespace: str | None,
     job_name: str | None,
-) -> None:
+) -> NoReturn:
     """Classify a Kubernetes submit failure and raise the right APIError.
 
     Side effects, in order: log with traceback; best-effort delete the
@@ -207,6 +209,7 @@ async def cancel_task(
     conn: Annotated[Any, Depends(get_db_conn)],
     k8s: Annotated[K8sClient, Depends(get_k8s)],
     runtime_config: Annotated[RuntimeConfig, Depends(get_runtime_config)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> TesCancelTaskResponse:
     """Mark the task CANCELING and delete its wrapping Kubernetes Job.
 
@@ -219,7 +222,12 @@ async def cancel_task(
     except ValueError as exc:
         raise BadRequestError(f"invalid task id: {id}") from exc
 
-    if await tasks_db.get_task(conn, task_uuid, view=TaskView.MINIMAL) is None:
+    if (
+        await tasks_db.get_task(
+            conn, task_uuid, view=TaskView.MINIMAL, principal=principal.id
+        )
+        is None
+    ):
         raise NotFoundError(f"task {id} not found")
 
     transitioned = await state_db.mark_canceling(conn, task_uuid)
@@ -245,6 +253,7 @@ async def cancel_task(
 async def get_task(
     id: str,
     conn: Annotated[Any, Depends(get_db_conn)],
+    principal: Annotated[Principal, Depends(get_principal)],
     view: Annotated[TaskView, Query()] = TaskView.MINIMAL,
 ) -> TesTask:
     """Return a single task at the requested view level."""
@@ -253,7 +262,7 @@ async def get_task(
     except ValueError as exc:
         raise BadRequestError(f"invalid task id: {id}") from exc
 
-    task = await tasks_db.get_task(conn, task_uuid, view=view)
+    task = await tasks_db.get_task(conn, task_uuid, view=view, principal=principal.id)
     if task is None:
         raise NotFoundError(f"task {id} not found")
     return task
@@ -286,9 +295,11 @@ def _list_filters(
 async def list_tasks(
     conn: Annotated[Any, Depends(get_db_conn)],
     filters: Annotated[ListFilters, Depends(_list_filters)],
+    principal: Annotated[Principal, Depends(get_principal)],
     view: Annotated[TaskView, Query()] = TaskView.MINIMAL,
 ) -> TesListTasksResponse:
     """Return a paginated list of tasks, newest first."""
+    filters.principal = principal.id
     try:
         tasks, next_token = await tasks_db.list_tasks(conn, filters, view=view)
     except ValueError as exc:

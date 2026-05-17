@@ -130,6 +130,33 @@ database:
   # tctl, and every taskpod's poiesis-owned container. Empty disables.
   caConfigmap: ""
 
+# OIDC resource-server auth. Poiesis validates incoming JWTs directly
+# against the configured issuer's JWKS. When `enabled: true` (default),
+# `oidc.issuer` and `oidc.audience` are REQUIRED — the schema rejects
+# empty values at `helm install` time. When `enabled: false` the API
+# accepts every request as a fixed anonymous principal; intended for
+# local dev and air-gapped single-tenant deployments only.
+auth:
+  enabled: true
+  oidc:
+    # Full issuer URL, e.g. https://keycloak.example.org/realms/poiesis
+    issuer: ""
+    # Expected `aud` claim. Tokens not minted for this audience are rejected.
+    audience: ""
+    # Seconds to cache the JWKS before re-fetching. Lower values trade
+    # JWKS endpoint load for faster key-rotation pickup.
+    jwksCacheTtl: 3600
+    # Allowed clock-skew in seconds when validating exp/nbf/iat.
+    clockSkew: 30
+    # Which claim names the principal. Default `sub` matches every
+    # standards-compliant OIDC provider. Dotted paths walk nested
+    # objects, e.g. `ctx.group_id` resolves `claims["ctx"]["group_id"]`.
+    # Useful when the operator's IdP groups tasks by a tenant or group
+    # identifier rather than the per-user `sub`.
+    principalClaim: sub
+    # Optional list of scopes a token MUST carry. Empty disables the check.
+    requiredScopes: []
+
 # S3-compatible storage. Optional: required only when task inputs/outputs
 # reference s3:// URLs.
 s3:

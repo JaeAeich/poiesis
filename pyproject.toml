@@ -28,6 +28,8 @@ dependencies = [
   "click",
   "fastapi",
   "gunicorn",
+  "httpx",
+  "joserfc",
   "kubernetes",
   "pydantic",
   "requests",
