@@ -107,6 +107,28 @@ jobs:
       - run: mise x -- toml-sort --check --all --trailing-comma-inline-array $(git ls-files '*.toml' | grep -v '^uv\.lock$')
       - run: mise x -- taplo format --check $(git ls-files '*.toml' | grep -v '^uv\.lock$')
 
+  diagrams-drift:
+    name: diagrams drift
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs/app
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: docs/app/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run diagrams
+      - name: fail if SVGs out of date
+        run: |
+          if ! git diff --exit-code -- public/diagrams; then
+            echo "Mermaid SVGs are stale. Run 'npm run diagrams' in docs/app and commit." >&2
+            exit 1
+          fi
+
   commitlint:
     name: commitlint
     runs-on: ubuntu-latest

@@ -4,7 +4,7 @@ pre-commit:
     editorconfig:
       glob: "**/*.{toml,yaml,yml,json,md,py,sh}"
       exclude: "docs/app/**"
-      run: mise x -- eclint fix {staged_files}
+      run: mise x -- eclint fix {staged_files} && mise x -- eclint check {staged_files}
       stage_fixed: true
 
     toml-hygiene:

@@ -5,17 +5,17 @@ layout: home
 hero:
   name: Poiesis
   text: TES on Kubernetes
-  tagline: A single-Pod GA4GH TES v1.1 implementation backed by PostgreSQL
+  tagline: Scalable, secure task execution for workflow workloads
   image:
     src: /logo/logo.png
     alt: Poiesis Logo
   actions:
     - theme: brand
-      text: Architecture
-      link: /docs/dev/architecture
-    - theme: alt
       text: Deploy
       link: /docs/deploy/deploying-poiesis
+    - theme: alt
+      text: Architecture
+      link: /docs/dev/architecture
 
 features:
   - title: GA4GH TES v1.1.0

@@ -1,11 +1,11 @@
 """Kubernetes probe endpoints.
 
 - `/healthz`: liveness — the process is up. No dependency checks; a failure
-  here means restart the pod.
+    here means restart the pod.
 - `/readyz`: readiness — the API can serve a request right now. Pings the
-  database; a failure removes the pod from the Service endpoints.
+    database; a failure removes the pod from the Service endpoints.
 - `/startupz`: startup — initialisation finished (db pool built). Gives
-  slow boots time before liveness/readiness kick in.
+    slow boots time before liveness/readiness kick in.
 """
 
 from __future__ import annotations
