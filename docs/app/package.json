@@ -1,7 +1,7 @@
 {
   "scripts": {
     "docs:dev": "npm run copy-spec && npm run diagrams && vitepress dev",
-    "docs:build": "npm run copy-spec && npm run diagrams && vitepress build .",
+    "docs:build": "npm run copy-spec && vitepress build .",
     "docs:preview": "npm run copy-spec && vitepress preview",
     "copy-spec": "cp ../../poiesis/api/tes/spec/*.openapi.yaml public/openapi.yaml",
     "diagrams": "node scripts/render-diagrams.mjs"
