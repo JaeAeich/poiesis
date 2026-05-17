@@ -26,9 +26,11 @@ client-side model objects and returns them; the caller submits.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from kubernetes.client import (
+    V1Capabilities,
     V1Container,
     V1EnvVar,
     V1EnvVarSource,
@@ -43,6 +45,8 @@ from kubernetes.client import (
     V1PodSpec,
     V1PodTemplateSpec,
     V1ResourceRequirements,
+    V1SeccompProfile,
+    V1SecurityContext,
     V1Volume,
     V1VolumeMount,
 )
@@ -59,6 +63,22 @@ COMPONENT_LABEL = "app.kubernetes.io/component"
 NAME_LABEL = "app.kubernetes.io/name"
 
 DEFAULT_PVC_SIZE_GI = "1"
+
+
+class PodSecurityEnforce(StrEnum):
+    """How strictly to lock down poiesis-owned TaskPod containers.
+
+    Executor containers run user-supplied images and are always exempt;
+    operators that need them constrained must run TaskPods in a namespace
+    with the PodSecurity admission controller configured at the cluster
+    level.
+    """
+
+    RESTRICTED = "restricted"
+    BASELINE = "baseline"
+    OFF = "off"
+
+
 PVC_VOLUME_NAME = "task-data"
 
 
@@ -87,6 +107,9 @@ class RuntimeConfig:
         active_deadline_seconds: activeDeadlineSeconds on the Job
             (covers stuck-Pending).
         grace_period_seconds: terminationGracePeriodSeconds on the Pod.
+        pod_security_enforce: `restricted` | `baseline` | `off`. Applies to
+            poiesis-owned containers only; executor containers run user
+            images and are deliberately exempt.
         filer_resources: Resource requests/limits for TIF/TOF containers.
         recorder_resources: Resource requests/limits for the TRec sidecar.
         ack_resources: Resource requests/limits for the terminal `ack`
@@ -105,6 +128,7 @@ class RuntimeConfig:
     job_ttl_seconds: int = 3600
     active_deadline_seconds: int = 3600
     grace_period_seconds: int = 30
+    pod_security_enforce: PodSecurityEnforce = PodSecurityEnforce.RESTRICTED
     filer_resources: V1ResourceRequirements | None = None
     recorder_resources: V1ResourceRequirements | None = None
     ack_resources: V1ResourceRequirements | None = None
@@ -319,6 +343,7 @@ def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
         env=_downward_api_env() + list(config.extra_env),
         volume_mounts=[_pvc_mount(config)],
         resources=config.recorder_resources,
+        security_context=_poiesis_security_context(config),
     )
     object.__setattr__(container, "restart_policy", "Always")
     return container
@@ -353,6 +378,7 @@ def _build_tif(task: TesTask, config: RuntimeConfig) -> V1Container:
         env=_filer_env(config),
         volume_mounts=[_pvc_mount(config)],
         resources=config.filer_resources,
+        security_context=_poiesis_security_context(config),
     )
 
 
@@ -367,6 +393,7 @@ def _build_tof(task: TesTask, config: RuntimeConfig) -> V1Container:
         env=_filer_env(config),
         volume_mounts=[_pvc_mount(config)],
         resources=config.filer_resources,
+        security_context=_poiesis_security_context(config),
     )
 
 
@@ -416,11 +443,39 @@ def _build_ack_container(task: TesTask, config: RuntimeConfig) -> V1Container:
         image_pull_policy=config.image_pull_policy,
         command=["poiesis", "ack", "run", "--task-id", task_id],
         resources=config.ack_resources,
+        security_context=_poiesis_security_context(config),
     )
 
 
 def _pvc_mount(config: RuntimeConfig) -> V1VolumeMount:
     return V1VolumeMount(name=PVC_VOLUME_NAME, mount_path=config.filer_pvc_mount_path)
+
+
+def _poiesis_security_context(config: RuntimeConfig) -> V1SecurityContext | None:
+    """SecurityContext applied to poiesis-owned containers (trec/tif/tof/ack).
+
+    Executor containers run user-supplied images and are deliberately exempt.
+
+    - `RESTRICTED`: full PSS-restricted (runAsNonRoot, drop ALL, no privesc,
+    seccomp RuntimeDefault, readOnlyRootFilesystem). The poiesis image is
+    built to satisfy this profile.
+    - `BASELINE`: the universally-safe subset (drop ALL, no privesc).
+    - `OFF`: emit nothing.
+    """
+    if config.pod_security_enforce is PodSecurityEnforce.OFF:
+        return None
+    if config.pod_security_enforce is PodSecurityEnforce.BASELINE:
+        return V1SecurityContext(
+            allow_privilege_escalation=False,
+            capabilities=V1Capabilities(drop=["ALL"]),
+        )
+    return V1SecurityContext(
+        run_as_non_root=True,
+        allow_privilege_escalation=False,
+        read_only_root_filesystem=True,
+        capabilities=V1Capabilities(drop=["ALL"]),
+        seccomp_profile=V1SeccompProfile(type="RuntimeDefault"),
+    )
 
 
 def _require_id(task: TesTask) -> str:

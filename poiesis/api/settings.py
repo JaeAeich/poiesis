@@ -11,7 +11,7 @@ import os
 from kubernetes.client import V1EnvVar
 from pydantic import BaseModel, Field
 
-from poiesis.core.taskpod import RuntimeConfig
+from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 
 DEFAULT_POIESIS_IMAGE = "docker.io/jaeaeich/poiesis:latest"
 
@@ -49,6 +49,11 @@ class Settings(BaseModel):
             os.environ.get("POIESIS_TASKPOD_SERVICE_ACCOUNT") or None
         ),
     )
+    pod_security_enforce: PodSecurityEnforce = Field(
+        default_factory=lambda: PodSecurityEnforce(
+            os.environ.get("POIESIS_POD_SECURITY_ENFORCE", "restricted")
+        ),
+    )
     aws_endpoint_url: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_ENDPOINT_URL") or None,
     )
@@ -80,6 +85,7 @@ class Settings(BaseModel):
             pvc_storage_class=self.pvc_storage_class,
             pvc_access_mode=self.pvc_access_mode,
             taskpod_service_account=self.taskpod_service_account,
+            pod_security_enforce=self.pod_security_enforce,
             extra_env=env,
         )
 
