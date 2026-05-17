@@ -62,6 +62,9 @@ class Settings(BaseModel):
             if s.strip()
         ),
     )
+    postgres_ca_configmap: str | None = Field(
+        default_factory=lambda: os.environ.get("POIESIS_POSTGRES_CA_CONFIGMAP") or None,
+    )
     aws_endpoint_url: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_ENDPOINT_URL") or None,
     )
@@ -95,6 +98,7 @@ class Settings(BaseModel):
             taskpod_service_account=self.taskpod_service_account,
             pod_security_enforce=self.pod_security_enforce,
             image_pull_secrets=self.image_pull_secrets,
+            postgres_ca_configmap=self.postgres_ca_configmap,
             extra_env=env,
         )
 

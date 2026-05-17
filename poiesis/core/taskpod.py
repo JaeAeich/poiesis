@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 
 from kubernetes.client import (
     V1Capabilities,
+    V1ConfigMapVolumeSource,
     V1Container,
     V1EnvVar,
     V1EnvVarSource,
@@ -81,6 +82,8 @@ class PodSecurityEnforce(StrEnum):
 
 
 PVC_VOLUME_NAME = "task-data"
+PG_CA_VOLUME_NAME = "postgres-ca"
+PG_CA_MOUNT_PATH = "/etc/ssl/poiesis"
 
 
 @dataclass(frozen=True)
@@ -113,6 +116,10 @@ class RuntimeConfig:
             images and are deliberately exempt.
         image_pull_secrets: Secret names attached to every TaskPod for
             pulling images from private registries.
+        postgres_ca_configmap: ConfigMap name (key `ca.crt`) mounted at
+            `/etc/ssl/poiesis` on poiesis-owned containers so asyncpg can
+            validate the Postgres server cert via `sslrootcert=` in
+            DATABASE_URL. None disables the mount.
         filer_resources: Resource requests/limits for TIF/TOF containers.
         recorder_resources: Resource requests/limits for the TRec sidecar.
         ack_resources: Resource requests/limits for the terminal `ack`
@@ -133,6 +140,11 @@ class RuntimeConfig:
     grace_period_seconds: int = 30
     pod_security_enforce: PodSecurityEnforce = PodSecurityEnforce.RESTRICTED
     image_pull_secrets: tuple[str, ...] = ()
+    # Name of a ConfigMap holding the Postgres CA bundle (key `ca.crt`).
+    # When set, the ConfigMap is mounted read-only at /etc/ssl/poiesis on
+    # every poiesis-owned container so asyncpg can validate the server cert
+    # via `sslrootcert=` in DATABASE_URL.
+    postgres_ca_configmap: str | None = None
     filer_resources: V1ResourceRequirements | None = None
     recorder_resources: V1ResourceRequirements | None = None
     ack_resources: V1ResourceRequirements | None = None
@@ -286,6 +298,16 @@ def _build_job(
             ),
         ),
     ]
+    if config.postgres_ca_configmap:
+        volumes.append(
+            V1Volume(
+                name=PG_CA_VOLUME_NAME,
+                config_map=V1ConfigMapVolumeSource(
+                    name=config.postgres_ca_configmap,
+                    default_mode=0o0444,
+                ),
+            )
+        )
 
     pod_spec = V1PodSpec(
         init_containers=init_containers,
@@ -348,7 +370,7 @@ def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
         image_pull_policy=config.image_pull_policy,
         command=["poiesis", "trec", "run", "--task-id", _require_id(task)],
         env=_downward_api_env() + list(config.extra_env),
-        volume_mounts=[_pvc_mount(config)],
+        volume_mounts=_poiesis_mounts(config),
         resources=config.recorder_resources,
         security_context=_poiesis_security_context(config),
     )
@@ -383,7 +405,7 @@ def _build_tif(task: TesTask, config: RuntimeConfig) -> V1Container:
         image_pull_policy=config.image_pull_policy,
         command=["poiesis", "tif", "run", "--task-id", task_id],
         env=_filer_env(config),
-        volume_mounts=[_pvc_mount(config)],
+        volume_mounts=_poiesis_mounts(config),
         resources=config.filer_resources,
         security_context=_poiesis_security_context(config),
     )
@@ -398,7 +420,7 @@ def _build_tof(task: TesTask, config: RuntimeConfig) -> V1Container:
         image_pull_policy=config.image_pull_policy,
         command=["poiesis", "tof", "run", "--task-id", task_id],
         env=_filer_env(config),
-        volume_mounts=[_pvc_mount(config)],
+        volume_mounts=_poiesis_mounts(config),
         resources=config.filer_resources,
         security_context=_poiesis_security_context(config),
     )
@@ -456,6 +478,20 @@ def _build_ack_container(task: TesTask, config: RuntimeConfig) -> V1Container:
 
 def _pvc_mount(config: RuntimeConfig) -> V1VolumeMount:
     return V1VolumeMount(name=PVC_VOLUME_NAME, mount_path=config.filer_pvc_mount_path)
+
+
+def _poiesis_mounts(config: RuntimeConfig) -> list[V1VolumeMount]:
+    """Volume mounts every poiesis-owned container that touches Postgres gets."""
+    mounts = [_pvc_mount(config)]
+    if config.postgres_ca_configmap:
+        mounts.append(
+            V1VolumeMount(
+                name=PG_CA_VOLUME_NAME,
+                mount_path=PG_CA_MOUNT_PATH,
+                read_only=True,
+            )
+        )
+    return mounts
 
 
 def _poiesis_security_context(config: RuntimeConfig) -> V1SecurityContext | None:
