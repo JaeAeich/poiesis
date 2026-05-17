@@ -4,6 +4,43 @@ Taskpods land in: {{ include "poiesis.taskpodNamespace" . }}
 PSS profile:      {{ .Values.podSecurityEnforce }}
 DB secret:        {{ .Values.database.existingSecret }}/{{ .Values.database.existingSecretKey }}
 
+Per-task storage:
+  default size:   {{ .Values.taskpods.persistence.defaultSizeGi }} GiB
+  cap:            {{ .Values.taskpods.persistence.maxSizeGi }} GiB (requests over this are rejected with 400)
+  storage class:  {{ .Values.taskpods.persistence.storageClass | default "(cluster default)" }}
+  access modes:   {{ join ", " .Values.taskpods.persistence.accessModes }}
+{{- if kindIs "invalid" .Values.taskpods.persistence.retainAfterSeconds }}
+  retention:      retained until manually deleted (audit mode)
+{{- else }}
+  retention:      {{ .Values.taskpods.persistence.retainAfterSeconds }}s after Job completion
+{{- end }}
+
+TaskPod extensions:
+  extraEnv:           {{ len .Values.taskpods.extraEnv }}
+  extraVolumes:       {{ len .Values.taskpods.extraVolumes }}
+  extraVolumeMounts:  {{ len .Values.taskpods.extraVolumeMounts }}
+
+Operator checklist:
+  - Ensure a default StorageClass exists in this cluster, OR set
+    taskpods.persistence.storageClass explicitly to a named class.
+  - Set a namespace ResourceQuota on {{ include "poiesis.taskpodNamespace" . }}
+    to cap aggregate PVC count + storage:
+        kubectl -n {{ include "poiesis.taskpodNamespace" . }} apply -f - <<EOF
+        apiVersion: v1
+        kind: ResourceQuota
+        metadata:
+          name: poiesis-taskpods
+        spec:
+          hard:
+            persistentvolumeclaims: "200"
+            requests.storage: "2Ti"
+        EOF
+  - For Velero/Kasten backups, add the backup annotation to
+    taskpods.persistence.annotations.
+  - For audit-retention deployments, set
+    taskpods.persistence.retainAfterSeconds: null and provision an
+    out-of-band cleanup process.
+
 To reach the API (cluster-internal):
 
   http://{{ include "poiesis.fullname" . }}-api.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.api.service.port }}/ga4gh/tes/v1

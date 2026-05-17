@@ -28,7 +28,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from kubernetes.client import (
     V1Capabilities,
@@ -145,8 +145,22 @@ class RuntimeConfig:
         recorder_resources: Resource requests/limits for the TRec sidecar.
         ack_resources: Resource requests/limits for the terminal `ack`
             container.
-        extra_env: Extra env vars injected into every container
-            (database DSN, S3 creds, etc.).
+        extra_env: Chart-internal env vars injected into every poiesis-owned
+            container (database DSN, S3 creds, etc.). Populated by the API
+            from Settings; not directly operator-controllable.
+        taskpod_extra_env: Operator-supplied env vars injected into every
+            poiesis-owned container (trec/tif/tof/ack). Sourced from
+            ``taskpods.extraEnv`` in the chart. Executors are *not*
+            covered by this — operators shouldn't silently mutate the
+            environment of user-supplied images.
+        taskpod_extra_volumes: Operator-supplied volumes appended to every
+            TaskPod's ``spec.volumes``. Sourced from
+            ``taskpods.extraVolumes``. Each entry is a dict shaped like
+            a Kubernetes V1Volume.
+        taskpod_extra_volume_mounts: Operator-supplied volume mounts
+            appended to every container (poiesis-owned AND executors,
+            because the reference-data use case requires executors to see
+            the mount). Each entry is a dict shaped like V1VolumeMount.
     """
 
     taskpod_namespace: str
@@ -173,6 +187,9 @@ class RuntimeConfig:
     recorder_resources: V1ResourceRequirements | None = None
     ack_resources: V1ResourceRequirements | None = None
     extra_env: list[V1EnvVar] = field(default_factory=list)
+    taskpod_extra_env: list[V1EnvVar] = field(default_factory=list)
+    taskpod_extra_volumes: list[dict[str, Any]] = field(default_factory=list)
+    taskpod_extra_volume_mounts: list[dict[str, Any]] = field(default_factory=list)
 
 
 def build_taskpod_job(
@@ -354,7 +371,10 @@ def _build_job(
     """Construct the Job that wraps the TaskPod."""
     init_containers = _build_init_containers(task, config)
     main_containers = [_build_ack_container(task, config)]
-    volumes = [
+    # ``Any`` because operator extras come in as raw dicts; the kubernetes
+    # client's serialiser walks both V1Volume instances and dicts and
+    # Kubernetes admission validates the actual shape.
+    volumes: list[Any] = [
         V1Volume(
             name=PVC_VOLUME_NAME,
             persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
@@ -372,6 +392,7 @@ def _build_job(
                 ),
             )
         )
+    volumes.extend(config.taskpod_extra_volumes)
 
     pod_spec = V1PodSpec(
         init_containers=init_containers,
@@ -433,7 +454,7 @@ def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
         command=["poiesis", "trec", "run", "--task-id", _require_id(task)],
-        env=_downward_api_env() + list(config.extra_env),
+        env=_downward_api_env() + _poiesis_env(config),
         volume_mounts=_poiesis_mounts(config),
         resources=config.recorder_resources,
         security_context=_poiesis_security_context(config),
@@ -494,10 +515,20 @@ def _filer_env(config: RuntimeConfig) -> list[V1EnvVar]:
     """Env vars TIF/TOF need.
 
     The mount path is *not* an operator knob — filer code reads
-    ``poiesis.core.constants.FILER_PVC_PATH`` directly. Only the DB DSN
-    and S3 creds come through here from RuntimeConfig.extra_env.
+    ``poiesis.core.constants.FILER_PVC_PATH`` directly. The chart-internal
+    DB DSN + S3 creds, plus operator extras, come through ``_poiesis_env``.
     """
-    return list(config.extra_env)
+    return _poiesis_env(config)
+
+
+def _poiesis_env(config: RuntimeConfig) -> list[V1EnvVar]:
+    """Env list shared by every poiesis-owned container.
+
+    Chart-internal env (DATABASE_URL, AWS creds, etc.) first; operator
+    extras second. Settings rejects collisions between the two sets at
+    api startup so the order here is informational, not load-bearing.
+    """
+    return [*config.extra_env, *config.taskpod_extra_env]
 
 
 def _build_executor(
@@ -518,7 +549,7 @@ def _build_executor(
         command=list(executor.command),
         working_dir=executor.workdir,
         env=env or None,
-        volume_mounts=[_pvc_mount()],
+        volume_mounts=_executor_mounts(config),
         stdin=bool(executor.stdin),
     )
 
@@ -546,9 +577,15 @@ def _pvc_mount() -> V1VolumeMount:
     return V1VolumeMount(name=PVC_VOLUME_NAME, mount_path=FILER_PVC_PATH)
 
 
-def _poiesis_mounts(config: RuntimeConfig) -> list[V1VolumeMount]:
-    """Volume mounts every poiesis-owned container that touches Postgres gets."""
-    mounts = [_pvc_mount()]
+def _poiesis_mounts(config: RuntimeConfig) -> list[Any]:
+    """Volume mounts every poiesis-owned container that touches Postgres gets.
+
+    Includes operator-supplied extras (``taskpods.extraVolumeMounts``).
+    Return type is ``list[Any]`` because the kubernetes client tolerates
+    dict entries inline; we keep operator dicts as-is rather than
+    round-tripping through V1VolumeMount.
+    """
+    mounts: list[Any] = [_pvc_mount()]
     if config.postgres_ca_configmap:
         mounts.append(
             V1VolumeMount(
@@ -557,7 +594,18 @@ def _poiesis_mounts(config: RuntimeConfig) -> list[V1VolumeMount]:
                 read_only=True,
             )
         )
+    mounts.extend(config.taskpod_extra_volume_mounts)
     return mounts
+
+
+def _executor_mounts(config: RuntimeConfig) -> list[Any]:
+    """Volume mounts for an executor (user-supplied) container.
+
+    Executors get the PVC for staging files and the operator-supplied
+    ``taskpods.extraVolumeMounts`` — the reference-data use case
+    explicitly requires the mount to reach user code.
+    """
+    return [_pvc_mount(), *config.taskpod_extra_volume_mounts]
 
 
 def _poiesis_security_context(config: RuntimeConfig) -> V1SecurityContext | None:

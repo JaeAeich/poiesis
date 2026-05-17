@@ -41,3 +41,6 @@ taskpods:
     maxSizeGi: 100
     accessModes:
       - ReadWriteOnce
+  extraEnv: []
+  extraVolumes: []
+  extraVolumeMounts: []

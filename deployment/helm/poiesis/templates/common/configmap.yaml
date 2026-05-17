@@ -52,6 +52,21 @@ data:
   POIESIS_JOB_TTL_SECONDS: {{ .Values.taskpods.persistence.retainAfterSeconds | quote }}
   {{- end }}
 
+  # ---- Operator-supplied TaskPod extensions ---------------------------------
+  # Serialised as JSON arrays so the API can decode them at startup. Empty
+  # lists are omitted entirely; the runtime defaults to [] when unset.
+  # Reserved-name collisions (env starting with POIESIS_, volumes named
+  # task-data/postgres-ca/tmp) are rejected at API startup.
+  {{- with .Values.taskpods.extraEnv }}
+  POIESIS_TASKPOD_EXTRA_ENV: {{ toJson . | quote }}
+  {{- end }}
+  {{- with .Values.taskpods.extraVolumes }}
+  POIESIS_TASKPOD_EXTRA_VOLUMES: {{ toJson . | quote }}
+  {{- end }}
+  {{- with .Values.taskpods.extraVolumeMounts }}
+  POIESIS_TASKPOD_EXTRA_VOLUME_MOUNTS: {{ toJson . | quote }}
+  {{- end }}
+
   {{- with .Values.s3.endpoint }}
   AWS_ENDPOINT_URL: {{ . | quote }}
   {{- end }}

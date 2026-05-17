@@ -120,7 +120,10 @@
       "additionalProperties": false,
       "required": ["persistence"],
       "properties": {
-        "namespace":   { "type": "string" },
+        "namespace":         { "type": "string" },
+        "extraEnv":          { "type": "array", "items": { "type": "object" } },
+        "extraVolumes":      { "type": "array", "items": { "type": "object" } },
+        "extraVolumeMounts": { "type": "array", "items": { "type": "object" } },
         "persistence": {
           "type": "object",
           "additionalProperties": false,

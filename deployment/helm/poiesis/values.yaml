@@ -298,6 +298,34 @@ taskpods:
     # Job and PVC until manually deleted (audit-retention deployments).
     retainAfterSeconds: 3600
 
+  # Operator-supplied TaskPod extensions. Append to every per-task pod.
+  #
+  # env / volumes inject into poiesis-owned containers (trec / tif / tof).
+  # volumeMounts additionally inject into executor containers because the
+  # primary use case is read-only reference data that user code must see.
+  #
+  # Reserved names rejected at API startup:
+  #   env:     DATABASE_URL, AWS_*, anything prefixed POIESIS_
+  #   volume:  task-data, postgres-ca, tmp
+  #
+  # Total serialised JSON size is capped at ~32 KiB (Kubernetes env-var
+  # limit). For typical extras this is plenty; very large extension sets
+  # should use a mounted ConfigMap instead.
+  extraEnv: []
+  # - name: SENTRY_DSN
+  #   value: https://...
+
+  extraVolumes: []
+  # - name: ref-grch38
+  #   persistentVolumeClaim:
+  #     claimName: ref-grch38-ro
+  #     readOnly: true
+
+  extraVolumeMounts: []
+  # - name: ref-grch38
+  #   mountPath: /ref/grch38
+  #   readOnly: true
+
 # -----------------------------------------------------------------------------
 # NetworkPolicy
 # -----------------------------------------------------------------------------

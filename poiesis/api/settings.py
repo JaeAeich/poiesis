@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from typing import Any
 
 from kubernetes.client import V1EnvVar
 from pydantic import BaseModel, Field
@@ -69,6 +70,120 @@ def _parse_json_object_env(name: str) -> dict[str, str]:
         logger.warning("%s must encode a JSON object; ignoring", name)
         return {}
     return {str(k): str(v) for k, v in parsed.items()}
+
+
+def _parse_json_array_env(name: str) -> list[dict[str, Any]]:
+    """JSON-array-of-objects env value → list[dict].
+
+    Empty/unset returns []. Invalid JSON or wrong shape raises so a
+    misconfigured chart fails the api pod startup with a clear message.
+    Used for operator-supplied taskpod extras (env / volumes /
+    volume_mounts) where silently dropping a malformed entry would be
+    worse than a loud failure.
+    """
+    raw = os.environ.get(name, "")
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{name} is not valid JSON: {exc}") from exc
+    if not isinstance(parsed, list):
+        raise TypeError(f"{name} must encode a JSON array")
+    items: list[dict[str, Any]] = []
+    for idx, entry in enumerate(parsed):
+        if not isinstance(entry, dict):
+            raise TypeError(f"{name}[{idx}] must be a JSON object")
+        items.append({str(k): v for k, v in entry.items()})
+    return items
+
+
+#: Env-var names operators cannot redefine via ``taskpods.extraEnv``.
+#: Collisions are rejected at Settings construction so the API pod fails
+#: to start with a clear message rather than producing duplicate-env
+#: rejection at every task submit.
+_RESERVED_ENV_NAMES: frozenset[str] = frozenset(
+    {
+        "DATABASE_URL",
+        "AWS_ENDPOINT_URL",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_REGION",
+        "POIESIS_POD_NAME",
+        "POIESIS_POD_NAMESPACE",
+    }
+)
+_RESERVED_ENV_PREFIXES: tuple[str, ...] = ("POIESIS_",)
+
+#: Volume names the chart already uses; operator extras cannot reuse these.
+_RESERVED_VOLUME_NAMES: frozenset[str] = frozenset({"task-data", "postgres-ca", "tmp"})
+
+
+def _check_reserved_env(entries: list[dict[str, Any]]) -> None:
+    """Reject operator-supplied env that clashes with chart-internal names."""
+    for idx, entry in enumerate(entries):
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError(
+                f"POIESIS_TASKPOD_EXTRA_ENV[{idx}] missing required 'name'"
+            )
+        if name in _RESERVED_ENV_NAMES or any(
+            name.startswith(p) for p in _RESERVED_ENV_PREFIXES
+        ):
+            raise ValueError(
+                f"POIESIS_TASKPOD_EXTRA_ENV[{idx}].name={name!r} collides with a "
+                "chart-internal env var; pick a different name"
+            )
+
+
+def _check_reserved_volume(entries: list[dict[str, Any]], setting_name: str) -> None:
+    """Reject operator-supplied volume/mount entries with reserved names."""
+    for idx, entry in enumerate(entries):
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"{setting_name}[{idx}] missing required 'name'")
+        if name in _RESERVED_VOLUME_NAMES:
+            raise ValueError(
+                f"{setting_name}[{idx}].name={name!r} is reserved by the chart"
+            )
+
+
+def _parse_and_check_env_extras() -> list[dict[str, Any]]:
+    """Parse POIESIS_TASKPOD_EXTRA_ENV and reject reserved-name collisions."""
+    entries = _parse_json_array_env("POIESIS_TASKPOD_EXTRA_ENV")
+    _check_reserved_env(entries)
+    return entries
+
+
+def _parse_and_check_volume_extras(name: str) -> list[dict[str, Any]]:
+    """Parse a volume/mount extras env and reject reserved-name collisions."""
+    entries = _parse_json_array_env(name)
+    _check_reserved_volume(entries, name)
+    return entries
+
+
+def _entries_to_envvars(entries: list[dict[str, Any]]) -> list[V1EnvVar]:
+    """Convert JSON-shaped env entries to V1EnvVar instances.
+
+    Supports the two common shapes:
+    {"name": "X", "value": "1"}
+    {"name": "X", "valueFrom": {"secretKeyRef": {...}}}
+    """
+    out: list[V1EnvVar] = []
+    for entry in entries:
+        name = entry["name"]
+        if "value" in entry:
+            out.append(V1EnvVar(name=name, value=str(entry["value"])))
+        elif "valueFrom" in entry or "value_from" in entry:
+            out.append(
+                V1EnvVar(
+                    name=name,
+                    value_from=entry.get("valueFrom") or entry.get("value_from"),
+                )
+            )  # type: ignore[arg-type]
+        else:
+            out.append(V1EnvVar(name=name))
+    return out
 
 
 DEFAULT_POIESIS_IMAGE = "docker.io/jaeaeich/poiesis:latest"
@@ -155,6 +270,22 @@ class Settings(BaseModel):
     postgres_ca_configmap: str | None = Field(
         default_factory=lambda: os.environ.get("POIESIS_POSTGRES_CA_CONFIGMAP") or None,
     )
+    # Operator-supplied TaskPod extensions, JSON-encoded via the chart.
+    # All three are rejected on collision with chart-internal names at
+    # construction so the api pod fails fast on misconfiguration.
+    taskpod_extra_env: list[dict[str, Any]] = Field(
+        default_factory=_parse_and_check_env_extras,
+    )
+    taskpod_extra_volumes: list[dict[str, Any]] = Field(
+        default_factory=lambda: _parse_and_check_volume_extras(
+            "POIESIS_TASKPOD_EXTRA_VOLUMES"
+        ),
+    )
+    taskpod_extra_volume_mounts: list[dict[str, Any]] = Field(
+        default_factory=lambda: _parse_and_check_volume_extras(
+            "POIESIS_TASKPOD_EXTRA_VOLUME_MOUNTS"
+        ),
+    )
     aws_endpoint_url: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_ENDPOINT_URL") or None,
     )
@@ -195,6 +326,9 @@ class Settings(BaseModel):
             image_pull_secrets=self.image_pull_secrets,
             postgres_ca_configmap=self.postgres_ca_configmap,
             extra_env=env,
+            taskpod_extra_env=_entries_to_envvars(self.taskpod_extra_env),
+            taskpod_extra_volumes=self.taskpod_extra_volumes,
+            taskpod_extra_volume_mounts=self.taskpod_extra_volume_mounts,
         )
 
 
