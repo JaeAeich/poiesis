@@ -40,6 +40,16 @@ pre-commit:
       exclude: "docs/app/public/**"
       run: mise x -- typos {staged_files}
 
+    helm-lint:
+      glob: "deployment/helm/**"
+      run: mise run chart:lint
+    chart-schema:
+      glob:
+        - "deployment/helm/poiesis/values.yaml"
+        - "deployment/helm/poiesis/values.schema.json"
+        - "deployment/helm/poiesis/ci/*.yaml"
+      run: mise x -- check-jsonschema --schemafile deployment/helm/poiesis/values.schema.json deployment/helm/poiesis/ci/full-values.yaml
+
 commit-msg:
   commands:
     commitlint:

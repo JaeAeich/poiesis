@@ -1,8 +1,19 @@
 [env]
-_.python.venv = { create = true, path = ".venv" }
+_.python.venv = {create = true, path = ".venv"}
 
 [shell_alias]
 mr = "mise run"
+
+[tasks."chart:lint"]
+description = "helm lint + draft 2020-12 schema validation"
+run = [
+  "mise x -- check-jsonschema --schemafile deployment/helm/poiesis/values.schema.json deployment/helm/poiesis/ci/full-values.yaml",
+  "mise x -- helm lint deployment/helm/poiesis -f deployment/helm/poiesis/ci/lint-values.yaml --strict",
+]
+
+[tasks."chart:render"]
+description = "Render the chart with the CI lint-values overlay"
+run = "mise x -- helm template t deployment/helm/poiesis -f deployment/helm/poiesis/ci/lint-values.yaml"
 
 [tasks.checks]
 description = "Run all pre-commit hooks + deptry + ty (advisory)"
@@ -13,16 +24,16 @@ run = [
 ]
 
 [tasks."db:down"]
-description = "Roll back one migration against $POSTGRES_DSN"
-run = 'mise x -- migrate -path ./migrations -database "$POSTGRES_DSN" down 1'
+description = "Roll back one migration against $DATABASE_URL"
+run = 'mise x -- migrate -path ./migrations -database "$DATABASE_URL" down 1'
 
 [tasks."db:new"]
 description = "Scaffold a new migration pair: mise run db:new <name>"
 run = 'mise x -- migrate create -ext sql -dir ./migrations -seq -digits 6 {{arg(name="name")}}'
 
 [tasks."db:up"]
-description = "Apply all pending migrations against $POSTGRES_DSN"
-run = 'mise x -- migrate -path ./migrations -database "$POSTGRES_DSN" up'
+description = "Apply all pending migrations against $DATABASE_URL"
+run = 'mise x -- migrate -path ./migrations -database "$DATABASE_URL" up'
 
 [tasks.format]
 description = "Run ruff format"
@@ -42,11 +53,13 @@ run = "uv run ty check poiesis"
 
 [tools]
 gomigrate = "4.19.1"
+helm = "3.18.6"
 lefthook = "2.1.6"
 "npm:@commitlint/cli" = "20.4.1"
 "npm:@commitlint/config-conventional" = "20.4.1"
 "npm:eclint" = "2.8.1"
 "npm:markdownlint-cli" = "0.47.0"
+"pipx:check-jsonschema" = "0.37.2"
 "pipx:toml-sort" = "0.23.1"
 python = "3.13.13"
 taplo = "0.10.0"
