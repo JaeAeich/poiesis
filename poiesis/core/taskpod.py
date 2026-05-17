@@ -36,6 +36,7 @@ from kubernetes.client import (
     V1EnvVarSource,
     V1Job,
     V1JobSpec,
+    V1LocalObjectReference,
     V1ObjectFieldSelector,
     V1ObjectMeta,
     V1OwnerReference,
@@ -110,6 +111,8 @@ class RuntimeConfig:
         pod_security_enforce: `restricted` | `baseline` | `off`. Applies to
             poiesis-owned containers only; executor containers run user
             images and are deliberately exempt.
+        image_pull_secrets: Secret names attached to every TaskPod for
+            pulling images from private registries.
         filer_resources: Resource requests/limits for TIF/TOF containers.
         recorder_resources: Resource requests/limits for the TRec sidecar.
         ack_resources: Resource requests/limits for the terminal `ack`
@@ -129,6 +132,7 @@ class RuntimeConfig:
     active_deadline_seconds: int = 3600
     grace_period_seconds: int = 30
     pod_security_enforce: PodSecurityEnforce = PodSecurityEnforce.RESTRICTED
+    image_pull_secrets: tuple[str, ...] = ()
     filer_resources: V1ResourceRequirements | None = None
     recorder_resources: V1ResourceRequirements | None = None
     ack_resources: V1ResourceRequirements | None = None
@@ -290,6 +294,9 @@ def _build_job(
         service_account_name=config.taskpod_service_account,
         termination_grace_period_seconds=config.grace_period_seconds,
         volumes=volumes,
+        image_pull_secrets=(
+            [V1LocalObjectReference(name=n) for n in config.image_pull_secrets] or None
+        ),
     )
 
     return V1Job(

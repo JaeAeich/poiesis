@@ -54,6 +54,14 @@ class Settings(BaseModel):
             os.environ.get("POIESIS_POD_SECURITY_ENFORCE", "restricted")
         ),
     )
+    # Comma-separated list of Secrets to attach as imagePullSecrets on every TaskPod.
+    image_pull_secrets: tuple[str, ...] = Field(
+        default_factory=lambda: tuple(
+            s.strip()
+            for s in os.environ.get("POIESIS_IMAGE_PULL_SECRETS", "").split(",")
+            if s.strip()
+        ),
+    )
     aws_endpoint_url: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_ENDPOINT_URL") or None,
     )
@@ -86,6 +94,7 @@ class Settings(BaseModel):
             pvc_access_mode=self.pvc_access_mode,
             taskpod_service_account=self.taskpod_service_account,
             pod_security_enforce=self.pod_security_enforce,
+            image_pull_secrets=self.image_pull_secrets,
             extra_env=env,
         )
 
