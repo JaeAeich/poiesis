@@ -36,8 +36,8 @@ if TYPE_CHECKING:
 from poiesis.api.tes.models import TesState
 from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.pod_status import (
-    ACK_NAME,
-    PodTerminationReason,
+    extract_pending_failure_reason,
+    extract_terminal_reason,
     pod_terminated_terminal,
 )
 from poiesis.db import state as state_db
@@ -203,7 +203,7 @@ async def _handle_pod(
     if phase not in {"succeeded", "failed"}:
         return
 
-    pod_reason = _derive_pod_reason(pod)
+    pod_reason = extract_terminal_reason(pod)
     proposed, reason = pod_terminated_terminal(pod_reason)
     async with pool.acquire() as conn:
         # asyncpg's pool yields `PoolConnectionProxy` which forwards every
@@ -246,7 +246,7 @@ async def _sweep_pending(
         task_id = _task_id_from_pod(pod_dict)
         if task_id is None:
             continue
-        reason = _pending_failure_reason(pod_dict)
+        reason = extract_pending_failure_reason(pod_dict)
         async with pool.acquire() as conn:
             result = await state_db.write_terminal_state(
                 cast("asyncpg.Connection", conn),
@@ -281,75 +281,11 @@ def _pending_too_long(pod: Mapping[str, Any], now: datetime) -> bool:
     return (now - start).total_seconds() > _PENDING_TIMEOUT_SECONDS
 
 
-def _pending_failure_reason(pod: Mapping[str, Any]) -> str:
-    """Best-effort human-readable cause for a stuck-Pending pod."""
-    status = pod.get("status") or {}
-
-    # Container-level waiting reasons (image pull, config, etc).
-    init_statuses = (
-        status.get("initContainerStatuses")
-        or status.get("init_container_statuses")
-        or []
-    )
-    container_statuses = (
-        status.get("containerStatuses") or status.get("container_statuses") or []
-    )
-    for cs in (*init_statuses, *container_statuses):
-        waiting = (cs.get("state") or {}).get("waiting") or {}
-        reason = waiting.get("reason")
-        if reason and reason not in {"PodInitializing", "ContainerCreating"}:
-            return str(reason)
-
-    # Pod-level scheduling failure (FailedScheduling, Unschedulable).
-    for cond in status.get("conditions") or []:
-        if cond.get("type") == "PodScheduled" and cond.get("status") == "False":
-            return str(cond.get("reason") or "Unschedulable")
-
-    return "Pending timeout"
-
-
 def _task_id_from_pod(pod: Mapping[str, Any]) -> str | None:
     """Return the task UUID this Pod represents, if labelled."""
     metadata = pod.get("metadata") or {}
     labels = metadata.get("labels") or {}
     return labels.get(_TASK_LABEL)
-
-
-def _derive_pod_reason(pod: Mapping[str, Any]) -> str | None:
-    """Map kubelet's Pod-level reason to one of `PodTerminationReason.*.value`.
-
-    Most Pod terminations carry a `status.reason` we can pass through; we
-    only translate the common categories TRec can't observe (NodeLost,
-    Evicted, DeadlineExceeded). The non-init `pause` container completing
-    successfully means the Pod ran to terminal cleanly.
-    """
-    status = pod.get("status") or {}
-    raw_reason = status.get("reason")
-    if raw_reason == "Evicted":
-        return PodTerminationReason.EVICTED.value
-    if raw_reason == "NodeLost":
-        return PodTerminationReason.NODE_LOST.value
-    if raw_reason == "DeadlineExceeded":
-        return PodTerminationReason.DEADLINE_EXCEEDED.value
-    if status.get("phase") == "Succeeded":
-        return PodTerminationReason.COMPLETED.value
-
-    container_statuses = (
-        status.get("containerStatuses") or status.get("container_statuses") or []
-    )
-    init_statuses = (
-        status.get("initContainerStatuses")
-        or status.get("init_container_statuses")
-        or []
-    )
-    for cs in (*init_statuses, *container_statuses):
-        if cs.get("name") == ACK_NAME:
-            continue
-        terminated = (cs.get("state") or {}).get("terminated") or {}
-        cs_reason = terminated.get("reason")
-        if cs_reason:
-            return str(cs_reason)
-    return PodTerminationReason.ERROR.value
 
 
 async def _wait_or_cancel(cancelled: asyncio.Event, seconds: float) -> None:

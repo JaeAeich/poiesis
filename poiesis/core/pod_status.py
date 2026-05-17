@@ -329,18 +329,87 @@ def pod_terminated_terminal(
     return TesState.EXECUTOR_ERROR, pod_reason
 
 
+def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
+    """Map a Pod's status to one of `PodTerminationReason.*.value`.
+
+    Reads the Pod-level `status.reason` first (NodeLost, Evicted,
+    DeadlineExceeded all surface here), falls back to scanning container
+    terminated states for a more specific reason. Skips the `ack`
+    container so an `ack: exit 0` after a real failure doesn't shadow
+    the underlying error.
+    """
+    status = pod.get("status") or {}
+    raw_reason = status.get("reason")
+    if raw_reason == "Evicted":
+        return PodTerminationReason.EVICTED.value
+    if raw_reason == "NodeLost":
+        return PodTerminationReason.NODE_LOST.value
+    if raw_reason == "DeadlineExceeded":
+        return PodTerminationReason.DEADLINE_EXCEEDED.value
+    if status.get("phase") == "Succeeded":
+        return PodTerminationReason.COMPLETED.value
+
+    for cs in _iter_container_statuses(status):
+        if cs.get("name") == ACK_NAME:
+            continue
+        terminated = (cs.get("state") or {}).get("terminated") or {}
+        cs_reason = terminated.get("reason")
+        if cs_reason:
+            return str(cs_reason)
+    return PodTerminationReason.ERROR.value
+
+
+def extract_pending_failure_reason(pod: Mapping[str, Any]) -> str:
+    """Best-effort human-readable cause for a stuck-Pending Pod.
+
+    Looks at container waiting reasons first (image pull, config error),
+    then at the `PodScheduled` condition for cluster-side scheduling
+    failures. Returns `"Pending timeout"` when neither yields a useful
+    reason.
+    """
+    status = pod.get("status") or {}
+
+    for cs in _iter_container_statuses(status):
+        waiting = (cs.get("state") or {}).get("waiting") or {}
+        reason = waiting.get("reason")
+        if reason and reason not in {"PodInitializing", "ContainerCreating"}:
+            return str(reason)
+
+    for cond in status.get("conditions") or []:
+        if cond.get("type") == "PodScheduled" and cond.get("status") == "False":
+            return str(cond.get("reason") or "Unschedulable")
+
+    return "Pending timeout"
+
+
+def _iter_container_statuses(
+    pod_status: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Yield every container status on a Pod, init + regular, in order.
+
+    Handles both camelCase and snake_case keys because the kubernetes
+    Python client serialises differently depending on whether the dict
+    came from `to_dict()` or a raw watch event.
+    """
+    init_statuses = (
+        pod_status.get("initContainerStatuses")
+        or pod_status.get("init_container_statuses")
+        or []
+    )
+    container_statuses = (
+        pod_status.get("containerStatuses")
+        or pod_status.get("container_statuses")
+        or []
+    )
+    return [*init_statuses, *container_statuses]
+
+
 def _collect_container_reasons(pod_status: Mapping[str, Any]) -> set[str]:
     """Gather non-empty terminated reasons across all containers."""
     reasons: set[str] = set()
-    for field in (
-        "initContainerStatuses",
-        "init_container_statuses",
-        "containerStatuses",
-        "container_statuses",
-    ):
-        for cs in pod_status.get(field) or []:
-            terminated = (cs.get("state") or {}).get("terminated") or {}
-            reason = terminated.get("reason")
-            if reason:
-                reasons.add(reason)
+    for cs in _iter_container_statuses(pod_status):
+        terminated = (cs.get("state") or {}).get("terminated") or {}
+        reason = terminated.get("reason")
+        if reason:
+            reasons.add(reason)
     return reasons
