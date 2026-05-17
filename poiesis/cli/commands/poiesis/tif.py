@@ -9,7 +9,9 @@ import asyncpg
 import click
 
 from poiesis.cli.commands.poiesis.base import BaseCommand
-from poiesis.core.services.filer.filer_strategy_factory import STRATEGY_MAP
+from poiesis.core.services.filer.filer_strategy_factory import (
+    supported_input_schemes,
+)
 from poiesis.core.services.filer.tif import Tif
 from poiesis.db import tasks as tasks_db
 
@@ -41,9 +43,7 @@ class TifCommand(BaseCommand):
         info.update(
             {
                 "description": self.description,
-                "supported_protocols": ", ".join(
-                    v.name for v in STRATEGY_MAP.values() if v.input
-                ),
+                "supported_protocols": ", ".join(supported_input_schemes()),
             }
         )
         return dict(

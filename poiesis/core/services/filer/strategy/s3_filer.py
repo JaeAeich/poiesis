@@ -11,13 +11,16 @@ import boto3
 from botocore.config import Config
 
 from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
+from poiesis.core.services.filer.strategy.filer_strategy import (
+    InputFilerStrategy,
+    OutputFilerStrategy,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class S3FilerStrategy(FilerStrategy):
-    """S3 filer strategy."""
+class S3FilerStrategy(InputFilerStrategy, OutputFilerStrategy):
+    """S3 filer strategy — handles both inputs and outputs."""
 
     def __init__(self, payload: TesInput | TesOutput):
         """Initialize S3 filer strategy.
@@ -129,138 +132,85 @@ class S3FilerStrategy(FilerStrategy):
         logger.debug(f"Raw S3 key '{raw_key}' sanitized to prefix '{self.key}'")
 
     async def download_input_file(self, container_path: str) -> None:
-        """Download file from S3 or Minio and mount to PVC.
-
-        Download file from S3 or Minio to the path location which is mounted to PVC.
-
-        Args:
-            container_path: The path inside the container where the file needs to be
-                downloaded to.
-        """
+        """Download file from S3 or MinIO onto the PVC at `container_path`."""
         assert self.input is not None
-        assert self.input.url is not None
-
         try:
             self.client.download_file(self.bucket, self.key, container_path)
             logger.info("Downloaded file from %s to %s", self.input.url, container_path)
-        except Exception as e:
-            logger.error(f"Error downloading file: {e}")
+        except Exception:
+            logger.exception("S3 download failed")
             raise
 
     async def download_input_directory(self, container_path: str) -> None:
-        """Download a directory from S3 or Minio and mount to PVC.
-
-        Download directory from S3 or Minio to the path location which is mounted to
-        PVC. I.e if the path is `bucket_name/path_name` then it download all the files
-        in `bucket_name/path_name` to container_path.
-
-        Args:
-            container_path: The path inside the container where the file needs to be
-                downloaded to.
-        """
+        """Recursively download every object under `self.key` to the PVC."""
+        assert self.input is not None
+        prefix = (
+            self.key if self.key.endswith("/") else (f"{self.key}/" if self.key else "")
+        )
         try:
-            prefix = self.key
-            if prefix and not prefix.endswith("/"):
-                prefix += "/"
-            elif not prefix:
-                prefix = ""
-
             paginator = self.client.get_paginator("list_objects_v2")
-
             for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
                 for obj in page.get("Contents", []):
                     s3_key = obj["Key"]
-
-                    # Skip objects that don't start with prefix
                     if not s3_key.startswith(prefix):
                         continue
-
-                    # Relative path from prefix
                     relative_path = s3_key[len(prefix) :] if prefix else s3_key
                     local_path = os.path.join(container_path, relative_path)
-
-                    # Ensure local directory exists
                     Path(local_path).parent.mkdir(parents=True, exist_ok=True)
-
                     logger.info(
-                        f"Downloading s3://{self.bucket}/{s3_key} to {local_path}"
+                        "Downloading s3://%s/%s to %s",
+                        self.bucket,
+                        s3_key,
+                        local_path,
                     )
                     self.client.download_file(self.bucket, s3_key, local_path)
-
-            assert self.input is not None
-            assert self.input.url is not None
-
             logger.info(
                 "Downloaded directory from %s to %s",
                 self.input.url,
                 container_path,
             )
-
-        except Exception as e:
-            logger.error(f"Error downloading directory: {e}")
+        except Exception:
+            logger.exception("S3 directory download failed")
             raise
 
     async def upload_output_file(self, container_path: str) -> None:
-        """Upload file to S3 or Minio created by executors, mounted to PVC.
-
-        Args:
-            container_path: The path inside the container from where the file needs to
-                be uploaded from.
-        """
+        """Upload a single output file from the PVC to S3 / MinIO."""
         assert self.output is not None
-
+        if not os.path.exists(container_path):
+            raise FileNotFoundError(f"Output file not found: {container_path}")
         try:
-            if not os.path.exists(container_path):
-                logger.error(f"Output file not found: {container_path}")
-                raise FileNotFoundError(f"Output file not found: {container_path}")
-
             self.client.upload_file(container_path, self.bucket, self.key)
-            logger.info(f"Uploaded {container_path} to {self.output.url}")
-        except Exception as e:
-            logger.error(f"Error uploading file: {e}")
+            logger.info("Uploaded %s to %s", container_path, self.output.url)
+        except Exception:
+            logger.exception("S3 upload failed")
             raise
 
     async def upload_output_directory(self, container_path: str) -> None:
-        """Upload directory to S3 or Minio created by executors, mounted to PVC.
-
-        Args:
-            container_path: The path inside the container from where the directory
-                needs to be uploaded.
-        """
+        """Recursively upload `container_path` to S3 / MinIO under `self.key`."""
+        assert self.output is not None
+        if not os.path.exists(container_path):
+            raise FileNotFoundError(f"Output directory not found: {container_path}")
+        prefix = self.key if self.key.endswith("/") else f"{self.key}/"
         try:
-            if not os.path.exists(container_path):
-                logger.error(f"Output directory not found: {container_path}")
-                raise FileNotFoundError(f"Output directory not found: {container_path}")
-
             for root, _, files in os.walk(container_path):
                 for file in files:
                     local_file_path = os.path.join(root, file)
-
-                    # Get relative path to maintain directory structure
                     relative_path = os.path.relpath(local_file_path, container_path)
-
-                    # Construct the destination key in S3
-                    prefix = self.key if self.key.endswith("/") else f"{self.key}/"
-                    s3_key = prefix + relative_path.replace(
-                        "\\", "/"
-                    )  # Ensure POSIX-style key
-
+                    s3_key = prefix + relative_path.replace("\\", "/")
                     logger.info(
-                        f"Uploading {local_file_path} to s3://{self.bucket}/{s3_key}",
+                        "Uploading %s to s3://%s/%s",
+                        local_file_path,
+                        self.bucket,
+                        s3_key,
                     )
                     self.client.upload_file(local_file_path, self.bucket, s3_key)
-
-            assert self.output is not None
-            assert self.output.url is not None
-
             logger.info(
                 "Uploaded directory from %s to %s",
                 container_path,
                 self.output.url,
             )
-
-        except Exception as e:
-            logger.error(f"Error uploading directory: {e}")
+        except Exception:
+            logger.exception("S3 directory upload failed")
             raise
 
     async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):

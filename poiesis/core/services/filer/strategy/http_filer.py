@@ -1,30 +1,25 @@
-"""HTTP filer strategy module."""
+"""HTTP filer strategy — input-only.
+
+Per the TES spec, HTTP(S) URLs are only valid as inputs. Output to HTTP
+is not supported by the strategy interface; the factory rejects it.
+"""
 
 import requests
 
-from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
+from poiesis.api.tes.models import TesInput
+from poiesis.core.services.filer.strategy.filer_strategy import InputFilerStrategy
 
 
-class HttpFilerStrategy(FilerStrategy):
-    """Filer strategy for HTTP and HTTPS."""
+class HttpFilerStrategy(InputFilerStrategy):
+    """Filer strategy for HTTP and HTTPS inputs."""
 
-    def __init__(self, payload: TesInput | TesOutput):
-        """Initialize the HTTP filer strategy.
-
-        Args:
-            payload: The payload to instantiate the strategy
-                implementation.
-        """
+    def __init__(self, payload: TesInput):
+        """Initialise with the TES input."""
         super().__init__(payload)
-        self.input = self.payload
+        self.input = payload
 
-    async def download_input_file(self, container_path: str):
-        """Download the input file from the HTTP or HTTPS URI.
-
-        Args:
-            container_path: The path to download the file to.
-        """
+    async def download_input_file(self, container_path: str) -> None:
+        """Stream the input file from the HTTP(S) URL to `container_path`."""
         if self.input.url is None:
             raise ValueError("URL is required")
 
@@ -35,34 +30,8 @@ class HttpFilerStrategy(FilerStrategy):
                 if chunk:
                     f.write(chunk)
 
-    async def download_input_directory(self, container_path: str):
-        """Download the input directory from the HTTP or HTTPS URI.
-
-        Args:
-            container_path: The path to download the file to.
-        """
+    async def download_input_directory(self, container_path: str) -> None:
+        """HTTP directory listing is not standardised; refuse."""
         raise NotImplementedError(
-            "Downloading directory over HTTP or HTTPS is not supported"
+            "Downloading directories over HTTP/HTTPS is not supported"
         )
-
-    async def upload_output_file(self, container_path: str):
-        """Upload the output file to the HTTP or HTTPS URI.
-
-        Args:
-            output: The output file to upload.
-            container_path: The path to upload the file from.
-        """
-        raise NotImplementedError("Uploading to HTTP or HTTPS is not supported")
-
-    async def upload_output_directory(self, container_path: str):
-        """Upload the output directory to the HTTP or HTTPS URI.
-
-        Args:
-            output: The output file to upload.
-            container_path: The path to upload the file from.
-        """
-        raise NotImplementedError("Uploading to HTTP or HTTPS is not supported")
-
-    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
-        """Upload files using glob patterns."""
-        raise NotImplementedError("Uploading to HTTP or HTTPS is not supported")

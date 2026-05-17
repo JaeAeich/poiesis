@@ -6,13 +6,16 @@ import shutil
 from urllib.parse import urlparse
 
 from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
+from poiesis.core.services.filer.strategy.filer_strategy import (
+    InputFilerStrategy,
+    OutputFilerStrategy,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class LocalFilerStrategy(FilerStrategy):
-    """Local filer strategy."""
+class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
+    """Local-filesystem filer strategy — handles both inputs and outputs."""
 
     def __init__(self, payload: TesInput | TesOutput):
         """Initialize the local filer strategy.

@@ -1,4 +1,15 @@
-"""Filer strategy module."""
+"""Filer strategy interfaces.
+
+Two narrow interfaces — `InputFilerStrategy` and `OutputFilerStrategy` —
+split out from a shared `BaseFilerStrategy` that carries the path-mapping
+and glob helpers. Each concrete strategy implements only the interface(s)
+its protocol actually supports:
+
+The factory dispatches on (scheme, direction) and refuses combinations
+the type system cannot satisfy.
+"""
+
+from __future__ import annotations
 
 import logging
 import os
@@ -12,184 +23,130 @@ from poiesis.core.constants import FILER_PVC_PATH
 logger = logging.getLogger(__name__)
 
 
-class FilerStrategy(ABC):
-    """Filer strategy interface."""
+class BaseFilerStrategy:
+    """Shared infrastructure for every filer strategy.
+
+    Carries the path-mapping helpers (executor path → PVC-mounted path)
+    and the glob utilities used by output strategies. Holds no abstract
+    methods of its own — the input/output split is in the two
+    subclasses.
+    """
 
     def __init__(self, payload: TesInput | TesOutput):
-        """Initialize the filer strategy.
-
-        Args:
-            payload: input or output object from the TES task request.
-        """
+        """Initialise with the TES input or output the strategy will handle."""
         self.payload = payload
 
-    @abstractmethod
-    async def download_input_file(self, container_path: str):
-        """Download file from storage and mount to PVC.
-
-        Args:
-            container_path: The path inside the container from where the file needs to
-                be downloaded to the storage.
-        """
-
-    @abstractmethod
-    async def download_input_directory(self, container_path: str):
-        """Download the directory content from storage and mount to PVC.
-
-        Args:
-            container_path: The path inside the container from where the file needs to
-                be downloaded to the storage.
-        """
-
-    @abstractmethod
-    async def upload_output_file(self, container_path: str):
-        """Upload file to storage created by executors, mounted to PVC.
-
-        Args:
-            container_path: The path inside the container from where the file needs to
-                be uploaded to the storage.
-        """
-
-    @abstractmethod
-    async def upload_output_directory(self, container_path: str):
-        """Upload directory to storage created by executors, mounted to PVC.
-
-        Args:
-            container_path: The path inside the container from where the file needs to
-                be uploaded to the storage.
-        """
-
-    @abstractmethod
-    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
-        """Upload files and directories when wildcards are present.
-
-        Args:
-            glob_files: List of tuples containing (file_path, relative_path,
-                is_directory)
-        """
-
     def _get_container_path(self, path: str) -> str:
-        """Get the container path for the file.
+        """Translate an executor-visible path to its PVC-mounted equivalent.
 
-        For each path say `/data/f1/f2/file1`, the container path will be
-        `/transfer/f1/f2/file1`, this way this location can be mounted to PVC
-        at `/data` path, retaining the original path structure, ie `/data/f1/f2/file1`.
-
-        Note: This method creates the `container_path` if it doesn't exists.
-
-        Args:
-            path: The path of the file.
+        Given a TES `/data/f1/file1`, returns `/transfer/f1/file1` so the
+        filer pod can write to the PVC at the same logical location the
+        executor will later read it from. Creates parents as a side effect.
         """
-        container_path = os.path.join(
-            FILER_PVC_PATH,
-            path.lstrip("/"),
-        )
+        container_path = os.path.join(FILER_PVC_PATH, path.lstrip("/"))
         os.makedirs(os.path.dirname(container_path), exist_ok=True)
         return container_path
 
     def _get_path_as_in_exec_pod(self, path: str) -> str:
-        """Get the path of the file as it was in exec pod.
-
-        Note: This is done because file structure mounted in the filer pod
-            is different from that of the executor pod.
-
-        Args:
-            path: The string path obtained from glob.
-
-        Returns:
-            str: Path of the file as it was in the executor path.
-        """
+        """Reverse of `_get_container_path` — PVC path → executor-visible path."""
         pvc_base = FILER_PVC_PATH
         if path.startswith(pvc_base):
             return "/" + path[len(pvc_base) :].lstrip("/")
         return path
 
-    async def download(self):
-        """Download file from storage and mount to PVC.
+    def _path_contains_glob(self, path: str) -> bool:
+        """True if `path` contains any glob-significant character."""
+        return any(char in path for char in "*?[]{}")
 
-        Get the appropriate secrets, check permissions and download the file.
+    def _infer_base_path(self, path: str) -> str:
+        """Infer a `path_prefix` from a glob pattern.
+
+        Used as a fallback when a TES client supplies a glob output path
+        without an explicit `path_prefix`. Example: `/work/results/SRR*.fna`
+        infers `/work/results/`.
         """
+        if not self._path_contains_glob(path):
+            return os.path.dirname(path)
+
+        glob_pattern = re.compile(r"[\*\?\[\{]")
+        match = glob_pattern.search(path)
+        if not match:
+            return os.path.dirname(path)
+
+        pattern_start_index = match.start()
+        last_slash_index = path.rfind("/", 0, pattern_start_index)
+        return "/" if last_slash_index == -1 else path[: last_slash_index + 1]
+
+    def _get_glob_files(self, container_path: str) -> list[tuple[str, str, bool]]:
+        """Expand a glob path into `(path, relative_path, is_directory)` tuples.
+
+        Each tuple's relative_path has the output's `path_prefix` stripped,
+        ready to be appended to the destination URL. Each adapter's
+        `upload_glob` decides how to map those tuples onto its protocol.
+        """
+        assert isinstance(self.payload, TesOutput)
+        assert self.payload.path_prefix is not None
+        results: list[tuple[str, str, bool]] = []
+        for item in glob(container_path):
+            relative = (
+                self._get_path_as_in_exec_pod(item)
+                .removeprefix(self.payload.path_prefix)
+                .lstrip("/")
+            )
+            results.append((item, relative, os.path.isdir(item)))
+        return results
+
+
+class InputFilerStrategy(BaseFilerStrategy, ABC):
+    """Strategy that can stage TES inputs onto the shared task volume."""
+
+    @abstractmethod
+    async def download_input_file(self, container_path: str) -> None:
+        """Stage a single input file at `container_path`."""
+
+    @abstractmethod
+    async def download_input_directory(self, container_path: str) -> None:
+        """Stage an input directory tree at `container_path`."""
+
+    async def download(self) -> None:
+        """Dispatch to file or directory download based on payload type."""
         container_path = self._get_container_path(self.payload.path)
         if self.payload.type == TesFileType.FILE:
             await self.download_input_file(container_path)
         else:
             await self.download_input_directory(container_path)
 
-    def _get_glob_files(self, container_path: str) -> list[tuple[str, str, bool]]:
-        """Get the list of the files and directories from wildcards.
 
-        Note: tuple[0] is the path of the file/directory, tuple[1] is the path
-            from which the prefix `path_prefix` have been removed, and tuple[2] is
-            a boolean indicating if the item is a directory. Each protocol might
-            handle that URL differently, hence each `upload_glob` method should
-            take care of this URL based on its own implementation and requirement.
+class OutputFilerStrategy(BaseFilerStrategy, ABC):
+    """Strategy that can upload TES outputs from the shared task volume."""
 
-        Returns:
-            list[tuple[str, str, bool]]: List of tuple of file/directory path, its
-                prefix removed path that needs to be appended to url, and whether it's
-                a directory.
+    @abstractmethod
+    async def upload_output_file(self, container_path: str) -> None:
+        """Upload a single output file from `container_path`."""
+
+    @abstractmethod
+    async def upload_output_directory(self, container_path: str) -> None:
+        """Upload an output directory tree from `container_path`."""
+
+    @abstractmethod
+    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]) -> None:
+        """Upload the `(path, relative_path, is_directory)` tuples from a glob.
+
+        See `BaseFilerStrategy._get_glob_files` for the tuple shape.
         """
-        assert isinstance(self.payload, TesOutput)
-        assert self.payload.path_prefix is not None
-        _ret: list[tuple[str, str, bool]] = []
-        matched_items = glob(container_path)
 
-        for item in matched_items:
-            path_prefix = self.payload.path_prefix
-            _file_path = (
-                self._get_path_as_in_exec_pod(item)
-                .removeprefix(path_prefix)
-                .lstrip("/")
-            )
+    async def upload(self) -> None:
+        """Dispatch to glob, file, or directory upload.
 
-            is_directory = os.path.isdir(item)
-            _ret.append((item, _file_path, is_directory))
-
-        return _ret
-
-    def _path_contains_glob(self, path: str) -> bool:
-        """Checks if a path string contains glob-like characters."""
-        return any(char in path for char in "*?[]{}")
-
-    def _infer_base_path(self, path: str) -> str:
-        """Infers the base directory from a glob path.
-
-        This is used as the 'path_prefix' for calculating
-        relative upload paths. Fallback in case TES client
-        doesn't provide path_prefix but still has a glob pattern.
-
-        Example: '/work/results/SRR*.fna' -> '/work/results/'
-        """
-        if not self._path_contains_glob(path):
-            return os.path.dirname(path)
-
-        # Find the part of the path before the first wildcard.
-        glob_pattern = re.compile(r"[\*\?\[\{]")
-        match = glob_pattern.search(path)
-        if not match:
-            # Should be unreachable if _path_contains_glob is true, but defensive.
-            return os.path.dirname(path)
-
-        pattern_start_index = match.start()
-        # Find the last directory separator before the pattern.
-        last_slash_index = path.rfind("/", 0, pattern_start_index)
-
-        return "/" if last_slash_index == -1 else path[: last_slash_index + 1]
-
-    async def upload(self):
-        """Upload file to storage created by executors, mounted to PVC.
-
-        This method correctly dispatches to glob, file, or directory handlers
-        and includes robust logging and fallback mechanisms.
+        Glob upload is preferred when the path contains wildcards or the
+        caller supplied a `path_prefix`. Falls back to uploading the
+        parent directory when a glob matches no files.
         """
         assert isinstance(self.payload, TesOutput)
         is_glob_like = self._path_contains_glob(self.payload.path)
         container_path = self._get_container_path(self.payload.path)
 
-        # Handle all glob-related operations first.
         if self.payload.path_prefix or is_glob_like:
-            # Ensure a path_prefix exists, inferring if necessary for
-            # non-compliant clients.
             if is_glob_like and not self.payload.path_prefix:
                 inferred_prefix = self._infer_base_path(self.payload.path)
                 logger.debug(
@@ -204,44 +161,38 @@ class FilerStrategy(ABC):
                 "but was not found or inferred."
             )
 
-            # Execute the glob and evaluate results.
-            globbed_files = self._get_glob_files(container_path)
-
-            if globbed_files:
+            globbed = self._get_glob_files(container_path)
+            if globbed:
                 logger.info(
-                    f"Found {len(globbed_files)} file(s) matching glob "
-                    f"pattern '{self.payload.path}'.",
+                    "Found %d file(s) matching glob '%s'",
+                    len(globbed),
+                    self.payload.path,
                 )
-                logger.debug(
-                    "Glob matched files: %s", [item[0] for item in globbed_files]
-                )
-                await self.upload_glob(globbed_files)
-            else:
-                logger.warning(
-                    f"Output glob pattern '{self.payload.path}' did not match any "
-                    "files. Falling back to uploading the entire parent directory"
-                    f"'{self.payload.path_prefix}'. This may indicate a "
-                    "misconfiguration in the workflow definition.",
-                )
-                parent_dir_container_path = self._get_container_path(
-                    self.payload.path_prefix
-                )
-                await self.upload_output_directory(parent_dir_container_path)
+                logger.debug("Glob matched: %s", [item[0] for item in globbed])
+                await self.upload_glob(globbed)
+                return
 
-        # Handle standard file uploads.
-        elif (
+            logger.warning(
+                "Output glob '%s' matched no files; falling back to "
+                "uploading parent directory '%s'.",
+                self.payload.path,
+                self.payload.path_prefix,
+            )
+            parent = self._get_container_path(self.payload.path_prefix)
+            await self.upload_output_directory(parent)
+            return
+
+        if (
             self.payload.type == TesFileType.FILE
             and os.path.exists(container_path)
             and os.path.isfile(container_path)
         ):
             await self.upload_output_file(container_path)
+            return
 
-        # Handle standard directory uploads.
-        else:
-            if self.payload.type == TesFileType.FILE:
-                logger.warning(
-                    "Output specified as file but not found at"
-                    f"path: {container_path}. Assuming it to be"
-                    "a directory.",
-                )
-            await self.upload_output_directory(container_path)
+        if self.payload.type == TesFileType.FILE:
+            logger.warning(
+                "Output declared FILE but not found at %s; uploading as directory",
+                container_path,
+            )
+        await self.upload_output_directory(container_path)

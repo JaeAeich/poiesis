@@ -1,89 +1,36 @@
-"""Content filer strategy module."""
+"""Content filer strategy — input-only.
+
+Per the TES spec, `TesInput.content` carries the file body inline. There
+is no output equivalent; the factory refuses to construct a content
+output strategy.
+"""
 
 import logging
 
-from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.services.filer.strategy.filer_strategy import FilerStrategy
+from poiesis.api.tes.models import TesInput
+from poiesis.core.services.filer.strategy.filer_strategy import InputFilerStrategy
 
 logger = logging.getLogger(__name__)
 
 
-class ContentFilerStrategy(FilerStrategy):
-    """Content filer, if the content is given in the request."""
+class ContentFilerStrategy(InputFilerStrategy):
+    """Stage an inline `content` payload onto the PVC."""
 
-    def __init__(self, payload: TesInput | TesOutput):
-        """Initialize the content filer strategy.
-
-        Args:
-            payload: The payload to instantiate the strategy
-                implementation.
-        """
+    def __init__(self, payload: TesInput):
+        """Initialise with the TES input carrying inline content."""
         super().__init__(payload)
-        self.input = self.payload if isinstance(self.payload, TesInput) else None
-        self.output = self.payload if isinstance(self.payload, TesOutput) else None
+        self.input = payload
 
     async def download_input_file(self, container_path: str) -> None:
-        """Get the content from request and mount to PVC.
-
-        Args:
-            container_path: The path inside the container where the file needs to be
-                downloaded to.
-        """
-        assert self.input is not None
-
+        """Write `payload.content` directly to `container_path`."""
         if self.input.content is None:
             raise ValueError("Content is required for content filer strategy.")
 
-        content = self.input.content.encode("utf-8")
-
         with open(container_path, "wb") as f:
-            f.write(content)
+            f.write(self.input.content.encode("utf-8"))
 
-        logger.info(f"Created file with content at {container_path}.")
+        logger.info("Created file with inline content at %s", container_path)
 
-    async def download_input_directory(self, container_path: str):
-        """Download input directory.
-
-        Raises:
-            NotImplementedError: Content filer doesn't support downloading
-                directories.
-        """
-        raise NotImplementedError(
-            "Content filer doesn't support downloading directories."
-        )
-
-    async def upload_output_file(self, container_path: str) -> None:
-        """Mount the content to PVC.
-
-        Content filer does not support uploads according to TES spec.
-
-        Args:
-            container_path: The path inside the container from where the file needs to
-                be uploaded from.
-        """
-        logger.error(
-            f"Attempted to upload content from {container_path} which is not supported"
-        )
-        raise NotImplementedError(
-            "Content filer does not support uploads according to TES spec."
-        )
-
-    async def upload_output_directory(self, container_path: str):
-        """Upload output dir.
-
-        Raises:
-            NotImplementedError: Content filer doesn't support uploading directories.
-        """
-        raise NotImplementedError(
-            "Content filer does not support uploads according to TES spec."
-        )
-
-    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
-        """Upload output dir.
-
-        Raises:
-            NotImplementedError: Content filer doesn't support uploading directories.
-        """
-        raise NotImplementedError(
-            "Content filer does not support uploads according to TES spec."
-        )
+    async def download_input_directory(self, container_path: str) -> None:
+        """Inline content has no directory equivalent; refuse."""
+        raise NotImplementedError("Content filer does not support directory inputs.")

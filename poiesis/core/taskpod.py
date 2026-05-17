@@ -48,6 +48,7 @@ from kubernetes.client import (
 )
 
 from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
+from poiesis.core.services.filer import filer_strategy_factory as _filer
 
 if TYPE_CHECKING:
     from poiesis.api.tes.models import TesExecutor, TesTask
@@ -164,6 +165,21 @@ def _reject_unsupported_features(task: TesTask) -> None:
                 "per-container override"
             )
             raise ValueError(msg)
+
+    for idx, inp in enumerate(task.inputs or []):
+        # Inline `content` inputs carry no URL; the empty-scheme entry
+        # in the filer registry handles them, so `can_input(None)` is True.
+        if not _filer.can_input(inp.url):
+            raise ValueError(
+                f"inputs[{idx}].url scheme is not supported as a TES input: {inp.url!r}"
+            )
+
+    for idx, out in enumerate(task.outputs or []):
+        if not _filer.can_output(out.url):
+            raise ValueError(
+                f"outputs[{idx}].url scheme is not supported as a TES output: "
+                f"{out.url!r}"
+            )
 
     resources = task.resources
     if (
