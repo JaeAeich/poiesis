@@ -65,7 +65,7 @@ async def create_task(
     # The PVC is created with an ownerReference back to the Job so
     # kube-controller-manager garbage-collects it when the Job is deleted.
     try:
-        created_job = await k8s.create_job(runtime_config.namespace, job)
+        created_job = await k8s.create_job(runtime_config.taskpod_namespace, job)
     except ApiException as exc:
         logger.exception("Job submission failed for task %s", task_id)
         await _mark_system_error(conn, task_id, f"Job submission failed: {exc.reason}")
@@ -75,10 +75,10 @@ async def create_task(
     attach_pvc_owner(pvc, job_uid, job_name)
 
     try:
-        await k8s.create_pvc(runtime_config.namespace, pvc)
+        await k8s.create_pvc(runtime_config.taskpod_namespace, pvc)
     except ApiException as exc:
         logger.exception("PVC submission failed for task %s; deleting Job", task_id)
-        await _safe_delete_job(k8s, runtime_config.namespace, job_name)
+        await _safe_delete_job(k8s, runtime_config.taskpod_namespace, job_name)
         await _mark_system_error(conn, task_id, f"PVC submission failed: {exc.reason}")
         raise InternalServerError("Failed to create task PVC") from exc
 
@@ -117,7 +117,7 @@ async def cancel_task(
         return TesCancelTaskResponse()
 
     try:
-        await k8s.delete_job(runtime_config.namespace, job_name_for(task_uuid))
+        await k8s.delete_job(runtime_config.taskpod_namespace, job_name_for(task_uuid))
     except ApiException as exc:
         if exc.status != HTTPStatus.NOT_FOUND:
             logger.exception("Job delete failed for task %s", task_uuid)

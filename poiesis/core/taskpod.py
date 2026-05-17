@@ -70,7 +70,8 @@ class RuntimeConfig:
     portable across deployments.
 
     Attributes:
-        namespace: Kubernetes namespace to submit into.
+        taskpod_namespace: Kubernetes namespace to submit TaskPods into.
+            May differ from the control-plane namespace.
         poiesis_image: Image for every poiesis-owned container
             (trec, tif, tof, ack).
         pvc_storage_class: Storage class for the Task PVC. None defers
@@ -94,7 +95,7 @@ class RuntimeConfig:
             (database DSN, S3 creds, etc.).
     """
 
-    namespace: str
+    taskpod_namespace: str
     poiesis_image: str
     pvc_storage_class: str | None = None
     pvc_access_mode: str = "ReadWriteOnce"
@@ -228,7 +229,7 @@ def _build_pvc(
         kind="PersistentVolumeClaim",
         metadata=V1ObjectMeta(
             name=pvc_name,
-            namespace=config.namespace,
+            namespace=config.taskpod_namespace,
             labels=labels,
         ),
         spec=V1PersistentVolumeClaimSpec(
@@ -272,7 +273,7 @@ def _build_job(
         kind="Job",
         metadata=V1ObjectMeta(
             name=job_name,
-            namespace=config.namespace,
+            namespace=config.taskpod_namespace,
             labels=labels,
         ),
         spec=V1JobSpec(

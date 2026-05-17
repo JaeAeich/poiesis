@@ -28,6 +28,11 @@ class Settings(BaseModel):
     poiesis_namespace: str = Field(
         default_factory=lambda: os.environ.get("POIESIS_K8S_NAMESPACE", "poiesis"),
     )
+    # Defaults to poiesis_namespace via runtime_config() — operators can split
+    # the control plane from the workload ns by setting POIESIS_TASKPOD_NAMESPACE.
+    taskpod_namespace: str | None = Field(
+        default_factory=lambda: os.environ.get("POIESIS_TASKPOD_NAMESPACE") or None,
+    )
     poiesis_image: str = Field(
         default_factory=lambda: os.environ.get("POIESIS_IMAGE", DEFAULT_POIESIS_IMAGE),
     )
@@ -70,7 +75,7 @@ class Settings(BaseModel):
             if value is not None:
                 env.append(V1EnvVar(name=name, value=value))
         return RuntimeConfig(
-            namespace=self.poiesis_namespace,
+            taskpod_namespace=self.taskpod_namespace or self.poiesis_namespace,
             poiesis_image=self.poiesis_image,
             pvc_storage_class=self.pvc_storage_class,
             pvc_access_mode=self.pvc_access_mode,
