@@ -1,0 +1,29 @@
+Poiesis {{ .Chart.AppVersion }} installed as {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+Taskpods land in: {{ include "poiesis.taskpodNamespace" . }}
+PSS profile:      {{ .Values.podSecurityEnforce }}
+DB secret:        {{ .Values.database.existingSecret }}/{{ .Values.database.existingSecretKey }}
+
+To reach the API (cluster-internal):
+
+  http://{{ include "poiesis.fullname" . }}-api.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.api.service.port }}/ga4gh/tes/v1
+{{- if .Values.api.ingress.enabled }}
+
+Ingress hosts:
+{{- range .Values.api.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+
+For local access:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "poiesis.fullname" . }}-api {{ .Values.api.service.port }}:{{ .Values.api.service.port }}
+
+Then:
+
+  curl http://localhost:{{ .Values.api.service.port }}/ga4gh/tes/v1/service-info
+{{- end }}
+
+Verify the deploy:
+
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

@@ -1,0 +1,63 @@
+{{/*
+Pre-install / pre-upgrade migration job. Runs golang-migrate against the
+operator-managed DATABASE_URL before any Deployment rolls out. Idempotent —
+re-running against a migrated db is a no-op.
+*/}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "poiesis.fullname" . }}-migrate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "poiesis.componentLabels" (dict "component" "migrate" "root" .) | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "poiesis.componentLabels" (dict "component" "migrate" "root" .) | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      {{- with include "poiesis.imagePullSecrets" (dict "component" .Values.migrations "root" .) }}
+      imagePullSecrets:
+        {{- . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "poiesis.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "poiesis.migrations.image" . }}
+          imagePullPolicy: {{ .Values.migrations.image.pullPolicy }}
+          args:
+            - -database
+            - $(DATABASE_URL)
+            - up
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretKey }}
+          {{- if .Values.database.caConfigmap }}
+          volumeMounts:
+            - name: postgres-ca
+              mountPath: /etc/ssl/poiesis
+              readOnly: true
+          {{- end }}
+          securityContext:
+            {{- include "poiesis.containerSecurityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+      {{- if .Values.database.caConfigmap }}
+      volumes:
+        - name: postgres-ca
+          configMap:
+            name: {{ .Values.database.caConfigmap }}
+            defaultMode: 0444
+      {{- end }}

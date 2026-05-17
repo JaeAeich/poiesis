@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "poiesis chart values",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["image", "migrations", "database", "api", "tctl", "taskpods"],
+  "properties": {
+    "nameOverride":      { "type": "string" },
+    "fullnameOverride":  { "type": "string" },
+    "commonLabels":      { "type": "object" },
+    "commonAnnotations": { "type": "object" },
+
+    "image":              { "$ref": "#/$defs/imageSpec" },
+    "imagePullSecrets":   { "$ref": "#/$defs/imagePullSecretsList" },
+
+    "podSecurityContext":       { "type": "object" },
+    "containerSecurityContext": { "type": "object" },
+
+    "podSecurityEnforce": {
+      "type": "string",
+      "enum": ["restricted", "baseline", "off"]
+    },
+
+    "nodeSelector":   { "type": "object" },
+    "tolerations":    { "type": "array" },
+    "affinity":       { "type": "object" },
+
+    "extraEnv":          { "type": "array" },
+    "extraEnvFrom":      { "type": "array" },
+    "extraVolumes":      { "type": "array" },
+    "extraVolumeMounts": { "type": "array" },
+    "extraManifests":    { "type": "array", "items": { "type": "string" } },
+
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "api":     { "$ref": "#/$defs/saSpec" },
+        "tctl":    { "$ref": "#/$defs/saSpec" },
+        "taskpod": { "$ref": "#/$defs/saSpec" }
+      }
+    },
+
+    "logLevel": { "type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR"] },
+
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["existingSecret", "existingSecretKey"],
+      "properties": {
+        "existingSecret":    { "type": "string", "minLength": 1 },
+        "existingSecretKey": { "type": "string", "minLength": 1 },
+        "caConfigmap":       { "type": "string" }
+      }
+    },
+
+    "s3": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "endpoint":       { "type": "string" },
+        "region":         { "type": "string" },
+        "existingSecret": { "type": "string" }
+      }
+    },
+
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replicas", "resources", "service"],
+      "properties": {
+        "replicas":   { "type": "integer", "minimum": 1 },
+        "image":      { "$ref": "#/$defs/imageOverride" },
+        "resources":  { "type": "object" },
+        "probes":     { "$ref": "#/$defs/probesSpec" },
+        "service":    { "$ref": "#/$defs/serviceSpec" },
+        "ingress":    { "$ref": "#/$defs/ingressSpec" },
+        "pdb":        { "$ref": "#/$defs/pdbSpec" },
+        "autoscaling":{ "$ref": "#/$defs/hpaSpec" },
+
+        "extraEnv":          { "type": "array" },
+        "extraEnvFrom":      { "type": "array" },
+        "extraVolumes":      { "type": "array" },
+        "extraVolumeMounts": { "type": "array" },
+        "extraContainers":   { "type": "array" },
+
+        "podAnnotations": { "type": "object" },
+        "podLabels":      { "type": "object" },
+        "nodeSelector":   { "type": "object" },
+        "tolerations":    { "type": "array" },
+        "affinity":       { "type": "object" }
+      }
+    },
+
+    "tctl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replicas", "resources"],
+      "properties": {
+        "replicas":  { "type": "integer", "minimum": 1 },
+        "image":     { "$ref": "#/$defs/imageOverride" },
+        "resources": { "type": "object" },
+
+        "extraEnv":          { "type": "array" },
+        "extraEnvFrom":      { "type": "array" },
+        "extraVolumes":      { "type": "array" },
+        "extraVolumeMounts": { "type": "array" },
+        "extraContainers":   { "type": "array" },
+
+        "podAnnotations": { "type": "object" },
+        "podLabels":      { "type": "object" },
+        "nodeSelector":   { "type": "object" },
+        "tolerations":    { "type": "array" },
+        "affinity":       { "type": "object" }
+      }
+    },
+
+    "taskpods": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespace":       { "type": "string" },
+        "pvcStorageClass": { "type": "string" }
+      }
+    },
+
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":                { "type": "boolean" },
+        "ingressFromPodSelector": { "type": "object" },
+        "extraEgress":            { "type": "array" }
+      }
+    },
+
+    "migrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image"],
+      "properties": {
+        "image":     { "$ref": "#/$defs/imageSpec" },
+        "resources": { "type": "object" }
+      }
+    }
+  },
+
+  "$defs": {
+    "imageSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry", "repository", "pullPolicy"],
+      "properties": {
+        "registry":   { "type": "string", "minLength": 1 },
+        "repository": { "type": "string", "minLength": 1 },
+        "tag":        { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "imageOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry":   { "type": "string" },
+        "repository": { "type": "string" },
+        "tag":        { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never", ""] }
+      }
+    },
+    "imagePullSecretsList": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": { "name": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "saSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create":      { "type": "boolean" },
+        "name":        { "type": "string" },
+        "annotations": { "type": "object" }
+      }
+    },
+    "probesSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "startup":   { "$ref": "#/$defs/probeBlock" },
+        "readiness": { "$ref": "#/$defs/probeBlock" },
+        "liveness":  { "$ref": "#/$defs/probeBlock" }
+      }
+    },
+    "probeBlock": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled":          { "type": "boolean" },
+        "periodSeconds":    { "type": "integer", "minimum": 1 },
+        "timeoutSeconds":   { "type": "integer", "minimum": 1 },
+        "failureThreshold": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "serviceSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "port"],
+      "properties": {
+        "type":        { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "port":        { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "annotations": { "type": "object" }
+      }
+    },
+    "ingressSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":     { "type": "boolean" },
+        "className":   { "type": "string" },
+        "annotations": { "type": "object" },
+        "hosts":       { "type": "array" },
+        "tls":         { "type": "array" }
+      }
+    },
+    "pdbSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":      { "type": "boolean" },
+        "minAvailable": { "type": ["integer", "string"] }
+      }
+    },
+    "hpaSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":                        { "type": "boolean" },
+        "minReplicas":                    { "type": "integer", "minimum": 1 },
+        "maxReplicas":                    { "type": "integer", "minimum": 1 },
+        "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    }
+  }
+}

@@ -1,0 +1,76 @@
+{{- $args := dict "component" .Values.tctl "root" . -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "poiesis.fullname" . }}-tctl
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "poiesis.componentLabels" (dict "component" "tctl" "root" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.tctl.replicas }}
+  selector:
+    matchLabels:
+      {{- include "poiesis.componentSelectorLabels" (dict "component" "tctl" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "poiesis.componentLabels" (dict "component" "tctl" "root" .) | nindent 8 }}
+        {{- with .Values.tctl.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+        {{- with .Values.tctl.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "poiesis.serviceAccountName" (dict "role" "tctl" "root" .) }}
+      {{- with include "poiesis.imagePullSecrets" $args }}
+      imagePullSecrets:
+        {{- . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "poiesis.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: tctl
+          image: {{ include "poiesis.image" $args }}
+          imagePullPolicy: {{ include "poiesis.imagePullPolicy" $args }}
+          command: [poiesis, tctl, run]
+          envFrom:
+            - configMapRef:
+                name: {{ include "poiesis.fullname" . }}
+            {{- with include "poiesis.extraEnvFrom" $args }}
+            {{- . | nindent 12 }}
+            {{- end }}
+          env:
+            - name: POIESIS_POD_NAME
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretKey }}
+            {{- with include "poiesis.extraEnv" $args }}
+            {{- . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            {{- include "poiesis.volumeMounts" $args | nindent 12 }}
+          resources:
+            {{- toYaml .Values.tctl.resources | nindent 12 }}
+          securityContext:
+            {{- include "poiesis.containerSecurityContext" . | nindent 12 }}
+        {{- with .Values.tctl.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        {{- include "poiesis.volumes" $args | nindent 8 }}
+      {{- with include "poiesis.nodeSelector" $args }}
+      nodeSelector:
+        {{- . | nindent 8 }}
+      {{- end }}
+      {{- with include "poiesis.tolerations" $args }}
+      tolerations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      {{- with include "poiesis.affinity" $args }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}

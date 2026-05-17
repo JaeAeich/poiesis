@@ -1,0 +1,110 @@
+{{- $args := dict "component" .Values.api "root" . -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "poiesis.fullname" . }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "poiesis.componentLabels" (dict "component" "api" "root" .) | nindent 4 }}
+spec:
+  {{- if not .Values.api.autoscaling.enabled }}
+  replicas: {{ .Values.api.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "poiesis.componentSelectorLabels" (dict "component" "api" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "poiesis.componentLabels" (dict "component" "api" "root" .) | nindent 8 }}
+        {{- with .Values.api.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
+      annotations:
+        # Roll the API on configmap changes so env edits take effect.
+        checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+        {{- with .Values.api.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "poiesis.serviceAccountName" (dict "role" "api" "root" .) }}
+      {{- with include "poiesis.imagePullSecrets" $args }}
+      imagePullSecrets:
+        {{- . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "poiesis.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: api
+          image: {{ include "poiesis.image" $args }}
+          imagePullPolicy: {{ include "poiesis.imagePullPolicy" $args }}
+          command: [poiesis, api, run]
+          envFrom:
+            - configMapRef:
+                name: {{ include "poiesis.fullname" . }}
+            {{- with include "poiesis.extraEnvFrom" $args }}
+            {{- . | nindent 12 }}
+            {{- end }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretKey }}
+            {{- if .Values.s3.existingSecret }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3.existingSecret }}
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3.existingSecret }}
+                  key: AWS_SECRET_ACCESS_KEY
+            {{- end }}
+            {{- with include "poiesis.extraEnv" $args }}
+            {{- . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          {{- if .Values.api.probes.startup.enabled }}
+          startupProbe:
+            httpGet: { path: /startupz, port: http }
+            periodSeconds: {{ .Values.api.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.api.probes.startup.failureThreshold }}
+          {{- end }}
+          {{- if .Values.api.probes.readiness.enabled }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: {{ .Values.api.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.api.probes.readiness.timeoutSeconds }}
+          {{- end }}
+          {{- if .Values.api.probes.liveness.enabled }}
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: {{ .Values.api.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.api.probes.liveness.timeoutSeconds }}
+          {{- end }}
+          volumeMounts:
+            {{- include "poiesis.volumeMounts" $args | nindent 12 }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            {{- include "poiesis.containerSecurityContext" . | nindent 12 }}
+        {{- with .Values.api.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        {{- include "poiesis.volumes" $args | nindent 8 }}
+      {{- with include "poiesis.nodeSelector" $args }}
+      nodeSelector:
+        {{- . | nindent 8 }}
+      {{- end }}
+      {{- with include "poiesis.tolerations" $args }}
+      tolerations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      {{- with include "poiesis.affinity" $args }}
+      affinity:
+        {{- . | nindent 8 }}
+      {{- end }}

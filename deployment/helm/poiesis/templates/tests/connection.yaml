@@ -1,0 +1,43 @@
+{{/*
+helm test hook: hits /readyz against the chart-installed API Service. A
+non-200 means the API can't reach Postgres or hasn't finished startup.
+*/}}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "poiesis.fullname" . }}-test-connection
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "poiesis.componentLabels" (dict "component" "test" "root" .) | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  securityContext:
+    {{- include "poiesis.podSecurityContext" . | nindent 4 }}
+  containers:
+    - name: curl
+      image: curlimages/curl:8.10.1
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -eu
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              "http://{{ include "poiesis.fullname" . }}-api.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.api.service.port }}/readyz")
+            if [ "$code" = "200" ]; then
+              echo "readyz OK"
+              exit 0
+            fi
+            echo "attempt $i: got $code, retrying"
+            sleep 2
+          done
+          echo "readyz never returned 200" >&2
+          exit 1
+      securityContext:
+        {{- include "poiesis.containerSecurityContext" . | nindent 8 }}
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }

@@ -1,0 +1,38 @@
+{{/*
+Non-secret runtime env for api + tctl. The taskpod image gets baked in
+here so submitted tasks always pull the same tag the control plane runs.
+*/}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "poiesis.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "poiesis.labels" . | nindent 4 }}
+  {{- with include "poiesis.commonAnnotations" . }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  POIESIS_K8S_NAMESPACE: {{ .Release.Namespace | quote }}
+  POIESIS_TASKPOD_NAMESPACE: {{ include "poiesis.taskpodNamespace" . | quote }}
+  POIESIS_IMAGE: {{ include "poiesis.image" (dict "component" .Values.api "root" .) | quote }}
+  POIESIS_TASKPOD_SERVICE_ACCOUNT: {{ include "poiesis.serviceAccountName" (dict "role" "taskpod" "root" .) | quote }}
+  POIESIS_POD_SECURITY_ENFORCE: {{ .Values.podSecurityEnforce | quote }}
+  {{- with .Values.imagePullSecrets }}
+  POIESIS_IMAGE_PULL_SECRETS: {{ join "," (pluck "name" .) | quote }}
+  {{- end }}
+  {{- with .Values.database.caConfigmap }}
+  POIESIS_POSTGRES_CA_CONFIGMAP: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.taskpods.pvcStorageClass }}
+  POIESIS_PVC_STORAGE_CLASS: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.s3.endpoint }}
+  AWS_ENDPOINT_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.s3.region }}
+  AWS_REGION: {{ . | quote }}
+  {{- end }}
+  LOG_LEVEL: {{ .Values.logLevel | quote }}

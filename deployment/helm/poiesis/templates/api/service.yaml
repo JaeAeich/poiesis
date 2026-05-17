@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "poiesis.fullname" . }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "poiesis.componentLabels" (dict "component" "api" "root" .) | nindent 4 }}
+  {{- with .Values.api.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.api.service.type }}
+  selector:
+    {{- include "poiesis.componentSelectorLabels" (dict "component" "api" "root" .) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: http
+      protocol: TCP

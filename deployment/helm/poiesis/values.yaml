@@ -1,0 +1,291 @@
+# Default values for poiesis.
+#
+# Layered defaults:
+#
+#   Top level    → chart-wide settings every component inherits.
+#   api: / tctl: → per-component overrides; only what differs from the top
+#                  level. Image, security context, env, volumes, node
+#                  scheduling all fall through to top-level when unset.
+#   taskpods:    → workload-shape config baked into TaskPod manifests by
+#                  the API at task-submit time. Distinct from the control
+#                  plane: settings here affect what runs *for* a TES task,
+#                  not the control plane itself.
+#
+# This chart NEVER creates Secrets for credentials. The operator must
+# pre-create the database (and optional S3) Secret; the chart references
+# it by name via existingSecret. values.schema.json enforces required keys.
+
+# Name overrides. Empty values fall back to the chart's release name.
+nameOverride: ""
+fullnameOverride: ""
+
+# Labels and annotations propagated to every resource the chart renders.
+# Useful for cost allocation, multi-tenant cluster tagging, ownership audit.
+commonLabels: {}
+commonAnnotations: {}
+
+# -----------------------------------------------------------------------------
+# Chart-wide defaults (top level)
+# -----------------------------------------------------------------------------
+
+image:
+  # registry + repository are kept separate so policy engines that scan for a
+  # specific registry can match registry alone.
+  registry: docker.io
+  repository: jaeaeich/poiesis
+  # Defaults to .Chart.AppVersion when empty so freshly-pulled charts pin to
+  # their declared appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# imagePullSecrets propagate to api, tctl, migration hook, and every taskpod.
+# Operators using IRSA / Workload Identity for runtime image pulls leave this
+# empty.
+imagePullSecrets: []
+# - name: ghcr-pull-secret
+
+# Pod-level securityContext applied to api, tctl, and the migration hook.
+# Container-level lives under containerSecurityContext below.
+# Both default to a profile derived from podSecurityEnforce (see below).
+podSecurityContext: {}
+containerSecurityContext: {}
+
+# PodSecurity profile applied to poiesis-owned containers (api, tctl, hook,
+# and per-TaskPod trec/tif/tof/ack). Executor containers in TaskPods always
+# run user-supplied images and are exempt — operators needing constraints on
+# user code should rely on the namespace's PodSecurity admission level.
+#
+# Allowed: restricted | baseline | off.
+podSecurityEnforce: restricted
+
+# Default pod scheduling. Per-component overrides win when set.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Extension points. Per-component extras APPEND to these — top-level wins
+# nothing; component-level wins nothing; they coexist. Duplicate names will
+# be rejected by Kubernetes admission. Operators must avoid collisions.
+extraEnv: []
+# - name: SENTRY_DSN
+#   value: https://...
+
+extraEnvFrom: []
+# - secretRef:
+#     name: observability-tokens
+
+extraVolumes: []
+# - name: shared-ca
+#   configMap:
+#     name: corp-ca-bundle
+
+extraVolumeMounts: []
+# - name: shared-ca
+#   mountPath: /etc/ssl/corp
+#   readOnly: true
+
+# Arbitrary manifests rendered verbatim by the chart. Trapdoor for everything
+# the chart doesn't model: NetworkAttachmentDefinitions, custom CRs, sealed
+# secrets, etc. Each entry is a string or template rendering to one or more
+# YAML docs.
+extraManifests: []
+# - |
+#   apiVersion: v1
+#   kind: ConfigMap
+#   metadata:
+#     name: extra-config
+#   data:
+#     key: value
+
+# Service accounts. Per-component create=true mints a chart-managed SA; set
+# create=false and name=<existing> to bind an out-of-band SA (typical for
+# IRSA / Workload Identity).
+serviceAccount:
+  api:
+    create: true
+    name: ""
+    annotations: {}
+  tctl:
+    create: true
+    name: ""
+    annotations: {}
+  taskpod:
+    create: true
+    name: ""
+    annotations: {}
+
+# Logging.
+logLevel: INFO
+
+# -----------------------------------------------------------------------------
+# External dependencies (operator-supplied; chart does NOT create these)
+# -----------------------------------------------------------------------------
+
+# Postgres connection. The Secret must hold a full DATABASE_URL of the form:
+#   postgresql://USER:PASS@HOST:PORT/DB?sslmode=verify-full&sslrootcert=/etc/ssl/poiesis/ca.crt
+database:
+  existingSecret: ""
+  existingSecretKey: DATABASE_URL
+  # ConfigMap (key: ca.crt) mounted read-only at /etc/ssl/poiesis on api,
+  # tctl, and every taskpod's poiesis-owned container. Empty disables.
+  caConfigmap: ""
+
+# S3-compatible storage. Optional: required only when task inputs/outputs
+# reference s3:// URLs.
+s3:
+  # Non-secret. AWS_ENDPOINT_URL — empty for real AWS S3.
+  endpoint: ""
+  # AWS_REGION.
+  region: ""
+  # Existing Secret with AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY. Empty
+  # when using IRSA / IMDS credentials.
+  existingSecret: ""
+
+# -----------------------------------------------------------------------------
+# API (TES HTTP endpoint)
+# -----------------------------------------------------------------------------
+
+api:
+  replicas: 1
+
+  # Image override (falls back to top-level image). Useful for canarying.
+  image: {}
+  # registry: ""
+  # repository: ""
+  # tag: ""
+  # pullPolicy: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+  probes:
+    startup:
+      enabled: true
+      periodSeconds: 2
+      failureThreshold: 30
+    readiness:
+      enabled: true
+      periodSeconds: 5
+      timeoutSeconds: 2
+    liveness:
+      enabled: true
+      periodSeconds: 10
+      timeoutSeconds: 2
+
+  service:
+    type: ClusterIP
+    port: 8000
+    annotations: {}
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: poiesis.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  pdb:
+    enabled: false
+    minAvailable: 1
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+
+  # Component-local extensions. Append to the chart-wide extras.
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraContainers: []
+
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# -----------------------------------------------------------------------------
+# TCtl (sole writer of terminal task state)
+# -----------------------------------------------------------------------------
+
+tctl:
+  # Leader election means only one replica is active at a time. Increasing
+  # this gives faster failover, not throughput.
+  replicas: 1
+
+  image: {}
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraContainers: []
+
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# -----------------------------------------------------------------------------
+# TaskPod workload-shape config
+#
+# Settings here are baked into the TaskPod manifests the API builds at
+# submit time. They affect what runs FOR a TES task, not the control plane.
+# -----------------------------------------------------------------------------
+
+taskpods:
+  # Namespace TaskPods land in. Empty means same as release namespace.
+  # When split, the chart renders the API + taskpod Roles in this namespace.
+  namespace: ""
+
+  # PVC storage class for the per-task scratch volume. Empty defers to the
+  # cluster default.
+  pvcStorageClass: ""
+
+# -----------------------------------------------------------------------------
+# NetworkPolicy
+# -----------------------------------------------------------------------------
+
+networkPolicy:
+  enabled: false
+  ingressFromPodSelector: {}
+  extraEgress: []
+
+# -----------------------------------------------------------------------------
+# Migration hook (golang-migrate against the poiesis-migrations image)
+# -----------------------------------------------------------------------------
+
+migrations:
+  image:
+    registry: docker.io
+    repository: jaeaeich/poiesis-migrations
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

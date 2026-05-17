@@ -1,0 +1,5 @@
+# Minimal values used by `helm lint -f ci/lint-values.yaml` to validate
+# the chart renders cleanly. Production deploys MUST supply their own
+# database.existingSecret pointing at an operator-managed Secret.
+database:
+  existingSecret: poiesis-db

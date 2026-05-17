@@ -1,0 +1,38 @@
+# Complete values fixture used by `check-jsonschema` in CI to validate the
+# merged input the chart would actually receive. Mirrors values.yaml's
+# shape and supplies the operator-required keys (database.existingSecret).
+# Edit this when adding new required fields to the schema.
+
+image:
+  registry: docker.io
+  repository: jaeaeich/poiesis
+  pullPolicy: IfNotPresent
+
+migrations:
+  image:
+    registry: docker.io
+    repository: jaeaeich/poiesis-migrations
+    pullPolicy: IfNotPresent
+
+database:
+  existingSecret: poiesis-db
+  existingSecretKey: DATABASE_URL
+
+api:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  service:
+    type: ClusterIP
+    port: 8000
+
+tctl:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+taskpods: {}

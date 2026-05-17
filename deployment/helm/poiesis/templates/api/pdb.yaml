@@ -1,0 +1,15 @@
+{{- if .Values.api.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "poiesis.fullname" . }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "poiesis.componentLabels" (dict "component" "api" "root" .) | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.api.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "poiesis.componentSelectorLabels" (dict "component" "api" "root" .) | nindent 6 }}
+{{- end }}

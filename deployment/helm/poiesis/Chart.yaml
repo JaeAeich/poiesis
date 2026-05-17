@@ -1,0 +1,39 @@
+apiVersion: v2
+name: poiesis
+description: |
+  GA4GH TES (Task Execution Service) on Kubernetes.
+
+  Poiesis runs each TES task as a single Kubernetes Job with one Pod —
+  init containers cover input staging, the user executors, and output
+  staging; a native-sidecar recorder writes task state into Postgres.
+  A leader-elected controller (tctl) acts as the backstop reconciler.
+
+  External dependencies (Postgres, optional S3) are operator-supplied;
+  this chart deploys only the poiesis control plane.
+
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+kubeVersion: ">=1.29.0-0"
+
+home: https://poiesis.vercel.app
+icon: https://raw.githubusercontent.com/JaeAeich/poiesis/refs/heads/main/docs/app/public/logo/logo.png
+
+sources:
+  - https://github.com/jaeaeich/poiesis
+
+keywords:
+  - ga4gh
+  - tes
+  - task-execution-service
+  - genomics
+  - workflow
+  - bioinformatics
+
+maintainers:
+  - name: Javed Habib
+    email: jh4official@gmail.com
+
+annotations:
+  category: WorkflowOrchestration
+  licenses: Apache-2.0

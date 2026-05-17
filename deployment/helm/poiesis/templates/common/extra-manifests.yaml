@@ -1,0 +1,8 @@
+{{/*
+Operator trapdoor: arbitrary YAML documents rendered verbatim. Each entry
+is a string; tpl is applied so values can reference .Values / .Release.
+*/}}
+{{- range $manifest := .Values.extraManifests }}
+---
+{{ tpl $manifest $ }}
+{{- end }}
