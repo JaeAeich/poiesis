@@ -56,6 +56,10 @@ export default defineConfig({
                         text: "Deploying Poiesis",
                         link: "/docs/deploy/deploying-poiesis",
                     },
+                    {
+                        text: "Authentication",
+                        link: "/docs/deploy/authentication",
+                    },
                 ],
             },
         ],

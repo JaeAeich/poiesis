@@ -63,6 +63,16 @@ Rerun the second command after any change under `./migrations/`.
 kubectl apply -f deployment/dev.yaml
 ```
 
+`dev.yaml` defaults to `POIESIS_AUTH_ENABLED=true` and points the API
+at an in-cluster Keycloak issuer. For a smoke test without standing
+up an IdP, override on apply:
+
+```bash
+kubectl -n po set env deploy/poiesis-api POIESIS_AUTH_ENABLED=false
+```
+
+See [Authentication](./authentication.md) for the production model.
+
 Wait until all four workloads report `Running`:
 
 ```bash
@@ -174,6 +184,7 @@ templates the same shape. Values cover:
 - S3 endpoint and credentials
 - Ingress for the API
 - TCtl HA replica count
+- OIDC authentication ([dedicated page](./authentication.md))
 
 `Chart.yaml` pins `kubeVersion: ">=1.29.0"` so installs fail fast on
 incompatible clusters.

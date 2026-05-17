@@ -17,7 +17,6 @@ A [GA4GH TES][tes] task execution service for Kubernetes.
 ```sh
 mise install        # tools + venv
 lefthook install    # git hooks
-mise run dev        # start the API
 mise run checks     # run all checks with auto-fix
 ```
 

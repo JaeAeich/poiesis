@@ -30,5 +30,8 @@ workflow engines (Nextflow, Cromwell, Toil), client SDKs, or plain
 - **Schedule across clusters.** One TaskPod, one cluster.
 - **Mutate your executor image.** Commands run exactly as submitted.
 - **Cache anything.** Each submission is independent.
-- **Authenticate.** Auth was deliberately removed in v0.2 pending a
-  rethink; deploy behind a gateway if you need it.
+- **Run its own login flow.** Poiesis is a resource server, not an
+  OAuth client. It validates OIDC bearer tokens minted by an external
+  IdP (Keycloak, Auth0, Dex, …). See
+  [Authentication](../deploy/authentication.md) for the operator
+  configuration and the principal-claim model.
