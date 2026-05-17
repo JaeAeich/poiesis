@@ -35,4 +35,9 @@ tctl:
       cpu: 50m
       memory: 128Mi
 
-taskpods: {}
+taskpods:
+  persistence:
+    defaultSizeGi: 10
+    maxSizeGi: 100
+    accessModes:
+      - ReadWriteOnce

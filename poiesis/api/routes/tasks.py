@@ -2,14 +2,22 @@
 
 import logging
 import uuid
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Annotated, Any
 
+import asyncpg
 from fastapi import APIRouter, Depends, Query
 from kubernetes.client.exceptions import ApiException
 
 from poiesis.api.deps import get_db_conn, get_k8s, get_runtime_config
-from poiesis.api.exceptions import BadRequestError, InternalServerError, NotFoundError
+from poiesis.api.exceptions import (
+    APIError,
+    BadRequestError,
+    InternalServerError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 from poiesis.api.tes.models import (
     TesCancelTaskResponse,
     TesCreateTaskResponse,
@@ -67,9 +75,9 @@ async def create_task(
     try:
         created_job = await k8s.create_job(runtime_config.taskpod_namespace, job)
     except ApiException as exc:
-        logger.exception("Job submission failed for task %s", task_id)
-        await _mark_system_error(conn, task_id, f"Job submission failed: {exc.reason}")
-        raise InternalServerError("Failed to create task Job") from exc
+        await _on_kubernetes_submit_failure(
+            conn, task_id, exc, where="Job", k8s=None, namespace=None, job_name=None
+        )
 
     job_uid, job_name = _server_assigned_meta(created_job)
     attach_pvc_owner(pvc, job_uid, job_name)
@@ -77,13 +85,116 @@ async def create_task(
     try:
         await k8s.create_pvc(runtime_config.taskpod_namespace, pvc)
     except ApiException as exc:
-        logger.exception("PVC submission failed for task %s; deleting Job", task_id)
-        await _safe_delete_job(k8s, runtime_config.taskpod_namespace, job_name)
-        await _mark_system_error(conn, task_id, f"PVC submission failed: {exc.reason}")
-        raise InternalServerError("Failed to create task PVC") from exc
+        await _on_kubernetes_submit_failure(
+            conn,
+            task_id,
+            exc,
+            where="PVC",
+            k8s=k8s,
+            namespace=runtime_config.taskpod_namespace,
+            job_name=job_name,
+        )
 
     logger.info("TaskPod submitted for task %s (job=%s)", task_id, job_name)
     return TesCreateTaskResponse(id=task_id)
+
+
+async def _on_kubernetes_submit_failure(
+    conn: Any,
+    task_id: str,
+    exc: ApiException,
+    *,
+    where: str,
+    k8s: K8sClient | None,
+    namespace: str | None,
+    job_name: str | None,
+) -> None:
+    """Classify a Kubernetes submit failure and raise the right APIError.
+
+    Side effects, in order: log with traceback; best-effort delete the
+    Job if we already created it; transition the task row to SYSTEM_ERROR
+    with a useful reason; append the same reason to system_logs so it
+    surfaces in GetTask / ListTasks output. This function always raises.
+    """
+    classification = _classify_submit_exception(exc, where)
+    logger.exception(
+        "%s submission failed for task %s (status=%s reason=%s)",
+        where,
+        task_id,
+        exc.status,
+        exc.reason,
+    )
+    if k8s is not None and namespace is not None and job_name is not None:
+        await _safe_delete_job(k8s, namespace, job_name)
+
+    await _mark_system_error(conn, task_id, classification.system_log)
+    raise classification.api_error from exc
+
+
+@dataclass(frozen=True)
+class _SubmitErrorClassification:
+    """How the API should respond to a submission failure.
+
+    ``system_log`` is what gets persisted on the task row; ``api_error`` is
+    raised on the request thread. Kept together so the two channels never
+    drift on phrasing.
+    """
+
+    system_log: str
+    api_error: APIError
+
+
+def _classify_submit_exception(
+    exc: ApiException, where: str
+) -> _SubmitErrorClassification:
+    """Map a Kubernetes ApiException to an HTTP response + system_logs entry.
+
+    - 403 with quota messages → 503 Retry-After. The chart-shipped
+    ResourceQuota is rejecting us; the client should back off.
+    - 403 generic → 503 too; it's almost always RBAC + quota in practice
+    and we'd rather over-classify retryable than under-classify it.
+    - 422 from admission webhooks (SC missing, PVC malformed) → 400; the
+    operator misconfigured the deployment but the client gets a clean
+    error rather than a retry suggestion.
+    - 404 on PVC create → 400 with "namespace missing" guidance.
+    - Anything else → 500.
+    """
+    status = exc.status or 0
+    body = (exc.body or "").lower() if isinstance(exc.body, str) else ""
+    reason_lower = (exc.reason or "").lower()
+
+    if status == HTTPStatus.FORBIDDEN.value or "forbidden" in reason_lower:
+        if "exceeded quota" in body or "quota" in body:
+            msg = f"{where} submission rejected: namespace quota exceeded"
+            return _SubmitErrorClassification(
+                system_log=msg,
+                api_error=ServiceUnavailableError(msg, retry_after_seconds=30),
+            )
+        msg = f"{where} submission forbidden: {exc.reason}"
+        return _SubmitErrorClassification(
+            system_log=msg,
+            api_error=ServiceUnavailableError(msg, retry_after_seconds=30),
+        )
+
+    if status == HTTPStatus.UNPROCESSABLE_ENTITY.value:
+        if "storageclass" in body:
+            msg = f"{where} submission failed: configured StorageClass not found"
+        else:
+            msg = f"{where} submission failed (validation): {exc.reason}"
+        return _SubmitErrorClassification(
+            system_log=msg, api_error=BadRequestError(msg)
+        )
+
+    if status == HTTPStatus.NOT_FOUND.value:
+        msg = f"{where} submission failed: target namespace not found"
+        return _SubmitErrorClassification(
+            system_log=msg, api_error=BadRequestError(msg)
+        )
+
+    msg = f"{where} submission failed: {exc.reason}"
+    return _SubmitErrorClassification(
+        system_log=msg, api_error=InternalServerError(msg)
+    )
 
 
 @router.post(
@@ -200,12 +311,17 @@ def _server_assigned_meta(obj: Any) -> tuple[str, str]:
 
 
 async def _mark_system_error(conn: Any, task_id: str, reason: str) -> None:
-    """Best-effort transition to SYSTEM_ERROR after a submission failure."""
+    """Best-effort transition to SYSTEM_ERROR after a submission failure.
+
+    Writes both the terminal state and a system_logs entry so the same
+    diagnostic string is visible via ``GetTask`` for client inspection.
+    """
     try:
         await state_db.write_terminal_state(
             conn, task_id, TesState.SYSTEM_ERROR, reason=reason
         )
-    except Exception:
+        await state_db.append_system_log(conn, task_id, reason)
+    except (asyncpg.PostgresError, OSError, TimeoutError):
         logger.exception(
             "Failed to mark task %s SYSTEM_ERROR after submission failure", task_id
         )

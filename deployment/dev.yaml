@@ -187,7 +187,7 @@ metadata:
   name: poiesis
   namespace: po
 data:
-  POIESIS_K8S_NAMESPACE: po
+  POIESIS_NAMESPACE: po
   POIESIS_TASKPOD_NAMESPACE: po
   POIESIS_IMAGE: poiesis:dev
   POIESIS_TASKPOD_SERVICE_ACCOUNT: poiesis-taskpod

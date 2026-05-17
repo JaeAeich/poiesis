@@ -43,7 +43,14 @@ async def handle_api_exception(request: Request, exc: Exception) -> JSONResponse
     else:
         logger.warning("Client error: %s", err.message)
 
-    return JSONResponse(status_code=err.status_code, content=err.to_dict())
+    headers: dict[str, str] = {}
+    retry_after = getattr(err, "retry_after_seconds", None)
+    if isinstance(retry_after, int) and retry_after > 0:
+        headers["Retry-After"] = str(retry_after)
+
+    return JSONResponse(
+        status_code=err.status_code, content=err.to_dict(), headers=headers or None
+    )
 
 
 async def handle_unexpected_exception(request: Request, exc: Exception) -> JSONResponse:
@@ -79,3 +86,25 @@ class InternalServerError(APIError):
 
     status_code = HTTPStatus.INTERNAL_SERVER_ERROR.value
     error_code = "internal_error"
+
+
+class ServiceUnavailableError(APIError):
+    """The server is temporarily unable to handle the request.
+
+    Used for back-pressure on operator-side capacity limits (Kubernetes
+    quota exceeded, etc.). The client is expected to retry after the
+    advertised interval.
+    """
+
+    status_code = HTTPStatus.SERVICE_UNAVAILABLE.value
+    error_code = "service_unavailable"
+
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        retry_after_seconds: int | None = None,
+    ) -> None:
+        """Capture an optional ``Retry-After`` hint alongside the message."""
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds

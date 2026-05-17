@@ -25,6 +25,7 @@ client-side model objects and returns them; the caller submits.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -53,10 +54,13 @@ from kubernetes.client import (
     V1VolumeMount,
 )
 
+from poiesis.core.constants import FILER_PVC_PATH
 from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
 from poiesis.core.services.filer import filer_strategy_factory as _filer
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from poiesis.api.tes.models import TesExecutor, TesTask
 
 
@@ -64,7 +68,11 @@ TASK_LABEL = "poiesis.io/task"
 COMPONENT_LABEL = "app.kubernetes.io/component"
 NAME_LABEL = "app.kubernetes.io/name"
 
-DEFAULT_PVC_SIZE_GI = "1"
+#: Floor for the per-task scratch PVC when neither the TES request nor the
+#: operator-configured default supplies a size. Kept conservative because a
+#: misconfigured chart should still produce *something* mountable instead of
+#: failing manifest construction.
+_FALLBACK_PVC_SIZE_GI = 1
 
 
 class PodSecurityEnforce(StrEnum):
@@ -99,15 +107,28 @@ class RuntimeConfig:
         poiesis_image: Image for every poiesis-owned container
             (trec, tif, tof, ack).
         pvc_storage_class: Storage class for the Task PVC. None defers
-            to the cluster default.
-        pvc_access_mode: Access mode for the Task PVC. Defaults to
-            ReadWriteOnce.
-        filer_pvc_mount_path: Path at which the PVC is mounted in every
-            container.
+            to the cluster default. The sentinel ``""`` (empty string)
+            explicitly disables dynamic provisioning and requires a
+            pre-bound PV — matches the kubectl convention.
+        pvc_access_modes: PVC access modes applied to every task. Cluster
+            property, not a TES knob: every task in a single deployment
+            runs on one node so RWO is sufficient, but NFS / CephFS
+            clusters need RWX since their CSI driver doesn't support RWO.
+        pvc_default_size_gi: Size used when a TES request omits
+            ``resources.disk_gb``.
+        pvc_max_size_gi: Hard upper bound enforced at submit time. A TES
+            request with ``disk_gb`` over this is rejected with a 400 by
+            ``_reject_unsupported_features``. None disables the cap.
+        pvc_labels: Labels merged onto every per-task PVC. Use for cost
+            allocation, backup operator selectors, data classification.
+        pvc_annotations: Annotations merged onto every per-task PVC. Use
+            for backup operator opt-in (Velero/Kasten), compliance tags.
         image_pull_policy: imagePullPolicy for every container.
         taskpod_service_account: SA bound to the TaskPod; needs RBAC for
             `get`/`watch`/`delete` on its own Pod.
-        job_ttl_seconds: ttlSecondsAfterFinished on the Job.
+        job_ttl_seconds: ttlSecondsAfterFinished on the Job. None omits
+            the field entirely → Job (and PVC via owner ref) is retained
+            until manually deleted. Use for audit-retention deployments.
         active_deadline_seconds: activeDeadlineSeconds on the Job
             (covers stuck-Pending).
         grace_period_seconds: terminationGracePeriodSeconds on the Pod.
@@ -131,11 +152,14 @@ class RuntimeConfig:
     taskpod_namespace: str
     poiesis_image: str
     pvc_storage_class: str | None = None
-    pvc_access_mode: str = "ReadWriteOnce"
-    filer_pvc_mount_path: str = "/transfer"
+    pvc_access_modes: tuple[str, ...] = ("ReadWriteOnce",)
+    pvc_default_size_gi: int = _FALLBACK_PVC_SIZE_GI
+    pvc_max_size_gi: int | None = None
+    pvc_labels: Mapping[str, str] = field(default_factory=dict)
+    pvc_annotations: Mapping[str, str] = field(default_factory=dict)
     image_pull_policy: str = "IfNotPresent"
     taskpod_service_account: str | None = None
-    job_ttl_seconds: int = 3600
+    job_ttl_seconds: int | None = 3600
     active_deadline_seconds: int = 3600
     grace_period_seconds: int = 30
     pod_security_enforce: PodSecurityEnforce = PodSecurityEnforce.RESTRICTED
@@ -172,7 +196,7 @@ def build_taskpod_job(
     if task.id is None:
         msg = "TesTask.id must be set before manifest construction"
         raise ValueError(msg)
-    _reject_unsupported_features(task)
+    _reject_unsupported_features(task, config)
 
     task_id = task.id
     job_name = job_name_for(task_id)
@@ -196,8 +220,11 @@ def job_name_for(task_id: str) -> str:
 _SUPPORTED_BACKEND_PARAMETERS: frozenset[str] = frozenset()
 
 
-def _reject_unsupported_features(task: TesTask) -> None:
-    """Fail fast on TES features the single-Pod model cannot honour."""
+def _reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
+    """Reject TES features the single-Pod model or operator policy cannot honour.
+
+    Raises ``ValueError``; the API translates this into HTTP 400.
+    """
     for idx, ex in enumerate(task.executors):
         if ex.ignore_error:
             msg = (
@@ -221,6 +248,8 @@ def _reject_unsupported_features(task: TesTask) -> None:
                 f"outputs[{idx}].url scheme is not supported as a TES output: "
                 f"{out.url!r}"
             )
+
+    _reject_oversized_disk(task, config)
 
     resources = task.resources
     if (
@@ -254,30 +283,65 @@ def _build_pvc(
     task: TesTask,
     config: RuntimeConfig,
 ) -> V1PersistentVolumeClaim:
-    """Construct the shared Task PVC."""
-    disk_gb = (
-        task.resources.disk_gb if task.resources and task.resources.disk_gb else None
-    )
-    if disk_gb is not None:
-        # Render whole numbers without a trailing .0 for readability.
-        storage = f"{int(disk_gb)}Gi" if float(disk_gb).is_integer() else f"{disk_gb}Gi"
-    else:
-        storage = f"{DEFAULT_PVC_SIZE_GI}Gi"
+    """Construct the shared Task PVC.
 
+    Merges chart-supplied labels/annotations onto the per-task labels; the
+    task labels win on key collision so internal selectors (poiesis.io/task)
+    can't be redefined by operator config.
+    """
+    size_gi = _resolve_pvc_size_gi(task, config)
+    merged_labels = {**config.pvc_labels, **labels}
     return V1PersistentVolumeClaim(
         api_version="v1",
         kind="PersistentVolumeClaim",
         metadata=V1ObjectMeta(
             name=pvc_name,
             namespace=config.taskpod_namespace,
-            labels=labels,
+            labels=merged_labels,
+            annotations=dict(config.pvc_annotations) or None,
         ),
         spec=V1PersistentVolumeClaimSpec(
-            access_modes=[config.pvc_access_mode],
+            access_modes=list(config.pvc_access_modes),
             storage_class_name=config.pvc_storage_class,
-            resources=V1ResourceRequirements(requests={"storage": storage}),
+            resources=V1ResourceRequirements(requests={"storage": f"{size_gi}Gi"}),
         ),
     )
+
+
+def _reject_oversized_disk(task: TesTask, config: RuntimeConfig) -> None:
+    """Reject TES requests whose ``disk_gb`` exceeds the operator cap.
+
+    Cap is matched against the *rounded-up* size — the value the chart will
+    actually try to provision — so the error names the same number an
+    operator would see in ``kubectl get pvc``.
+    """
+    resources = task.resources
+    if resources is None or resources.disk_gb is None or resources.disk_gb <= 0:
+        return
+    if config.pvc_max_size_gi is None:
+        return
+    rounded = max(1, math.ceil(float(resources.disk_gb)))
+    if rounded > config.pvc_max_size_gi:
+        raise ValueError(
+            f"resources.disk_gb={resources.disk_gb} GiB exceeds the "
+            f"operator-configured maximum of {config.pvc_max_size_gi} "
+            "GiB. Ask your administrator to raise "
+            "taskpods.persistence.maxSizeGi or reduce the request."
+        )
+
+
+def _resolve_pvc_size_gi(task: TesTask, config: RuntimeConfig) -> int:
+    """Pick the PVC size in whole GiB.
+
+    TES `resources.disk_gb` is a float; Kubernetes only accepts integer-Gi
+    quantities, so we round up to the nearest GiB to avoid silently
+    under-provisioning. Falls back to ``config.pvc_default_size_gi`` when
+    the request omits ``disk_gb`` or sets it to zero.
+    """
+    requested = task.resources.disk_gb if task.resources else None
+    if requested and requested > 0:
+        return max(1, math.ceil(float(requested)))
+    return max(1, config.pvc_default_size_gi)
 
 
 def _build_job(
@@ -427,11 +491,13 @@ def _build_tof(task: TesTask, config: RuntimeConfig) -> V1Container:
 
 
 def _filer_env(config: RuntimeConfig) -> list[V1EnvVar]:
-    """Env vars TIF/TOF need; pinned to match the spec builder's PVC mount."""
-    return [
-        V1EnvVar(name="POIESIS_FILER_PVC_PATH", value=config.filer_pvc_mount_path),
-        *config.extra_env,
-    ]
+    """Env vars TIF/TOF need.
+
+    The mount path is *not* an operator knob — filer code reads
+    ``poiesis.core.constants.FILER_PVC_PATH`` directly. Only the DB DSN
+    and S3 creds come through here from RuntimeConfig.extra_env.
+    """
+    return list(config.extra_env)
 
 
 def _build_executor(
@@ -452,7 +518,7 @@ def _build_executor(
         command=list(executor.command),
         working_dir=executor.workdir,
         env=env or None,
-        volume_mounts=[_pvc_mount(config)],
+        volume_mounts=[_pvc_mount()],
         stdin=bool(executor.stdin),
     )
 
@@ -476,13 +542,13 @@ def _build_ack_container(task: TesTask, config: RuntimeConfig) -> V1Container:
     )
 
 
-def _pvc_mount(config: RuntimeConfig) -> V1VolumeMount:
-    return V1VolumeMount(name=PVC_VOLUME_NAME, mount_path=config.filer_pvc_mount_path)
+def _pvc_mount() -> V1VolumeMount:
+    return V1VolumeMount(name=PVC_VOLUME_NAME, mount_path=FILER_PVC_PATH)
 
 
 def _poiesis_mounts(config: RuntimeConfig) -> list[V1VolumeMount]:
     """Volume mounts every poiesis-owned container that touches Postgres gets."""
-    mounts = [_pvc_mount(config)]
+    mounts = [_pvc_mount()]
     if config.postgres_ca_configmap:
         mounts.append(
             V1VolumeMount(

@@ -15,7 +15,7 @@ metadata:
     {{- . | nindent 4 }}
   {{- end }}
 data:
-  POIESIS_K8S_NAMESPACE: {{ .Release.Namespace | quote }}
+  POIESIS_NAMESPACE: {{ .Release.Namespace | quote }}
   POIESIS_TASKPOD_NAMESPACE: {{ include "poiesis.taskpodNamespace" . | quote }}
   POIESIS_IMAGE: {{ include "poiesis.image" (dict "component" .Values.api "root" .) | quote }}
   POIESIS_TASKPOD_SERVICE_ACCOUNT: {{ include "poiesis.serviceAccountName" (dict "role" "taskpod" "root" .) | quote }}
@@ -26,9 +26,32 @@ data:
   {{- with .Values.database.caConfigmap }}
   POIESIS_POSTGRES_CA_CONFIGMAP: {{ . | quote }}
   {{- end }}
-  {{- with .Values.taskpods.pvcStorageClass }}
-  POIESIS_PVC_STORAGE_CLASS: {{ . | quote }}
+
+  # ---- Per-task PVC contract -------------------------------------------------
+  # storageClass: the kubectl "-" sentinel for "no provisioning" maps to the
+  # empty string so the runtime sets storageClassName: "" on the PVC. Unset
+  # passes through as unset.
+  {{- $sc := .Values.taskpods.persistence.storageClass }}
+  {{- if ne $sc "" }}
+  POIESIS_PVC_STORAGE_CLASS: {{ ternary "" $sc (eq $sc "-") | quote }}
   {{- end }}
+  POIESIS_PVC_DEFAULT_SIZE_GI: {{ .Values.taskpods.persistence.defaultSizeGi | quote }}
+  POIESIS_PVC_MAX_SIZE_GI: {{ .Values.taskpods.persistence.maxSizeGi | quote }}
+  POIESIS_PVC_ACCESS_MODES: {{ join "," .Values.taskpods.persistence.accessModes | quote }}
+  {{- with .Values.taskpods.persistence.labels }}
+  POIESIS_PVC_LABELS: {{ toJson . | quote }}
+  {{- end }}
+  {{- with .Values.taskpods.persistence.annotations }}
+  POIESIS_PVC_ANNOTATIONS: {{ toJson . | quote }}
+  {{- end }}
+  # retainAfterSeconds: nil → null sentinel reaches the runtime as None and
+  # ttlSecondsAfterFinished is omitted from the Job entirely (audit retention).
+  {{- if kindIs "invalid" .Values.taskpods.persistence.retainAfterSeconds }}
+  POIESIS_JOB_TTL_SECONDS: "null"
+  {{- else }}
+  POIESIS_JOB_TTL_SECONDS: {{ .Values.taskpods.persistence.retainAfterSeconds | quote }}
+  {{- end }}
+
   {{- with .Values.s3.endpoint }}
   AWS_ENDPOINT_URL: {{ . | quote }}
   {{- end }}

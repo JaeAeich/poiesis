@@ -118,9 +118,35 @@
     "taskpods": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["persistence"],
       "properties": {
-        "namespace":       { "type": "string" },
-        "pvcStorageClass": { "type": "string" }
+        "namespace":   { "type": "string" },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["defaultSizeGi", "maxSizeGi", "accessModes"],
+          "properties": {
+            "defaultSizeGi": { "type": "integer", "minimum": 1 },
+            "maxSizeGi":     { "type": "integer", "minimum": 1 },
+            "storageClass":  { "type": "string" },
+            "accessModes": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "ReadWriteOnce",
+                  "ReadWriteMany",
+                  "ReadOnlyMany",
+                  "ReadWriteOncePod"
+                ]
+              }
+            },
+            "labels":             { "type": "object" },
+            "annotations":        { "type": "object" },
+            "retainAfterSeconds": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        }
       }
     },
 

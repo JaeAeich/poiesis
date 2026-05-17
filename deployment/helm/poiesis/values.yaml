@@ -259,9 +259,44 @@ taskpods:
   # When split, the chart renders the API + taskpod Roles in this namespace.
   namespace: ""
 
-  # PVC storage class for the per-task scratch volume. Empty defers to the
-  # cluster default.
-  pvcStorageClass: ""
+  persistence:
+    # Default size when a TES request omits resources.disk_gb.
+    defaultSizeGi: 10
+
+    # Hard upper bound on resources.disk_gb. The API rejects submissions
+    # over this with HTTP 400 before any pod is created. Production MUST
+    # set this; the schema fails install if it's missing.
+    maxSizeGi: 100
+
+    # StorageClass for per-task PVCs. Three states:
+    #   ""    → omit storageClassName; cluster default applies
+    #   "-"   → set storageClassName: "" (disables dynamic provisioning,
+    #           requires a pre-bound PV; matches kubectl convention)
+    #   other → use that named StorageClass
+    storageClass: ""
+
+    # PVC access modes applied to every task. Cluster property: in this
+    # architecture a task runs on one node, so RWO is sufficient. NFS /
+    # CephFS clusters that only offer RWX should set this to
+    # [ReadWriteMany].
+    accessModes:
+      - ReadWriteOnce
+
+    # Labels merged onto every per-task PVC. Use for cost allocation,
+    # backup operator selectors, data classification.
+    labels: {}
+    # cost-center: research-genomics
+    # compliance/data-class: phi
+
+    # Annotations merged onto every per-task PVC. Use for backup
+    # operators (Velero/Kasten) and compliance tagging.
+    annotations: {}
+    # backup.velero.io/backup-volumes: task-data
+
+    # ttlSecondsAfterFinished on the per-task Job (which GCs the PVC via
+    # ownerReferences). null → field is omitted entirely, retaining the
+    # Job and PVC until manually deleted (audit-retention deployments).
+    retainAfterSeconds: 3600
 
 # -----------------------------------------------------------------------------
 # NetworkPolicy

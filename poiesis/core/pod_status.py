@@ -362,10 +362,16 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
 def extract_pending_failure_reason(pod: Mapping[str, Any]) -> str:
     """Best-effort human-readable cause for a stuck-Pending Pod.
 
-    Looks at container waiting reasons first (image pull, config error),
-    then at the `PodScheduled` condition for cluster-side scheduling
-    failures. Returns `"Pending timeout"` when neither yields a useful
-    reason.
+    Order of preference (most specific first):
+
+    1. Container-level waiting reasons that aren't transient (image pull
+        failures, config errors).
+    2. Storage-side scheduling failures: the scheduler emits the
+        specifics inside ``PodScheduled``/``False``.message. We classify
+        the common ones (StorageClass missing, volume zone mismatch,
+        quota exceeded) into stable strings so operators can grep logs.
+    3. Generic ``PodScheduled``/``False``.reason.
+    4. Fallback ``"Pending timeout"``.
     """
     status = pod.get("status") or {}
 
@@ -377,9 +383,48 @@ def extract_pending_failure_reason(pod: Mapping[str, Any]) -> str:
 
     for cond in status.get("conditions") or []:
         if cond.get("type") == "PodScheduled" and cond.get("status") == "False":
+            classified = _classify_scheduling_message(cond.get("message"))
+            if classified is not None:
+                return classified
             return str(cond.get("reason") or "Unschedulable")
 
     return "Pending timeout"
+
+
+#: Storage-failure classifiers.
+#:
+#: Each entry is ``(needle, classification)``. Needles are substrings of the
+#: kubelet/scheduler ``PodScheduled``/``False`` message; the first match wins.
+#: Classifications are stable strings — operators may grep on them, so don't
+#: rephrase casually.
+_SCHEDULING_MESSAGE_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("storageclass.storage.k8s.io", "StorageClass not found"),
+    ("storage class", "StorageClass not found"),
+    ("had volume node affinity conflict", "Volume zone mismatch"),
+    ("node(s) had volume node affinity conflict", "Volume zone mismatch"),
+    ("exceeded quota", "Quota exceeded"),
+    ("forbidden: exceeded quota", "Quota exceeded"),
+    ("pod has unbound immediate PersistentVolumeClaims", "PVC unbound"),
+    ("unbound persistentvolumeclaim", "PVC unbound"),
+    ("insufficient cpu", "Insufficient CPU"),
+    ("insufficient memory", "Insufficient memory"),
+    ("untolerated taint", "Untolerated taint"),
+)
+
+
+def _classify_scheduling_message(message: object) -> str | None:
+    """Map a scheduler/kubelet failure message to a stable classification.
+
+    Returns ``None`` when no known pattern matches, signalling the caller
+    should fall back to the raw ``reason``.
+    """
+    if not isinstance(message, str) or not message:
+        return None
+    lowered = message.lower()
+    for needle, classification in _SCHEDULING_MESSAGE_PATTERNS:
+        if needle in lowered:
+            return classification
+    return None
 
 
 def _iter_container_statuses(
