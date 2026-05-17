@@ -1,70 +1,51 @@
-# Global ARGs
-ARG PY_VERSION=3.13.0
-ARG PY_IMAGE=alpine
+# syntax=docker/dockerfile:1.7
 
-###################################################
-# Stage 1: Build application                      #
-###################################################
-FROM python:${PY_VERSION}-${PY_IMAGE} AS builder
+#######################
+# 1) Python builder   #
+#######################
+FROM python:3.13-slim-bookworm AS builder
 
-WORKDIR /app
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON_DOWNLOADS=never \
+    PYTHONDONTWRITEBYTECODE=1
 
-# Copy `uv` for package management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN --mount=type=cache,id=apt-builder,target=/var/cache/apt \
+    --mount=type=cache,id=apt-lists-builder,target=/var/lib/apt \
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy only files needed for dependency installation
-COPY . .
-
-# Install dependencies
-RUN uv build
-
-###################################################
-# Stage 2: Install tini                           #
-###################################################
-FROM python:${PY_VERSION}-${PY_IMAGE} AS tini-installer
-
-RUN apk add --no-cache tini
-
-###################################################
-# Stage 3: Final runtime image                    #
-###################################################
-FROM python:${PY_VERSION}-${PY_IMAGE} AS runtime
-
-ARG PY_VERSION
-ARG PY_IMAGE
-ARG BUILD_DATE
-ARG GIT_REVISION
-ARG VERSION
-
-LABEL Author="Javed Habib <jh4official@gmail.com>"
-
-LABEL org.opencontainers.image.title="poiesis" \
-    org.opencontainers.image.description="TES (Task Execution Service) implementation on Kubernetes" \
-    org.opencontainers.image.version="${VERSION}" \
-    org.opencontainers.image.created="${BUILD_DATE}" \
-    org.opencontainers.image.revision="${GIT_REVISION}" \
-    org.opencontainers.image.licenses="Apache-2.0" \
-    org.opencontainers.image.maintainers="Javed Habib <jh4official@gmail.com>" \
-    org.opencontainers.image.authors="jaeaeich <jh4official@gmail.com>" \
-    org.opencontainers.image.vendor="jaeaeich" \
-    org.opencontainers.image.authors="Javed Habib <jh4official@gmail.com>" \
-    org.opencontainers.image.url="https://github.com/jaeaeich/poiesis" \
-    org.opencontainers.image.documentation="https://github.com/jaeaeich/poiesis" \
-    org.opencontainers.image.source="https://github.com/jaeaeich/poiesis" \
-    org.opencontainers.image.base.name="python:${PY_VERSION}-${PY_IMAGE}"
-
-RUN addgroup -S poiesis && adduser -S -G poiesis -h /home/poiesis -s /bin/sh poiesis \
-    && mkdir -p /app /home/poiesis/.cache \
-    && chown -R poiesis:poiesis /app /home/poiesis/.cache
-
-# Copy tini, uv, and the built package
-COPY --from=tini-installer /sbin/tini /sbin/tini
-COPY --from=builder /app/dist/*.whl /tmp/
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-RUN uv pip install --system --no-cache /tmp/*.whl && rm /tmp/*.whl
+COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /usr/local/bin/uv
 
 WORKDIR /app
-USER poiesis
+COPY pyproject.toml uv.lock README.md ./
+COPY poiesis ./poiesis
 
-ENTRYPOINT ["/sbin/tini", "--"]
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
+
+###################
+# 2) Runtime      #
+###################
+FROM python:3.13-slim-bookworm AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/app/.venv/bin:$PATH"
+
+RUN --mount=type=cache,id=apt-runtime,target=/var/cache/apt \
+    --mount=type=cache,id=apt-lists-runtime,target=/var/lib/apt \
+    apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 65532 poiesis \
+    && useradd  --system --uid 65532 --gid 65532 --home /home/poiesis --create-home poiesis
+
+COPY --from=builder /app /app
+
+USER 65532:65532
+WORKDIR /app
+
+EXPOSE 8000
+ENTRYPOINT ["poiesis"]
