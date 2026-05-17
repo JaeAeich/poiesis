@@ -103,6 +103,10 @@ async def _reconcile_while_leader(
     """Run the Pod informer + lease renewal until lease is lost or signalled."""
     selector = PodSelector(namespace=namespace, label_selector=_TASK_LABEL)
     events = watch_pods(core_v1, selector)
+    # On entry, reconcile every existing terminal pod the previous watch may
+    # have missed during its outage. Cheap (one list call); the writer is
+    # idempotent so re-applying already-recorded terminals is a no-op.
+    await _sweep_terminal(core_v1, pool, namespace)
     try:
         while not cancelled.is_set():
             renewed = await try_acquire_or_renew(
@@ -120,10 +124,10 @@ async def _reconcile_while_leader(
                     _next(events), timeout=_LEASE_RENEW_INTERVAL_SECONDS
                 )
             except TimeoutError:
-                # No watch event this tick — sweep for stuck-Pending pods so a
-                # task that can't be scheduled (bad image, unbindable pvc) is
-                # eventually moved out of QUEUED/INITIALIZING.
+                # No watch event this tick — sweep stuck-Pending and any
+                # terminal pods the watch dropped on its last reconnect.
                 await _sweep_pending(core_v1, pool, namespace)
+                await _sweep_terminal(core_v1, pool, namespace)
                 continue
             if event is None:
                 logger.warning("tctl: pod stream ended; restarting")
@@ -191,6 +195,53 @@ async def _handle_pod(
             reason,
             result.value,
         )
+
+
+async def _sweep_terminal(
+    core_v1: CoreV1Api,
+    pool: asyncpg.Pool,
+    namespace: str,
+) -> None:
+    """List Succeeded/Failed taskpods and reconcile any the watch missed.
+
+    Watch streams can drop events on reconnect; without this sweep a pod
+    that finishes during the outage window leaves its task stuck in a
+    non-terminal state. The writer's CANCELING precedence + idempotent
+    semantics make re-applying already-terminal tasks a no-op.
+    """
+    try:
+        pod_list = await asyncio.to_thread(
+            core_v1.list_namespaced_pod,
+            namespace=namespace,
+            label_selector=_TASK_LABEL,
+            field_selector="status.phase!=Pending,status.phase!=Running",
+        )
+    except Exception:
+        logger.exception("tctl: terminal sweep — list pods failed")
+        return
+
+    for pod in pod_list.items:
+        pod_dict = pod.to_dict() if hasattr(pod, "to_dict") else dict(pod)
+        phase = ((pod_dict.get("status") or {}).get("phase") or "").lower()
+        if phase not in {"succeeded", "failed"}:
+            continue
+        task_id = _task_id_from_pod(pod_dict)
+        if task_id is None:
+            continue
+        pod_reason = extract_terminal_reason(pod_dict)
+        proposed, reason = pod_terminated_terminal(pod_reason)
+        async with pool.acquire() as conn:
+            result = await state_db.write_terminal_state(
+                cast("asyncpg.Connection", conn), task_id, proposed, reason=reason
+            )
+        if result is not state_db.TerminalWriteResult.NO_OP:
+            logger.info(
+                "tctl: terminal sweep reconciled task=%s as %s (reason=%s, write=%s)",
+                task_id,
+                proposed.value,
+                reason,
+                result.value,
+            )
 
 
 async def _sweep_pending(
