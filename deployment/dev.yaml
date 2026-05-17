@@ -1,53 +1,84 @@
+# Dev-only manifest: stands up Postgres + MinIO + Poiesis (API + TCtl) on a
+# local cluster (OrbStack). Not for production — the real chart lives in
+# deployment/helm. This file is deliberately one-shot: hardcoded creds,
+# imagePullPolicy=IfNotPresent against locally-built images, no probes
+# tuning, no PDB/HPA. Apply with:
+#
+#   docker build -f deployment/images/Dockerfile            -t poiesis:dev            .
+#   docker build -f deployment/images/migrations.Dockerfile -t poiesis-migrations:dev .
+#   kubectl apply -f deployment/dev.yaml
+#   kubectl -n po wait --for=condition=Available deploy/poiesis-api --timeout=120s
+#   kubectl -n po port-forward svc/poiesis-api 8000:8000 &
+#   kubectl -n deps port-forward svc/minio 9000:9000 &
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: deps
 ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: po
+---
 ################################################################################
-# MONGODB
+# POSTGRES
 ################################################################################
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres
+  namespace: deps
+type: Opaque
+stringData:
+  POSTGRES_USER: poiesis
+  POSTGRES_PASSWORD: poiesis
+  POSTGRES_DB: poiesis
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mongodb
+  name: postgres
   namespace: deps
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mongodb
+      app: postgres
   template:
     metadata:
       labels:
-        app: mongodb
+        app: postgres
     spec:
       containers:
-        - name: mongodb
-          image: mongo:8.0.10
+        - name: postgres
+          image: postgres:16-alpine
           ports:
-            - containerPort: 27017
-          env:
-            - name: MONGO_INITDB_ROOT_USERNAME
-              value: "admin"
-            - name: MONGO_INITDB_ROOT_PASSWORD
-              value: "password"
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "poiesis"]
+            initialDelaySeconds: 3
+            periodSeconds: 3
           volumeMounts:
-            - name: mongo-data
-              mountPath: /data/db
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
       volumes:
-        - name: mongo-data
+        - name: data
           persistentVolumeClaim:
-            claimName: mongo-pvc
+            claimName: postgres
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: mongo-pvc
+  name: postgres
   namespace: deps
 spec:
-  accessModes:
-    - ReadWriteOnce
+  accessModes: [ReadWriteOnce]
   resources:
     requests:
       storage: 1Gi
@@ -55,55 +86,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: mongodb
+  name: postgres
   namespace: deps
 spec:
   type: ClusterIP
   selector:
-    app: mongodb
+    app: postgres
   ports:
-    - protocol: TCP
-      port: 27017
-      targetPort: 27017
----
-################################################################################
-# REDIS
-################################################################################
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: redis
-  namespace: deps
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: redis
-  template:
-    metadata:
-      labels:
-        app: redis
-    spec:
-      containers:
-        - name: redis
-          image: redis:8.0.0
-          command: ["redis-server", "--requirepass", "password"]
-          ports:
-            - containerPort: 6379
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis
-  namespace: deps
-spec:
-  type: ClusterIP
-  selector:
-    app: redis
-  ports:
-    - protocol: TCP
-      port: 6379
-      targetPort: 6379
+    - port: 5432
+      targetPort: 5432
 ---
 ################################################################################
 # MINIO
@@ -126,36 +117,33 @@ spec:
       containers:
         - name: minio
           image: minio/minio:RELEASE.2025-04-22T22-12-26Z
-          command:
-            - /bin/bash
-            - -c
-            - minio server /data --console-address :9001
+          command: ["/bin/bash", "-c"]
+          args: ["minio server /data --console-address :9001"]
           env:
             - name: MINIO_ROOT_USER
-              value: "admin"
+              value: admin
             - name: MINIO_ROOT_PASSWORD
-              value: "password"
+              value: password
           ports:
             - containerPort: 9000
               name: api
             - containerPort: 9001
               name: console
           volumeMounts:
-            - name: minio-data
+            - name: data
               mountPath: /data
       volumes:
-        - name: minio-data
+        - name: data
           persistentVolumeClaim:
-            claimName: minio-pvc
+            claimName: minio
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: minio-pvc
+  name: minio
   namespace: deps
 spec:
-  accessModes:
-    - ReadWriteOnce
+  accessModes: [ReadWriteOnce]
   resources:
     requests:
       storage: 1Gi
@@ -176,3 +164,261 @@ spec:
     - name: console
       port: 9001
       targetPort: 9001
+---
+################################################################################
+# POIESIS SHARED CONFIG / RBAC
+################################################################################
+apiVersion: v1
+kind: Secret
+metadata:
+  name: poiesis
+  namespace: po
+type: Opaque
+stringData:
+  DATABASE_URL: postgresql://poiesis:poiesis@postgres.deps.svc.cluster.local:5432/poiesis?sslmode=disable
+  AWS_ENDPOINT_URL: http://minio.deps.svc.cluster.local:9000
+  AWS_ACCESS_KEY_ID: admin
+  AWS_SECRET_ACCESS_KEY: password
+  AWS_REGION: us-east-1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: poiesis
+  namespace: po
+data:
+  POIESIS_K8S_NAMESPACE: po
+  POIESIS_TASKPOD_NAMESPACE: po
+  POIESIS_IMAGE: poiesis:dev
+  POIESIS_TASKPOD_SERVICE_ACCOUNT: poiesis-taskpod
+  POIESIS_POD_SECURITY_ENFORCE: restricted
+  LOG_LEVEL: INFO
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: poiesis-api
+  namespace: po
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: poiesis-tctl
+  namespace: po
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: poiesis-taskpod
+  namespace: po
+---
+# API submits and (on cancel) deletes Jobs; creates PVCs with an
+# ownerReference back to the Job so kube-controller-manager handles PVC
+# garbage collection.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: poiesis-api
+  namespace: po
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: [create, get, list, delete]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [pods, pods/log]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: poiesis-api
+  namespace: po
+subjects:
+  - kind: ServiceAccount
+    name: poiesis-api
+    namespace: po
+roleRef:
+  kind: Role
+  name: poiesis-api
+  apiGroup: rbac.authorization.k8s.io
+---
+# TCtl: read-only over taskpods + leases for leader election. It never
+# deletes pods or jobs — the API owns the delete path.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: poiesis-tctl
+  namespace: po
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: poiesis-tctl
+  namespace: po
+subjects:
+  - kind: ServiceAccount
+    name: poiesis-tctl
+    namespace: po
+roleRef:
+  kind: Role
+  name: poiesis-tctl
+  apiGroup: rbac.authorization.k8s.io
+---
+# TaskPod: trec watches its own Pod via the K8s API.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: poiesis-taskpod
+  namespace: po
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: poiesis-taskpod
+  namespace: po
+subjects:
+  - kind: ServiceAccount
+    name: poiesis-taskpod
+    namespace: po
+roleRef:
+  kind: Role
+  name: poiesis-taskpod
+  apiGroup: rbac.authorization.k8s.io
+---
+################################################################################
+# MIGRATIONS
+################################################################################
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: poiesis-migrate
+  namespace: po
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: poiesis-migrations:dev
+          imagePullPolicy: IfNotPresent
+          args:
+            - -database
+            - $(DATABASE_URL)
+            - up
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: poiesis
+                  key: DATABASE_URL
+---
+################################################################################
+# POIESIS API
+################################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: poiesis-api
+  namespace: po
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: poiesis-api
+  template:
+    metadata:
+      labels:
+        app: poiesis-api
+    spec:
+      serviceAccountName: poiesis-api
+      containers:
+        - name: api
+          image: poiesis:dev
+          imagePullPolicy: IfNotPresent
+          command: [poiesis, api, run]
+          envFrom:
+            - secretRef:
+                name: poiesis
+            - configMapRef:
+                name: poiesis
+          ports:
+            - containerPort: 8000
+          startupProbe:
+            httpGet:
+              path: /startupz
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: poiesis-api
+  namespace: po
+spec:
+  type: ClusterIP
+  selector:
+    app: poiesis-api
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+################################################################################
+# POIESIS TCTL
+################################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: poiesis-tctl
+  namespace: po
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: poiesis-tctl
+  template:
+    metadata:
+      labels:
+        app: poiesis-tctl
+    spec:
+      serviceAccountName: poiesis-tctl
+      containers:
+        - name: tctl
+          image: poiesis:dev
+          imagePullPolicy: IfNotPresent
+          command: [poiesis, tctl, run]
+          envFrom:
+            - secretRef:
+                name: poiesis
+            - configMapRef:
+                name: poiesis
+          env:
+            - name: POIESIS_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
