@@ -7,7 +7,7 @@
 #   - migrations can roll out (or back) without rebuilding the API/TCtl image,
 #   - the hook Job pulls a ~25 MB image instead of the full runtime.
 
-FROM migrate/migrate:v4.18.1
+FROM migrate/migrate:v4.19.1
 
 COPY migrations /migrations
 
