@@ -3,7 +3,7 @@
 #######################
 # 1) Python builder   #
 #######################
-FROM python:3.13-slim-bookworm AS builder
+FROM python:3.14-slim-bookworm AS builder
 
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ###################
 # 2) Runtime      #
 ###################
-FROM python:3.13-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
