@@ -18,6 +18,7 @@ from poiesis.api.tes.models import TesInput, TesOutput
 from poiesis.core.services.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     OutputFilerStrategy,
+    redact_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,8 +111,8 @@ def _put(path: str, url: str) -> None:
                     and urlsplit(redirect).scheme != "https"
                 ):
                     raise requests.HTTPError(
-                        f"PUT {_without_query(target)} was redirected to "
-                        f"{_without_query(redirect)}, which isn't HTTPS",
+                        f"PUT {redact_url(target)} was redirected to "
+                        f"{redact_url(redirect)}, which isn't HTTPS",
                         response=response,
                     )
                 target = redirect
@@ -125,14 +126,14 @@ def _put(path: str, url: str) -> None:
                     .strip()
                 )
                 raise requests.HTTPError(
-                    f"PUT {_without_query(target)} returned {response.status_code}"
+                    f"PUT {redact_url(target)} returned {response.status_code}"
                     f"{': ' + body if body else ''}",
                     response=response,
                 )
-        logger.info("Uploaded %s to %s", path, _without_query(url))
+        logger.info("Uploaded %s to %s", path, redact_url(url))
         return
     raise requests.TooManyRedirects(
-        f"PUT {_without_query(url)} stopped after {_MAX_REDIRECTS} redirects"
+        f"PUT {redact_url(url)} stopped after {_MAX_REDIRECTS} redirects"
     )
 
 
@@ -148,9 +149,17 @@ def _send(path: str, url: str) -> requests.Response:
         # upload URLs such as S3's reject; b"" is sent with a Content-Length
         # of 0.
         data = f if os.fstat(f.fileno()).st_size > 0 else b""
-        return requests.put(
-            url, data=data, allow_redirects=False, timeout=30, stream=True
-        )
+        try:
+            return requests.put(
+                url, data=data, allow_redirects=False, timeout=30, stream=True
+            )
+        except requests.RequestException as e:
+            # requests quotes the URL, query included, in the message of
+            # errors such as a failed connection.
+            query = urlsplit(url).query
+            if not query:
+                raise
+            raise type(e)(str(e).replace(query, "<redacted>")) from None
 
 
 def _join(url: str, relative_path: str) -> str:
@@ -166,8 +175,3 @@ def _join(url: str, relative_path: str) -> str:
     segments = [quote(os.fsencode(s), safe="") for s in relative_path.split("/")]
     path = "/".join([parts.path.rstrip("/"), *segments])
     return urlunsplit(parts._replace(path=path))
-
-
-def _without_query(url: str) -> str:
-    """`url` for logs and errors: a presigned URL's query is its signature."""
-    return urlunsplit(urlsplit(url)._replace(query="", fragment=""))

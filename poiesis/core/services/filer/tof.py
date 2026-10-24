@@ -5,6 +5,7 @@ import logging
 from poiesis.api.tes.models import TesOutput
 from poiesis.core.services.filer.filer import Filer
 from poiesis.core.services.filer.filer_strategy_factory import create_output_strategy
+from poiesis.core.services.filer.strategy.filer_strategy import redact_url
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,10 @@ class Tof(Filer):
                 raise ValueError("output.url is required for TOF")
             strategy = create_output_strategy(output.url, output)
             try:
-                logger.info("Uploading output: %s", output)
+                logger.info(
+                    "Uploading output: %s",
+                    output.model_copy(update={"url": redact_url(output.url)}),
+                )
                 await strategy.upload()
             except Exception:
                 logger.exception("TOF failed")
