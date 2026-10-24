@@ -111,7 +111,15 @@ def _put(path: str, url: str) -> None:
             )
         location = response.headers.get("Location")
         if response.status_code in _UPLOAD_REDIRECTS and location:
-            target = urljoin(target, location)
+            redirect = urljoin(target, location)
+            # An upload to an HTTPS URL is never resent in cleartext.
+            if urlsplit(url).scheme == "https" and urlsplit(redirect).scheme != "https":
+                raise requests.HTTPError(
+                    f"PUT {_without_query(target)} was redirected to "
+                    f"{_without_query(redirect)}, which isn't HTTPS",
+                    response=response,
+                )
+            target = redirect
             continue
         if not HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES:
             # Object stores explain a rejection, such as an expired or

@@ -41,12 +41,15 @@ storage. TOF uploads each file with a `PUT` request that carries a
   signature, so point the output URL at a server that signs each upload
   as it arrives and redirects it to the storage provider.
 - An upload follows a 307 or 308 redirect and sends the file again to
-  the new URL. The first request carries the file too, so up to the
-  whole file reaches a redirecting server, which can answer without
-  reading it.
+  the new URL, unless the output URL is `https://` and the new URL
+  isn't. The first request carries the file too, so up to the whole
+  file reaches a redirecting server, which can answer without reading
+  it.
 - A 301, 302 or 303 response fails the upload, because following it
   would turn the `PUT` into a `GET`. So does any other response outside
   2xx; the TOF log shows the start of the response body.
+- Over `http://`, the URL, including any signature, and the file travel
+  unencrypted, so use `https://` outside a trusted network.
 - The URL is stored with the task, including any signature in its query
   string, so issue presigned URLs with a short expiry.
 
