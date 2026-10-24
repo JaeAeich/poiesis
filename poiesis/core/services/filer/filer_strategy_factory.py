@@ -2,8 +2,8 @@
 
 Two entry points, one per direction. Each looks up the registered
 strategy class for the URI scheme and refuses combinations the strategy
-cannot satisfy (e.g. `http://` outputs, `s3://` content uploads). The
-refusal is a `ValueError` that flows out to a 400 at the API edge.
+cannot satisfy (e.g. inline content as an output). The refusal is a
+`ValueError` that flows out to a 400 at the API edge.
 """
 
 from __future__ import annotations
@@ -42,8 +42,12 @@ _SCHEMES: dict[str, _SchemeEntry] = {
         name="file", input=LocalFilerStrategy, output=LocalFilerStrategy
     ),
     "s3": _SchemeEntry(name="s3", input=S3FilerStrategy, output=S3FilerStrategy),
-    "http": _SchemeEntry(name="http", input=HttpFilerStrategy, output=None),
-    "https": _SchemeEntry(name="https", input=HttpFilerStrategy, output=None),
+    "http": _SchemeEntry(
+        name="http", input=HttpFilerStrategy, output=HttpFilerStrategy
+    ),
+    "https": _SchemeEntry(
+        name="https", input=HttpFilerStrategy, output=HttpFilerStrategy
+    ),
 }
 
 
