@@ -54,6 +54,5 @@ commit-msg:
   commands:
     commitlint:
       run: |
-        config_dir="$(mise where 'npm:@commitlint/config-conventional')"
-        NODE_PATH="$config_dir/node_modules:$config_dir/lib/node_modules" \
+        COMMITLINT_CONFIG_DIR="$(mise where 'npm:@commitlint/config-conventional')" \
         mise x -- commitlint --edit {1}
