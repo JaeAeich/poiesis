@@ -100,41 +100,57 @@ def _put(path: str, url: str) -> None:
     """PUT the file at `path` to `url`, following 307 and 308 redirects."""
     target = url
     for _ in range(_MAX_REDIRECTS + 1):
-        with open(path, "rb") as f:
-            # requests streams a file object and sets Content-Length from its
-            # size, but sends an empty one with chunked encoding, which
-            # presigned upload URLs such as S3's reject; b"" is sent with a
-            # Content-Length of 0.
-            data = f if os.fstat(f.fileno()).st_size > 0 else b""
-            response = requests.put(
-                target, data=data, allow_redirects=False, timeout=30
-            )
-        location = response.headers.get("Location")
-        if response.status_code in _UPLOAD_REDIRECTS and location:
-            redirect = urljoin(target, location)
-            # An upload to an HTTPS URL is never resent in cleartext.
-            if urlsplit(url).scheme == "https" and urlsplit(redirect).scheme != "https":
+        with _send(path, target) as response:
+            location = response.headers.get("Location")
+            if response.status_code in _UPLOAD_REDIRECTS and location:
+                redirect = urljoin(target, location)
+                # An upload to an HTTPS URL is never resent in cleartext.
+                if (
+                    urlsplit(url).scheme == "https"
+                    and urlsplit(redirect).scheme != "https"
+                ):
+                    raise requests.HTTPError(
+                        f"PUT {_without_query(target)} was redirected to "
+                        f"{_without_query(redirect)}, which isn't HTTPS",
+                        response=response,
+                    )
+                target = redirect
+                continue
+            if not HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES:
+                # Object stores explain a rejection, such as an expired or
+                # mismatched signature, at the start of the response body.
+                body = (
+                    response.raw.read(1024, decode_content=True)
+                    .decode(errors="replace")
+                    .strip()
+                )
                 raise requests.HTTPError(
-                    f"PUT {_without_query(target)} was redirected to "
-                    f"{_without_query(redirect)}, which isn't HTTPS",
+                    f"PUT {_without_query(target)} returned {response.status_code}"
+                    f"{': ' + body if body else ''}",
                     response=response,
                 )
-            target = redirect
-            continue
-        if not HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES:
-            # Object stores explain a rejection, such as an expired or
-            # mismatched signature, in the response body.
-            body = response.text[:1024].strip()
-            raise requests.HTTPError(
-                f"PUT {_without_query(target)} returned {response.status_code}"
-                f"{': ' + body if body else ''}",
-                response=response,
-            )
         logger.info("Uploaded %s to %s", path, _without_query(url))
         return
     raise requests.TooManyRedirects(
         f"PUT {_without_query(url)} stopped after {_MAX_REDIRECTS} redirects"
     )
+
+
+def _send(path: str, url: str) -> requests.Response:
+    """PUT the file at `path` to `url` once, without following redirects.
+
+    The response is streamed: its body isn't read, except for up to 1 KiB
+    of an error.
+    """
+    with open(path, "rb") as f:
+        # requests streams a file object and sets Content-Length from its
+        # size, but sends an empty one with chunked encoding, which presigned
+        # upload URLs such as S3's reject; b"" is sent with a Content-Length
+        # of 0.
+        data = f if os.fstat(f.fileno()).st_size > 0 else b""
+        return requests.put(
+            url, data=data, allow_redirects=False, timeout=30, stream=True
+        )
 
 
 def _join(url: str, relative_path: str) -> str:
