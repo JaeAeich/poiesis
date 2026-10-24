@@ -142,7 +142,9 @@ jobs:
           install: true
           cache: true
       - run: |
-          NODE_PATH="$(mise where 'npm:@commitlint/config-conventional')/lib/node_modules" \
-          "$(mise where 'npm:@commitlint/cli')/bin/commitlint" \
+          config_dir="$(mise where 'npm:@commitlint/config-conventional')"
+          # mise's native npm backend and npm install -g use different layouts.
+          NODE_PATH="$config_dir/node_modules:$config_dir/lib/node_modules" \
+          mise x -- commitlint \
             --from "${{ github.event.pull_request.base.sha }}" \
             --to "${{ github.event.pull_request.head.sha }}"

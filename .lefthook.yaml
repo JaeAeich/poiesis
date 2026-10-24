@@ -53,6 +53,7 @@ pre-commit:
 commit-msg:
   commands:
     commitlint:
-      run: >
-        NODE_PATH="$(mise where 'npm:@commitlint/config-conventional')/lib/node_modules"
-        "$(mise where 'npm:@commitlint/cli')/bin/commitlint" --edit {1}
+      run: |
+        config_dir="$(mise where 'npm:@commitlint/config-conventional')"
+        NODE_PATH="$config_dir/node_modules:$config_dir/lib/node_modules" \
+        mise x -- commitlint --edit {1}
