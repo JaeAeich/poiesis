@@ -10,7 +10,7 @@
   <em>TES (Task Execution Service) on kubernetes</em>
 </div>
 
-A [GA4GH TES][tes] task execution service for Kubernetes.
+A [GA4GH TES][tes] task execution service for Kubernetes. TEST
 
 ## Development
 
