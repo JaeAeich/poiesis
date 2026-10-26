@@ -142,7 +142,7 @@ jobs:
           install: true
           cache: true
       - run: |
-          NODE_PATH="$(mise where 'npm:@commitlint/config-conventional')/lib/node_modules" \
-          "$(mise where 'npm:@commitlint/cli')/bin/commitlint" \
+          COMMITLINT_CONFIG_DIR="$(mise where 'npm:@commitlint/config-conventional')" \
+          mise x -- commitlint \
             --from "${{ github.event.pull_request.base.sha }}" \
             --to "${{ github.event.pull_request.head.sha }}"
