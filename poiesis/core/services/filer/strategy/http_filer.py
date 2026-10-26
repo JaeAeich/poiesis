@@ -9,6 +9,7 @@ signs each upload as it arrives and redirects it with a 307 or 308.
 
 import logging
 import os
+import time
 from http import HTTPStatus
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
@@ -29,6 +30,18 @@ logger = logging.getLogger(__name__)
 #: those redirects fail the upload instead.
 _UPLOAD_REDIRECTS = (HTTPStatus.TEMPORARY_REDIRECT, HTTPStatus.PERMANENT_REDIRECT)
 _MAX_REDIRECTS = 10
+
+#: Responses after which a later attempt at an upload may succeed.
+_TRANSIENT_STATUSES = frozenset(
+    {
+        HTTPStatus.TOO_MANY_REQUESTS,
+        HTTPStatus.INTERNAL_SERVER_ERROR,
+        HTTPStatus.BAD_GATEWAY,
+        HTTPStatus.SERVICE_UNAVAILABLE,
+        HTTPStatus.GATEWAY_TIMEOUT,
+    }
+)
+_ATTEMPTS = 3
 
 
 class HttpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
@@ -98,6 +111,38 @@ def _put_directory(directory: str, url: str) -> None:
 
 
 def _put(path: str, url: str) -> None:
+    """PUT the file at `path` to `url`, retrying transient failures.
+
+    Each attempt starts again from `url`, so a server that signs uploads
+    signs the retry afresh. Repeating a PUT of the same file to the same
+    URL is safe even if an earlier attempt got through.
+    """
+    for attempt in range(1, _ATTEMPTS + 1):
+        try:
+            _put_once(path, url)
+            return
+        except requests.RequestException as e:
+            if attempt == _ATTEMPTS or not _is_transient(e):
+                raise
+            delay = 2 ** (attempt - 1)
+            logger.warning("Upload of %s failed, retrying in %d s: %s", path, delay, e)
+            time.sleep(delay)
+
+
+def _is_transient(error: requests.RequestException) -> bool:
+    """True if a later attempt at the upload that raised `error` may succeed."""
+    if isinstance(error, requests.HTTPError):
+        return (
+            error.response is not None
+            and error.response.status_code in _TRANSIENT_STATUSES
+        )
+    # A certificate the client rejects won't pass on a later attempt either.
+    return isinstance(
+        error, (requests.ConnectionError, requests.Timeout)
+    ) and not isinstance(error, requests.exceptions.SSLError)
+
+
+def _put_once(path: str, url: str) -> None:
     """PUT the file at `path` to `url`, following 307 and 308 redirects."""
     target = url
     for _ in range(_MAX_REDIRECTS + 1):

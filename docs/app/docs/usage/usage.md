@@ -48,6 +48,9 @@ storage. TOF uploads each file with a `PUT` request that carries a
 - A 301, 302 or 303 response fails the upload, because following it
   would turn the `PUT` into a `GET`. So does any other response outside
   2xx; the TOF log shows the start of the response body.
+- A 429, 500, 502, 503 or 504 response, a failed connection or a
+  timeout is retried twice, after 1 s and then 2 s, each time from the
+  output URL.
 - Over `http://`, the URL, including any signature, and the file travel
   unencrypted, so use `https://` outside a trusted network.
 - The URL is stored with the task, including any signature in its query
