@@ -47,6 +47,10 @@ run = [
   "uv run ruff check poiesis",
 ]
 
+[tasks.test]
+description = "Run the pytest suite"
+run = "uv run pytest"
+
 [tasks.typecheck]
 description = "Type-check with ty (Astral)"
 run = "uv run ty check poiesis"

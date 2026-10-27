@@ -16,11 +16,22 @@ import os
 import re
 from abc import ABC, abstractmethod
 from glob import glob
+from urllib.parse import urlsplit, urlunsplit
 
 from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
 from poiesis.core.constants import FILER_PVC_PATH
 
 logger = logging.getLogger(__name__)
+
+
+def redact_url(url: str | None) -> str | None:
+    """Return `url` without its query and fragment, for logs and errors.
+
+    The query of a presigned URL is its signature.
+    """
+    if not url:
+        return url
+    return urlunsplit(urlsplit(url)._replace(query="", fragment=""))
 
 
 class BaseFilerStrategy:

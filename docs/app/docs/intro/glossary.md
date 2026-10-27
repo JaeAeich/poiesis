@@ -20,7 +20,7 @@ inline `content`.
 ### Task Output Filer (TOF)
 
 Init container that uploads `TesTask.outputs` from the PVC after the
-last executor finishes. Supports `s3://` and `file://`.
+last executor finishes. Supports `s3://`, `http(s)://`, and `file://`.
 
 ### Executor
 

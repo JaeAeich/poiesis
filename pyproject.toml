@@ -4,6 +4,7 @@ requires = ["hatchling"]
 
 [dependency-groups]
 code_quality = ["deptry", "ruff", "ty", "typos"]
+test = ["pytest"]
 types = [
   "asyncpg-stubs",
   "boto3-stubs",
@@ -68,6 +69,9 @@ known_first_party = ["poiesis"]
 # uvicorn is loaded by gunicorn via the worker_class string
 # "uvicorn.workers.UvicornWorker" in asgi.py — deptry can't see it.
 DEP002 = ["uvicorn"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 indent-width = 4
