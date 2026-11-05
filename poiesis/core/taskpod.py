@@ -633,10 +633,10 @@ def _executor_path_mounts(task: TesTask) -> list[V1VolumeMount]:
 
     - task ``volumes`` and DIRECTORY inputs and outputs at their path;
     - FILE inputs at their path (TIF has created the file by then);
-    - FILE outputs at their parent directory, since the file doesn't exist
-      yet and a ``subPath`` mount of a missing path creates a directory;
-      wildcard outputs at ``path_prefix``, or else at the directory before
-      the first wildcard.
+    - FILE outputs at their parent directory (a missing file can't be the
+    target of a ``subPath`` mount: the kubelet would create a directory);
+    - wildcard outputs at ``path_prefix``, or else at the directory before
+    the first wildcard.
 
     A path under another mounted path already shows through that mount, so
     only the outermost ones are kept. Directories that don't exist yet on
