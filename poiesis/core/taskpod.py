@@ -15,7 +15,8 @@ The TaskPod's shape:
     containers:
         pause    — placeholder; satisfies K8s' "must have a regular container"
 
-All containers share one PVC mounted at the configured filer path. The PVC's
+All containers share one PVC mounted at the configured filer path; executors
+also see it at the task's TES paths (`_executor_path_mounts`). The PVC's
 `ownerReferences` point at the Job so Kubernetes garbage-collects it when
 the Job is deleted.
 
@@ -26,6 +27,7 @@ client-side model objects and returns them; the caller submits.
 from __future__ import annotations
 
 import math
+import posixpath
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -54,6 +56,7 @@ from kubernetes.client import (
     V1VolumeMount,
 )
 
+from poiesis.api.tes.models import TesFileType
 from poiesis.core.constants import FILER_PVC_PATH
 from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
 from poiesis.core.services.filer import filer_strategy_factory as _filer
@@ -266,6 +269,9 @@ def _reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
                 f"{out.url!r}"
             )
 
+    # paths the executor can't be given (raises before anything is created)
+    _executor_path_mounts(task)
+
     _reject_oversized_disk(task, config)
 
     resources = task.resources
@@ -433,8 +439,9 @@ def _build_init_containers(task: TesTask, config: RuntimeConfig) -> list[V1Conta
     if task.inputs:
         containers.append(_build_tif(task, config))
 
+    path_mounts = _executor_path_mounts(task)
     for idx, executor in enumerate(task.executors):
-        containers.append(_build_executor(executor, idx, config))
+        containers.append(_build_executor(executor, idx, config, path_mounts))
 
     if task.outputs:
         containers.append(_build_tof(task, config))
@@ -535,6 +542,7 @@ def _build_executor(
     executor: TesExecutor,
     index: int,
     config: RuntimeConfig,
+    path_mounts: list[V1VolumeMount],
 ) -> V1Container:
     """One executor init container.
 
@@ -549,7 +557,7 @@ def _build_executor(
         command=list(executor.command),
         working_dir=executor.workdir,
         env=env or None,
-        volume_mounts=_executor_mounts(config),
+        volume_mounts=_executor_mounts(config, path_mounts),
         stdin=bool(executor.stdin),
     )
 
@@ -598,14 +606,103 @@ def _poiesis_mounts(config: RuntimeConfig) -> list[Any]:
     return mounts
 
 
-def _executor_mounts(config: RuntimeConfig) -> list[Any]:
+def _executor_mounts(
+    config: RuntimeConfig, path_mounts: list[V1VolumeMount]
+) -> list[Any]:
     """Volume mounts for an executor (user-supplied) container.
 
-    Executors get the PVC for staging files and the operator-supplied
-    ``taskpods.extraVolumeMounts`` — the reference-data use case
-    explicitly requires the mount to reach user code.
+    Executors get the PVC for staging files, the PVC again at each TES path
+    of the task (``path_mounts``, see ``_executor_path_mounts``), and the
+    operator-supplied ``taskpods.extraVolumeMounts`` — the reference-data
+    use case explicitly requires the mount to reach user code.
     """
-    return [_pvc_mount(), *config.taskpod_extra_volume_mounts]
+    return [_pvc_mount(), *path_mounts, *config.taskpod_extra_volume_mounts]
+
+
+_GLOB_CHARS = frozenset("*?[]{}")
+
+
+def _executor_path_mounts(task: TesTask) -> list[V1VolumeMount]:
+    """Mount the PVC at each TES path so the executor sees what the filers see.
+
+    TIF stages ``inputs[].path`` to ``<FILER_PVC_PATH>/<path>`` and TOF
+    collects ``outputs[].path`` from there. A ``subPath`` mount of
+    ``<path>`` at ``<path>`` shows the executor that same PVC location at
+    the path the task declares, so reads and writes meet. Mounted, as in
+    v0.1:
+
+    - task ``volumes`` and DIRECTORY inputs and outputs at their path;
+    - FILE inputs at their path (TIF has created the file by then);
+    - FILE outputs at their parent directory (a missing file can't be the
+    target of a ``subPath`` mount: the kubelet would create a directory);
+    - wildcard outputs at ``path_prefix``, or else at the directory before
+    the first wildcard.
+
+    A path under another mounted path already shows through that mount, so
+    only the outermost ones are kept. Directories that don't exist yet on
+    the PVC are created by the kubelet, with the mode of the volume root.
+
+    Raises ``ValueError`` (HTTP 400) for a path that isn't absolute, that
+    would mean mounting ``/``, or that lies in the filers' staging directory.
+    """
+    candidates: set[str] = set(task.volumes or [])
+    for inp in task.inputs or []:
+        candidates.add(inp.path)
+    for out in task.outputs or []:
+        if out.type == TesFileType.DIRECTORY:
+            candidates.add(out.path)
+        elif _GLOB_CHARS.intersection(out.path):
+            candidates.add(out.path_prefix or _glob_free_dir(out.path))
+        else:
+            candidates.add(posixpath.dirname(out.path))
+
+    mount_paths: list[str] = []
+    for path in sorted({_mount_path(p) for p in candidates}, key=_depth):
+        if not any(_is_within(path, outer) for outer in mount_paths):
+            mount_paths.append(path)
+
+    return [
+        V1VolumeMount(name=PVC_VOLUME_NAME, mount_path=path, sub_path=path[1:])
+        for path in sorted(mount_paths)
+    ]
+
+
+def _mount_path(path: str) -> str:
+    """Normalise a TES path for mounting; reject paths that can't be mounted."""
+    if not posixpath.isabs(path):
+        msg = f"TES paths must be absolute: {path!r}"
+        raise ValueError(msg)
+    normalised = posixpath.normpath(path)
+    # POSIX keeps a leading `//` as is
+    normalised = "/" + normalised.lstrip("/")
+    if normalised == "/":
+        msg = (
+            f"TES path {path!r} would need the task volume mounted at `/`; "
+            "put inputs, outputs and volumes in a directory, e.g. `/data`"
+        )
+        raise ValueError(msg)
+    if _is_within(normalised, FILER_PVC_PATH):
+        msg = (
+            f"TES path {path!r} is in {FILER_PVC_PATH}, where Poiesis stages "
+            "task files; use another directory"
+        )
+        raise ValueError(msg)
+    return normalised
+
+
+def _glob_free_dir(path: str) -> str:
+    """Return the directory before the first wildcard of `path`."""
+    first = min(path.index(char) for char in _GLOB_CHARS if char in path)
+    return posixpath.dirname(path[:first])
+
+
+def _is_within(path: str, outer: str) -> bool:
+    """True if `path` is `outer` or below it, comparing whole components."""
+    return path == outer or path.startswith(outer.rstrip("/") + "/")
+
+
+def _depth(path: str) -> tuple[int, str]:
+    return (path.count("/"), path)
 
 
 def _poiesis_security_context(config: RuntimeConfig) -> V1SecurityContext | None:
