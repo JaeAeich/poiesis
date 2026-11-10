@@ -23,7 +23,38 @@ workflow engines (Nextflow, Cromwell, Toil), client SDKs, or plain
 - **Inline content** — `inputs[].content` carries the file body
   inline; no external storage needed.
 - **Multi-executor** — executors run strictly sequentially through
-  init-container ordering; the `/transfer` PVC persists between them.
+  init-container ordering. Data persists between them only under the
+  paths the task declares (see [Task paths](#task-paths)).
+
+## Task paths
+
+Executors see the task volume at the paths the task declares, where TIF
+stages inputs and TOF collects outputs: each declared path is a mount of
+the same location of the volume, so a file the executor writes under
+`/data` is the file TOF uploads. What is mounted:
+
+- `volumes` and `DIRECTORY` inputs and outputs: the path itself.
+- `FILE` inputs: the file itself, a single-file mount. It can be read and
+  written in place, but not renamed or replaced (e.g. `mv tmp in.txt`
+  fails), and nothing can be created below it.
+- `FILE` outputs: their directory.
+- Outputs with wildcards (`FILE` or `DIRECTORY`): the directory before the
+  first wildcard (`/data` for `/data/*/x.txt`), whatever `path_prefix` is.
+
+A path below another mounted path is covered by that mount. Only data
+under these paths persists between executors and reaches TOF; anything
+else an executor writes stays in its own container and is lost.
+
+A task is refused with `400 Bad Request` if a path:
+
+- is relative;
+- has a `..` component (`.` and repeated slashes are fine);
+- would need a mount at `/` (e.g. `/` as a volume, or a
+  wildcard in the first component, `/*.txt`);
+- is in `/transfer`, where Poiesis stages task files;
+- is below a `FILE` input;
+- is at or below an operator mount (`taskpods.extraVolumeMounts`), such as
+  a read-only reference volume.
 
 ## HTTP(S) outputs
 

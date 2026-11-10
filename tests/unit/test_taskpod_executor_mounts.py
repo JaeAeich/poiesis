@@ -19,8 +19,10 @@ from poiesis.api.tes.models import (
     TesOutput,
     TesTask,
 )
+from kubernetes.client import V1VolumeMount
+
 from poiesis.core.constants import FILER_PVC_PATH
-from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
+from poiesis.core.taskpod import PVC_VOLUME_NAME, RuntimeConfig, build_taskpod_job
 
 CONFIG = RuntimeConfig(taskpod_namespace="tasks", poiesis_image="poiesis:test")
 
@@ -66,14 +68,24 @@ def executor_containers(task: TesTask) -> list:
     ]
 
 
-def path_mounts(task: TesTask) -> dict[str, str]:
-    """Executor mounts at TES paths: mount path → PVC subPath."""
-    (container,) = executor_containers(task)
-    return {
-        m.mount_path: m.sub_path
+def path_mounts(task: TesTask, config: RuntimeConfig = CONFIG) -> dict[str, str]:
+    """Executor mounts at TES paths: mount path → PVC subPath.
+
+    Also checks that each is a writable mount of the task's PVC.
+    """
+    _, job = build_taskpod_job(task, config)
+    (container,) = [
+        c for c in job.spec.template.spec.init_containers if c.name.startswith("exec-")
+    ]
+    mounts = [
+        m
         for m in container.volume_mounts
-        if m.mount_path != FILER_PVC_PATH
-    }
+        if isinstance(m, V1VolumeMount) and m.mount_path != FILER_PVC_PATH
+    ]
+    for m in mounts:
+        assert m.name == PVC_VOLUME_NAME, m
+        assert not m.read_only, m
+    return {m.mount_path: m.sub_path for m in mounts}
 
 
 def pvc_location(mounts: dict[str, str], path: str) -> str | None:
@@ -180,11 +192,106 @@ def test_sibling_prefixes_are_not_nested():
 
 def test_paths_are_normalised():
     task = make_task(
-        inputs=[file_input("/data/./x/../in.txt")],
+        inputs=[file_input("/data/./in.txt"), file_input("//data//ref.fa")],
         outputs=[file_output("/data/out.txt")],
     )
 
+    mounts = path_mounts(task)
+
+    assert mounts == {"/data": "data"}
+    for path in ("/data/./in.txt", "//data//ref.fa"):
+        # TIF joins the path as given onto the PVC, which is the same file
+        assert pvc_location(mounts, posixpath.normpath("/" + path.lstrip("/"))) == (
+            posixpath.normpath(filer_location(path))
+        )
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        make_task(inputs=[file_input("/data/x/../in.txt")]),
+        make_task(outputs=[file_output("/data/*.txt", path_prefix="/data/x/..")]),
+        make_task(volumes=["/scratch/.."]),
+    ],
+)
+def test_parent_components_are_rejected(task: TesTask):
+    # TIF and TOF join paths as given, the executor mounts normalised ones
+    # (TesOutput normalises outputs[].path itself, so it can't have `..`)
+    with pytest.raises(ValueError, match="`..` component"):
+        build_taskpod_job(task, CONFIG)
+
+
+@pytest.mark.parametrize("path_prefix", ["/", "/data", "/data/s1", None])
+def test_wildcard_outputs_are_mounted_at_the_pattern_directory(path_prefix):
+    # TOF globs /transfer/<path> whatever path_prefix is
+    task = make_task(outputs=[file_output("/data/*/x.txt", path_prefix=path_prefix)])
+
+    mounts = path_mounts(task)
+
+    assert mounts == {"/data": "data"}
+    for match in ("/data/s1/x.txt", "/data/s2/x.txt"):
+        assert pvc_location(mounts, match) == filer_location(match)
+
+
+def test_directory_wildcard_outputs_are_mounted_at_the_pattern_directory():
+    task = make_task(
+        outputs=[
+            TesOutput(
+                path="/data/res_*",
+                url="s3://bucket/out",
+                type=TesFileType.DIRECTORY,
+                path_prefix="/data",
+            )
+        ]
+    )
+
     assert path_mounts(task) == {"/data": "data"}
+
+
+def test_paths_below_a_file_input_are_rejected():
+    task = make_task(
+        inputs=[file_input("/data")], outputs=[file_output("/data/out.txt")]
+    )
+
+    with pytest.raises(ValueError, match="below inputs"):
+        build_taskpod_job(task, CONFIG)
+
+
+def test_output_at_a_file_inputs_path_is_allowed():
+    # updating an input in place: the output's parent directory covers it
+    task = make_task(
+        inputs=[file_input("/data/in.txt")], outputs=[file_output("/data/in.txt")]
+    )
+
+    assert path_mounts(task) == {"/data": "data"}
+
+
+OPERATOR_CONFIG = RuntimeConfig(
+    taskpod_namespace="tasks",
+    poiesis_image="poiesis:test",
+    taskpod_extra_volume_mounts=[
+        {"name": "ref", "mountPath": "/ref", "readOnly": True}
+    ],
+)
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        make_task(inputs=[dir_input("/ref")]),
+        make_task(inputs=[file_input("/ref/genome.fa")]),
+        make_task(outputs=[file_output("/ref/sub/out.txt")]),
+    ],
+)
+def test_tes_paths_at_or_below_operator_mounts_are_rejected(task: TesTask):
+    with pytest.raises(ValueError, match="where the operator mounts a volume"):
+        build_taskpod_job(task, OPERATOR_CONFIG)
+
+
+def test_tes_paths_next_to_operator_mounts_are_allowed():
+    task = make_task(outputs=[file_output("/refx/out.txt")])
+
+    assert path_mounts(task, OPERATOR_CONFIG) == {"/refx": "refx"}
 
 
 def test_every_executor_gets_the_mounts_and_keeps_the_staging_mount():
@@ -193,6 +300,10 @@ def test_every_executor_gets_the_mounts_and_keeps_the_staging_mount():
     for container in executor_containers(task):
         mounts = [(m.mount_path, m.sub_path) for m in container.volume_mounts]
         assert mounts == [(FILER_PVC_PATH, None), ("/data", "data")]
+        assert all(
+            m.name == PVC_VOLUME_NAME and not m.read_only
+            for m in container.volume_mounts
+        )
 
 
 def test_operator_mounts_still_reach_executors():
