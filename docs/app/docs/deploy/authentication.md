@@ -26,6 +26,7 @@ auth:
     audience:        poiesis
     jwksCacheTtl:    3600    # seconds; lower = faster key-rotation pickup
     clockSkew:       30      # seconds of leeway on exp / nbf / iat
+    timeout:         10      # seconds per call to the issuer
     principalClaim:  sub     # see "Principal claim" below
     requiredScopes:  []      # optional: reject tokens missing these
     userinfo:
@@ -38,9 +39,12 @@ misconfiguration surfaces immediately rather than as silent 401s.
 
 There is no `clientSecret` in the chart — Poiesis is a resource
 server, not an OAuth client, and never talks to the token endpoint.
-The only network call out is an anonymous GET to the issuer's
+The only network calls out go to the issuer: an anonymous GET of its
 discovery document and JWKS endpoint, performed once at startup and
-then refreshed lazily per `jwksCacheTtl`.
+then refreshed lazily per `jwksCacheTtl`, and, if enabled, the
+userinfo lookup (see "User info" below). `timeout`
+(`POIESIS_AUTH_OIDC_TIMEOUT`, a positive number of seconds) bounds
+each of these calls; a slower answer at startup aborts the start.
 
 ## Disabling auth
 
@@ -121,8 +125,9 @@ to (not merged into) the token claims:
   IdP takes to show. The cache is bounded (least recently used
   tokens go first); parallel first requests with a new token may each
   call the endpoint.
-- Any failure (endpoint unreachable, an error status, a different
-  `sub`, a non-JSON answer) is a `401 unauthorized`. Signed or
+- Any failure (endpoint unreachable, slower than `timeout`, an error
+  status, a different `sub`, a non-JSON answer) is a
+  `401 unauthorized`. Signed or
   encrypted userinfo (`application/jwt`) is not supported.
 - The token is sent to the userinfo endpoint only, never to any other
   service. The principal is still taken from the token.
