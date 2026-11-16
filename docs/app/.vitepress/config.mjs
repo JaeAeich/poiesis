@@ -60,6 +60,10 @@ export default defineConfig({
                         text: "Authentication",
                         link: "/docs/deploy/authentication",
                     },
+                    {
+                        text: "Authorization",
+                        link: "/docs/deploy/authorization",
+                    },
                 ],
             },
         ],
