@@ -44,7 +44,8 @@ discovery document and JWKS endpoint, performed once at startup and
 then refreshed lazily per `jwksCacheTtl`, and, if enabled, the
 userinfo lookup (see "User info" below). `timeout`
 (`POIESIS_AUTH_OIDC_TIMEOUT`, a positive number of seconds) bounds
-each of these calls; a slower answer at startup aborts the start.
+each of these calls in total, from connecting to the last byte of the
+answer; a slower answer at startup aborts the start.
 
 ## Disabling auth
 
@@ -126,9 +127,8 @@ to (not merged into) the token claims:
   tokens go first); parallel first requests with a new token may each
   call the endpoint.
 - Any failure (endpoint unreachable, slower than `timeout`, an error
-  status, a different `sub`, a non-JSON answer) is a
-  `401 unauthorized`. Signed or
-  encrypted userinfo (`application/jwt`) is not supported.
+  status, a different `sub`, a non-JSON answer) is a `401 unauthorized`.
+  Signed or encrypted userinfo (`application/jwt`) is not supported.
 - The token is sent to the userinfo endpoint only, never to any other
   service. The principal is still taken from the token.
 

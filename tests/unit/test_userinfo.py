@@ -5,6 +5,9 @@ userinfo) is a fake on a fake network (see `fake_issuer.py`).
 """
 
 import asyncio
+import math
+import time
+from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
 from typing import Any
 
@@ -215,9 +218,9 @@ def test_bootstrap_needs_usable_endpoint(
 # -- OIDC timeout ------------------------------------------------------------
 
 
-def timeouts(network: Network) -> set[float]:
-    """Return the read timeouts of all recorded requests."""
-    return {request.extensions["timeout"]["read"] for request in network.requests}
+def timeouts(network: Network) -> list[dict[str, float]]:
+    """Return the httpx timeouts (per phase) of all recorded requests."""
+    return [request.extensions["timeout"] for request in network.requests]
 
 
 @pytest.mark.parametrize(
@@ -242,6 +245,13 @@ def test_timeout_setting_invalid(monkeypatch: pytest.MonkeyPatch, value: str) ->
         AuthSettings()
 
 
+@pytest.mark.parametrize("value", [0, -1, math.nan, math.inf])
+def test_timeout_argument_invalid(value: float) -> None:
+    """The same holds when the settings are built in code."""
+    with pytest.raises(ValueError, match="timeout"):
+        AuthSettings(timeout=value)
+
+
 @pytest.mark.parametrize("seconds", [None, 2.5])
 def test_timeout_bounds_every_call(
     issuer: Issuer,
@@ -255,14 +265,17 @@ def test_timeout_bounds_every_call(
     principal(validator(), issuer.token())
     paths = {request.url.path for request in network.requests}
     assert paths == {"/.well-known/openid-configuration", "/jwks", "/userinfo"}
-    assert timeouts(network) == {seconds or 10.0}
+    phases = dict.fromkeys(("connect", "read", "write", "pool"), seconds or 10.0)
+    assert timeouts(network) == [phases] * 3
 
 
 def slow(delay: float) -> Any:
     """Return a userinfo handler that answers after `delay` seconds.
 
     The fake network doesn't wait; it fails like a timed-out request
-    whenever the client's read timeout is shorter than `delay`.
+    whenever the client's read timeout is shorter than `delay`. This
+    checks the mapping of a timeout to 401; `test_trickle_*` check
+    that the timeout bounds the whole call.
     """
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -281,6 +294,65 @@ def test_slow_userinfo_is_401(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -
         principal(validator(), issuer.token())
     monkeypatch.delenv("POIESIS_AUTH_OIDC_TIMEOUT")
     assert principal(validator(), issuer.token()).userinfo == {"sub": "alice"}
+
+
+TRICKLE_BODY = b'{"sub": "alice", "padding": "................"}'
+TRICKLE_GAP = 0.05  # seconds between bytes: each wait is far below the timeout
+TRICKLE_TIMEOUT = 0.5  # the whole answer takes about 2.3 s
+
+
+async def trickle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    """Answer any request with JSON, one byte at a time."""
+    await reader.readuntil(b"\r\n\r\n")
+    writer.write(
+        b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n"
+        b"content-length: %d\r\n\r\n" % len(TRICKLE_BODY)
+    )
+    try:
+        for byte in TRICKLE_BODY:
+            writer.write(bytes([byte]))
+            await writer.drain()
+            await asyncio.sleep(TRICKLE_GAP)
+    except ConnectionError:  # the client gave up
+        pass
+    writer.close()
+
+
+async def against_trickle(call: Callable[[str], Awaitable[Any]]) -> float:
+    """Run `call` with the URL of a local trickling server; return seconds."""
+    server = await asyncio.start_server(trickle, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    start = time.monotonic()
+    try:
+        await call(f"http://127.0.0.1:{port}")
+    finally:
+        elapsed = time.monotonic() - start
+        server.close()
+    return elapsed
+
+
+def test_trickle_userinfo_is_401() -> None:
+    """The timeout bounds the whole userinfo call, not each read."""
+
+    async def call(url: str) -> None:
+        with pytest.raises(UnauthorizedError) as error:
+            await OIDCValidator._fetch_userinfo(
+                f"{url}/userinfo", "token", TRICKLE_TIMEOUT
+            )
+        assert isinstance(error.value.__cause__, TimeoutError)
+
+    assert asyncio.run(against_trickle(call)) < 2 * TRICKLE_TIMEOUT
+
+
+def test_trickle_discovery_aborts_start() -> None:
+    """A slow issuer at startup fails the start within the timeout."""
+
+    async def call(url: str) -> None:
+        settings = AuthSettings(issuer=url, audience="a", timeout=TRICKLE_TIMEOUT)
+        with pytest.raises(TimeoutError):
+            await OIDCValidator(settings).bootstrap()
+
+    assert asyncio.run(against_trickle(call)) < 2 * TRICKLE_TIMEOUT
 
 
 class TestClaimLookup:

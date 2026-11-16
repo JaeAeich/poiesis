@@ -36,12 +36,13 @@ def _parse_seconds_env(name: str, default: float) -> float:
     raw = os.environ.get(name, "")
     if raw == "":
         return default
+    message = f"{name} must be a positive number of seconds, got {raw!r}"
     try:
         seconds = float(raw)
-    except ValueError:
-        seconds = math.nan
-    if not (0 < seconds < math.inf):
-        raise ValueError(f"{name} must be a positive number of seconds, got {raw!r}")
+    except ValueError as exc:
+        raise ValueError(message) from exc
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError(message)
     return seconds
 
 
@@ -248,6 +249,8 @@ class AuthSettings(BaseModel):
     # userinfo).
     timeout: float = Field(
         default_factory=lambda: _parse_seconds_env("POIESIS_AUTH_OIDC_TIMEOUT", 10.0),
+        gt=0,
+        allow_inf_nan=False,
     )
     # Fetch the issuer's userinfo per token (cached) and keep it on the
     # principal next to the token claims. Off by default.

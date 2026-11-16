@@ -12,6 +12,7 @@ to wire dependency injection, so ``Request`` must be a live import,
 not a string forward reference. Same constraint as `poiesis.api.deps`.
 """
 
+import asyncio
 import copy
 import hashlib
 import logging
@@ -125,10 +126,9 @@ class OIDCValidator:
         configured server that returns 401 on every request.
         """
         url = self._settings.issuer.rstrip("/") + _DISCOVERY_SUFFIX
-        async with httpx.AsyncClient(timeout=self._settings.timeout) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            doc = resp.json()
+        resp = await _get(url, self._settings.timeout)
+        resp.raise_for_status()
+        doc = resp.json()
         self._issuer_from_discovery = doc.get("issuer") or self._settings.issuer
         self._jwks_uri = doc["jwks_uri"]
         if self._settings.userinfo_enabled:
@@ -205,16 +205,13 @@ class OIDCValidator:
         Only plain JSON is accepted: signed or encrypted userinfo
         (``application/jwt``) is not supported.
         """
+        headers = {
+            "Authorization": _BEARER_PREFIX + token,
+            "Accept": "application/json",
+        }
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.get(
-                    uri,
-                    headers={
-                        "Authorization": _BEARER_PREFIX + token,
-                        "Accept": "application/json",
-                    },
-                )
-        except httpx.HTTPError as exc:
+            resp = await _get(uri, timeout, headers)
+        except (httpx.HTTPError, TimeoutError) as exc:
             logger.warning("Userinfo request failed: %s", type(exc).__name__)
             raise UnauthorizedError("userinfo lookup failed") from exc
         content_type = resp.headers.get("content-type", "")
@@ -238,11 +235,10 @@ class OIDCValidator:
         """Refresh the cached JWKS from the discovered ``jwks_uri``."""
         if not self._jwks_uri:
             raise RuntimeError("OIDCValidator used before bootstrap()")
-        async with httpx.AsyncClient(timeout=self._settings.timeout) as client:
-            resp = await client.get(self._jwks_uri)
-            resp.raise_for_status()
-            self._jwks = KeySet.import_key_set(resp.json())
-            self._jwks_fetched_at = time.monotonic()
+        resp = await _get(self._jwks_uri, self._settings.timeout)
+        resp.raise_for_status()
+        self._jwks = KeySet.import_key_set(resp.json())
+        self._jwks_fetched_at = time.monotonic()
 
     async def _jwks_or_refresh(self) -> KeySet:
         """Return the cached JWKS, refreshing it if past the TTL."""
@@ -312,6 +308,22 @@ class OIDCValidator:
         if not isinstance(value, str) or not value:
             raise UnauthorizedError(f"token missing or non-string claim {path!r}")
         return Principal(id=value, claims=claims, userinfo=userinfo or {})
+
+
+async def _get(
+    url: str, timeout: float, headers: dict[str, str] | None = None
+) -> httpx.Response:
+    """GET ``url`` from the issuer within ``timeout`` seconds in total.
+
+    httpx's own timeout applies to each connect or read separately, so
+    a slowly trickling answer could take far longer; the overall
+    deadline raises :class:`TimeoutError`.
+    """
+    async with (
+        asyncio.timeout(timeout),
+        httpx.AsyncClient(timeout=timeout) as client,
+    ):
+        return await client.get(url, headers=headers)
 
 
 def _walk_claim_path(claims: dict[str, Any], path: str) -> Any:
