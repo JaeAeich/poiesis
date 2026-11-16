@@ -156,6 +156,12 @@ auth:
     principalClaim: sub
     # Optional list of scopes a token MUST carry. Empty disables the check.
     requiredScopes: []
+    # Fetch the issuer's userinfo (endpoint from OIDC discovery) for every
+    # token, cached until the token expires (at most 5 minutes), for claims
+    # the IdP releases there but not in access tokens. Its `sub` must equal
+    # the token's. Any failure is a 401.
+    userinfo:
+      enabled: false
 
 # S3-compatible storage. Optional: required only when task inputs/outputs
 # reference s3:// URLs.

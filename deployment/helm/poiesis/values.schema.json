@@ -72,6 +72,11 @@
             "requiredScopes": {
               "type": "array",
               "items": { "type": "string", "minLength": 1 }
+            },
+            "userinfo": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "enabled": { "type": "boolean" } }
             }
           }
         }
