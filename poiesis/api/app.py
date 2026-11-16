@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
 from poiesis.api.auth import OIDCValidator
+from poiesis.api.authz import Authz
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.api.exceptions import (
     APIError,
@@ -42,6 +43,7 @@ api_constants = get_poiesis_api_constants()
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Build process-wide resources at startup, tear them down at shutdown."""
     settings = load_settings()
+    settings.authz.validate_for(auth_enabled=settings.auth.enabled)
     app.state.settings = settings
     app.state.runtime_config = settings.runtime_config()
 
@@ -73,9 +75,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.oidc = None
         logger.warning("OIDC auth is DISABLED; all requests will run as anonymous")
 
+    app.state.authz = Authz(settings.authz)
+
     try:
         yield
     finally:
+        await app.state.authz.aclose()
         logger.info("Closing Postgres pool")
         await app.state.db_pool.close()
 

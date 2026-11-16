@@ -88,6 +88,24 @@ def _parse_json_object_env(name: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in parsed.items()}
 
 
+def _parse_json_strings_env(name: str) -> tuple[str, ...]:
+    """JSON-array-of-strings env value → tuple. Empty/unset returns ().
+
+    JSON rather than CSV because values such as group URNs may contain
+    commas. Anything but an array of strings raises.
+    """
+    raw = os.environ.get(name, "")
+    if not raw:
+        return ()
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{name} is not valid JSON: {exc}") from exc
+    if not isinstance(parsed, list) or not all(isinstance(v, str) for v in parsed):
+        raise TypeError(f"{name} must encode a JSON array of strings")
+    return tuple(parsed)
+
+
 def _parse_json_array_env(name: str) -> list[dict[str, Any]]:
     """JSON-array-of-objects env value → list[dict].
 
@@ -281,6 +299,77 @@ class AuthSettings(BaseModel):
             )
 
 
+class AuthzSettings(BaseModel):
+    """Authorization settings: the claim rule and the decision service.
+
+    Both are off by default. See ``poiesis.api.authz`` and the
+    "Authorization" docs page.
+    """
+
+    required_claim_name: str = Field(
+        default_factory=lambda: os.environ.get("POIESIS_AUTHZ_REQUIRED_CLAIM_NAME", ""),
+    )
+    required_claim_values: tuple[str, ...] = Field(
+        default_factory=lambda: _parse_json_strings_env(
+            "POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES"
+        ),
+    )
+    required_claim_prefixes: tuple[str, ...] = Field(
+        default_factory=lambda: _parse_json_strings_env(
+            "POIESIS_AUTHZ_REQUIRED_CLAIM_PREFIXES"
+        ),
+    )
+    decision_service_url: str = Field(
+        default_factory=lambda: os.environ.get(
+            "POIESIS_AUTHZ_DECISION_SERVICE_URL", ""
+        ),
+    )
+    decision_service_timeout: float = Field(
+        default_factory=lambda: float(
+            os.environ.get("POIESIS_AUTHZ_DECISION_SERVICE_TIMEOUT") or 2
+        ),
+        gt=0,
+    )
+    decision_service_claims: tuple[str, ...] = Field(
+        default_factory=lambda: _parse_json_strings_env(
+            "POIESIS_AUTHZ_DECISION_SERVICE_CLAIMS"
+        ),
+    )
+    decision_service_credential_file: str = Field(
+        default_factory=lambda: os.environ.get(
+            "POIESIS_AUTHZ_DECISION_SERVICE_CREDENTIAL_FILE", ""
+        ),
+    )
+
+    def validate_for(self, *, auth_enabled: bool) -> None:
+        """Refuse configurations that would not do what they say.
+
+        Called at app startup: authorization without authentication (no
+        real subject could reach a decision), and a claim rule that names
+        no claim or no values and prefixes.
+        """
+        rule = (
+            self.required_claim_name,
+            self.required_claim_values,
+            self.required_claim_prefixes,
+        )
+        service = (
+            self.decision_service_url,
+            self.decision_service_claims,
+            self.decision_service_credential_file,
+        )
+        if not auth_enabled and any(rule + service):
+            raise ValueError("POIESIS_AUTHZ_* is set but auth is disabled")
+        if any(rule) and not (
+            self.required_claim_name
+            and (self.required_claim_values or self.required_claim_prefixes)
+        ):
+            raise ValueError(
+                "the claim rule needs POIESIS_AUTHZ_REQUIRED_CLAIM_NAME and "
+                "POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES or _PREFIXES"
+            )
+
+
 class Settings(BaseModel):
     """API runtime settings."""
 
@@ -391,6 +480,7 @@ class Settings(BaseModel):
         default_factory=lambda: os.environ.get("AWS_REGION") or None,
     )
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    authz: AuthzSettings = Field(default_factory=AuthzSettings)
 
     def runtime_config(self) -> RuntimeConfig:
         """Materialise the TaskPod RuntimeConfig used by the spec builder."""

@@ -364,6 +364,25 @@ async def get_task(
     )
 
 
+async def get_task_meta(
+    conn: asyncpg.Connection, task_id: str
+) -> dict[str, Any] | None:
+    """Return a task's ``owner``, ``state`` and ``tags``, or ``None``.
+
+    No owner filter: the caller decides who may see the task.
+    """
+    row = await conn.fetchrow(
+        "SELECT principal, state, tags FROM tasks WHERE id = $1", uuid.UUID(task_id)
+    )
+    if row is None:
+        return None
+    return {
+        "owner": row["principal"],
+        "state": row["state"],
+        "tags": _load_jsonb(row["tags"]) or {},
+    }
+
+
 async def list_tasks(
     conn: asyncpg.Connection,
     filters: ListFilters,

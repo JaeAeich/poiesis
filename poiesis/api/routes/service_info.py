@@ -39,7 +39,7 @@ _api_constants = get_poiesis_api_constants()
 async def service_info() -> TesServiceInfo:
     """Return TES-compliant service information."""
     return TesServiceInfo(
-        id="org.ga4gh.poiesis",
+        id=_api_constants.SERVICE_ID,
         name="Poiesis",
         description="GA4GH TES (Task Execution Service) on Kubernetes",
         organization=Organization(

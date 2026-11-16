@@ -1,0 +1,46 @@
+{
+  "case": "13",
+  "description": "Poiesis ListTasks on tes_task_set own, by a member",
+  "expect": {
+    "reference_policy": {
+      "decision": true
+    }
+  },
+  "name": "poiesis-list-own",
+  "request": {
+    "action": {
+      "name": "ListTasks",
+      "properties": {
+        "view": "MINIMAL"
+      }
+    },
+    "context": {
+      "tes": {
+        "profile": "tes-authzen/1",
+        "service_id": "org.ga4gh.poiesis"
+      }
+    },
+    "resource": {
+      "id": "own",
+      "type": "tes_task_set"
+    },
+    "subject": {
+      "id": "{{subject_id}}",
+      "properties": {
+        "claims": {
+          "eduperson_entitlement": [
+            "urn:geant:lifescience-ri.eu:group:example-vo:analysts#login.aai.lifescience-ri.eu"
+          ]
+        },
+        "client_id": "{{client_id}}",
+        "iss": "{{iss}}",
+        "scope": [
+          "openid",
+          "eduperson_entitlement"
+        ],
+        "sub": "{{sub}}"
+      },
+      "type": "user"
+    }
+  }
+}

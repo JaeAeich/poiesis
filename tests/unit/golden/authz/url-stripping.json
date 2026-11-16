@@ -1,0 +1,67 @@
+[
+  {
+    "input": "https://u:p@h/p?sig=x",
+    "expected": "https://h/p",
+    "description": "spec: userinfo and query"
+  },
+  {
+    "input": "s3://b/k?X-Amz-Signature=x",
+    "expected": "s3://b/k",
+    "description": "spec: presigned query"
+  },
+  {
+    "input": "ftp://a@b@h/p",
+    "expected": "ftp://h/p",
+    "description": "spec: last '@' in the authority"
+  },
+  {
+    "input": "file:///d/f",
+    "expected": "file:///d/f",
+    "description": "spec: empty authority unchanged"
+  },
+  {
+    "input": "/local/path",
+    "expected": "/local/path",
+    "description": "spec: no '://', no '@'"
+  },
+  {
+    "input": "user@host:path",
+    "expected": null,
+    "description": "spec: no '://' with '@' is omitted"
+  },
+  {
+    "input": "https://u@h",
+    "expected": "https://h",
+    "description": "authority to the end"
+  },
+  {
+    "input": "drs://u:p@h/obj#frag",
+    "expected": "drs://h/obj",
+    "description": "fragment cut"
+  },
+  {
+    "input": "http://[::1]:8080/p?x=1",
+    "expected": "http://[::1]:8080/p",
+    "description": "IPv6 host and port kept"
+  },
+  {
+    "input": "s3://bucket/key@v1",
+    "expected": "s3://bucket/key@v1",
+    "description": "'@' in the path is kept"
+  },
+  {
+    "input": "gs://b/k#x?y",
+    "expected": "gs://b/k",
+    "description": "first of '?' or '#'"
+  },
+  {
+    "input": "relative?x=@",
+    "expected": "relative",
+    "description": "cut before the '@' test"
+  },
+  {
+    "input": "HTTPS://H/%41",
+    "expected": "HTTPS://H/%41",
+    "description": "no normalisation"
+  }
+]
