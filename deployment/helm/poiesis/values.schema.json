@@ -96,6 +96,39 @@
       }
     },
 
+    "authz": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requiredClaim": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name":     { "type": "string" },
+            "values":   { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "prefixes": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          },
+          "if": { "required": ["name"], "properties": { "name": { "minLength": 1 } } },
+          "then": {
+            "anyOf": [
+              { "required": ["values"],   "properties": { "values":   { "minItems": 1 } } },
+              { "required": ["prefixes"], "properties": { "prefixes": { "minItems": 1 } } }
+            ]
+          }
+        },
+        "decisionService": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url":            { "type": "string", "pattern": "^(https?://\\S+)?$" },
+            "timeout":        { "type": "number", "exclusiveMinimum": 0 },
+            "claims":         { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "credentialFile": { "type": "string" }
+          }
+        }
+      }
+    },
+
     "s3": {
       "type": "object",
       "additionalProperties": false,

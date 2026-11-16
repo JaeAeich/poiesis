@@ -27,6 +27,19 @@ auth:
     userinfo:
       enabled: true
 
+authz:
+  requiredClaim:
+    name: eduperson_entitlement
+    values:
+      - "urn:geant:lifescience-ri.eu:group:example-vo#login.aai.lifescience-ri.eu"
+    prefixes:
+      - "urn:geant:lifescience-ri.eu:group:example-vo:"
+  decisionService:
+    url: http://localhost:8181/access/v1/evaluation
+    timeout: 2
+    claims: [eduperson_entitlement]
+    credentialFile: /var/run/secrets/authz/token
+
 api:
   replicas: 1
   resources:
