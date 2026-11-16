@@ -93,20 +93,17 @@ data:
   {{- end }}
 
   # ---- Authorization -----------------------------------------------------------
+  # Always rendered, so the API's startup checks see incomplete settings.
   {{- with .Values.authz.requiredClaim }}
-  {{- if .name }}
   POIESIS_AUTHZ_REQUIRED_CLAIM_NAME: {{ .name | quote }}
   POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES: {{ .values | toJson | quote }}
   POIESIS_AUTHZ_REQUIRED_CLAIM_PREFIXES: {{ .prefixes | toJson | quote }}
   {{- end }}
-  {{- end }}
   {{- with .Values.authz.decisionService }}
-  {{- if .url }}
   POIESIS_AUTHZ_DECISION_SERVICE_URL: {{ .url | quote }}
   POIESIS_AUTHZ_DECISION_SERVICE_TIMEOUT: {{ .timeout | quote }}
   POIESIS_AUTHZ_DECISION_SERVICE_CLAIMS: {{ .claims | toJson | quote }}
   POIESIS_AUTHZ_DECISION_SERVICE_CREDENTIAL_FILE: {{ .credentialFile | quote }}
-  {{- end }}
   {{- end }}
 
   LOG_LEVEL: {{ .Values.logLevel | quote }}

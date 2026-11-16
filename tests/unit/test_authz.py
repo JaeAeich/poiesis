@@ -342,8 +342,18 @@ def test_incomplete_rule_refused(settings: dict[str, Any]) -> None:
         {"decision_service_url": "ftp://pdp/x"},
         {"decision_service_url": "pdp.example.org/x"},
         {"decision_service_url": "https://"},
+        {"decision_service_url": "http:///evaluation"},
+        {"decision_service_url": "http://:80/"},
     ],
-    ids=["claims-only", "credential-only", "ftp", "no-scheme", "no-host"],
+    ids=[
+        "claims-only",
+        "credential-only",
+        "ftp",
+        "no-scheme",
+        "no-host",
+        "empty-host",
+        "port-only",
+    ],
 )
 def test_decision_service_needs_http_url(settings: dict[str, Any]) -> None:
     """Decision service settings need an http(s) URL."""
@@ -467,14 +477,17 @@ def test_rule_only(env: Env) -> None:
     ],
 )
 def test_rule_denies_before_decision(env: Env, method: str, path: str) -> None:
-    """A failing rule gives 403 on every action; the PDP is not asked."""
+    """A failing rule gives 403 on every action; PDP and database untouched."""
     env.claims[ENTITLEMENT] = ["urn:geant:lifescience-ri.eu:group:other#x"]
     client = env.pdp_on(
         required_claim_name=ENTITLEMENT, required_claim_prefixes=(SUBGROUPS,)
     )
+    connections: list[None] = []
+    client.app.dependency_overrides[get_db_conn] = lambda: connections.append(None)  # type: ignore[attr-defined]
     env.store.add("bob", BOB_TASK)
     assert client.request(method, path, json=TASK).status_code == 403  # noqa: PLR2004
     assert env.pdp.requests == []
+    assert connections == []
 
 
 def test_rule_denies_service_client(env: Env) -> None:

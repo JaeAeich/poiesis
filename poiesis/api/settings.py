@@ -12,6 +12,7 @@ import math
 import os
 from typing import Any
 
+import httpx
 from kubernetes.client import V1EnvVar
 from pydantic import BaseModel, Field
 
@@ -372,9 +373,11 @@ class AuthzSettings(BaseModel):
             )
         if "" in self.required_claim_values + self.required_claim_prefixes:
             raise ValueError("the claim rule's values and prefixes must not be empty")
-        url = self.decision_service_url
-        scheme, _, rest = url.partition("://")
-        if any(service) and (scheme not in {"http", "https"} or not rest):
+        try:
+            url = httpx.URL(self.decision_service_url)
+        except httpx.InvalidURL:
+            url = httpx.URL()
+        if any(service) and (url.scheme not in {"http", "https"} or not url.host):
             raise ValueError(
                 "POIESIS_AUTHZ_DECISION_SERVICE_* needs an http(s) "
                 "POIESIS_AUTHZ_DECISION_SERVICE_URL"
