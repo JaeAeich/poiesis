@@ -180,8 +180,9 @@ restart the API pods.
 | Decision service fails or times out              | `503`, `Retry-After: 1`      |
 
 Every get or cancel, even of a random ID, costs a call to the
-decision service (a denied cancel two, for missing and existing tasks
-alike); rate-limit at the gateway. Poiesis reads the task from its
+decision service; a cancel costs two (`CancelTask`, then `GetTask`)
+unless it is allowed for an existing task, so a missing task never
+costs fewer calls than an existing one. Rate-limit at the gateway. Poiesis reads the task from its
 database before asking, which for a missing task takes slightly less
 time than for an existing one; the decision call dominates either way.
 

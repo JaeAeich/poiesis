@@ -600,21 +600,24 @@ def test_cancel_allowed(env: Env) -> None:
     env.store.add("alice", ALICE_TASK)
     assert env.pdp_on().post(f"{TASKS}/{ALICE_TASK}:cancel").status_code == 200  # noqa: PLR2004
     assert env.store.tasks[ALICE_TASK][1].state == TesState.CANCELING
+    assert [body["action"]["name"] for body in env.pdp.bodies] == ["CancelTask"]
 
 
 @pytest.mark.parametrize("allowed", [True, False])
 def test_missing_task(env: Env, *, allowed: bool) -> None:
-    """A missing task is 404 whatever the decision; the PDP is still asked."""
+    """A missing task is 404 whatever the decision; the PDP is still asked.
+
+    Cancel always asks GetTask as well (case 11c): an allowed cancel of a
+    missing task must not cost fewer calls than a denied one.
+    """
     env.pdp.decide = per_action(GetTask=allowed, CancelTask=allowed)
     client = env.pdp_on()
     assert client.get(f"{TASKS}/{MISSING}").status_code == 404  # noqa: PLR2004
     assert client.post(f"{TASKS}/{MISSING}:cancel").status_code == 404  # noqa: PLR2004
     golden("get-missing", env.pdp.bodies[0])
-    # A denied cancel asks GetTask too, as for an existing foreign task.
     cancel = env.pdp.bodies[1:]
-    expected = ["CancelTask"] if allowed else ["CancelTask", "GetTask"]
     assert [body["action"] for body in cancel] == [
-        {"name": name, "properties": {}} for name in expected
+        {"name": name, "properties": {}} for name in ("CancelTask", "GetTask")
     ]
     assert all(body["resource"]["properties"] == {} for body in cancel)
     ids = {request.headers["x-request-id"] for request in env.pdp.requests}

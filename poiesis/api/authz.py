@@ -133,8 +133,10 @@ class Authz:
         """Raise ``404`` or ``403`` unless the caller may cancel the task.
 
         A denied caller who may read the task gets ``403``, anyone else
-        ``404``. On a deny, ``GetTask`` is asked for missing tasks too, so
-        that missing and foreign tasks cost the same calls.
+        ``404``. ``GetTask`` is asked after a denied cancel and always for
+        a missing task, so a missing task never costs fewer calls than an
+        existing one (one call for an allowed cancel of an existing task,
+        two otherwise).
         """
         if self._client is None:
             allowed = meta is not None and meta["owner"] == principal.id
@@ -142,7 +144,9 @@ class Authz:
         else:
             resource = _task_resource(task_id, meta)
             allowed = await self._ask(principal, "CancelTask", resource)
-            readable = not allowed and await self._ask(principal, "GetTask", resource)
+            readable = (not allowed or meta is None) and await self._ask(
+                principal, "GetTask", resource
+            )
         if meta is not None and allowed:
             return
         if meta is not None and readable:
