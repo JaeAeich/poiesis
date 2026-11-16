@@ -138,5 +138,20 @@
     "input": "/local/file#1",
     "expected": "/local/file#1",
     "description": "spec step 5: no scheme, no '@' or '?': fragment kept"
+  },
+  {
+    "input": "https:///u:p@h/p",
+    "expected": null,
+    "description": "spec step 2c: empty authority, '@' in the rest"
+  },
+  {
+    "input": "file:///d/user@x/f",
+    "expected": null,
+    "description": "spec step 2c: accepted over-omission"
+  },
+  {
+    "input": "file:///d/f?x=@y",
+    "expected": "file:///d/f",
+    "description": "spec step 2c: '@' only in the query"
   }
 ]

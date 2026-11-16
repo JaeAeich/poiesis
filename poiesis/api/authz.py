@@ -282,7 +282,10 @@ def strip_url(url: str) -> str | None:
        what follows, up to the first ``/`` or the end.
     2. If W's last ``@`` comes after its first ``?`` or ``#``, the
        value is ambiguous and omitted. So is a W with a backslash,
-       which WHATWG-style clients read as ``/`` (another host).
+       which WHATWG-style clients read as ``/`` (another host), and an
+       empty W followed by an ``@`` before the first ``?`` or ``#``
+       (WHATWG skips the extra slashes, so ``https:///u:p@h/p`` sends
+       ``u:p`` to ``h``).
     3. The authority (W up to its first ``?`` or ``#``) loses everything
        up to and including its last ``@``.
     4. The rest is cut at its first ``?`` or ``#``.
@@ -298,6 +301,8 @@ def strip_url(url: str) -> str | None:
     end = len(url) if slash < 0 else slash
     cut = _first_of(url, "?#", start, end)
     if url.rfind("@", start, end) > cut or "\\" in url[start:end]:
+        return None
+    if end == start and "@" in url[end : _first_of(url, "?#", end, len(url))]:
         return None
     rest = url[cut:]
     rest = rest[: _first_of(rest, "?#", 0, len(rest))]
