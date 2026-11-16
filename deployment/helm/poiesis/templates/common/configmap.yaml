@@ -88,7 +88,7 @@ data:
   {{- with .Values.auth.oidc.requiredScopes }}
   POIESIS_AUTH_OIDC_REQUIRED_SCOPES: {{ join "," . | quote }}
   {{- end }}
-  POIESIS_AUTH_OIDC_USERINFO_ENABLED: {{ .Values.auth.oidc.userinfo.enabled | default false | quote }}
+  POIESIS_AUTH_OIDC_USERINFO_ENABLED: {{ .Values.auth.oidc.userinfo.enabled | quote }}
   {{- end }}
 
   LOG_LEVEL: {{ .Values.logLevel | quote }}

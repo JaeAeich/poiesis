@@ -1,7 +1,7 @@
 """Tests for the optional userinfo lookup and the claim lookup.
 
 Tokens are minted and validated for real; the issuer (discovery, JWKS,
-userinfo) is a fake on a fake network (see `conftest.py`).
+userinfo) is a fake on a fake network (see `fake_issuer.py`).
 """
 
 import asyncio
@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 import pytest
-from conftest import ISSUER, Issuer, Network
+from fake_issuer import ISSUER, Issuer, Network
 
 from poiesis.api import auth
 from poiesis.api.auth import OIDCValidator, Principal, get_principal
@@ -20,8 +20,7 @@ from poiesis.api.settings import AuthSettings
 
 def validator(*, userinfo: bool = True) -> OIDCValidator:
     """Bootstrap a validator against the fake issuer."""
-    settings = AuthSettings(userinfo_enabled=userinfo)
-    oidc = OIDCValidator(settings)
+    oidc = OIDCValidator(AuthSettings(userinfo_enabled=userinfo))
     asyncio.run(oidc.bootstrap())
     return oidc
 
@@ -35,13 +34,19 @@ def principal(oidc: OIDCValidator, token: str) -> Principal:
     return asyncio.run(get_principal(request))
 
 
+def fetches(issuer: Issuer, oidc: OIDCValidator, token: str) -> int:
+    """Return how many userinfo calls a request with `token` caused."""
+    before = issuer.userinfo_calls
+    principal(oidc, token)
+    return issuer.userinfo_calls - before
+
+
 def test_off_by_default(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
     """Without the setting, userinfo is never fetched and stays empty."""
     monkeypatch.delenv("POIESIS_AUTH_OIDC_USERINFO_ENABLED", raising=False)
     oidc = OIDCValidator(AuthSettings())
     asyncio.run(oidc.bootstrap())
-    result = principal(oidc, issuer.token())
-    assert result.userinfo == {}
+    assert principal(oidc, issuer.token()).userinfo == {}
     assert issuer.userinfo_calls == 0
 
 
@@ -61,14 +66,20 @@ def test_claims_kept_apart(issuer: Issuer) -> None:
 
 
 def test_one_lookup_per_token(issuer: Issuer) -> None:
-    """Case 21: two requests with one token cause one userinfo call."""
+    """Two requests with one token cause one userinfo call."""
     oidc = validator()
     token = issuer.token()
-    principal(oidc, token)
-    principal(oidc, token)
-    assert issuer.userinfo_calls == 1
-    principal(oidc, issuer.token(jti="other"))
-    assert issuer.userinfo_calls == 2  # noqa: PLR2004
+    assert fetches(issuer, oidc, token) == 1
+    assert fetches(issuer, oidc, token) == 0
+    assert fetches(issuer, oidc, issuer.token(jti="other")) == 1
+
+
+def test_cached_answer_is_a_copy(issuer: Issuer) -> None:
+    """Changing a principal's userinfo doesn't change the cached answer."""
+    oidc = validator()
+    token = issuer.token()
+    principal(oidc, token).userinfo["sub"] = "mallory"
+    assert principal(oidc, token).userinfo == {"sub": "alice"}
 
 
 def test_request_carries_token(issuer: Issuer, network: Network) -> None:
@@ -81,20 +92,33 @@ def test_request_carries_token(issuer: Issuer, network: Network) -> None:
     assert request.headers["accept"] == "application/json"
 
 
-def test_cache_expires(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Entries live until the token expires, at most five minutes."""
+def test_cache_ends_with_token(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An entry ends when its token expires."""
     oidc = validator()
     now = auth.time.time()
-    short, long = issuer.token(exp=int(now) + 60), issuer.token(exp=int(now) + 3600)
-    principal(oidc, short)
-    principal(oidc, long)
+    token = issuer.token(exp=int(now) + 60)
+    principal(oidc, token)
     monkeypatch.setattr(auth.time, "time", lambda: now + 120)
-    asyncio.run(oidc.userinfo(short, issuer.tokens[short]))
-    asyncio.run(oidc.userinfo(long, issuer.tokens[long]))
-    assert issuer.userinfo_calls == 3  # noqa: PLR2004 (short refetched)
-    monkeypatch.setattr(auth.time, "time", lambda: now + 400)
-    asyncio.run(oidc.userinfo(long, issuer.tokens[long]))
-    assert issuer.userinfo_calls == 4  # noqa: PLR2004 (five minutes passed)
+    before = issuer.userinfo_calls
+    asyncio.run(oidc.userinfo(token, issuer.tokens[token]))
+    assert issuer.userinfo_calls == before + 1
+
+
+def test_cache_ends_after_five_minutes(
+    issuer: Issuer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An entry of a long-lived token ends after five minutes."""
+    oidc = validator()
+    now = auth.time.time()
+    token = issuer.token(exp=int(now) + 3600)
+    principal(oidc, token)
+    monkeypatch.setattr(auth.time, "time", lambda: now + 290)
+    before = issuer.userinfo_calls
+    asyncio.run(oidc.userinfo(token, issuer.tokens[token]))
+    assert issuer.userinfo_calls == before
+    monkeypatch.setattr(auth.time, "time", lambda: now + 310)
+    asyncio.run(oidc.userinfo(token, issuer.tokens[token]))
+    assert issuer.userinfo_calls == before + 1
 
 
 def test_cache_is_bounded(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -104,11 +128,8 @@ def test_cache_is_bounded(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> No
     first, second, third = (issuer.token(jti=str(i)) for i in range(3))
     for token in (first, second, first, third):
         principal(oidc, token)
-    assert issuer.userinfo_calls == 3  # noqa: PLR2004
-    principal(oidc, first)
-    assert issuer.userinfo_calls == 3  # noqa: PLR2004 (first was used recently)
-    principal(oidc, second)
-    assert issuer.userinfo_calls == 4  # noqa: PLR2004 (second was evicted)
+    assert fetches(issuer, oidc, first) == 0  # used recently, kept
+    assert fetches(issuer, oidc, second) == 1  # least recently used, evicted
 
 
 def respond(*args: Any, **kwargs: Any) -> Any:
@@ -129,6 +150,7 @@ def fail(_: httpx.Request) -> httpx.Response:
         fail,
         respond(500, json={"sub": "alice"}),
         respond(401),
+        respond(302, headers={"location": "https://elsewhere.example.org/"}),
         respond(200, content=b"e.y.J", headers={"content-type": "application/jwt"}),
         respond(200, content=b"{", headers={"content-type": "application/json"}),
         respond(200, json=["alice"]),
@@ -139,13 +161,14 @@ def fail(_: httpx.Request) -> httpx.Response:
         "unreachable",
         "server-error",
         "token-refused",
+        "redirect",
         "signed-jwt",
         "not-json",
         "not-an-object",
     ],
 )
 def test_failures_are_401(issuer: Issuer, handler: Any) -> None:
-    """Case 20: a different `sub`, any error or non-JSON answer is a 401."""
+    """A different `sub`, any error or a non-JSON answer is a 401."""
     issuer.userinfo_handler = handler
     oidc = validator()
     token = issuer.token()
@@ -153,6 +176,16 @@ def test_failures_are_401(issuer: Issuer, handler: Any) -> None:
         principal(oidc, token)
     issuer.userinfo_handler = None
     assert principal(oidc, token).userinfo == {"sub": "alice"}  # failure not cached
+
+
+def test_media_type_case_insensitive(issuer: Issuer) -> None:
+    """`Application/JSON; charset=utf-8` is JSON too."""
+    issuer.userinfo_handler = respond(
+        200,
+        content=b'{"sub": "alice"}',
+        headers={"content-type": "Application/JSON; charset=utf-8"},
+    )
+    assert principal(validator(), issuer.token()).userinfo == {"sub": "alice"}
 
 
 @pytest.mark.parametrize(
@@ -180,16 +213,16 @@ class TestClaimLookup:
     """`Principal.claim`: exact name, then dotted path; token, then userinfo."""
 
     def test_token_wins(self) -> None:
-        """Case 6b: a claim in both sources resolves to the token's value."""
+        """A claim in both sources resolves to the token's value."""
         both = Principal(id="a", claims={"g": "token"}, userinfo={"g": "info"})
         assert both.claim("g") == "token"
 
     def test_userinfo_fills_in(self) -> None:
-        """Case 6b: a claim only in userinfo resolves to the userinfo value."""
+        """A claim only in userinfo resolves to the userinfo value."""
         assert Principal(id="a", userinfo={"g": "info"}).claim("g") == "info"
 
     def test_exact_name_before_path(self) -> None:
-        """An exact name anywhere wins over a dotted path in the token."""
+        """An exact (URI) name anywhere wins over a dotted path in the token."""
         p = Principal(
             id="a",
             claims={"https://e": {"org/g": "path"}},
@@ -198,9 +231,14 @@ class TestClaimLookup:
         assert p.claim("https://e.org/g") == "exact"
 
     def test_dotted_path(self) -> None:
-        """Case 5c: dotted paths walk objects, token before userinfo."""
+        """Dotted paths walk objects, token before userinfo."""
         p = Principal(id="a", claims={"ctx": {}}, userinfo={"ctx": {"groups": ["x"]}})
         assert p.claim("ctx.groups") == ["x"]
+
+    def test_null_exact_name_falls_back_to_path(self) -> None:
+        """A null exact-name claim counts as missing."""
+        p = Principal(id="a", claims={"a.b": None, "a": {"b": "x"}})
+        assert p.claim("a.b") == "x"
 
     @pytest.mark.parametrize("claims", [{}, {"g": None}, {"ctx": "flat"}])
     def test_missing(self, claims: dict[str, Any]) -> None:
@@ -208,9 +246,9 @@ class TestClaimLookup:
         assert Principal(id="a", claims=claims).claim("ctx.g") is None
         assert Principal(id="a", claims=claims).claim("g") is None
 
-    def test_principal_claim_exact_name(self, issuer: Issuer) -> None:
-        """`principal_claim` also prefers an exact (URI) name."""
-        oidc = OIDCValidator(AuthSettings(principal_claim="https://e.org/id"))
+    def test_principal_claim_unchanged(self, issuer: Issuer) -> None:
+        """`principal_claim` still walks a dotted path, as before."""
+        oidc = OIDCValidator(AuthSettings(principal_claim="ctx.id"))
         asyncio.run(oidc.bootstrap())
-        token = issuer.token(**{"https://e.org/id": "owner-1"})
-        assert principal(oidc, token).id == "owner-1"
+        token = issuer.token(**{"ctx.id": "top", "ctx": {"id": "nested"}})
+        assert principal(oidc, token).id == "nested"

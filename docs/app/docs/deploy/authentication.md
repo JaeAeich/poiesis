@@ -72,8 +72,6 @@ auth:
 resolves to `claims["ctx"]["group_id"]`. This is useful when the IdP
 groups tasks by tenant or group rather than per-user — every member of
 group `alpha` then shares one principal and sees one another's tasks.
-A claim whose exact name contains dots (URI-named claims such as
-`https://example.org/tenant`) is found by that name first.
 
 The claim must resolve to a non-empty string. Missing or non-string
 values fail the request with `401 unauthorized`.
@@ -120,7 +118,9 @@ to (not merged into) the token claims:
 - The answer's `sub` must equal the token's `sub`.
 - Answers are cached per token (keyed by a hash of it) until the token
   expires, but at most 5 minutes, which bounds how long a change at the
-  IdP takes to show. The cache holds at most 4096 tokens.
+  IdP takes to show. The cache is bounded (least recently used
+  tokens go first); parallel first requests with a new token may each
+  call the endpoint.
 - Any failure (endpoint unreachable, an error status, a different
   `sub`, a non-JSON answer) is a `401 unauthorized`. Signed or
   encrypted userinfo (`application/jwt`) is not supported.

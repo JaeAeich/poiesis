@@ -167,18 +167,20 @@ class OIDCValidator:
         """Return the userinfo response for a validated token.
 
         Cached per token (by hash) until the token expires, at most
-        ``_USERINFO_MAX_AGE`` seconds. Fails closed: any failure, and a
-        ``sub`` that differs from the token's, raises
-        :class:`UnauthorizedError`.
+        ``_USERINFO_MAX_AGE`` seconds; concurrent first requests with one
+        token may each fetch. Fails closed: any failure, and a ``sub``
+        that differs from the token's, raises :class:`UnauthorizedError`.
         """
+        if self._userinfo_uri is None:
+            raise RuntimeError("userinfo lookup is not enabled")
         key = hashlib.sha256(token.encode()).hexdigest()
         now = time.time()
         cached = self._userinfo_cache.get(key)
         if cached is not None and cached[0] > now:
             self._userinfo_cache.move_to_end(key)
-            return cached[1]
+            return dict(cached[1])
 
-        info = await self._fetch_userinfo(token)
+        info = await self._fetch_userinfo(self._userinfo_uri, token)
         sub = claims.get("sub")
         if not isinstance(sub, str) or info.get("sub") != sub:
             logger.warning("Userinfo sub does not match the token's sub")
@@ -192,10 +194,11 @@ class OIDCValidator:
         self._userinfo_cache.move_to_end(key)
         while len(self._userinfo_cache) > _USERINFO_CACHE_SIZE:
             self._userinfo_cache.popitem(last=False)
-        return info
+        return dict(info)
 
-    async def _fetch_userinfo(self, token: str) -> dict[str, Any]:
-        """GET the userinfo endpoint with ``token``; any failure is a 401.
+    @staticmethod
+    async def _fetch_userinfo(uri: str, token: str) -> dict[str, Any]:
+        """GET userinfo at ``uri`` with ``token``; any failure is a 401.
 
         Only plain JSON is accepted: signed or encrypted userinfo
         (``application/jwt``) is not supported.
@@ -203,7 +206,7 @@ class OIDCValidator:
         try:
             async with httpx.AsyncClient(timeout=_USERINFO_TIMEOUT) as client:
                 resp = await client.get(
-                    self._userinfo_uri or "",
+                    uri,
                     headers={
                         "Authorization": _BEARER_PREFIX + token,
                         "Accept": "application/json",
@@ -214,9 +217,8 @@ class OIDCValidator:
             raise UnauthorizedError("userinfo lookup failed") from exc
         content_type = resp.headers.get("content-type", "")
         info: Any = None
-        if resp.status_code == httpx.codes.OK and content_type.startswith(
-            "application/json"
-        ):
+        media_type = content_type.split(";")[0].strip().lower()
+        if resp.status_code == httpx.codes.OK and media_type == "application/json":
             try:
                 info = resp.json()
             except ValueError:
@@ -311,13 +313,13 @@ class OIDCValidator:
 
 
 def _walk_claim_path(claims: dict[str, Any], path: str) -> Any:
-    """Resolve a claim name or dotted ``path`` like ``ctx.group_id``.
+    """Resolve a dotted ``path`` like ``ctx.group_id`` against ``claims``.
 
-    An exact top-level name wins over the dotted path, so URI-named
-    claims such as ``https://example.org/groups`` resolve. Returns
-    ``None`` if any intermediate segment is missing or not a dict.
+    Returns ``None`` if any intermediate segment is missing or not a
+    dict. The top-level case ``path='sub'`` is preserved for the common
+    default with no dotted lookup overhead.
     """
-    if path in claims or "." not in path:
+    if "." not in path:
         return claims.get(path)
     current: Any = claims
     for segment in path.split("."):
