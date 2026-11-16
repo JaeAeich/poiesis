@@ -242,17 +242,6 @@ def test_strip_url(case: dict[str, Any]) -> None:
     assert strip_url(case["input"]) == case["expected"]
 
 
-@pytest.mark.parametrize("url", ["https://x@/u:p@h/p", "https://@/u:p@h/p"])
-def test_strip_url_empty_authority_after_userinfo(url: str) -> None:
-    """Stripping must not produce the empty-host form that step 2c omits.
-
-    Not yet in the shared golden file (proposed spec addition): W holds
-    only userinfo, so the stripped value would be ``https:///u:p@h/p``,
-    which WHATWG reads as host ``h`` with user ``u``.
-    """
-    assert strip_url(url) is None
-
-
 # -- claim rule ------------------------------------------------------------------
 
 

@@ -142,17 +142,17 @@
   {
     "input": "https:///u:p@h/p",
     "expected": null,
-    "description": "spec step 2c: empty authority, '@' in the rest"
+    "description": "spec step 4b: empty authority, '@' in the rest"
   },
   {
     "input": "file:///d/user@x/f",
     "expected": null,
-    "description": "spec step 2c: accepted over-omission"
+    "description": "spec step 4b: accepted over-omission"
   },
   {
     "input": "file:///d/f?x=@y",
     "expected": "file:///d/f",
-    "description": "spec step 2c: '@' only in the query"
+    "description": "spec step 4b: '@' only in the query"
   },
   {
     "input": "https://\t/u:p@h/p",
@@ -168,5 +168,15 @@
     "input": "/local/a\r\nb",
     "expected": null,
     "description": "spec step 0: CR LF without a scheme"
+  },
+  {
+    "input": "https://x@/u:p@h/p",
+    "expected": null,
+    "description": "spec step 4b: host empty after dropping userinfo"
+  },
+  {
+    "input": "https://@/u:p@h/p",
+    "expected": null,
+    "description": "spec step 4b: empty userinfo, empty host"
   }
 ]

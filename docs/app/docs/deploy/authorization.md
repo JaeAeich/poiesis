@@ -135,9 +135,11 @@ retries) and allows only on `200` with `{"decision": true}`.
   `type`. Commands, environments and input contents are never sent.
   URLs with a `scheme://` prefix lose any `user:password@`, query and
   fragment; they are left out if the part before the first `/` has an
-  `@` after a `?` or `#`, or a backslash (the host would be ambiguous).
-  Other values are sent unchanged, fragment included, unless they
-  contain `@` or `?`, in which case they are left out.
+  `@` after a `?` or `#`, or a backslash, or if the host is empty and
+  the path has an `@` (the host would be ambiguous). Other values are
+  sent unchanged, fragment included, unless they contain `@` or `?`,
+  in which case they are left out. Any value with a tab or line break
+  is left out.
 - Tags and other task fields are what the client submitted, not facts.
 - Each request carries a new `X-Request-ID`, which Poiesis logs with
   the decision.
