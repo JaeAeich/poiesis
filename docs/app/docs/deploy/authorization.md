@@ -133,8 +133,11 @@ retries) and allows only on `200` with `{"decision": true}`.
   `tags`, `resources` (without `backend_parameters`), `volumes`,
   `executors[].image`, and `inputs`/`outputs` with `url`, `path`,
   `type`. Commands, environments and input contents are never sent.
-  URLs are cut at the first `?` or `#` and lose any `user:password@`;
-  a URL without `://` that contains `@` is left out.
+  URLs with a `scheme://` prefix lose any `user:password@`, query and
+  fragment; they are left out if the part before the first `/` has an
+  `@` after a `?` or `#`, or a backslash (the host would be ambiguous).
+  Other values are sent unchanged, fragment included, unless they
+  contain `@` or `?`, in which case they are left out.
 - Tags and other task fields are what the client submitted, not facts.
 - Each request carries a new `X-Request-ID`, which Poiesis logs with
   the decision.

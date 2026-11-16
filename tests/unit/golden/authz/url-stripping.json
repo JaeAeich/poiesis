@@ -10,9 +10,29 @@
     "description": "spec: presigned query"
   },
   {
+    "input": "drs://u:p@h/obj",
+    "expected": "drs://h/obj",
+    "description": "spec: userinfo, non-HTTP scheme"
+  },
+  {
     "input": "ftp://a@b@h/p",
     "expected": "ftp://h/p",
     "description": "spec: last '@' in the authority"
+  },
+  {
+    "input": "https://h?sig=x",
+    "expected": "https://h",
+    "description": "spec: query right after the host"
+  },
+  {
+    "input": "https://h/p#frag",
+    "expected": "https://h/p",
+    "description": "spec: fragment cut"
+  },
+  {
+    "input": "s3://b/user@x/f",
+    "expected": "s3://b/user@x/f",
+    "description": "spec: '@' in the path is kept"
   },
   {
     "input": "file:///d/f",
@@ -20,14 +40,39 @@
     "description": "spec: empty authority unchanged"
   },
   {
+    "input": "https://u:p?ss@h/p",
+    "expected": null,
+    "description": "spec step 2: '?' in userinfo"
+  },
+  {
+    "input": "https://evil?x=@trusted/p",
+    "expected": null,
+    "description": "spec step 2: '@' in the query"
+  },
+  {
+    "input": "u:p@host/x://y",
+    "expected": null,
+    "description": "spec: '://' not after a scheme, '@'"
+  },
+  {
+    "input": "1s://u@h/p",
+    "expected": null,
+    "description": "spec: invalid scheme, '@'"
+  },
+  {
     "input": "/local/path",
     "expected": "/local/path",
-    "description": "spec: no '://', no '@'"
+    "description": "spec: no scheme, no '@' or '?'"
+  },
+  {
+    "input": "/local/path?x",
+    "expected": null,
+    "description": "spec: no scheme with '?' is omitted"
   },
   {
     "input": "user@host:path",
     "expected": null,
-    "description": "spec: no '://' with '@' is omitted"
+    "description": "spec: no scheme with '@' is omitted"
   },
   {
     "input": "https://u@h",
@@ -37,7 +82,7 @@
   {
     "input": "drs://u:p@h/obj#frag",
     "expected": "drs://h/obj",
-    "description": "fragment cut"
+    "description": "userinfo and fragment"
   },
   {
     "input": "http://[::1]:8080/p?x=1",
@@ -45,23 +90,48 @@
     "description": "IPv6 host and port kept"
   },
   {
-    "input": "s3://bucket/key@v1",
-    "expected": "s3://bucket/key@v1",
-    "description": "'@' in the path is kept"
-  },
-  {
     "input": "gs://b/k#x?y",
     "expected": "gs://b/k",
     "description": "first of '?' or '#'"
   },
   {
+    "input": "https://h#a@b",
+    "expected": null,
+    "description": "step 2: '@' after '#' before any '/'"
+  },
+  {
+    "input": "https://u@h?q",
+    "expected": "https://h",
+    "description": "userinfo before a query after the host"
+  },
+  {
     "input": "relative?x=@",
-    "expected": "relative",
-    "description": "cut before the '@' test"
+    "expected": null,
+    "description": "no scheme with '?' and '@'"
   },
   {
     "input": "HTTPS://H/%41",
     "expected": "HTTPS://H/%41",
     "description": "no normalisation"
+  },
+  {
+    "input": "git+ssh://u@h/r",
+    "expected": "git+ssh://h/r",
+    "description": "scheme with '+'"
+  },
+  {
+    "input": "https://evil.example\\@trusted.example/p?x=1",
+    "expected": null,
+    "description": "proposed step 2b: backslash before the first '/' (WHATWG: '/')"
+  },
+  {
+    "input": "https://u:p@h\\x@y/p",
+    "expected": null,
+    "description": "proposed step 2b: backslash in userinfo"
+  },
+  {
+    "input": "https://h/a\\b@c",
+    "expected": "https://h/a\\b@c",
+    "description": "backslash after the first '/' kept"
   }
 ]

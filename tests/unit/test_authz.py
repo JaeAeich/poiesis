@@ -595,9 +595,15 @@ def test_missing_task(env: Env, *, allowed: bool) -> None:
     assert client.get(f"{TASKS}/{MISSING}").status_code == 404  # noqa: PLR2004
     assert client.post(f"{TASKS}/{MISSING}:cancel").status_code == 404  # noqa: PLR2004
     golden("get-missing", env.pdp.bodies[0])
-    assert env.pdp.bodies[1]["resource"]["properties"] == {}
     # A denied cancel asks GetTask too, as for an existing foreign task.
-    assert len(env.pdp.requests) == (2 if allowed else 3)
+    cancel = env.pdp.bodies[1:]
+    expected = ["CancelTask"] if allowed else ["CancelTask", "GetTask"]
+    assert [body["action"] for body in cancel] == [
+        {"name": name, "properties": {}} for name in expected
+    ]
+    assert all(body["resource"]["properties"] == {} for body in cancel)
+    ids = {request.headers["x-request-id"] for request in env.pdp.requests}
+    assert len(ids) == len(env.pdp.requests)
 
 
 def test_legacy_task_has_no_owner(env: Env) -> None:

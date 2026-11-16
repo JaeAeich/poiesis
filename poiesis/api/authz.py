@@ -23,6 +23,7 @@ dependencies below at runtime (see `poiesis.api.auth`).
 import asyncio
 import ipaddress
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Annotated, Any
@@ -46,6 +47,8 @@ PROFILE = "tes-authzen/1"
 #: Owner of tasks created before owners were stamped, nobody's (set by
 #: migrations/000002_add_task_principal.up.sql; see also app.py).
 _LEGACY_OWNER = "__legacy__"
+#: A leading RFC 3986 scheme and ``://`` (ASCII only, unlike ``\w``).
+_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 
 
 class Authz:
@@ -268,20 +271,39 @@ async def authorized_principal(
 def strip_url(url: str) -> str | None:
     """Remove credentials from a URL, or return ``None`` to omit it.
 
-    A plain string algorithm (URL parsers differ between languages, and
-    falling back to the raw value would leak): cut at the first ``?`` or
-    ``#``; with ``://``, drop the authority up to its last ``@``; without
-    ``://``, keep the value only if it has no ``@``. Nothing else changes.
+    The profile's plain string algorithm (URL parsers differ between
+    languages, and falling back to the raw value would leak):
+
+    1. Only a leading RFC 3986 scheme followed by ``://`` counts; W is
+       what follows, up to the first ``/`` or the end.
+    2. If W's last ``@`` comes after its first ``?`` or ``#``, the
+       value is ambiguous and omitted. So is a W with a backslash,
+       which WHATWG-style clients read as ``/`` (another host).
+    3. The authority (W up to its first ``?`` or ``#``) loses everything
+       up to and including its last ``@``.
+    4. The rest is cut at its first ``?`` or ``#``.
+    5. Without a scheme, the value is kept only if it has neither ``@``
+       nor ``?``.
+    6. Nothing else changes.
     """
-    for separator in "?#":
-        url = url.split(separator, 1)[0]
-    scheme_end = url.find("://")
-    if scheme_end < 0:
-        return None if "@" in url else url
-    start = scheme_end + 3
-    end = url.find("/", start)
-    at = url.rfind("@", start, len(url) if end < 0 else end)
-    return url if at < 0 else url[:start] + url[at + 1 :]
+    scheme = _SCHEME.match(url)
+    if scheme is None:
+        return None if "@" in url or "?" in url else url
+    start = scheme.end()
+    slash = url.find("/", start)
+    end = len(url) if slash < 0 else slash
+    cut = _first_of(url, "?#", start, end)
+    if url.rfind("@", start, end) > cut or "\\" in url[start:end]:
+        return None
+    rest = url[cut:]
+    rest = rest[: _first_of(rest, "?#", 0, len(rest))]
+    return scheme.group() + url[start:cut].rpartition("@")[2] + rest
+
+
+def _first_of(text: str, characters: str, start: int, end: int) -> int:
+    """Return the index of the first of `characters` in a slice, or `end`."""
+    found = (text.find(character, start, end) for character in characters)
+    return min((index for index in found if index >= 0), default=end)
 
 
 def project(task: TesTask) -> dict[str, Any]:
