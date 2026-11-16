@@ -28,6 +28,8 @@ auth:
     clockSkew:       30      # seconds of leeway on exp / nbf / iat
     principalClaim:  sub     # see "Principal claim" below
     requiredScopes:  []      # optional: reject tokens missing these
+    userinfo:
+      enabled:       false   # see "User info" below
 ```
 
 `issuer` and `audience` are **required** when `enabled: true`. The
@@ -70,9 +72,15 @@ auth:
 resolves to `claims["ctx"]["group_id"]`. This is useful when the IdP
 groups tasks by tenant or group rather than per-user — every member of
 group `alpha` then shares one principal and sees one another's tasks.
+A claim whose exact name contains dots (URI-named claims such as
+`https://example.org/tenant`) is found by that name first.
 
 The claim must resolve to a non-empty string. Missing or non-string
 values fail the request with `401 unauthorized`.
+
+Only `sub` is a safe owner: claims that users can change at the IdP,
+such as `email` or `preferred_username`, let one user take over
+another's tasks.
 
 ### Worked example
 
@@ -96,6 +104,33 @@ not contain every listed scope is rejected with `403 forbidden`. This
 is intentionally coarse — TES is a small API surface and per-endpoint
 scopes were deferred to a later iteration. Leave the list empty
 (default) to skip the check entirely.
+
+## User info
+
+Some IdPs release claims (e.g. group memberships such as
+`eduperson_entitlement`) at the OIDC userinfo endpoint but not in
+access tokens. With `userinfo.enabled: true`
+(`POIESIS_AUTH_OIDC_USERINFO_ENABLED`), Poiesis calls that endpoint
+for every validated token and keeps the answer on the principal, next
+to (not merged into) the token claims:
+
+- The endpoint comes from the issuer's discovery document; startup
+  fails if it has none (or announces a plain `http` endpoint for an
+  `https` issuer).
+- The answer's `sub` must equal the token's `sub`.
+- Answers are cached per token (keyed by a hash of it) until the token
+  expires, but at most 5 minutes, which bounds how long a change at the
+  IdP takes to show. The cache holds at most 4096 tokens.
+- Any failure (endpoint unreachable, an error status, a different
+  `sub`, a non-JSON answer) is a `401 unauthorized`. Signed or
+  encrypted userinfo (`application/jwt`) is not supported.
+- The token is sent to the userinfo endpoint only, never to any other
+  service. The principal is still taken from the token.
+
+Where a claim is looked up by name, Poiesis takes the access token's
+value first and the userinfo value only if the token lacks the claim.
+If your IdP can put the claims you need into the access token, prefer
+that and leave userinfo off.
 
 ## What's enforced where
 
