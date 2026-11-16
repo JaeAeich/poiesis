@@ -4,15 +4,15 @@ Two independent parts, both off by default; when both are set, both
 must allow:
 
 - The claim rule admits a caller if one claim holds one of the
-  configured values or starts with one of the configured prefixes.
+    configured values or starts with one of the configured prefixes.
 - The decision service is an OpenID AuthZEN 1.0 Access Evaluation
-  endpoint (``POST`` ``/access/v1/evaluation``) that gets one question
-  per decision, in the ``tes-authzen/1`` profile: the subject (owner id,
-  ``iss``, ``sub``, ``client_id``, ``scope`` and allowlisted claims; never
-  the token), the TES ``operationId`` as action, and a ``tes_task`` (get,
-  cancel) or a ``tes_task_set`` ``own``/``all`` (create, list) as
-  resource. Without it, the built-in owner rule applies: callers see and
-  cancel only their own tasks.
+    endpoint (``POST`` ``/access/v1/evaluation``) that gets one question
+    per decision, in the ``tes-authzen/1`` profile: the subject (owner id,
+    ``iss``, ``sub``, ``client_id``, ``scope`` and allowlisted claims; never
+    the token), the TES ``operationId`` as action, and a ``tes_task`` (get,
+    cancel) or a ``tes_task_set`` ``own``/``all`` (create, list) as
+    resource. Without it, the built-in owner rule applies: callers see and
+    cancel only their own tasks.
 
 Any failure of the decision service denies with ``503``.
 
@@ -279,21 +279,21 @@ def strip_url(url: str) -> str | None:
     languages, and falling back to the raw value would leak):
 
     0. A value with a tab, LF or CR anywhere is omitted (WHATWG-style
-       clients delete them, so they can hide a host or an empty one).
+        clients delete them, so they can hide a host or an empty one).
     1. Only a leading RFC 3986 scheme followed by ``://`` counts; W is
-       what follows, up to the first ``/`` or the end.
+        what follows, up to the first ``/`` or the end.
     2. If W's last ``@`` comes after its first ``?`` or ``#``, the
-       value is ambiguous and omitted. So is a W with a backslash,
-       which WHATWG-style clients read as ``/`` (another host).
+        value is ambiguous and omitted. So is a W with a backslash,
+        which WHATWG-style clients read as ``/`` (another host).
     3. The authority (W up to its first ``?`` or ``#``) loses everything
-       up to and including its last ``@``.
+        up to and including its last ``@``.
     4. The rest is cut at its first ``?`` or ``#``. If the authority is
-       now empty and the rest has an ``@``, the value is omitted
-       (WHATWG skips the extra slashes, so ``https:///u:p@h/p`` sends
-       ``u:p`` to ``h``; this also covers an authority that held only
-       userinfo, such as ``https://x@/u:p@h/p``).
+        now empty and the rest has an ``@``, the value is omitted
+        (WHATWG skips the extra slashes, so ``https:///u:p@h/p`` sends
+        ``u:p`` to ``h``; this also covers an authority that held only
+        userinfo, such as ``https://x@/u:p@h/p``).
     5. Without a scheme, the value is kept only if it has neither ``@``
-       nor ``?``.
+        nor ``?``.
     6. Nothing else changes.
     """
     if any(character in url for character in "\t\n\r"):

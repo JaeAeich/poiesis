@@ -498,7 +498,8 @@ def test_rule_denies_before_decision(env: Env, method: str, path: str) -> None:
         required_claim_name=ENTITLEMENT, required_claim_prefixes=(SUBGROUPS,)
     )
     connections: list[None] = []
-    client.app.dependency_overrides[get_db_conn] = lambda: connections.append(None)  # type: ignore[attr-defined]
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_db_conn] = lambda: connections.append(None)
     env.store.add("bob", BOB_TASK)
     assert client.request(method, path, json=TASK).status_code == 403  # noqa: PLR2004
     assert env.pdp.requests == []
@@ -598,7 +599,8 @@ def test_cancel_denied_but_readable(env: Env) -> None:
 def test_cancel_allowed(env: Env) -> None:
     """An allowed cancel moves the task to CANCELING."""
     env.store.add("alice", ALICE_TASK)
-    assert env.pdp_on().post(f"{TASKS}/{ALICE_TASK}:cancel").status_code == 200  # noqa: PLR2004
+    response = env.pdp_on().post(f"{TASKS}/{ALICE_TASK}:cancel")
+    assert response.status_code == 200  # noqa: PLR2004
     assert env.store.tasks[ALICE_TASK][1].state == TesState.CANCELING
     assert [body["action"]["name"] for body in env.pdp.bodies] == ["CancelTask"]
 
