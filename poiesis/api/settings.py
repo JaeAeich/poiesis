@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from typing import Any
 
@@ -28,6 +29,20 @@ def _parse_int_env(name: str, default: int | None = None) -> int | None:
         return int(raw)
     except ValueError as exc:
         raise ValueError(f"{name} must be an integer, got {raw!r}") from exc
+
+
+def _parse_seconds_env(name: str, default: float) -> float:
+    """Parse a positive, finite number of seconds; empty/unset is default."""
+    raw = os.environ.get(name, "")
+    if raw == "":
+        return default
+    try:
+        seconds = float(raw)
+    except ValueError:
+        seconds = math.nan
+    if not (0 < seconds < math.inf):
+        raise ValueError(f"{name} must be a positive number of seconds, got {raw!r}")
+    return seconds
 
 
 def _parse_optional_int_env(name: str) -> int | None:
@@ -228,6 +243,11 @@ class AuthSettings(BaseModel):
     )
     required_scopes: tuple[str, ...] = Field(
         default_factory=lambda: _parse_csv_env("POIESIS_AUTH_OIDC_REQUIRED_SCOPES"),
+    )
+    # Seconds allowed for each call to the issuer (discovery, JWKS,
+    # userinfo).
+    timeout: float = Field(
+        default_factory=lambda: _parse_seconds_env("POIESIS_AUTH_OIDC_TIMEOUT", 10.0),
     )
     # Fetch the issuer's userinfo per token (cached) and keep it on the
     # principal next to the token claims. Off by default.

@@ -212,6 +212,77 @@ def test_bootstrap_needs_usable_endpoint(
         validator()
 
 
+# -- OIDC timeout ------------------------------------------------------------
+
+
+def timeouts(network: Network) -> set[float]:
+    """Return the read timeouts of all recorded requests."""
+    return {request.extensions["timeout"]["read"] for request in network.requests}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(None, 10.0), ("", 10.0), ("2.5", 2.5), ("30", 30.0)]
+)
+def test_timeout_setting(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, expected: float
+) -> None:
+    """`POIESIS_AUTH_OIDC_TIMEOUT` is in seconds; unset or empty is 10."""
+    if value is None:
+        monkeypatch.delenv("POIESIS_AUTH_OIDC_TIMEOUT", raising=False)
+    else:
+        monkeypatch.setenv("POIESIS_AUTH_OIDC_TIMEOUT", value)
+    assert AuthSettings().timeout == expected
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "soon", "nan", "inf"])
+def test_timeout_setting_invalid(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """A timeout that isn't a positive number of seconds refuses to start."""
+    monkeypatch.setenv("POIESIS_AUTH_OIDC_TIMEOUT", value)
+    with pytest.raises(ValueError, match="POIESIS_AUTH_OIDC_TIMEOUT"):
+        AuthSettings()
+
+
+@pytest.mark.parametrize("seconds", [None, 2.5])
+def test_timeout_bounds_every_call(
+    issuer: Issuer,
+    network: Network,
+    monkeypatch: pytest.MonkeyPatch,
+    seconds: float | None,
+) -> None:
+    """Discovery, JWKS and userinfo all use the one timeout (default 10 s)."""
+    if seconds is not None:
+        monkeypatch.setenv("POIESIS_AUTH_OIDC_TIMEOUT", str(seconds))
+    principal(validator(), issuer.token())
+    paths = {request.url.path for request in network.requests}
+    assert paths == {"/.well-known/openid-configuration", "/jwks", "/userinfo"}
+    assert timeouts(network) == {seconds or 10.0}
+
+
+def slow(delay: float) -> Any:
+    """Return a userinfo handler that answers after `delay` seconds.
+
+    The fake network doesn't wait; it fails like a timed-out request
+    whenever the client's read timeout is shorter than `delay`.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.extensions["timeout"]["read"] < delay:
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(200, json={"sub": "alice"})
+
+    return handler
+
+
+def test_slow_userinfo_is_401(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Userinfo slower than the timeout is a 401; a longer timeout lets it in."""
+    issuer.userinfo_handler = slow(5)
+    monkeypatch.setenv("POIESIS_AUTH_OIDC_TIMEOUT", "1")
+    with pytest.raises(UnauthorizedError):
+        principal(validator(), issuer.token())
+    monkeypatch.delenv("POIESIS_AUTH_OIDC_TIMEOUT")
+    assert principal(validator(), issuer.token()).userinfo == {"sub": "alice"}
+
+
 class TestClaimLookup:
     """`Principal.claim`: exact name, then dotted path; token, then userinfo."""
 

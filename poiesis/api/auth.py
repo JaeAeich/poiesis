@@ -47,7 +47,6 @@ _DISCOVERY_SUFFIX = "/.well-known/openid-configuration"
 _USERINFO_MAX_AGE = 300.0
 #: ... and for at most this many tokens; the least recently used go first.
 _USERINFO_CACHE_SIZE = 4096
-_USERINFO_TIMEOUT = 5.0
 _BEARER_PREFIX = "Bearer "
 _DEFAULT_ALGORITHMS: tuple[str, ...] = (
     "RS256",
@@ -126,7 +125,7 @@ class OIDCValidator:
         configured server that returns 401 on every request.
         """
         url = self._settings.issuer.rstrip("/") + _DISCOVERY_SUFFIX
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=self._settings.timeout) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             doc = resp.json()
@@ -181,7 +180,9 @@ class OIDCValidator:
             self._userinfo_cache.move_to_end(key)
             return copy.deepcopy(cached[1])
 
-        info = await self._fetch_userinfo(self._userinfo_uri, token)
+        info = await self._fetch_userinfo(
+            self._userinfo_uri, token, self._settings.timeout
+        )
         sub = claims.get("sub")
         if not isinstance(sub, str) or info.get("sub") != sub:
             logger.warning("Userinfo sub does not match the token's sub")
@@ -198,14 +199,14 @@ class OIDCValidator:
         return copy.deepcopy(info)
 
     @staticmethod
-    async def _fetch_userinfo(uri: str, token: str) -> dict[str, Any]:
+    async def _fetch_userinfo(uri: str, token: str, timeout: float) -> dict[str, Any]:
         """GET userinfo at ``uri`` with ``token``; any failure is a 401.
 
         Only plain JSON is accepted: signed or encrypted userinfo
         (``application/jwt``) is not supported.
         """
         try:
-            async with httpx.AsyncClient(timeout=_USERINFO_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.get(
                     uri,
                     headers={
@@ -237,7 +238,7 @@ class OIDCValidator:
         """Refresh the cached JWKS from the discovered ``jwks_uri``."""
         if not self._jwks_uri:
             raise RuntimeError("OIDCValidator used before bootstrap()")
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=self._settings.timeout) as client:
             resp = await client.get(self._jwks_uri)
             resp.raise_for_status()
             self._jwks = KeySet.import_key_set(resp.json())
