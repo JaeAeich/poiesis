@@ -23,6 +23,7 @@ auth:
   oidc:
     issuer: https://keycloak.example.org/realms/poiesis
     audience: poiesis
+    timeout: 2.5
     userinfo:
       enabled: true
 

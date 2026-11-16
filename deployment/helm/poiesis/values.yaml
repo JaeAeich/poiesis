@@ -148,6 +148,9 @@ auth:
     jwksCacheTtl: 3600
     # Allowed clock-skew in seconds when validating exp/nbf/iat.
     clockSkew: 30
+    # Seconds allowed for each call to the issuer: discovery, JWKS and
+    # userinfo.
+    timeout: 10
     # Which claim names the principal. Default `sub` matches every
     # standards-compliant OIDC provider. Dotted paths walk nested
     # objects, e.g. `ctx.group_id` resolves `claims["ctx"]["group_id"]`.

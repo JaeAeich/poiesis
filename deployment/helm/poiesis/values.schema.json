@@ -68,6 +68,7 @@
             "audience":       { "type": "string" },
             "jwksCacheTtl":   { "type": "integer", "minimum": 1 },
             "clockSkew":      { "type": "integer", "minimum": 0 },
+            "timeout":        { "type": "number", "exclusiveMinimum": 0 },
             "principalClaim": { "type": "string", "minLength": 1 },
             "requiredScopes": {
               "type": "array",
