@@ -78,8 +78,11 @@ def test_cached_answer_is_a_copy(issuer: Issuer) -> None:
     """Changing a principal's userinfo doesn't change the cached answer."""
     oidc = validator()
     token = issuer.token()
-    principal(oidc, token).userinfo["sub"] = "mallory"
-    assert principal(oidc, token).userinfo == {"sub": "alice"}
+    issuer.userinfo = {"groups": ["g"]}
+    first = principal(oidc, token).userinfo
+    first["sub"] = "mallory"
+    first["groups"].append("h")
+    assert principal(oidc, token).userinfo == {"sub": "alice", "groups": ["g"]}
 
 
 def test_request_carries_token(issuer: Issuer, network: Network) -> None:

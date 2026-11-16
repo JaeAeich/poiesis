@@ -12,6 +12,7 @@ to wire dependency injection, so ``Request`` must be a live import,
 not a string forward reference. Same constraint as `poiesis.api.deps`.
 """
 
+import copy
 import hashlib
 import logging
 import time
@@ -178,7 +179,7 @@ class OIDCValidator:
         cached = self._userinfo_cache.get(key)
         if cached is not None and cached[0] > now:
             self._userinfo_cache.move_to_end(key)
-            return dict(cached[1])
+            return copy.deepcopy(cached[1])
 
         info = await self._fetch_userinfo(self._userinfo_uri, token)
         sub = claims.get("sub")
@@ -194,7 +195,7 @@ class OIDCValidator:
         self._userinfo_cache.move_to_end(key)
         while len(self._userinfo_cache) > _USERINFO_CACHE_SIZE:
             self._userinfo_cache.popitem(last=False)
-        return dict(info)
+        return copy.deepcopy(info)
 
     @staticmethod
     async def _fetch_userinfo(uri: str, token: str) -> dict[str, Any]:
