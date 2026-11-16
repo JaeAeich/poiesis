@@ -371,6 +371,21 @@ def test_defaults_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.decision_service_timeout == 2  # noqa: PLR2004
 
 
+@pytest.mark.parametrize("value", ["0", "-1", "soon", "nan", "inf"])
+def test_timeout_invalid(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """A timeout that isn't a positive number of seconds refuses to start."""
+    monkeypatch.setenv("POIESIS_AUTHZ_DECISION_SERVICE_TIMEOUT", value)
+    with pytest.raises(ValueError, match="DECISION_SERVICE_TIMEOUT"):
+        AuthzSettings()
+
+
+@pytest.mark.parametrize("value", [0, -1, float("nan"), float("inf")])
+def test_timeout_argument_invalid(value: float) -> None:
+    """The same holds when the settings are built in code."""
+    with pytest.raises(ValueError, match="decision_service_timeout"):
+        AuthzSettings(decision_service_timeout=value)
+
+
 def test_settings_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Lists are JSON arrays (values may contain commas)."""
     monkeypatch.setenv("POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES", '["a,b", "c"]')

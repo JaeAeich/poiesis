@@ -326,10 +326,11 @@ class AuthzSettings(BaseModel):
         ),
     )
     decision_service_timeout: float = Field(
-        default_factory=lambda: float(
-            os.environ.get("POIESIS_AUTHZ_DECISION_SERVICE_TIMEOUT") or 2
+        default_factory=lambda: _parse_seconds_env(
+            "POIESIS_AUTHZ_DECISION_SERVICE_TIMEOUT", 2.0
         ),
         gt=0,
+        allow_inf_nan=False,
     )
     decision_service_claims: tuple[str, ...] = Field(
         default_factory=lambda: _parse_json_strings_env(
