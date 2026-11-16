@@ -229,6 +229,14 @@ class AuthSettings(BaseModel):
     required_scopes: tuple[str, ...] = Field(
         default_factory=lambda: _parse_csv_env("POIESIS_AUTH_OIDC_REQUIRED_SCOPES"),
     )
+    # Fetch the issuer's userinfo per token (cached) and keep it on the
+    # principal next to the token claims. Off by default.
+    userinfo_enabled: bool = Field(
+        default_factory=lambda: (
+            os.environ.get("POIESIS_AUTH_OIDC_USERINFO_ENABLED", "false").lower()
+            in {"1", "true", "yes", "on"}
+        ),
+    )
 
     def validate_required(self) -> None:
         """Raise if mandatory fields are missing. Called at app startup.
