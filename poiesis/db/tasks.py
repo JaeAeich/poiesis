@@ -44,10 +44,9 @@ class TaskView(StrEnum):
 class ListFilters:
     """Filters and pagination cursor for `list_tasks`.
 
-    ``principal`` is mandatory at the route layer (every TES endpoint
-    depends on :func:`poiesis.api.auth.get_principal`); ``None`` is
-    reserved for internal call sites (workers, migrations) that
-    intentionally bypass ownership filtering.
+    ``principal`` restricts the list to one owner. ``None`` lists every
+    task: internal call sites (workers, migrations), and the route when
+    the decision service allows the caller to list all tasks.
     """
 
     name_prefix: str | None = None

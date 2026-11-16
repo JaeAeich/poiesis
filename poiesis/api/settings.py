@@ -345,8 +345,10 @@ class AuthzSettings(BaseModel):
         """Refuse configurations that would not do what they say.
 
         Called at app startup: authorization without authentication (no
-        real subject could reach a decision), and a claim rule that names
-        no claim or no values and prefixes.
+        real subject could reach a decision), an incomplete claim rule or
+        one with empty values or prefixes (an empty prefix admits
+        everyone), decision service settings without a URL, and a URL
+        that isn't http(s).
         """
         rule = (
             self.required_claim_name,
@@ -367,6 +369,15 @@ class AuthzSettings(BaseModel):
             raise ValueError(
                 "the claim rule needs POIESIS_AUTHZ_REQUIRED_CLAIM_NAME and "
                 "POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES or _PREFIXES"
+            )
+        if "" in self.required_claim_values + self.required_claim_prefixes:
+            raise ValueError("the claim rule's values and prefixes must not be empty")
+        url = self.decision_service_url
+        scheme, _, rest = url.partition("://")
+        if any(service) and (scheme not in {"http", "https"} or not rest):
+            raise ValueError(
+                "POIESIS_AUTHZ_DECISION_SERVICE_* needs an http(s) "
+                "POIESIS_AUTHZ_DECISION_SERVICE_URL"
             )
 
 

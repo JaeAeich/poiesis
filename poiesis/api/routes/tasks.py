@@ -53,20 +53,25 @@ router = APIRouter(tags=["TaskService"])
 )
 async def create_task(
     task: TesTask,
-    conn: Annotated[Any, Depends(get_db_conn)],
     k8s: Annotated[K8sClient, Depends(get_k8s)],
     runtime_config: Annotated[RuntimeConfig, Depends(get_runtime_config)],
     principal: Annotated[Principal, Depends(authorized_principal)],
     authz: Annotated[Authz, Depends(get_authz)],
+    conn: Annotated[Any, Depends(get_db_conn)],
 ) -> TesCreateTaskResponse:
     """Accept a TES task, persist it, and submit its TaskPod to Kubernetes."""
     # Server-assigned fields: a client-chosen id would reveal whether a
     # task with that id exists.
-    task = TesTask.model_validate(
-        task.model_dump(exclude={"id", "state", "creation_time", "logs"})
+    task = task.model_copy(
+        update={
+            "id": str(uuid.uuid4()),
+            "state": TesState.QUEUED,
+            "logs": None,
+            "creation_time": TesTask.model_fields["creation_time"].get_default(
+                call_default_factory=True
+            ),
+        }
     )
-    task.id = str(uuid.uuid4())
-    task.state = TesState.QUEUED
     await authz.check_create(principal, task)
 
     # Build the K8s manifests first so spec-builder errors (e.g.
@@ -214,11 +219,11 @@ def _classify_submit_exception(
 )
 async def cancel_task(
     id: str,
-    conn: Annotated[Any, Depends(get_db_conn)],
     k8s: Annotated[K8sClient, Depends(get_k8s)],
     runtime_config: Annotated[RuntimeConfig, Depends(get_runtime_config)],
     principal: Annotated[Principal, Depends(authorized_principal)],
     authz: Annotated[Authz, Depends(get_authz)],
+    conn: Annotated[Any, Depends(get_db_conn)],
 ) -> TesCancelTaskResponse:
     """Mark the task CANCELING and delete its wrapping Kubernetes Job.
 
@@ -256,9 +261,9 @@ async def cancel_task(
 )
 async def get_task(
     id: str,
-    conn: Annotated[Any, Depends(get_db_conn)],
     principal: Annotated[Principal, Depends(authorized_principal)],
     authz: Annotated[Authz, Depends(get_authz)],
+    conn: Annotated[Any, Depends(get_db_conn)],
     view: Annotated[TaskView, Query()] = TaskView.MINIMAL,
 ) -> TesTask:
     """Return a single task at the requested view level."""
@@ -300,10 +305,10 @@ def _list_filters(
     operation_id="ListTasks",
 )
 async def list_tasks(
-    conn: Annotated[Any, Depends(get_db_conn)],
     filters: Annotated[ListFilters, Depends(_list_filters)],
     principal: Annotated[Principal, Depends(authorized_principal)],
     authz: Annotated[Authz, Depends(get_authz)],
+    conn: Annotated[Any, Depends(get_db_conn)],
     view: Annotated[TaskView, Query()] = TaskView.MINIMAL,
 ) -> TesListTasksResponse:
     """Return a paginated list of tasks, newest first."""

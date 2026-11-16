@@ -320,11 +320,34 @@ def test_refused_without_auth(settings: dict[str, Any]) -> None:
 
 @pytest.mark.parametrize(
     "settings",
-    [{"required_claim_name": "g"}, {"required_claim_values": ("a",)}],
+    [
+        {"required_claim_name": "g"},
+        {"required_claim_values": ("a",)},
+        {"required_claim_name": "g", "required_claim_prefixes": ("",)},
+        {"required_claim_name": "g", "required_claim_values": ("a", "")},
+    ],
+    ids=["no-values", "no-name", "empty-prefix", "empty-value"],
 )
 def test_incomplete_rule_refused(settings: dict[str, Any]) -> None:
-    """A rule needs a name and values or prefixes."""
+    """A rule needs a name and non-empty values or prefixes."""
     with pytest.raises(ValueError, match="claim rule"):
+        AuthzSettings(**settings).validate_for(auth_enabled=True)
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"decision_service_claims": ("g",)},
+        {"decision_service_credential_file": "/run/credential"},
+        {"decision_service_url": "ftp://pdp/x"},
+        {"decision_service_url": "pdp.example.org/x"},
+        {"decision_service_url": "https://"},
+    ],
+    ids=["claims-only", "credential-only", "ftp", "no-scheme", "no-host"],
+)
+def test_decision_service_needs_http_url(settings: dict[str, Any]) -> None:
+    """Decision service settings need an http(s) URL."""
+    with pytest.raises(ValueError, match="DECISION_SERVICE_URL"):
         AuthzSettings(**settings).validate_for(auth_enabled=True)
 
 
@@ -347,6 +370,12 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setenv("POIESIS_AUTHZ_DECISION_SERVICE_CLAIMS", "a,b")
     with pytest.raises(ValueError, match="not valid JSON"):
         AuthzSettings()
+    monkeypatch.setenv("POIESIS_AUTHZ_DECISION_SERVICE_CLAIMS", '{"a": "b"}')
+    with pytest.raises(TypeError, match="array of strings"):
+        AuthzSettings()
+    monkeypatch.setenv("POIESIS_AUTHZ_DECISION_SERVICE_CLAIMS", '["a", 1]')
+    with pytest.raises(TypeError, match="array of strings"):
+        AuthzSettings()
 
 
 def test_lifespan_refuses_authz_without_auth(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -360,11 +389,15 @@ def test_lifespan_refuses_authz_without_auth(monkeypatch: pytest.MonkeyPatch) ->
         pass
 
 
-@pytest.mark.parametrize("url", ["ftp://pdp/x", "pdp.example.org/x"])
-def test_url_must_be_http(url: str) -> None:
-    """Only http(s) decision service URLs are accepted."""
-    with pytest.raises(ValueError, match="http"):
-        Authz(AuthzSettings(decision_service_url=url))
+def test_empty_credential_refused(tmp_path: Path) -> None:
+    """An empty credential file refuses to start."""
+    credential = tmp_path / "credential"
+    credential.write_text("\n")
+    settings = AuthzSettings(
+        decision_service_url=PDP, decision_service_credential_file=str(credential)
+    )
+    with pytest.raises(ValueError, match="empty"):
+        Authz(settings)
 
 
 @pytest.mark.parametrize(
@@ -397,6 +430,23 @@ def test_builtin_owner_rule(env: Env) -> None:
     assert client.get(f"{TASKS}/{own}").status_code == 200  # noqa: PLR2004
     assert [t["id"] for t in client.get(TASKS).json()["tasks"]] == [own]
     assert env.pdp.requests == []
+
+
+def test_server_assigned_fields(env: Env) -> None:
+    """Without configuration too, client id, state, logs and time are ignored."""
+    submitted = TASK | {
+        "id": BOB_TASK,
+        "state": "COMPLETE",
+        "creation_time": "2000-01-01T00:00:00+0000",
+        "logs": [{"logs": [], "outputs": []}],
+    }
+    task_id = env.start().post(TASKS, json=submitted).json()["id"]
+    assert task_id != BOB_TASK
+    task = env.store.tasks[task_id][1]
+    assert task.state == TesState.QUEUED
+    assert task.logs is None
+    assert task.creation_time is not None
+    assert not task.creation_time.startswith("2000")
 
 
 def test_rule_only(env: Env) -> None:
@@ -533,6 +583,8 @@ def test_missing_task(env: Env, *, allowed: bool) -> None:
     assert client.post(f"{TASKS}/{MISSING}:cancel").status_code == 404  # noqa: PLR2004
     golden("get-missing", env.pdp.bodies[0])
     assert env.pdp.bodies[1]["resource"]["properties"] == {}
+    # A denied cancel asks GetTask too, as for an existing foreign task.
+    assert len(env.pdp.requests) == (2 if allowed else 3)
 
 
 def test_legacy_task_has_no_owner(env: Env) -> None:
@@ -562,6 +614,7 @@ def test_legacy_task_has_no_owner(env: Env) -> None:
         ("GET", f"{TASKS}/{BOB_TASK}"),
         ("GET", f"{TASKS}/{MISSING}"),
         ("POST", f"{TASKS}/{BOB_TASK}:cancel"),
+        ("POST", f"{TASKS}/{MISSING}:cancel"),
         ("GET", TASKS),
     ],
 )
@@ -577,6 +630,19 @@ def test_decision_service_failure(
     assert "Decision service failed" in caplog.text
     assert len(env.store.tasks) == 1
     assert env.store.tasks[BOB_TASK][1].state == TesState.RUNNING
+
+
+@pytest.mark.parametrize("task_id", [BOB_TASK, MISSING])
+def test_failure_on_second_cancel_call(env: Env, task_id: str) -> None:
+    """A failure of the GetTask call after a denied cancel is a 503 too."""
+    env.pdp.decide = lambda body: (
+        {"decision": False}
+        if body["action"]["name"] == "CancelTask"
+        else httpx.Response(500)
+    )
+    env.store.add("bob", BOB_TASK)
+    response = env.pdp_on().post(f"{TASKS}/{task_id}:cancel")
+    assert response.status_code == 503  # noqa: PLR2004
 
 
 def test_decision_service_too_slow(env: Env, network: Network) -> None:

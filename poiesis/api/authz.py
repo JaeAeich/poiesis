@@ -43,7 +43,8 @@ from poiesis.api.tes.models import TesInput, TesOutput, TesTask
 logger = logging.getLogger(__name__)
 
 PROFILE = "tes-authzen/1"
-#: Owner of tasks created before owners were stamped: nobody's.
+#: Owner of tasks created before owners were stamped, nobody's (set by
+#: migrations/000002_add_task_principal.up.sql; see also app.py).
 _LEGACY_OWNER = "__legacy__"
 
 
@@ -64,10 +65,14 @@ class Authz:
         self._client: httpx.AsyncClient | None = None
         if not self._url:
             return
-        _check_url(self._url)
+        _warn_if_plain_http(self._url)
         if settings.decision_service_credential_file:
-            credential = Path(settings.decision_service_credential_file).read_text()
-            self._headers["Authorization"] = "Bearer " + credential.strip()
+            path = Path(settings.decision_service_credential_file)
+            credential = path.read_text().strip()
+            if not credential:
+                raise ValueError(f"decision service credential file {path} is empty")
+            self._headers["Authorization"] = "Bearer " + credential
+        # asyncio.timeout in _ask bounds the whole call; this bounds each phase.
         self._client = client or httpx.AsyncClient(timeout=self._timeout)
 
     async def aclose(self) -> None:
@@ -125,20 +130,19 @@ class Authz:
         """Raise ``404`` or ``403`` unless the caller may cancel the task.
 
         A denied caller who may read the task gets ``403``, anyone else
-        ``404``.
+        ``404``. On a deny, ``GetTask`` is asked for missing tasks too, so
+        that missing and foreign tasks cost the same calls.
         """
         if self._client is None:
             allowed = meta is not None and meta["owner"] == principal.id
+            readable = False
         else:
             resource = _task_resource(task_id, meta)
             allowed = await self._ask(principal, "CancelTask", resource)
-        if meta is None:
-            raise NotFoundError(f"task {task_id} not found")
-        if allowed:
+            readable = not allowed and await self._ask(principal, "GetTask", resource)
+        if meta is not None and allowed:
             return
-        if self._client is not None and await self._ask(
-            principal, "GetTask", _task_resource(task_id, meta)
-        ):
+        if meta is not None and readable:
             raise ForbiddenError("forbidden")
         raise NotFoundError(f"task {task_id} not found")
 
@@ -197,8 +201,7 @@ class Authz:
         properties: dict[str, Any] | None = None,
     ) -> bool:
         """Ask the decision service once; any failure raises ``503``."""
-        if self._client is None:
-            raise RuntimeError("no decision service configured")
+        assert self._client is not None
         request_id = str(uuid.uuid4())
         body = {
             "subject": self._subject(principal),
@@ -334,22 +337,19 @@ def _task_resource(task_id: str, meta: dict[str, Any] | None) -> dict[str, Any]:
     return {"type": "tes_task", "id": task_id, "properties": properties}
 
 
-def _check_url(url: str) -> None:
-    """Refuse non-HTTP(S) URLs; warn on plain HTTP to another host.
+def _warn_if_plain_http(url: str) -> None:
+    """Warn on plain HTTP to a host other than loopback.
 
     The connection to the decision service must be secured (AuthZEN
     1.0, section 11.1), typically by a service mesh, so plain HTTP is
     only a warning.
     """
-    scheme, _, rest = url.partition("://")
-    if scheme not in {"http", "https"} or not rest:
-        raise ValueError("POIESIS_AUTHZ_DECISION_SERVICE_URL must be http(s)")
-    host = httpx.URL(url).host
+    parsed = httpx.URL(url)
     try:
-        loopback = ipaddress.ip_address(host).is_loopback
+        loopback = ipaddress.ip_address(parsed.host).is_loopback
     except ValueError:
-        loopback = host == "localhost"
-    if scheme == "http" and not loopback:
+        loopback = parsed.host == "localhost"
+    if parsed.scheme == "http" and not loopback:
         logger.warning(
             "The decision service URL uses plain http to a non-loopback "
             "host; secure the connection, e.g. with mesh mTLS"

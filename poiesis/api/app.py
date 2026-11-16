@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Build process-wide resources at startup, tear them down at shutdown."""
     settings = load_settings()
     settings.authz.validate_for(auth_enabled=settings.auth.enabled)
+    app.state.authz = Authz(settings.authz)
     app.state.settings = settings
     app.state.runtime_config = settings.runtime_config()
 
@@ -74,8 +75,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         app.state.oidc = None
         logger.warning("OIDC auth is DISABLED; all requests will run as anonymous")
-
-    app.state.authz = Authz(settings.authz)
 
     try:
         yield

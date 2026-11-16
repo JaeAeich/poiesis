@@ -45,8 +45,9 @@ path (`realm_access.roles`); in the access token first, then in
 userinfo if [userinfo](./authentication.md#user-info) is on. The caller
 is admitted if the claim is a string or a list of strings with a value
 that equals one of `values` or starts with one of `prefixes`. A missing
-claim or another type is a `403`. A name without values or prefixes
-refuses to start.
+claim or another type is a `403`, before any decision service call.
+Poiesis refuses to start with a name but no values or prefixes, values
+or prefixes but no name, or an empty value or prefix.
 
 Prefixes are compared as raw strings, so include the delimiter. For
 LS Login groups, admit a group and its subgroups with the group as an
@@ -138,9 +139,8 @@ retries) and allows only on `200` with `{"decision": true}`.
 - Each request carries a new `X-Request-ID`, which Poiesis logs with
   the decision.
 
-Poiesis assigns task IDs, state and creation time itself and ignores
-client-supplied values, so a client can't probe for a task by creating
-one with its ID.
+Poiesis refuses to start if `claims` or `credentialFile` is set
+without `url`, or if `url` isn't `http(s)`.
 
 ### Failures
 
@@ -159,7 +159,9 @@ NetworkPolicy so that only Poiesis reaches the service.
 If the service authenticates Poiesis, put a bearer credential in a
 Secret, mount it into the API pod (`extraVolumes`,
 `extraVolumeMounts`) and set `credentialFile` to its path. Poiesis reads
-it at startup and sends `Authorization: Bearer <credential>`.
+it at startup (an empty file refuses to start) and sends
+`Authorization: Bearer <credential>`. After rotating the Secret,
+restart the API pods.
 
 ## Behaviour the client sees
 
@@ -174,6 +176,13 @@ it at startup and sends `Authorization: Bearer <credential>`.
 | Task doesn't exist                               | `404`                        |
 | Decision service fails or times out              | `503`, `Retry-After: 1`      |
 
-Every get or cancel, even of a random ID, costs one call to the
-decision service; rate-limit at the gateway. Reading a missing task
-from the database is slightly faster than reading an existing one.
+Every get or cancel, even of a random ID, costs a call to the
+decision service (a denied cancel two, for missing and existing tasks
+alike); rate-limit at the gateway. Poiesis reads the task from its
+database before asking, which for a missing task takes slightly less
+time than for an existing one; the decision call dominates either way.
+
+Independent of authorization, Poiesis assigns task IDs, state, creation
+time and logs itself and ignores client-supplied values (the TES API
+marks them read-only), so a client can't probe for a task by creating
+one with its ID.
