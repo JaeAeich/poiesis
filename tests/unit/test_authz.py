@@ -242,6 +242,17 @@ def test_strip_url(case: dict[str, Any]) -> None:
     assert strip_url(case["input"]) == case["expected"]
 
 
+@pytest.mark.parametrize("url", ["https://x@/u:p@h/p", "https://@/u:p@h/p"])
+def test_strip_url_empty_authority_after_userinfo(url: str) -> None:
+    """Stripping must not produce the empty-host form that step 2c omits.
+
+    Not yet in the shared golden file (proposed spec addition): W holds
+    only userinfo, so the stripped value would be ``https:///u:p@h/p``,
+    which WHATWG reads as host ``h`` with user ``u``.
+    """
+    assert strip_url(url) is None
+
+
 # -- claim rule ------------------------------------------------------------------
 
 
@@ -669,11 +680,17 @@ def test_decision_service_failure(
     assert env.store.tasks[BOB_TASK][1].state == TesState.RUNNING
 
 
-@pytest.mark.parametrize("task_id", [BOB_TASK, MISSING])
-def test_failure_on_second_cancel_call(env: Env, task_id: str) -> None:
-    """A failure of the GetTask call after a denied cancel is a 503 too."""
+@pytest.mark.parametrize(
+    ("task_id", "cancel"),
+    [(BOB_TASK, False), (MISSING, False), (MISSING, True)],
+)
+def test_failure_on_second_cancel_call(env: Env, task_id: str, *, cancel: bool) -> None:
+    """A failure of the GetTask call after a cancel is a 503 too.
+
+    GetTask follows a denied cancel, and any cancel of a missing task.
+    """
     env.pdp.decide = lambda body: (
-        {"decision": False}
+        {"decision": cancel}
         if body["action"]["name"] == "CancelTask"
         else httpx.Response(500)
     )

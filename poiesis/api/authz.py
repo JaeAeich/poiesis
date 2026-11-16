@@ -278,21 +278,26 @@ def strip_url(url: str) -> str | None:
     The profile's plain string algorithm (URL parsers differ between
     languages, and falling back to the raw value would leak):
 
+    0. A value with a tab, LF or CR anywhere is omitted (WHATWG-style
+       clients delete them, so they can hide a host or an empty one).
     1. Only a leading RFC 3986 scheme followed by ``://`` counts; W is
        what follows, up to the first ``/`` or the end.
     2. If W's last ``@`` comes after its first ``?`` or ``#``, the
        value is ambiguous and omitted. So is a W with a backslash,
-       which WHATWG-style clients read as ``/`` (another host), and an
-       empty W followed by an ``@`` before the first ``?`` or ``#``
-       (WHATWG skips the extra slashes, so ``https:///u:p@h/p`` sends
-       ``u:p`` to ``h``).
+       which WHATWG-style clients read as ``/`` (another host).
     3. The authority (W up to its first ``?`` or ``#``) loses everything
        up to and including its last ``@``.
-    4. The rest is cut at its first ``?`` or ``#``.
+    4. The rest is cut at its first ``?`` or ``#``. If the authority is
+       now empty and the rest has an ``@``, the value is omitted
+       (WHATWG skips the extra slashes, so ``https:///u:p@h/p`` sends
+       ``u:p`` to ``h``; this also covers an authority that held only
+       userinfo, such as ``https://x@/u:p@h/p``).
     5. Without a scheme, the value is kept only if it has neither ``@``
        nor ``?``.
     6. Nothing else changes.
     """
+    if any(character in url for character in "\t\n\r"):
+        return None
     scheme = _SCHEME.match(url)
     if scheme is None:
         return None if "@" in url or "?" in url else url
@@ -302,11 +307,12 @@ def strip_url(url: str) -> str | None:
     cut = _first_of(url, "?#", start, end)
     if url.rfind("@", start, end) > cut or "\\" in url[start:end]:
         return None
-    if end == start and "@" in url[end : _first_of(url, "?#", end, len(url))]:
-        return None
+    host = url[start:cut].rpartition("@")[2]
     rest = url[cut:]
     rest = rest[: _first_of(rest, "?#", 0, len(rest))]
-    return scheme.group() + url[start:cut].rpartition("@")[2] + rest
+    if not host and "@" in rest:
+        return None
+    return scheme.group() + host + rest
 
 
 def _first_of(text: str, characters: str, start: int, end: int) -> int:

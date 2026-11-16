@@ -153,5 +153,20 @@
     "input": "file:///d/f?x=@y",
     "expected": "file:///d/f",
     "description": "spec step 2c: '@' only in the query"
+  },
+  {
+    "input": "https://\t/u:p@h/p",
+    "expected": null,
+    "description": "spec step 0: TAB (WHATWG deletes it)"
+  },
+  {
+    "input": "https://u:p@h\n/p",
+    "expected": null,
+    "description": "spec step 0: LF"
+  },
+  {
+    "input": "/local/a\r\nb",
+    "expected": null,
+    "description": "spec step 0: CR LF without a scheme"
   }
 ]
