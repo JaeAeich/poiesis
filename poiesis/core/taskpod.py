@@ -831,6 +831,12 @@ def attach_pvc_owner(
     Call after the Job is submitted to populate `pvc.metadata.ownerReferences`
     so kube-controller-manager garbage-collects the PVC when the Job is
     deleted. Returns the same object for chainability.
+
+    `block_owner_deletion` stays off: with it on, clusters that enforce
+    owner-reference permissions (e.g. OpenShift) require `update` on
+    `jobs/finalizers`, which namespace admins often can't grant. Garbage
+    collection still removes the PVC once the Job is gone; a foreground
+    deletion of the Job just doesn't wait for it.
     """
     if pvc.metadata is None:
         pvc.metadata = V1ObjectMeta()
@@ -841,7 +847,7 @@ def attach_pvc_owner(
             name=job_name,
             uid=job_uid,
             controller=True,
-            block_owner_deletion=True,
+            block_owner_deletion=False,
         ),
     ]
     return pvc

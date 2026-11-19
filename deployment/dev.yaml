@@ -218,7 +218,8 @@ metadata:
 ---
 # API submits and (on cancel) deletes Jobs; creates PVCs with an
 # ownerReference back to the Job so kube-controller-manager handles PVC
-# garbage collection.
+# garbage collection. No jobs/finalizers permission is needed: the
+# ownerReference sets blockOwnerDeletion: false.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

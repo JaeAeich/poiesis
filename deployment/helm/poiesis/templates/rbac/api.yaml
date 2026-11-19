@@ -1,6 +1,8 @@
 {{/*
 API submits + (on cancel) deletes Jobs; creates PVCs with an ownerReference
 back to the Job so kube-controller-manager handles PVC garbage collection.
+No jobs/finalizers permission is needed: the ownerReference sets
+blockOwnerDeletion: false.
 RBAC is namespaced to the taskpod namespace (potentially different from
 release namespace).
 */}}
