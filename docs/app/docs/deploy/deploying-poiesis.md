@@ -7,14 +7,21 @@ generalises the same shape for production.
 
 ## What gets deployed
 
-A single `poiesis` namespace containing:
+Two namespaces. `deps` holds the dependencies:
 
 | Workload | Purpose |
 | --- | --- |
 | `postgres` | State store. One replica, PVC-backed. |
-| `poiesis-api` | TES API (FastAPI). Init containers wait for Postgres and run migrations. |
-| `poiesis-tctl` | Backstop reconciler. 3 replicas, leader-elected via Leases. |
 | `minio` | S3-compatible object store for TIF/TOF inputs/outputs. Dev only. |
+| `keycloak` | OIDC identity provider with a ready-made `poiesis` realm. Dev only. |
+
+`po` holds Poiesis:
+
+| Workload | Purpose |
+| --- | --- |
+| `poiesis-migrate` | Job that applies the database migrations. |
+| `poiesis-api` | TES API (FastAPI). |
+| `poiesis-tctl` | Backstop reconciler, leader-elected via Leases. |
 
 Three ServiceAccounts with namespace-scoped Roles:
 
@@ -24,48 +31,42 @@ Three ServiceAccounts with namespace-scoped Roles:
 
 ## Steps
 
-### 1. Build the image
+### 1. Build the images
 
 ```bash
 git clone https://github.com/jaeaeich/poiesis.git
 cd poiesis
 docker build -f deployment/images/Dockerfile -t poiesis:dev .
+docker build -f deployment/images/migrations.Dockerfile -t poiesis-migrations:dev .
 ```
 
-OrbStack shares the host Docker daemon with the cluster, so the image
-is immediately available. On minikube/kind, push it in:
+OrbStack shares the host Docker daemon with the cluster, so the images
+are immediately available. On minikube/kind, push them in:
 
 ```bash
 # minikube
 minikube image load poiesis:dev
+minikube image load poiesis-migrations:dev
 # kind
-kind load docker-image poiesis:dev
+kind load docker-image poiesis:dev poiesis-migrations:dev
 ```
 
-### 2. Create the namespace and migrations ConfigMap
-
-```bash
-export KUBECONFIG=~/.kube/config
-
-kubectl create namespace poiesis \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n poiesis create configmap poiesis-migrations \
-  --from-file=./migrations \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-Rerun the second command after any change under `./migrations/`.
-
-### 3. Apply the manifest
+### 2. Apply the manifest
 
 ```bash
 kubectl apply -f deployment/dev.yaml
+kubectl -n deps wait --for=condition=Available deploy/keycloak --timeout=240s
+kubectl -n po wait --for=condition=Available deploy/poiesis-api --timeout=240s
 ```
 
-`dev.yaml` defaults to `POIESIS_AUTH_ENABLED=true` and points the API
-at an in-cluster Keycloak issuer. For a smoke test without standing
-up an IdP, override on apply:
+The API fetches the issuer's discovery document at startup, so it
+restarts until Keycloak is ready; that's expected.
+
+`poiesis-migrate` is a Job, and a completed Job doesn't run again on
+`apply`. After changing `./migrations/`, delete it first:
+`kubectl -n po delete job poiesis-migrate`.
+
+For a smoke test without an IdP, turn auth off:
 
 ```bash
 kubectl -n po set env deploy/poiesis-api POIESIS_AUTH_ENABLED=false
@@ -73,20 +74,68 @@ kubectl -n po set env deploy/poiesis-api POIESIS_AUTH_ENABLED=false
 
 See [Authentication](./authentication.md) for the production model.
 
-Wait until all four workloads report `Running`:
+### 3. Port-forward
 
 ```bash
-kubectl -n poiesis get pods
-```
-
-### 4. Port-forward and check the API
-
-```bash
-kubectl -n poiesis port-forward svc/poiesis-api 8000:8000
-```
-
-```bash
+kubectl -n po port-forward svc/poiesis-api 8000:8000 &
+kubectl -n deps port-forward svc/keycloak 8080:8080 &
 curl http://localhost:8000/ga4gh/tes/v1/service-info
+```
+
+### 4. Get a token
+
+The `poiesis` realm comes with four users (the password is the
+username) and two clients:
+
+| User | Group |
+| --- | --- |
+| `alice`, `carol` | `lab-alpha` |
+| `bob` | `lab-beta` |
+| `admin` | `poiesis-admins` |
+
+| Client | Use |
+| --- | --- |
+| `poiesis-cli` | Public. Authorization code + PKCE, device flow, and (dev only) password grant. |
+| `poiesis-ci` | Confidential, client credentials. Secret `poiesis-ci-secret`. |
+
+As a user:
+
+```bash
+TOKEN=$(curl -s http://localhost:8080/realms/poiesis/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=poiesis-cli -d scope=openid \
+  -d username=alice -d password=alice | jq -r .access_token)
+```
+
+As a service account:
+
+```bash
+TOKEN=$(curl -s http://localhost:8080/realms/poiesis/protocol/openid-connect/token \
+  -d grant_type=client_credentials -d scope=openid \
+  -d client_id=poiesis-ci -d client_secret=poiesis-ci-secret | jq -r .access_token)
+```
+
+Check it works:
+
+```bash
+curl http://localhost:8000/ga4gh/tes/v1/tasks -H "Authorization: Bearer $TOKEN"
+```
+
+Tokens carry `aud: poiesis` and a `groups` claim, and live five
+minutes. Keycloak pins their issuer to the in-cluster URL
+(`http://keycloak.deps.svc:8080/realms/poiesis`), so tokens fetched
+through the port-forward validate in the API too. Request
+`scope=openid` if the API has [userinfo](./authentication.md) on:
+Keycloak only answers userinfo for such tokens. User ids are fixed in
+the realm, so `sub` (and with it task ownership) survives a Keycloak
+restart. Its signing keys don't, and the API caches keys for an hour:
+after restarting Keycloak, restart the API too
+(`kubectl -n po rollout restart deploy/poiesis-api`).
+
+For browser flows (authorization code, device flow) from the host,
+make the pinned hostname resolve to the port-forward:
+
+```bash
+echo "127.0.0.1 keycloak.deps.svc" | sudo tee -a /etc/hosts
 ```
 
 ## Submit a task
@@ -95,6 +144,7 @@ A no-IO echo task:
 
 ```bash
 curl -X POST http://localhost:8000/ga4gh/tes/v1/tasks \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' \
   -d '{
     "name": "hello",
@@ -107,7 +157,8 @@ curl -X POST http://localhost:8000/ga4gh/tes/v1/tasks \
 You'll get `{"id": "<uuid>"}`. Poll for state:
 
 ```bash
-curl http://localhost:8000/ga4gh/tes/v1/tasks/<uuid>
+curl http://localhost:8000/ga4gh/tes/v1/tasks/<uuid> \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 A warm cluster reaches `COMPLETE` in under a minute. Cold image pulls
@@ -118,7 +169,7 @@ add to that.
 Seed a test bucket once:
 
 ```bash
-kubectl -n poiesis exec deploy/minio -- sh -c '
+kubectl -n deps exec deploy/minio -- sh -c '
   mc alias set local http://localhost:9000 admin password &&
   mc mb -p local/poiesis-test &&
   echo "hello from s3" | mc pipe local/poiesis-test/input.txt
@@ -129,6 +180,7 @@ Submit a task that reads it, transforms, and writes back:
 
 ```bash
 curl -X POST http://localhost:8000/ga4gh/tes/v1/tasks \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' \
   -d '{
     "name": "s3-roundtrip",
@@ -151,7 +203,7 @@ curl -X POST http://localhost:8000/ga4gh/tes/v1/tasks \
 Verify after `COMPLETE`:
 
 ```bash
-kubectl -n poiesis exec deploy/minio -- sh -c '
+kubectl -n deps exec deploy/minio -- sh -c '
   mc alias set local http://localhost:9000 admin password &&
   mc cat local/poiesis-test/output.txt
 '
@@ -169,7 +221,6 @@ S3-compatible endpoint (managed S3, Ceph, SeaweedFS, etc.) by setting
 
 ```bash
 kubectl delete -f deployment/dev.yaml
-kubectl delete namespace poiesis
 ```
 
 ## Production
