@@ -20,12 +20,20 @@ database:
 
 auth:
   enabled: true
-  oidc:
-    issuer: https://keycloak.example.org/realms/poiesis
-    audience: poiesis
-    timeout: 2.5
-    userinfo:
-      enabled: true
+  issuers:
+    - issuer: https://keycloak.example.org/realms/poiesis
+      audience: poiesis
+      principalClaim: sub
+      requiredScopes: [openid]
+      jwksCacheTtl: 600
+      clockSkew: 10
+      timeout: 2.5
+      userinfo:
+        enabled: true
+    # A gateway signing its own JWTs: keys only, no discovery.
+    - issuer: https://gateway.example.org
+      audience: poiesis
+      jwksUri: http://gateway.mesh.svc.cluster.local/.well-known/jwks.json
 
 authz:
   requiredClaim:
