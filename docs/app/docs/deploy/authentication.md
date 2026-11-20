@@ -26,8 +26,11 @@ auth:
     audience:        poiesis
     jwksCacheTtl:    3600    # seconds; lower = faster key-rotation pickup
     clockSkew:       30      # seconds of leeway on exp / nbf / iat
+    timeout:         10      # seconds per call to the issuer
     principalClaim:  sub     # see "Principal claim" below
     requiredScopes:  []      # optional: reject tokens missing these
+    userinfo:
+      enabled:       false   # see "User info" below
 ```
 
 `issuer` and `audience` are **required** when `enabled: true`. The
@@ -36,9 +39,13 @@ misconfiguration surfaces immediately rather than as silent 401s.
 
 There is no `clientSecret` in the chart — Poiesis is a resource
 server, not an OAuth client, and never talks to the token endpoint.
-The only network call out is an anonymous GET to the issuer's
+The only network calls out go to the issuer: an anonymous GET of its
 discovery document and JWKS endpoint, performed once at startup and
-then refreshed lazily per `jwksCacheTtl`.
+then refreshed lazily per `jwksCacheTtl`, and, if enabled, the
+userinfo lookup (see "User info" below). `timeout`
+(`POIESIS_AUTH_OIDC_TIMEOUT`, a positive number of seconds) bounds
+each of these calls in total, from connecting to the last byte of the
+answer; a slower answer at startup aborts the start.
 
 ## Disabling auth
 
@@ -74,6 +81,10 @@ group `alpha` then shares one principal and sees one another's tasks.
 The claim must resolve to a non-empty string. Missing or non-string
 values fail the request with `401 unauthorized`.
 
+Only `sub` is a safe owner: claims that users can change at the IdP,
+such as `email` or `preferred_username`, let one user take over
+another's tasks.
+
 ### Worked example
 
 Setting `principalClaim: ctx.group_id` with a Keycloak protocol-mapper
@@ -96,6 +107,42 @@ not contain every listed scope is rejected with `403 forbidden`. This
 is intentionally coarse — TES is a small API surface and per-endpoint
 scopes were deferred to a later iteration. Leave the list empty
 (default) to skip the check entirely.
+
+## User info
+
+![Userinfo lookup: before and after](/auth-userinfo.gif)
+
+Some IdPs release claims (e.g. group memberships such as
+`eduperson_entitlement`) at the OIDC userinfo endpoint but not in
+access tokens. With `userinfo.enabled: true`
+(`POIESIS_AUTH_OIDC_USERINFO_ENABLED`), Poiesis calls that endpoint
+for every validated token and keeps the answer on the principal, next
+to (not merged into) the token claims:
+
+- The endpoint comes from the issuer's discovery document; startup
+  fails if it has none (or announces a plain `http` endpoint for an
+  `https` issuer).
+- The answer's `sub` must equal the token's `sub`.
+- Answers are cached per token (keyed by a hash of it) until the token
+  expires, but at most 5 minutes, which bounds how long a change at the
+  IdP takes to show. The cache is bounded (least recently used
+  tokens go first); parallel first requests with a new token may each
+  call the endpoint.
+- An outage (endpoint unreachable, slower than `timeout`, a `5xx`
+  answer) is a `503 service_unavailable` with `Retry-After`, so clients
+  retry instead of treating their token as bad. Any other failure (the
+  token refused, a different `sub`, a non-JSON answer) is a
+  `401 unauthorized`. Signed or encrypted userinfo (`application/jwt`)
+  is not supported.
+- A token without the principal claim is refused before the userinfo
+  call, and one HTTP client per issuer is reused across calls.
+- The token is sent to the userinfo endpoint only, never to any other
+  service. The principal is still taken from the token.
+
+Where a claim is looked up by name, Poiesis takes the access token's
+value first and the userinfo value only if the token lacks the claim.
+If your IdP can put the claims you need into the access token, prefer
+that and leave userinfo off.
 
 ## What's enforced where
 

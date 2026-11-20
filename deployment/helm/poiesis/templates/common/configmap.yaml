@@ -84,10 +84,12 @@ data:
   POIESIS_AUTH_OIDC_AUDIENCE: {{ .Values.auth.oidc.audience | quote }}
   POIESIS_AUTH_OIDC_JWKS_CACHE_TTL: {{ .Values.auth.oidc.jwksCacheTtl | quote }}
   POIESIS_AUTH_OIDC_CLOCK_SKEW: {{ .Values.auth.oidc.clockSkew | quote }}
+  POIESIS_AUTH_OIDC_TIMEOUT: {{ .Values.auth.oidc.timeout | quote }}
   POIESIS_AUTH_OIDC_PRINCIPAL_CLAIM: {{ .Values.auth.oidc.principalClaim | quote }}
   {{- with .Values.auth.oidc.requiredScopes }}
   POIESIS_AUTH_OIDC_REQUIRED_SCOPES: {{ join "," . | quote }}
   {{- end }}
+  POIESIS_AUTH_OIDC_USERINFO_ENABLED: {{ .Values.auth.oidc.userinfo.enabled | quote }}
   {{- end }}
 
   LOG_LEVEL: {{ .Values.logLevel | quote }}

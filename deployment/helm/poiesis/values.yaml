@@ -148,6 +148,9 @@ auth:
     jwksCacheTtl: 3600
     # Allowed clock-skew in seconds when validating exp/nbf/iat.
     clockSkew: 30
+    # Seconds allowed for each call to the issuer: discovery, JWKS and
+    # userinfo.
+    timeout: 10
     # Which claim names the principal. Default `sub` matches every
     # standards-compliant OIDC provider. Dotted paths walk nested
     # objects, e.g. `ctx.group_id` resolves `claims["ctx"]["group_id"]`.
@@ -156,6 +159,12 @@ auth:
     principalClaim: sub
     # Optional list of scopes a token MUST carry. Empty disables the check.
     requiredScopes: []
+    # Fetch the issuer's userinfo (endpoint from OIDC discovery) for every
+    # token, cached until the token expires (at most 5 minutes), for claims
+    # the IdP releases there but not in access tokens. Its `sub` must equal
+    # the token's. Any failure is a 401.
+    userinfo:
+      enabled: false
 
 # S3-compatible storage. Optional: required only when task inputs/outputs
 # reference s3:// URLs.
