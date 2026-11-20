@@ -1,6 +1,7 @@
 """poiesis code package.
 
-This package contains the core component of poiesis like Torc, Tif, Texam etc.
+This package contains the TaskPod side of Poiesis: the TaskPod spec builder,
+TRec, TCtl, and the filer services (TIF/TOF).
 
 This file is also used to initialize the logging configuration.
 """
