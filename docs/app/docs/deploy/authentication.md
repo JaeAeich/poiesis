@@ -6,12 +6,11 @@ minted by an external Identity Provider (Keycloak, Auth0, Dex, Cognito,
 issue tokens, or store passwords. Clients obtain a token from the IdP
 and present it as `Authorization: Bearer <jwt>` on every request.
 
-Authorization is currently a **fixed owner-only filter**: every task
-row carries a `principal` column and every read returns only the rows
-whose `principal` equals the one named by the caller's token. A
-pluggable `Authorizer` interface for richer policies (RBAC, groups,
-labels) is on the roadmap; v1 hardcodes owner-only filtering as the
-single policy.
+By default, authorization is an **owner-only rule**: every task row
+carries a `principal` column, and callers see and cancel only the rows
+whose `principal` equals the one named by their token. An optional
+claim rule and an external decision service change that; see
+[Authorization](./authorization.md).
 
 ## Configuration
 
@@ -149,7 +148,7 @@ that and leave userinfo off.
 | Surface          | Enforcement                                                              |
 | ---------------- | ------------------------------------------------------------------------ |
 | HTTP handler     | `Depends(get_principal)` on every TES route. `service-info` is unauthed. |
-| Database         | `tasks.principal` stamped on every insert; reads filter on the column.   |
+| Database         | `tasks.principal` stamped on every insert; reads are scoped by authz.    |
 | Workers          | TaskPods and `tctl` access the DB directly without a principal filter.   |
 
 Workers (`trec`, `tctl`) act as the system, not on behalf of any user.
@@ -169,6 +168,9 @@ applies.
   (deliberate: the policy does not leak the existence of resources you
   cannot see). Same for `POST /tasks/{id}:cancel`.
 - **`GET /tasks`** → returns only tasks whose `principal` matches.
+
+With a claim rule or a decision service, see
+[Authorization](./authorization.md#behaviour-the-client-sees).
 
 ## How clients obtain a token
 

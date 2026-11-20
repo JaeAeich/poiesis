@@ -15,11 +15,14 @@ class PoiesisApiConstants:
             implementor-specific but compliant edits.
         TES_VERSION: TES API version implemented.
         BASE_PATH: URL prefix the FastAPI router is mounted under.
+        SERVICE_ID: The service-info ``id``, also sent to the decision
+            service as ``context.tes.service_id``.
     """
 
     SPEC_GIT_HASH = "c4c17c9"
     TES_VERSION = "v1.1.0"
     BASE_PATH = "ga4gh/tes/v1"
+    SERVICE_ID = "org.ga4gh.poiesis"
 
 
 @lru_cache

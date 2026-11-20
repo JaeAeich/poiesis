@@ -166,6 +166,33 @@ auth:
     userinfo:
       enabled: false
 
+# Authorization (see the "Authorization" docs page). Both parts are off by
+# default; when both are set, both must allow. Needs auth.enabled.
+authz:
+  # Built-in claim rule for every TES action: callers whose claim `name`
+  # (exact name first, then a dotted path; token first, then userinfo) is
+  # not a string or list of strings holding one of `values` or starting
+  # with one of `prefixes` get 403. Prefixes are raw: include the
+  # delimiter (e.g. `urn:...:group:vo:`). Empty `name` disables it.
+  requiredClaim:
+    name: ""
+    values: []
+    prefixes: []
+  # External decision service: an OpenID AuthZEN 1.0 Access Evaluation
+  # endpoint asked once per decision. Empty `url` keeps the built-in
+  # owner rule. Any failure or timeout is a 503.
+  decisionService:
+    # Full evaluation URL, e.g. http://localhost:8181/access/v1/evaluation
+    url: ""
+    # Seconds per evaluation.
+    timeout: 2
+    # Claims sent to the service in subject.properties.claims.
+    claims: []
+    # Optional path (in the API pod) of a file with a bearer credential
+    # for the service; mount it from a Secret via extraVolumes and
+    # extraVolumeMounts.
+    credentialFile: ""
+
 # S3-compatible storage. Optional: required only when task inputs/outputs
 # reference s3:// URLs.
 s3:

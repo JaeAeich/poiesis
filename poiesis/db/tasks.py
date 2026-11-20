@@ -44,10 +44,9 @@ class TaskView(StrEnum):
 class ListFilters:
     """Filters and pagination cursor for `list_tasks`.
 
-    ``principal`` is mandatory at the route layer (every TES endpoint
-    depends on :func:`poiesis.api.auth.get_principal`); ``None`` is
-    reserved for internal call sites (workers, migrations) that
-    intentionally bypass ownership filtering.
+    ``principal`` restricts the list to one owner. ``None`` lists every
+    task: internal call sites (workers, migrations), and the route when
+    the decision service allows the caller to list all tasks.
     """
 
     name_prefix: str | None = None
@@ -362,6 +361,25 @@ async def get_task(
         or None,
         creation_time=_format_dt(task_row["creation_time"]),
     )
+
+
+async def get_task_meta(
+    conn: asyncpg.Connection, task_id: str
+) -> dict[str, Any] | None:
+    """Return a task's ``owner``, ``state`` and ``tags``, or ``None``.
+
+    No owner filter: the caller decides who may see the task.
+    """
+    row = await conn.fetchrow(
+        "SELECT principal, state, tags FROM tasks WHERE id = $1", uuid.UUID(task_id)
+    )
+    if row is None:
+        return None
+    return {
+        "owner": row["principal"],
+        "state": row["state"],
+        "tags": _load_jsonb(row["tags"]) or {},
+    }
 
 
 async def list_tasks(
