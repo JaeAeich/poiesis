@@ -1,15 +1,16 @@
-# Dev-only manifest: stands up Postgres + MinIO + Poiesis (API + TCtl) on a
-# local cluster (OrbStack). Not for production — the real chart lives in
-# deployment/helm. This file is deliberately one-shot: hardcoded creds,
-# imagePullPolicy=IfNotPresent against locally-built images, no probes
-# tuning, no PDB/HPA. Apply with:
+# Dev-only manifest: stands up Postgres + MinIO + Keycloak + Poiesis
+# (API + TCtl) on a local cluster (OrbStack). Not for production — the
+# real chart lives in deployment/helm. This file is deliberately
+# one-shot: hardcoded creds, imagePullPolicy=IfNotPresent against
+# locally-built images, no probes tuning, no PDB/HPA. Apply with:
 #
 #   docker build -f deployment/images/Dockerfile            -t poiesis:dev            .
 #   docker build -f deployment/images/migrations.Dockerfile -t poiesis-migrations:dev .
 #   kubectl apply -f deployment/dev.yaml
-#   kubectl -n po wait --for=condition=Available deploy/poiesis-api --timeout=120s
+#   kubectl -n po wait --for=condition=Available deploy/poiesis-api --timeout=240s
 #   kubectl -n po port-forward svc/poiesis-api 8000:8000 &
 #   kubectl -n deps port-forward svc/minio 9000:9000 &
+#   kubectl -n deps port-forward svc/keycloak 8080:8080 &
 ---
 apiVersion: v1
 kind: Namespace
@@ -164,6 +165,154 @@ spec:
     - name: console
       port: 9001
       targetPort: 9001
+---
+################################################################################
+# KEYCLOAK (dev IdP)
+################################################################################
+# Realm `poiesis`, imported on start. KC_HOSTNAME pins every issued token's
+# `iss` to the in-cluster URL, so tokens fetched through a port-forward from
+# the host validate in the API too. Users (password = username):
+#   alice, carol -> group lab-alpha    bob -> lab-beta    admin -> poiesis-admins
+# Clients:
+#   poiesis-cli  public; auth code + PKCE, device flow, password grant (dev only)
+#   poiesis-ci   confidential, client credentials; secret: poiesis-ci-secret
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: deps
+data:
+  poiesis-realm.json: |
+    {
+      "realm": "poiesis",
+      "enabled": true,
+      "sslRequired": "none",
+      "accessTokenLifespan": 300,
+      "groups": [
+        {"name": "lab-alpha"},
+        {"name": "lab-beta"},
+        {"name": "poiesis-admins"}
+      ],
+      "users": [
+        {"username": "alice", "enabled": true, "emailVerified": true,
+         "email": "alice@example.org", "firstName": "Alice", "lastName": "Dev",
+         "credentials": [{"type": "password", "value": "alice", "temporary": false}],
+         "groups": ["/lab-alpha"]},
+        {"username": "carol", "enabled": true, "emailVerified": true,
+         "email": "carol@example.org", "firstName": "Carol", "lastName": "Dev",
+         "credentials": [{"type": "password", "value": "carol", "temporary": false}],
+         "groups": ["/lab-alpha"]},
+        {"username": "bob", "enabled": true, "emailVerified": true,
+         "email": "bob@example.org", "firstName": "Bob", "lastName": "Dev",
+         "credentials": [{"type": "password", "value": "bob", "temporary": false}],
+         "groups": ["/lab-beta"]},
+        {"username": "admin", "enabled": true, "emailVerified": true,
+         "email": "admin@example.org", "firstName": "Admin", "lastName": "Dev",
+         "credentials": [{"type": "password", "value": "admin", "temporary": false}],
+         "groups": ["/poiesis-admins"]}
+      ],
+      "clients": [
+        {
+          "clientId": "poiesis-cli",
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": ["http://localhost:8000/*"],
+          "webOrigins": ["+"],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "oauth2.device.authorization.grant.enabled": "true"
+          },
+          "protocolMappers": [
+            {"name": "audience-poiesis", "protocol": "openid-connect",
+             "protocolMapper": "oidc-audience-mapper",
+             "config": {"included.custom.audience": "poiesis",
+                        "access.token.claim": "true", "id.token.claim": "false"}},
+            {"name": "groups", "protocol": "openid-connect",
+             "protocolMapper": "oidc-group-membership-mapper",
+             "config": {"claim.name": "groups", "full.path": "false",
+                        "access.token.claim": "true", "id.token.claim": "true",
+                        "userinfo.token.claim": "true"}}
+          ]
+        },
+        {
+          "clientId": "poiesis-ci",
+          "publicClient": false,
+          "secret": "poiesis-ci-secret",
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "protocolMappers": [
+            {"name": "audience-poiesis", "protocol": "openid-connect",
+             "protocolMapper": "oidc-audience-mapper",
+             "config": {"included.custom.audience": "poiesis",
+                        "access.token.claim": "true", "id.token.claim": "false"}}
+          ]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: deps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.0.7
+          args: ["start-dev", "--import-realm"]
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: admin
+            - name: KC_HOSTNAME
+              value: http://keycloak.deps.svc:8080
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9000
+              name: management
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            periodSeconds: 5
+            failureThreshold: 60
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      volumes:
+        - name: realm
+          configMap:
+            name: keycloak-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: deps
+spec:
+  type: ClusterIP
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
 ---
 ################################################################################
 # POIESIS SHARED CONFIG / RBAC
