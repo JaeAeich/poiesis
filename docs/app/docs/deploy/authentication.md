@@ -109,6 +109,8 @@ scopes were deferred to a later iteration. Leave the list empty
 
 ## User info
 
+![Userinfo lookup: before and after](/auth-userinfo.gif)
+
 Some IdPs release claims (e.g. group memberships such as
 `eduperson_entitlement`) at the OIDC userinfo endpoint but not in
 access tokens. With `userinfo.enabled: true`
