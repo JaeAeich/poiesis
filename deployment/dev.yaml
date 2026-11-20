@@ -176,6 +176,10 @@ spec:
 # Clients:
 #   poiesis-cli  public; auth code + PKCE, device flow, password grant (dev only)
 #   poiesis-ci   confidential, client credentials; secret: poiesis-ci-secret
+# User ids are fixed, so `sub` (the task owner) survives Keycloak restarts.
+# Keycloak keeps no data volume: `kubectl -n deps rollout restart
+# deploy/keycloak` re-imports the realm after editing it. Signing keys
+# change on restart, so restart poiesis-api too (it caches keys for 1h).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -189,27 +193,99 @@ data:
       "sslRequired": "none",
       "accessTokenLifespan": 300,
       "groups": [
-        {"name": "lab-alpha"},
-        {"name": "lab-beta"},
-        {"name": "poiesis-admins"}
+        {
+          "name": "lab-alpha"
+        },
+        {
+          "name": "lab-beta"
+        },
+        {
+          "name": "poiesis-admins"
+        }
       ],
       "users": [
-        {"username": "alice", "enabled": true, "emailVerified": true,
-         "email": "alice@example.org", "firstName": "Alice", "lastName": "Dev",
-         "credentials": [{"type": "password", "value": "alice", "temporary": false}],
-         "groups": ["/lab-alpha"]},
-        {"username": "carol", "enabled": true, "emailVerified": true,
-         "email": "carol@example.org", "firstName": "Carol", "lastName": "Dev",
-         "credentials": [{"type": "password", "value": "carol", "temporary": false}],
-         "groups": ["/lab-alpha"]},
-        {"username": "bob", "enabled": true, "emailVerified": true,
-         "email": "bob@example.org", "firstName": "Bob", "lastName": "Dev",
-         "credentials": [{"type": "password", "value": "bob", "temporary": false}],
-         "groups": ["/lab-beta"]},
-        {"username": "admin", "enabled": true, "emailVerified": true,
-         "email": "admin@example.org", "firstName": "Admin", "lastName": "Dev",
-         "credentials": [{"type": "password", "value": "admin", "temporary": false}],
-         "groups": ["/poiesis-admins"]}
+        {
+          "id": "00000000-0000-4000-8000-00000000a11c",
+          "username": "alice",
+          "enabled": true,
+          "emailVerified": true,
+          "email": "alice@example.org",
+          "firstName": "Alice",
+          "lastName": "Dev",
+          "credentials": [
+            {
+              "type": "password",
+              "value": "alice",
+              "temporary": false
+            }
+          ],
+          "groups": [
+            "/lab-alpha"
+          ]
+        },
+        {
+          "id": "00000000-0000-4000-8000-00000000ca01",
+          "username": "carol",
+          "enabled": true,
+          "emailVerified": true,
+          "email": "carol@example.org",
+          "firstName": "Carol",
+          "lastName": "Dev",
+          "credentials": [
+            {
+              "type": "password",
+              "value": "carol",
+              "temporary": false
+            }
+          ],
+          "groups": [
+            "/lab-alpha"
+          ]
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000b0b",
+          "username": "bob",
+          "enabled": true,
+          "emailVerified": true,
+          "email": "bob@example.org",
+          "firstName": "Bob",
+          "lastName": "Dev",
+          "credentials": [
+            {
+              "type": "password",
+              "value": "bob",
+              "temporary": false
+            }
+          ],
+          "groups": [
+            "/lab-beta"
+          ]
+        },
+        {
+          "id": "00000000-0000-4000-8000-00000000ad01",
+          "username": "admin",
+          "enabled": true,
+          "emailVerified": true,
+          "email": "admin@example.org",
+          "firstName": "Admin",
+          "lastName": "Dev",
+          "credentials": [
+            {
+              "type": "password",
+              "value": "admin",
+              "temporary": false
+            }
+          ],
+          "groups": [
+            "/poiesis-admins"
+          ]
+        },
+        {
+          "id": "00000000-0000-4000-8000-0000000000c1",
+          "username": "service-account-poiesis-ci",
+          "enabled": true,
+          "serviceAccountClientId": "poiesis-ci"
+        }
       ],
       "clients": [
         {
@@ -217,22 +293,39 @@ data:
           "publicClient": true,
           "standardFlowEnabled": true,
           "directAccessGrantsEnabled": true,
-          "redirectUris": ["http://localhost:8000/*"],
-          "webOrigins": ["+"],
+          "redirectUris": [
+            "http://localhost:8000/*"
+          ],
+          "webOrigins": [
+            "+"
+          ],
           "attributes": {
             "pkce.code.challenge.method": "S256",
             "oauth2.device.authorization.grant.enabled": "true"
           },
           "protocolMappers": [
-            {"name": "audience-poiesis", "protocol": "openid-connect",
-             "protocolMapper": "oidc-audience-mapper",
-             "config": {"included.custom.audience": "poiesis",
-                        "access.token.claim": "true", "id.token.claim": "false"}},
-            {"name": "groups", "protocol": "openid-connect",
-             "protocolMapper": "oidc-group-membership-mapper",
-             "config": {"claim.name": "groups", "full.path": "false",
-                        "access.token.claim": "true", "id.token.claim": "true",
-                        "userinfo.token.claim": "true"}}
+            {
+              "name": "audience-poiesis",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "config": {
+                "included.custom.audience": "poiesis",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            },
+            {
+              "name": "groups",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-group-membership-mapper",
+              "config": {
+                "claim.name": "groups",
+                "full.path": "false",
+                "access.token.claim": "true",
+                "id.token.claim": "true",
+                "userinfo.token.claim": "true"
+              }
+            }
           ]
         },
         {
@@ -243,10 +336,16 @@ data:
           "standardFlowEnabled": false,
           "directAccessGrantsEnabled": false,
           "protocolMappers": [
-            {"name": "audience-poiesis", "protocol": "openid-connect",
-             "protocolMapper": "oidc-audience-mapper",
-             "config": {"included.custom.audience": "poiesis",
-                        "access.token.claim": "true", "id.token.claim": "false"}}
+            {
+              "name": "audience-poiesis",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "config": {
+                "included.custom.audience": "poiesis",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            }
           ]
         }
       ]
@@ -259,6 +358,9 @@ metadata:
   namespace: deps
 spec:
   replicas: 1
+  # One pod at a time: each dev-mode pod has its own H2 database and keys.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: keycloak
