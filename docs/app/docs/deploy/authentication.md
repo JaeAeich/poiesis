@@ -126,9 +126,14 @@ to (not merged into) the token claims:
   IdP takes to show. The cache is bounded (least recently used
   tokens go first); parallel first requests with a new token may each
   call the endpoint.
-- Any failure (endpoint unreachable, slower than `timeout`, an error
-  status, a different `sub`, a non-JSON answer) is a `401 unauthorized`.
-  Signed or encrypted userinfo (`application/jwt`) is not supported.
+- An outage (endpoint unreachable, slower than `timeout`, a `5xx`
+  answer) is a `503 service_unavailable` with `Retry-After`, so clients
+  retry instead of treating their token as bad. Any other failure (the
+  token refused, a different `sub`, a non-JSON answer) is a
+  `401 unauthorized`. Signed or encrypted userinfo (`application/jwt`)
+  is not supported.
+- A token without the principal claim is refused before the userinfo
+  call, and one HTTP client per issuer is reused across calls.
 - The token is sent to the userinfo endpoint only, never to any other
   service. The principal is still taken from the token.
 

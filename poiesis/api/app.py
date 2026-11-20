@@ -67,7 +67,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     if settings.auth.enabled:
         oidc = OIDCValidator(settings.auth)
-        await oidc.bootstrap()
+        try:
+            await oidc.bootstrap()
+        except BaseException:
+            await oidc.aclose()
+            raise
         app.state.oidc = oidc
     else:
         app.state.oidc = None
@@ -76,6 +80,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        if app.state.oidc is not None:
+            await app.state.oidc.aclose()
         logger.info("Closing Postgres pool")
         await app.state.db_pool.close()
 

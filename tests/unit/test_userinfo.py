@@ -17,7 +17,7 @@ from fake_issuer import ISSUER, Issuer, Network
 
 from poiesis.api import auth
 from poiesis.api.auth import OIDCValidator, Principal, get_principal
-from poiesis.api.exceptions import UnauthorizedError
+from poiesis.api.exceptions import ServiceUnavailableError, UnauthorizedError
 from poiesis.api.settings import AuthSettings
 
 
@@ -153,8 +153,6 @@ def fail(_: httpx.Request) -> httpx.Response:
     [
         respond(200, json={"sub": "mallory"}),
         respond(200, json={"name": "no sub"}),
-        fail,
-        respond(500, json={"sub": "alice"}),
         respond(401),
         respond(302, headers={"location": "https://elsewhere.example.org/"}),
         respond(200, content=b"e.y.J", headers={"content-type": "application/jwt"}),
@@ -164,8 +162,6 @@ def fail(_: httpx.Request) -> httpx.Response:
     ids=[
         "other-sub",
         "no-sub",
-        "unreachable",
-        "server-error",
         "token-refused",
         "redirect",
         "signed-jwt",
@@ -174,7 +170,7 @@ def fail(_: httpx.Request) -> httpx.Response:
     ],
 )
 def test_failures_are_401(issuer: Issuer, handler: Any) -> None:
-    """A different `sub`, any error or a non-JSON answer is a 401."""
+    """A different `sub`, a refused token or a non-JSON answer is a 401."""
     issuer.userinfo_handler = handler
     oidc = validator()
     token = issuer.token()
@@ -182,6 +178,55 @@ def test_failures_are_401(issuer: Issuer, handler: Any) -> None:
         principal(oidc, token)
     issuer.userinfo_handler = None
     assert principal(oidc, token).userinfo == {"sub": "alice"}  # failure not cached
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [fail, respond(500, json={"sub": "alice"}), respond(503)],
+    ids=["unreachable", "server-error", "unavailable"],
+)
+def test_outages_are_503(issuer: Issuer, handler: Any) -> None:
+    """An unreachable or failing endpoint is a 503, not a bad token."""
+    issuer.userinfo_handler = handler
+    oidc = validator()
+    token = issuer.token()
+    with pytest.raises(ServiceUnavailableError) as error:
+        principal(oidc, token)
+    assert error.value.retry_after_seconds == auth._ISSUER_RETRY_AFTER
+    issuer.userinfo_handler = None
+    assert principal(oidc, token).userinfo == {"sub": "alice"}  # failure not cached
+
+
+def test_missing_owner_claim_skips_userinfo(
+    issuer: Issuer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A token without the owner claim is refused before userinfo sees it."""
+    monkeypatch.setenv("POIESIS_AUTH_OIDC_PRINCIPAL_CLAIM", "ctx.group_id")
+    oidc = validator()
+    before = issuer.userinfo_calls
+    with pytest.raises(UnauthorizedError, match="claim"):
+        principal(oidc, issuer.token())
+    assert issuer.userinfo_calls == before
+
+
+def test_one_client_per_validator(
+    issuer: Issuer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Discovery, JWKS and userinfo share one HTTP client until closed."""
+    made: list[httpx.AsyncClient] = []
+    factory = httpx.AsyncClient
+
+    def counting(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        made.append(factory(*args, **kwargs))
+        return made[-1]
+
+    monkeypatch.setattr(httpx, "AsyncClient", counting)
+    oidc = validator()
+    principal(oidc, issuer.token())
+    principal(oidc, issuer.token(jti="second"))
+    assert len(made) == 1
+    asyncio.run(oidc.aclose())
+    assert made[0].is_closed
 
 
 def test_media_type_case_insensitive(issuer: Issuer) -> None:
@@ -274,7 +319,7 @@ def slow(delay: float) -> Any:
 
     The fake network doesn't wait; it fails like a timed-out request
     whenever the client's read timeout is shorter than `delay`. This
-    checks the mapping of a timeout to 401; `test_trickle_*` check
+    checks the mapping of a timeout to 503; `test_trickle_*` check
     that the timeout bounds the whole call.
     """
 
@@ -286,11 +331,11 @@ def slow(delay: float) -> Any:
     return handler
 
 
-def test_slow_userinfo_is_401(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Userinfo slower than the timeout is a 401; a longer timeout lets it in."""
+def test_slow_userinfo_is_503(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Userinfo slower than the timeout is a 503; a longer timeout lets it in."""
     issuer.userinfo_handler = slow(5)
     monkeypatch.setenv("POIESIS_AUTH_OIDC_TIMEOUT", "1")
-    with pytest.raises(UnauthorizedError):
+    with pytest.raises(ServiceUnavailableError):
         principal(validator(), issuer.token())
     monkeypatch.delenv("POIESIS_AUTH_OIDC_TIMEOUT")
     assert principal(validator(), issuer.token()).userinfo == {"sub": "alice"}
@@ -331,11 +376,11 @@ async def against_trickle(call: Callable[[str], Awaitable[Any]]) -> float:
     return elapsed
 
 
-def test_trickle_userinfo_is_401() -> None:
+def test_trickle_userinfo_is_503() -> None:
     """The timeout bounds the whole userinfo call, not each read."""
 
     async def call(url: str) -> None:
-        with pytest.raises(UnauthorizedError) as error:
+        with pytest.raises(ServiceUnavailableError) as error:
             await OIDCValidator._fetch_userinfo(
                 f"{url}/userinfo", "token", TRICKLE_TIMEOUT
             )

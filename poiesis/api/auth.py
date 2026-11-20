@@ -14,6 +14,7 @@ not a string forward reference. Same constraint as `poiesis.api.deps`.
 
 import asyncio
 import copy
+import dataclasses
 import hashlib
 import logging
 import time
@@ -29,7 +30,11 @@ from joserfc.errors import JoseError
 from joserfc.jwk import KeySet
 from joserfc.jwt import JWTClaimsRegistry
 
-from poiesis.api.exceptions import ForbiddenError, UnauthorizedError
+from poiesis.api.exceptions import (
+    ForbiddenError,
+    ServiceUnavailableError,
+    UnauthorizedError,
+)
 
 if TYPE_CHECKING:
     from poiesis.api.settings import AuthSettings
@@ -48,6 +53,8 @@ _DISCOVERY_SUFFIX = "/.well-known/openid-configuration"
 _USERINFO_MAX_AGE = 300.0
 #: ... and for at most this many tokens; the least recently used go first.
 _USERINFO_CACHE_SIZE = 4096
+#: ``Retry-After`` seconds advertised when the issuer can't be reached.
+_ISSUER_RETRY_AFTER = 5
 _BEARER_PREFIX = "Bearer "
 _DEFAULT_ALGORITHMS: tuple[str, ...] = (
     "RS256",
@@ -117,6 +124,24 @@ class OIDCValidator:
         self._jwks: KeySet | None = None
         self._jwks_fetched_at: float = 0.0
         self._algorithms = list(_DEFAULT_ALGORITHMS)
+        self._client: httpx.AsyncClient | None = None
+
+    def _http(self) -> httpx.AsyncClient:
+        """Return the validator's HTTP client, creating it on first use.
+
+        One client per validator keeps connections to the issuer alive
+        across discovery, JWKS and userinfo calls instead of paying a
+        new TCP and TLS handshake per uncached userinfo lookup.
+        """
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=self._settings.timeout)
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close the HTTP client; called from the FastAPI ``lifespan``."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     async def bootstrap(self) -> None:
         """Fetch OIDC discovery and prime the JWKS cache.
@@ -126,7 +151,7 @@ class OIDCValidator:
         configured server that returns 401 on every request.
         """
         url = self._settings.issuer.rstrip("/") + _DISCOVERY_SUFFIX
-        resp = await _get(url, self._settings.timeout)
+        resp = await _get(url, self._settings.timeout, client=self._http())
         resp.raise_for_status()
         doc = resp.json()
         self._issuer_from_discovery = doc.get("issuer") or self._settings.issuer
@@ -168,8 +193,11 @@ class OIDCValidator:
 
         Cached per token (by hash) until the token expires, at most
         ``_USERINFO_MAX_AGE`` seconds; concurrent first requests with one
-        token may each fetch. Fails closed: any failure, and a ``sub``
-        that differs from the token's, raises :class:`UnauthorizedError`.
+        token may each fetch. Fails closed: a refused token, a non-JSON
+        answer or a ``sub`` that differs from the token's raises
+        :class:`UnauthorizedError`; an issuer that can't be reached, is
+        too slow or answers 5xx raises :class:`ServiceUnavailableError`,
+        so an IdP outage doesn't look like a bad token to clients.
         """
         if self._userinfo_uri is None:
             raise RuntimeError("userinfo lookup is not enabled")
@@ -181,7 +209,7 @@ class OIDCValidator:
             return copy.deepcopy(cached[1])
 
         info = await self._fetch_userinfo(
-            self._userinfo_uri, token, self._settings.timeout
+            self._userinfo_uri, token, self._settings.timeout, client=self._http()
         )
         sub = claims.get("sub")
         if not isinstance(sub, str) or info.get("sub") != sub:
@@ -199,21 +227,36 @@ class OIDCValidator:
         return copy.deepcopy(info)
 
     @staticmethod
-    async def _fetch_userinfo(uri: str, token: str, timeout: float) -> dict[str, Any]:
-        """GET userinfo at ``uri`` with ``token``; any failure is a 401.
+    async def _fetch_userinfo(
+        uri: str,
+        token: str,
+        timeout: float,
+        client: httpx.AsyncClient | None = None,
+    ) -> dict[str, Any]:
+        """GET userinfo at ``uri`` with ``token``.
 
-        Only plain JSON is accepted: signed or encrypted userinfo
-        (``application/jwt``) is not supported.
+        An outage (transport error, timeout, 5xx) is a 503; any other
+        failure is a 401. Only plain JSON is accepted: signed or
+        encrypted userinfo (``application/jwt``) is not supported.
         """
         headers = {
             "Authorization": _BEARER_PREFIX + token,
             "Accept": "application/json",
         }
         try:
-            resp = await _get(uri, timeout, headers)
+            resp = await _get(uri, timeout, headers, client=client)
         except (httpx.HTTPError, TimeoutError) as exc:
             logger.warning("Userinfo request failed: %s", type(exc).__name__)
-            raise UnauthorizedError("userinfo lookup failed") from exc
+            raise ServiceUnavailableError(
+                "identity provider unavailable",
+                retry_after_seconds=_ISSUER_RETRY_AFTER,
+            ) from exc
+        if resp.status_code >= httpx.codes.INTERNAL_SERVER_ERROR:
+            logger.warning("Userinfo endpoint answered %s", resp.status_code)
+            raise ServiceUnavailableError(
+                "identity provider unavailable",
+                retry_after_seconds=_ISSUER_RETRY_AFTER,
+            )
         content_type = resp.headers.get("content-type", "")
         info: Any = None
         media_type = content_type.split(";")[0].strip().lower()
@@ -235,7 +278,7 @@ class OIDCValidator:
         """Refresh the cached JWKS from the discovered ``jwks_uri``."""
         if not self._jwks_uri:
             raise RuntimeError("OIDCValidator used before bootstrap()")
-        resp = await _get(self._jwks_uri, self._settings.timeout)
+        resp = await _get(self._jwks_uri, self._settings.timeout, client=self._http())
         resp.raise_for_status()
         self._jwks = KeySet.import_key_set(resp.json())
         self._jwks_fetched_at = time.monotonic()
@@ -311,19 +354,24 @@ class OIDCValidator:
 
 
 async def _get(
-    url: str, timeout: float, headers: dict[str, str] | None = None
+    url: str,
+    timeout: float,
+    headers: dict[str, str] | None = None,
+    *,
+    client: httpx.AsyncClient | None = None,
 ) -> httpx.Response:
     """GET ``url`` from the issuer within ``timeout`` seconds in total.
 
     httpx's own timeout applies to each connect or read separately, so
     a slowly trickling answer could take far longer; the overall
-    deadline raises :class:`TimeoutError`.
+    deadline raises :class:`TimeoutError`. Uses ``client`` when given
+    (the validator's shared client), else a short-lived one.
     """
-    async with (
-        asyncio.timeout(timeout),
-        httpx.AsyncClient(timeout=timeout) as client,
-    ):
-        return await client.get(url, headers=headers)
+    async with asyncio.timeout(timeout):
+        if client is not None:
+            return await client.get(url, headers=headers)
+        async with httpx.AsyncClient(timeout=timeout) as own:
+            return await own.get(url, headers=headers)
 
 
 def _walk_claim_path(claims: dict[str, Any], path: str) -> Any:
@@ -366,7 +414,9 @@ async def get_principal(request: Request) -> Principal:
         return Principal(id=ANONYMOUS_PRINCIPAL_ID, claims={})
     token = _extract_bearer(request)
     claims = await validator.validate(token)
-    userinfo = (
-        await validator.userinfo(token, claims) if validator.userinfo_enabled else None
-    )
-    return validator.principal_from(claims, userinfo)
+    # Resolve the owner first so a token without it never reaches userinfo.
+    principal = validator.principal_from(claims)
+    if validator.userinfo_enabled:
+        userinfo = await validator.userinfo(token, claims)
+        principal = dataclasses.replace(principal, userinfo=userinfo)
+    return principal
