@@ -12,6 +12,8 @@ carries an `owner` column, and callers see and cancel only the rows
 whose `owner` is their own. An optional claim rule and an external
 decision service change that; see [Authorization](./authorization.md).
 
+![Authenticator chain: before and after, use case by use case](/auth-chain.gif)
+
 ## Configuration
 
 The Helm chart lists the trusted issuers under `auth.issuers`. The
