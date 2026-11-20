@@ -31,22 +31,24 @@ Three ServiceAccounts with namespace-scoped Roles:
 
 ## Steps
 
-### 1. Build the image
+### 1. Build the images
 
 ```bash
 git clone https://github.com/jaeaeich/poiesis.git
 cd poiesis
 docker build -f deployment/images/Dockerfile -t poiesis:dev .
+docker build -f deployment/images/migrations.Dockerfile -t poiesis-migrations:dev .
 ```
 
-OrbStack shares the host Docker daemon with the cluster, so the image
-is immediately available. On minikube/kind, push it in:
+OrbStack shares the host Docker daemon with the cluster, so the images
+are immediately available. On minikube/kind, push them in:
 
 ```bash
 # minikube
 minikube image load poiesis:dev
+minikube image load poiesis-migrations:dev
 # kind
-kind load docker-image poiesis:dev
+kind load docker-image poiesis:dev poiesis-migrations:dev
 ```
 
 ### 2. Apply the manifest
@@ -59,6 +61,10 @@ kubectl -n po wait --for=condition=Available deploy/poiesis-api --timeout=240s
 
 The API fetches the issuer's discovery document at startup, so it
 restarts until Keycloak is ready; that's expected.
+
+`poiesis-migrate` is a Job, and a completed Job doesn't run again on
+`apply`. After changing `./migrations/`, delete it first:
+`kubectl -n po delete job poiesis-migrate`.
 
 For a smoke test without an IdP, turn auth off:
 
@@ -104,8 +110,14 @@ As a service account:
 
 ```bash
 TOKEN=$(curl -s http://localhost:8080/realms/poiesis/protocol/openid-connect/token \
-  -d grant_type=client_credentials \
+  -d grant_type=client_credentials -d scope=openid \
   -d client_id=poiesis-ci -d client_secret=poiesis-ci-secret | jq -r .access_token)
+```
+
+Check it works:
+
+```bash
+curl http://localhost:8000/ga4gh/tes/v1/tasks -H "Authorization: Bearer $TOKEN"
 ```
 
 Tokens carry `aud: poiesis` and a `groups` claim, and live five
@@ -113,7 +125,18 @@ minutes. Keycloak pins their issuer to the in-cluster URL
 (`http://keycloak.deps.svc:8080/realms/poiesis`), so tokens fetched
 through the port-forward validate in the API too. Request
 `scope=openid` if the API has [userinfo](./authentication.md) on:
-Keycloak only answers userinfo for such tokens.
+Keycloak only answers userinfo for such tokens. User ids are fixed in
+the realm, so `sub` (and with it task ownership) survives a Keycloak
+restart. Its signing keys don't, and the API caches keys for an hour:
+after restarting Keycloak, restart the API too
+(`kubectl -n po rollout restart deploy/poiesis-api`).
+
+For browser flows (authorization code, device flow) from the host,
+make the pinned hostname resolve to the port-forward:
+
+```bash
+echo "127.0.0.1 keycloak.deps.svc" | sudo tee -a /etc/hosts
+```
 
 ## Submit a task
 
