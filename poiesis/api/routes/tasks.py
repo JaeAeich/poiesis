@@ -12,7 +12,7 @@ from kubernetes.client.exceptions import ApiException
 
 from poiesis.api.auth import Principal
 from poiesis.api.authz import Authz, authorized_principal, get_authz
-from poiesis.api.deps import get_db_conn, get_k8s, get_runtime_config
+from poiesis.api.deps import get_db_pool, get_k8s, get_runtime_config
 from poiesis.api.exceptions import (
     APIError,
     BadRequestError,
@@ -57,7 +57,7 @@ async def create_task(
     runtime_config: Annotated[RuntimeConfig, Depends(get_runtime_config)],
     principal: Annotated[Principal, Depends(authorized_principal)],
     authz: Annotated[Authz, Depends(get_authz)],
-    conn: Annotated[Any, Depends(get_db_conn)],
+    pool: Annotated[Any, Depends(get_db_pool)],
 ) -> TesCreateTaskResponse:
     """Accept a TES task, persist it, and submit its TaskPod to Kubernetes."""
     # Server-assigned fields: a client-chosen id would reveal whether a
@@ -81,34 +81,36 @@ async def create_task(
     except ValueError as exc:
         raise BadRequestError(str(exc)) from exc
 
-    task_id = await tasks_db.create_task(conn, task, principal.id)
-    logger.info("Persisted task %s", task_id)
+    # Acquired only after the decision, so it never waits holding one.
+    async with pool.acquire() as conn:
+        task_id = await tasks_db.create_task(conn, task, principal.id)
+        logger.info("Persisted task %s", task_id)
 
-    # Submit the Job first; the Pod will wait Pending until the PVC exists.
-    # The PVC is created with an ownerReference back to the Job so
-    # kube-controller-manager garbage-collects it when the Job is deleted.
-    try:
-        created_job = await k8s.create_job(runtime_config.taskpod_namespace, job)
-    except ApiException as exc:
-        await _on_kubernetes_submit_failure(
-            conn, task_id, exc, where="Job", k8s=None, namespace=None, job_name=None
-        )
+        # Submit the Job first; the Pod will wait Pending until the PVC exists.
+        # The PVC is created with an ownerReference back to the Job so
+        # kube-controller-manager garbage-collects it when the Job is deleted.
+        try:
+            created_job = await k8s.create_job(runtime_config.taskpod_namespace, job)
+        except ApiException as exc:
+            await _on_kubernetes_submit_failure(
+                conn, task_id, exc, where="Job", k8s=None, namespace=None, job_name=None
+            )
 
-    job_uid, job_name = _server_assigned_meta(created_job)
-    attach_pvc_owner(pvc, job_uid, job_name)
+        job_uid, job_name = _server_assigned_meta(created_job)
+        attach_pvc_owner(pvc, job_uid, job_name)
 
-    try:
-        await k8s.create_pvc(runtime_config.taskpod_namespace, pvc)
-    except ApiException as exc:
-        await _on_kubernetes_submit_failure(
-            conn,
-            task_id,
-            exc,
-            where="PVC",
-            k8s=k8s,
-            namespace=runtime_config.taskpod_namespace,
-            job_name=job_name,
-        )
+        try:
+            await k8s.create_pvc(runtime_config.taskpod_namespace, pvc)
+        except ApiException as exc:
+            await _on_kubernetes_submit_failure(
+                conn,
+                task_id,
+                exc,
+                where="PVC",
+                k8s=k8s,
+                namespace=runtime_config.taskpod_namespace,
+                job_name=job_name,
+            )
 
     logger.info("TaskPod submitted for task %s (job=%s)", task_id, job_name)
     return TesCreateTaskResponse(id=task_id)
@@ -223,7 +225,7 @@ async def cancel_task(
     runtime_config: Annotated[RuntimeConfig, Depends(get_runtime_config)],
     principal: Annotated[Principal, Depends(authorized_principal)],
     authz: Annotated[Authz, Depends(get_authz)],
-    conn: Annotated[Any, Depends(get_db_conn)],
+    pool: Annotated[Any, Depends(get_db_pool)],
 ) -> TesCancelTaskResponse:
     """Mark the task CANCELING and delete its wrapping Kubernetes Job.
 
@@ -236,10 +238,12 @@ async def cancel_task(
     except ValueError as exc:
         raise BadRequestError(f"invalid task id: {id}") from exc
 
-    meta = await tasks_db.get_task_meta(conn, task_uuid)
+    async with pool.acquire() as conn:
+        meta = await tasks_db.get_task_meta(conn, task_uuid)
     await authz.check_cancel(principal, task_uuid, meta)
 
-    transitioned = await state_db.mark_canceling(conn, task_uuid)
+    async with pool.acquire() as conn:
+        transitioned = await state_db.mark_canceling(conn, task_uuid)
     if not transitioned:
         # Already terminal (or already CANCELING) — TES spec says return success.
         return TesCancelTaskResponse()
@@ -263,7 +267,7 @@ async def get_task(
     id: str,
     principal: Annotated[Principal, Depends(authorized_principal)],
     authz: Annotated[Authz, Depends(get_authz)],
-    conn: Annotated[Any, Depends(get_db_conn)],
+    pool: Annotated[Any, Depends(get_db_pool)],
     view: Annotated[TaskView, Query()] = TaskView.MINIMAL,
 ) -> TesTask:
     """Return a single task at the requested view level."""
@@ -272,9 +276,13 @@ async def get_task(
     except ValueError as exc:
         raise BadRequestError(f"invalid task id: {id}") from exc
 
-    meta = await tasks_db.get_task_meta(conn, task_uuid)
+    async with pool.acquire() as conn:
+        meta = await tasks_db.get_task_meta(conn, task_uuid)
     allowed = await authz.may_read(principal, task_uuid, meta, view.value)
-    task = await tasks_db.get_task(conn, task_uuid, view=view) if allowed else None
+    task = None
+    if allowed:
+        async with pool.acquire() as conn:
+            task = await tasks_db.get_task(conn, task_uuid, view=view)
     if task is None:
         raise NotFoundError(f"task {id} not found")
     return task
@@ -308,14 +316,15 @@ async def list_tasks(
     filters: Annotated[ListFilters, Depends(_list_filters)],
     principal: Annotated[Principal, Depends(authorized_principal)],
     authz: Annotated[Authz, Depends(get_authz)],
-    conn: Annotated[Any, Depends(get_db_conn)],
+    pool: Annotated[Any, Depends(get_db_pool)],
     view: Annotated[TaskView, Query()] = TaskView.MINIMAL,
 ) -> TesListTasksResponse:
     """Return a paginated list of tasks, newest first."""
     all_tasks = await authz.lists_all(principal, view.value)
     filters.principal = None if all_tasks else principal.id
     try:
-        tasks, next_token = await tasks_db.list_tasks(conn, filters, view=view)
+        async with pool.acquire() as conn:
+            tasks, next_token = await tasks_db.list_tasks(conn, filters, view=view)
     except ValueError as exc:
         raise BadRequestError(str(exc)) from exc
     return TesListTasksResponse(tasks=tasks, next_page_token=next_token)

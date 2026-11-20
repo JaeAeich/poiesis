@@ -8,9 +8,10 @@ The requests the stub receives are compared with golden files in
 """
 
 import asyncio
+import contextlib
 import json
 import os
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -24,7 +25,7 @@ from fastapi.testclient import TestClient
 from poiesis.api import app as app_module
 from poiesis.api.auth import OIDCValidator, Principal
 from poiesis.api.authz import Authz, strip_url
-from poiesis.api.deps import get_db_conn, get_k8s, get_runtime_config
+from poiesis.api.deps import get_db_pool, get_k8s, get_runtime_config
 from poiesis.api.exceptions import APIError, handle_api_exception
 from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.settings import AuthSettings, AuthzSettings
@@ -151,6 +152,25 @@ def per_action(**decisions: bool) -> Decide:
 # -- fixtures --------------------------------------------------------------------
 
 
+class Pool:
+    """Stands in for the asyncpg pool; counts and tracks held connections."""
+
+    def __init__(self) -> None:
+        """Start with nothing acquired."""
+        self.acquired = 0
+        self.held = 0
+
+    @contextlib.asynccontextmanager
+    async def acquire(self) -> AsyncIterator[None]:
+        """Hand out a dummy connection (the store fakes ignore it)."""
+        self.acquired += 1
+        self.held += 1
+        try:
+            yield None
+        finally:
+            self.held -= 1
+
+
 class Env:
     """A Poiesis API under test, with its fakes."""
 
@@ -172,7 +192,8 @@ class Env:
         app.include_router(tasks_routes.router, prefix="/ga4gh/tes/v1")
         app.state.oidc = oidc
         app.state.authz = Authz(AuthzSettings(**settings))
-        app.dependency_overrides[get_db_conn] = lambda: None
+        self.pool = Pool()
+        app.dependency_overrides[get_db_pool] = lambda: self.pool
         app.dependency_overrides[get_k8s] = K8s
         app.dependency_overrides[get_runtime_config] = lambda: SimpleNamespace(
             taskpod_namespace="ns"
@@ -497,13 +518,38 @@ def test_rule_denies_before_decision(env: Env, method: str, path: str) -> None:
     client = env.pdp_on(
         required_claim_name=ENTITLEMENT, required_claim_prefixes=(SUBGROUPS,)
     )
-    connections: list[None] = []
-    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
-    overrides[get_db_conn] = lambda: connections.append(None)
     env.store.add("bob", BOB_TASK)
     assert client.request(method, path, json=TASK).status_code == 403  # noqa: PLR2004
     assert env.pdp.requests == []
-    assert connections == []
+    assert env.pool.acquired == 0
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("POST", TASKS),
+        ("GET", f"{TASKS}/{BOB_TASK}"),
+        ("POST", f"{TASKS}/{BOB_TASK}:cancel"),
+        ("GET", TASKS),
+    ],
+)
+def test_no_connection_held_during_decision(
+    env: Env, network: Network, method: str, path: str
+) -> None:
+    """No pooled connection is held while the decision service is asked."""
+    client = env.pdp_on()
+    stub = network.hosts["pdp.example.org"]
+    held: list[int] = []
+
+    def spy(request: httpx.Request) -> httpx.Response:
+        held.append(env.pool.held)
+        return stub(request)
+
+    network.hosts["pdp.example.org"] = spy
+    env.store.add("bob", BOB_TASK)
+    client.request(method, path, json=TASK)
+    assert held
+    assert set(held) == {0}
 
 
 def test_rule_denies_service_client(env: Env) -> None:

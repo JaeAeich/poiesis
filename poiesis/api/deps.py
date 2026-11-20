@@ -29,6 +29,16 @@ async def get_db_conn(request: Request) -> AsyncIterator[Any]:
         yield conn
 
 
+def get_db_pool(request: Request) -> Any:
+    """Return the process-wide asyncpg pool.
+
+    For routes that call the decision service: they acquire a
+    connection around their database work only, so a slow decision
+    never holds a pooled connection (and can't starve other routes).
+    """
+    return request.app.state.db_pool
+
+
 def get_k8s(request: Request) -> K8sClient:
     """Return the process-wide K8s client wrapper."""
     return request.app.state.k8s
