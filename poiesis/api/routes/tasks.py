@@ -83,7 +83,7 @@ async def create_task(
 
     # Acquired only after the decision, so it never waits holding one.
     async with pool.acquire() as conn:
-        task_id = await tasks_db.create_task(conn, task, principal.id)
+        task_id = await tasks_db.create_task(conn, task, principal.owner)
         logger.info("Persisted task %s", task_id)
 
         # Submit the Job first; the Pod will wait Pending until the PVC exists.
@@ -321,7 +321,7 @@ async def list_tasks(
 ) -> TesListTasksResponse:
     """Return a paginated list of tasks, newest first."""
     all_tasks = await authz.lists_all(principal, view.value)
-    filters.principal = None if all_tasks else principal.id
+    filters.owner = None if all_tasks else principal.owner
     try:
         async with pool.acquire() as conn:
             tasks, next_token = await tasks_db.list_tasks(conn, filters, view=view)

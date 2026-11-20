@@ -13,31 +13,49 @@ from typing import Any
 
 import httpx
 import pytest
-from fake_issuer import ISSUER, Issuer, Network
+from fake_issuer import AUDIENCE, ISSUER, Issuer, Network, set_issuers
+from pydantic import ValidationError
 
-from poiesis.api import auth
-from poiesis.api.auth import OIDCValidator, Principal, get_principal
+from poiesis.api import jwt_auth
+from poiesis.api.auth import Principal, get_principal
 from poiesis.api.exceptions import ServiceUnavailableError, UnauthorizedError
-from poiesis.api.settings import AuthSettings
+from poiesis.api.jwt_auth import IssuerValidator, JWTAuthenticator
+from poiesis.api.settings import AuthSettings, IssuerSettings
 
 
-def validator(*, userinfo: bool = True) -> OIDCValidator:
-    """Bootstrap a validator against the fake issuer."""
-    oidc = OIDCValidator(AuthSettings(userinfo_enabled=userinfo))
-    asyncio.run(oidc.bootstrap())
+def started(oidc: JWTAuthenticator) -> JWTAuthenticator:
+    """Start `oidc` (bootstrap its issuers) and return it."""
+    asyncio.run(oidc.start())
     return oidc
 
 
-def principal(oidc: OIDCValidator, token: str) -> Principal:
+def validator(**settings: Any) -> JWTAuthenticator:
+    """Start an authenticator for the fake issuer, userinfo on by default."""
+    entry = {"issuer": ISSUER, "audience": AUDIENCE, "userinfo": {"enabled": True}}
+    return started(JWTAuthenticator([IssuerSettings.model_validate(entry | settings)]))
+
+
+def from_env() -> JWTAuthenticator:
+    """Start an authenticator for the issuers configured in the environment."""
+    return started(JWTAuthenticator(AuthSettings().issuers))
+
+
+def principal(oidc: JWTAuthenticator, token: str) -> Principal:
     """Run the `get_principal` dependency for a request with `token`."""
     request: Any = SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(oidc=oidc)),
+        app=SimpleNamespace(state=SimpleNamespace(authenticators=[oidc])),
         headers={"authorization": f"Bearer {token}"},
     )
     return asyncio.run(get_principal(request))
 
 
-def fetches(issuer: Issuer, oidc: OIDCValidator, token: str) -> int:
+def userinfo(oidc: JWTAuthenticator, issuer: Issuer, token: str) -> dict[str, Any]:
+    """Call the fake issuer's validator's userinfo lookup directly."""
+    lookup = oidc.issuers[ISSUER].userinfo(token, issuer.tokens[token])
+    return asyncio.run(lookup)
+
+
+def fetches(issuer: Issuer, oidc: JWTAuthenticator, token: str) -> int:
     """Return how many userinfo calls a request with `token` caused."""
     before = issuer.userinfo_calls
     principal(oidc, token)
@@ -46,17 +64,16 @@ def fetches(issuer: Issuer, oidc: OIDCValidator, token: str) -> int:
 
 def test_off_by_default(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
     """Without the setting, userinfo is never fetched and stays empty."""
-    monkeypatch.delenv("POIESIS_AUTH_OIDC_USERINFO_ENABLED", raising=False)
-    oidc = OIDCValidator(AuthSettings())
-    asyncio.run(oidc.bootstrap())
+    oidc = from_env()
     assert principal(oidc, issuer.token()).userinfo == {}
     assert issuer.userinfo_calls == 0
 
 
 def test_setting_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`POIESIS_AUTH_OIDC_USERINFO_ENABLED=true` turns it on."""
-    monkeypatch.setenv("POIESIS_AUTH_OIDC_USERINFO_ENABLED", "true")
-    assert AuthSettings().userinfo_enabled
+    """`"userinfo": {"enabled": true}` in an issuer's entry turns it on."""
+    entry = {"issuer": ISSUER, "audience": AUDIENCE, "userinfo": {"enabled": True}}
+    set_issuers(monkeypatch, entry)
+    assert AuthSettings().issuers[0].userinfo.enabled
 
 
 def test_claims_kept_apart(issuer: Issuer) -> None:
@@ -101,12 +118,12 @@ def test_request_carries_token(issuer: Issuer, network: Network) -> None:
 def test_cache_ends_with_token(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
     """An entry ends when its token expires."""
     oidc = validator()
-    now = auth.time.time()
+    now = jwt_auth.time.time()
     token = issuer.token(exp=int(now) + 60)
     principal(oidc, token)
-    monkeypatch.setattr(auth.time, "time", lambda: now + 120)
+    monkeypatch.setattr(jwt_auth.time, "time", lambda: now + 120)
     before = issuer.userinfo_calls
-    asyncio.run(oidc.userinfo(token, issuer.tokens[token]))
+    userinfo(oidc, issuer, token)
     assert issuer.userinfo_calls == before + 1
 
 
@@ -115,21 +132,21 @@ def test_cache_ends_after_five_minutes(
 ) -> None:
     """An entry of a long-lived token ends after five minutes."""
     oidc = validator()
-    now = auth.time.time()
+    now = jwt_auth.time.time()
     token = issuer.token(exp=int(now) + 3600)
     principal(oidc, token)
-    monkeypatch.setattr(auth.time, "time", lambda: now + 290)
+    monkeypatch.setattr(jwt_auth.time, "time", lambda: now + 290)
     before = issuer.userinfo_calls
-    asyncio.run(oidc.userinfo(token, issuer.tokens[token]))
+    userinfo(oidc, issuer, token)
     assert issuer.userinfo_calls == before
-    monkeypatch.setattr(auth.time, "time", lambda: now + 310)
-    asyncio.run(oidc.userinfo(token, issuer.tokens[token]))
+    monkeypatch.setattr(jwt_auth.time, "time", lambda: now + 310)
+    userinfo(oidc, issuer, token)
     assert issuer.userinfo_calls == before + 1
 
 
 def test_cache_is_bounded(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
     """The least recently used entry goes when the cache is full."""
-    monkeypatch.setattr(auth, "_USERINFO_CACHE_SIZE", 2)
+    monkeypatch.setattr(jwt_auth, "_USERINFO_CACHE_SIZE", 2)
     oidc = validator()
     first, second, third = (issuer.token(jti=str(i)) for i in range(3))
     for token in (first, second, first, third):
@@ -192,7 +209,7 @@ def test_outages_are_503(issuer: Issuer, handler: Any) -> None:
     token = issuer.token()
     with pytest.raises(ServiceUnavailableError) as error:
         principal(oidc, token)
-    assert error.value.retry_after_seconds == auth._ISSUER_RETRY_AFTER
+    assert error.value.retry_after_seconds == jwt_auth._ISSUER_RETRY_AFTER
     issuer.userinfo_handler = None
     assert principal(oidc, token).userinfo == {"sub": "alice"}  # failure not cached
 
@@ -201,8 +218,7 @@ def test_missing_owner_claim_skips_userinfo(
     issuer: Issuer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A token without the owner claim is refused before userinfo sees it."""
-    monkeypatch.setenv("POIESIS_AUTH_OIDC_PRINCIPAL_CLAIM", "ctx.group_id")
-    oidc = validator()
+    oidc = validator(principalClaim="ctx.group_id")
     before = issuer.userinfo_calls
     with pytest.raises(UnauthorizedError, match="claim"):
         principal(oidc, issuer.token())
@@ -256,7 +272,7 @@ def test_bootstrap_needs_usable_endpoint(
         if request.url.path.endswith("openid-configuration")
         else issuer(request)
     )
-    with pytest.raises(RuntimeError, match="userinfo_endpoint"):
+    with pytest.raises(jwt_auth.IssuerConfigError, match="userinfo_endpoint"):
         validator()
 
 
@@ -268,33 +284,33 @@ def timeouts(network: Network) -> list[dict[str, float]]:
     return [request.extensions["timeout"] for request in network.requests]
 
 
-@pytest.mark.parametrize(
-    ("value", "expected"), [(None, 10.0), ("", 10.0), ("2.5", 2.5), ("30", 30.0)]
-)
+def entry(**settings: Any) -> dict[str, Any]:
+    """Return an issuer entry for the fake issuer, plus `settings`."""
+    return {"issuer": ISSUER, "audience": AUDIENCE} | settings
+
+
+@pytest.mark.parametrize(("value", "expected"), [(None, 10.0), (2.5, 2.5), (30, 30.0)])
 def test_timeout_setting(
-    monkeypatch: pytest.MonkeyPatch, value: str | None, expected: float
+    monkeypatch: pytest.MonkeyPatch, value: float | None, expected: float
 ) -> None:
-    """`POIESIS_AUTH_OIDC_TIMEOUT` is in seconds; unset or empty is 10."""
-    if value is None:
-        monkeypatch.delenv("POIESIS_AUTH_OIDC_TIMEOUT", raising=False)
-    else:
-        monkeypatch.setenv("POIESIS_AUTH_OIDC_TIMEOUT", value)
-    assert AuthSettings().timeout == expected
+    """An issuer's `timeout` is in seconds; unset is 10."""
+    set_issuers(monkeypatch, entry() if value is None else entry(timeout=value))
+    assert AuthSettings().issuers[0].timeout == expected
 
 
-@pytest.mark.parametrize("value", ["0", "-1", "soon", "nan", "inf"])
-def test_timeout_setting_invalid(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+@pytest.mark.parametrize("value", [0, -1, "soon", math.nan, math.inf])
+def test_timeout_setting_invalid(monkeypatch: pytest.MonkeyPatch, value: Any) -> None:
     """A timeout that isn't a positive number of seconds refuses to start."""
-    monkeypatch.setenv("POIESIS_AUTH_OIDC_TIMEOUT", value)
-    with pytest.raises(ValueError, match="POIESIS_AUTH_OIDC_TIMEOUT"):
+    set_issuers(monkeypatch, entry(timeout=value))
+    with pytest.raises(ValueError, match=r"(?s)POIESIS_AUTH_ISSUERS\[0\].*timeout"):
         AuthSettings()
 
 
 @pytest.mark.parametrize("value", [0, -1, math.nan, math.inf])
 def test_timeout_argument_invalid(value: float) -> None:
     """The same holds when the settings are built in code."""
-    with pytest.raises(ValueError, match="timeout"):
-        AuthSettings(timeout=value)
+    with pytest.raises(ValidationError, match="timeout"):
+        IssuerSettings(issuer=ISSUER, audience=AUDIENCE, timeout=value)
 
 
 @pytest.mark.parametrize("seconds", [None, 2.5])
@@ -305,9 +321,9 @@ def test_timeout_bounds_every_call(
     seconds: float | None,
 ) -> None:
     """Discovery, JWKS and userinfo all use the one timeout (default 10 s)."""
-    if seconds is not None:
-        monkeypatch.setenv("POIESIS_AUTH_OIDC_TIMEOUT", str(seconds))
-    principal(validator(), issuer.token())
+    principal(
+        validator(**({} if seconds is None else {"timeout": seconds})), issuer.token()
+    )
     paths = {request.url.path for request in network.requests}
     assert paths == {"/.well-known/openid-configuration", "/jwks", "/userinfo"}
     phases = dict.fromkeys(("connect", "read", "write", "pool"), seconds or 10.0)
@@ -334,10 +350,8 @@ def slow(delay: float) -> Any:
 def test_slow_userinfo_is_503(issuer: Issuer, monkeypatch: pytest.MonkeyPatch) -> None:
     """Userinfo slower than the timeout is a 503; a longer timeout lets it in."""
     issuer.userinfo_handler = slow(5)
-    monkeypatch.setenv("POIESIS_AUTH_OIDC_TIMEOUT", "1")
     with pytest.raises(ServiceUnavailableError):
-        principal(validator(), issuer.token())
-    monkeypatch.delenv("POIESIS_AUTH_OIDC_TIMEOUT")
+        principal(validator(timeout=1), issuer.token())
     assert principal(validator(), issuer.token()).userinfo == {"sub": "alice"}
 
 
@@ -381,7 +395,7 @@ def test_trickle_userinfo_is_503() -> None:
 
     async def call(url: str) -> None:
         with pytest.raises(ServiceUnavailableError) as error:
-            await OIDCValidator._fetch_userinfo(
+            await IssuerValidator._fetch_userinfo(
                 f"{url}/userinfo", "token", TRICKLE_TIMEOUT
             )
         assert isinstance(error.value.__cause__, TimeoutError)
@@ -389,15 +403,24 @@ def test_trickle_userinfo_is_503() -> None:
     assert asyncio.run(against_trickle(call)) < 2 * TRICKLE_TIMEOUT
 
 
-def test_trickle_discovery_aborts_start() -> None:
-    """A slow issuer at startup fails the start within the timeout."""
+def test_trickle_discovery_is_an_outage() -> None:
+    """A slow issuer at startup counts as down within the timeout."""
 
     async def call(url: str) -> None:
-        settings = AuthSettings(issuer=url, audience="a", timeout=TRICKLE_TIMEOUT)
-        with pytest.raises(TimeoutError):
-            await OIDCValidator(settings).bootstrap()
+        settings = IssuerSettings(issuer=url, audience="a", timeout=TRICKLE_TIMEOUT)
+        validator = IssuerValidator(settings)
+        try:
+            await validator.start()
+            assert not validator.ready
+        finally:
+            await validator.aclose()
 
     assert asyncio.run(against_trickle(call)) < 2 * TRICKLE_TIMEOUT
+
+
+def oidc_principal(**fields: Any) -> Principal:
+    """Return a principal of the fake issuer for `a`, plus `fields`."""
+    return Principal(issuer=ISSUER, subject="a", via="oidc", **fields)
 
 
 class TestClaimLookup:
@@ -405,17 +428,16 @@ class TestClaimLookup:
 
     def test_token_wins(self) -> None:
         """A claim in both sources resolves to the token's value."""
-        both = Principal(id="a", claims={"g": "token"}, userinfo={"g": "info"})
+        both = oidc_principal(claims={"g": "token"}, userinfo={"g": "info"})
         assert both.claim("g") == "token"
 
     def test_userinfo_fills_in(self) -> None:
         """A claim only in userinfo resolves to the userinfo value."""
-        assert Principal(id="a", userinfo={"g": "info"}).claim("g") == "info"
+        assert oidc_principal(userinfo={"g": "info"}).claim("g") == "info"
 
     def test_exact_name_before_path(self) -> None:
         """An exact (URI) name anywhere wins over a dotted path in the token."""
-        p = Principal(
-            id="a",
+        p = oidc_principal(
             claims={"https://e": {"org/g": "path"}},
             userinfo={"https://e.org/g": "exact"},
         )
@@ -423,23 +445,22 @@ class TestClaimLookup:
 
     def test_dotted_path(self) -> None:
         """Dotted paths walk objects, token before userinfo."""
-        p = Principal(id="a", claims={"ctx": {}}, userinfo={"ctx": {"groups": ["x"]}})
+        p = oidc_principal(claims={"ctx": {}}, userinfo={"ctx": {"groups": ["x"]}})
         assert p.claim("ctx.groups") == ["x"]
 
     def test_null_exact_name_falls_back_to_path(self) -> None:
         """A null exact-name claim counts as missing."""
-        p = Principal(id="a", claims={"a.b": None, "a": {"b": "x"}})
+        p = oidc_principal(claims={"a.b": None, "a": {"b": "x"}})
         assert p.claim("a.b") == "x"
 
     @pytest.mark.parametrize("claims", [{}, {"g": None}, {"ctx": "flat"}])
     def test_missing(self, claims: dict[str, Any]) -> None:
         """Absent, null and unwalkable claims resolve to `None`."""
-        assert Principal(id="a", claims=claims).claim("ctx.g") is None
-        assert Principal(id="a", claims=claims).claim("g") is None
+        assert oidc_principal(claims=claims).claim("ctx.g") is None
+        assert oidc_principal(claims=claims).claim("g") is None
 
     def test_principal_claim_unchanged(self, issuer: Issuer) -> None:
         """`principal_claim` still walks a dotted path, as before."""
-        oidc = OIDCValidator(AuthSettings(principal_claim="ctx.id"))
-        asyncio.run(oidc.bootstrap())
+        oidc = validator(principalClaim="ctx.id", userinfo={"enabled": False})
         token = issuer.token(**{"ctx.id": "top", "ctx": {"id": "nested"}})
-        assert principal(oidc, token).id == "nested"
+        assert principal(oidc, token).subject == "nested"

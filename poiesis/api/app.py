@@ -17,7 +17,8 @@ from fastapi import FastAPI
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-from poiesis.api.auth import OIDCValidator
+    from poiesis.api.auth import Authenticator
+
 from poiesis.api.authz import Authz
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.api.exceptions import (
@@ -25,6 +26,7 @@ from poiesis.api.exceptions import (
     handle_api_exception,
     handle_unexpected_exception,
 )
+from poiesis.api.jwt_auth import JWTAuthenticator
 from poiesis.api.routes import health as health_routes
 from poiesis.api.routes import service_info as service_info_routes
 from poiesis.api.routes import tasks as tasks_routes
@@ -51,43 +53,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Connecting to Postgres at %s", _redact_dsn(settings.database_url))
     app.state.db_pool = await create_pool(settings.database_url)
 
-    async with app.state.db_pool.acquire() as conn:
-        legacy_count = await conn.fetchval(
-            "SELECT count(*) FROM tasks WHERE principal = '__legacy__'"
-        )
-    if legacy_count:
-        logger.warning(
-            "%d task(s) carry the '__legacy__' principal — they pre-date the "
-            "auth migration and are invisible to every real owner. Reassign "
-            "via UPDATE tasks SET principal = ... WHERE principal = "
-            "'__legacy__' if needed.",
-            legacy_count,
-        )
-
     load_config()
     app.state.k8s = K8sClient()
     logger.info("Kubernetes client ready (namespace=%s)", settings.poiesis_namespace)
 
     if settings.auth.enabled:
-        oidc = OIDCValidator(settings.auth)
+        authenticators: list[Authenticator] = [JWTAuthenticator(settings.auth.issuers)]
         try:
-            await oidc.bootstrap()
+            for authenticator in authenticators:
+                await authenticator.start()
         except BaseException:
-            await oidc.aclose()
+            await _close(authenticators)
             raise
-        app.state.oidc = oidc
+        app.state.authenticators = authenticators
     else:
-        app.state.oidc = None
-        logger.warning("OIDC auth is DISABLED; all requests will run as anonymous")
+        app.state.authenticators = None
+        logger.warning("Auth is DISABLED; all requests will run as anonymous")
 
     try:
         yield
     finally:
         await app.state.authz.aclose()
-        if app.state.oidc is not None:
-            await app.state.oidc.aclose()
+        if app.state.authenticators is not None:
+            await _close(app.state.authenticators)
         logger.info("Closing Postgres pool")
         await app.state.db_pool.close()
+
+
+async def _close(authenticators: list[Authenticator]) -> None:
+    """Close every authenticator, in order."""
+    for authenticator in authenticators:
+        await authenticator.aclose()
 
 
 def _redact_dsn(dsn: str) -> str:

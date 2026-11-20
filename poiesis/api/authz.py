@@ -8,11 +8,12 @@ must allow:
 - The decision service is an OpenID AuthZEN 1.0 Access Evaluation
     endpoint (``POST`` ``/access/v1/evaluation``) that gets one question
     per decision, in the ``tes-authzen/1`` profile: the subject (owner id,
-    ``iss``, ``sub``, ``client_id``, ``scope`` and allowlisted claims; never
-    the token), the TES ``operationId`` as action, and a ``tes_task`` (get,
-    cancel) or a ``tes_task_set`` ``own``/``all`` (create, list) as
-    resource. Without it, the built-in owner rule applies: callers see and
-    cancel only their own tasks.
+    ``iss``, ``sub``, ``client_id``, ``scope``, the ``actor`` of a delegated
+    token and allowlisted claims; never the token), the TES ``operationId``
+    as action, and a ``tes_task`` (get, cancel) or a ``tes_task_set``
+    ``own``/``all`` (create, list) as resource. Without it, the built-in
+    owner rule applies: callers see and cancel only their own tasks, and
+    delegated tokens (with an RFC 8693 ``act`` claim) are refused.
 
 Any failure of the decision service denies with ``503``.
 
@@ -44,9 +45,6 @@ from poiesis.api.tes.models import TesInput, TesOutput, TesTask
 logger = logging.getLogger(__name__)
 
 PROFILE = "tes-authzen/1"
-#: Owner of tasks created before owners were stamped, nobody's (set by
-#: migrations/000002_add_task_principal.up.sql; see also app.py).
-_LEGACY_OWNER = "__legacy__"
 #: A leading RFC 3986 scheme and ``://`` (ASCII only, unlike ``\w``).
 _SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 
@@ -88,7 +86,14 @@ class Authz:
             await self._client.aclose()
 
     def gate(self, principal: Principal) -> None:
-        """Apply the claim rule; raise ``403`` unless it is off or admits."""
+        """Apply the claim rule and the built-in delegation rule.
+
+        Raises ``403`` unless the claim rule is off or admits, and for a
+        delegated token (one with an actor) when there is no decision
+        service: the built-in owner rule can't tell what an actor may do.
+        """
+        if self._client is None and principal.actor is not None:
+            raise ForbiddenError("delegated tokens (act claim) need a decision service")
         if not self._claim:
             return
         value = principal.claim(self._claim)
@@ -127,7 +132,7 @@ class Authz:
         while the decision service is down).
         """
         if self._client is None:
-            return meta is not None and meta["owner"] == principal.id
+            return meta is not None and meta["owner"] == principal.owner
         resource = _task_resource(task_id, meta)
         return await self._ask(principal, "GetTask", resource, {"view": view})
 
@@ -143,7 +148,7 @@ class Authz:
         two otherwise).
         """
         if self._client is None:
-            allowed = meta is not None and meta["owner"] == principal.id
+            allowed = meta is not None and meta["owner"] == principal.owner
             readable = False
         else:
             resource = _task_resource(task_id, meta)
@@ -186,7 +191,7 @@ class Authz:
         properties = {
             key: value
             for key, value in (
-                ("iss", token.get("iss")),
+                ("iss", principal.issuer),
                 ("sub", token.get("sub")),
                 ("client_id", token.get("azp") or token.get("client_id")),
             )
@@ -197,12 +202,17 @@ class Authz:
             scope = scope.split()
         if isinstance(scope, list):
             properties["scope"] = scope
+        if principal.actor is not None:
+            properties["actor"] = {
+                "iss": principal.actor.issuer,
+                "sub": principal.actor.subject,
+            }
         properties["claims"] = {
             name: value
             for name in self._allowlist
             if (value := principal.claim(name)) is not None
         }
-        return {"type": "user", "id": principal.id, "properties": properties}
+        return {"type": "user", "id": principal.owner, "properties": properties}
 
     async def _ask(
         self,
@@ -371,11 +381,8 @@ def _without_none(values: dict[str, Any]) -> dict[str, Any]:
 
 
 def _task_resource(task_id: str, meta: dict[str, Any] | None) -> dict[str, Any]:
-    """Return a ``tes_task``; no properties if missing, no owner if legacy."""
-    properties = dict(meta or {})
-    if properties.get("owner") == _LEGACY_OWNER:
-        del properties["owner"]
-    return {"type": "tes_task", "id": task_id, "properties": properties}
+    """Return a ``tes_task``; no properties if the task is missing."""
+    return {"type": "tes_task", "id": task_id, "properties": dict(meta or {})}
 
 
 def _warn_if_plain_http(url: str) -> None:

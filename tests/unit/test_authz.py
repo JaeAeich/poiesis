@@ -18,17 +18,18 @@ from typing import Any
 
 import httpx
 import pytest
-from fake_issuer import Issuer, Network
+from fake_issuer import AUDIENCE, ISSUER, Issuer, Network
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from poiesis.api import app as app_module
-from poiesis.api.auth import OIDCValidator, Principal
+from poiesis.api.auth import Principal
 from poiesis.api.authz import Authz, strip_url
 from poiesis.api.deps import get_db_pool, get_k8s, get_runtime_config
 from poiesis.api.exceptions import APIError, handle_api_exception
+from poiesis.api.jwt_auth import JWTAuthenticator
 from poiesis.api.routes import tasks as tasks_routes
-from poiesis.api.settings import AuthSettings, AuthzSettings
+from poiesis.api.settings import AuthzSettings, IssuerSettings
 from poiesis.api.tes.models import TesState, TesTask
 from poiesis.db.tasks import ListFilters
 
@@ -41,6 +42,12 @@ MEMBER = (
 )
 SUBGROUPS = "urn:geant:lifescience-ri.eu:group:example-vo:"
 TASK = {"executors": [{"image": "alpine", "command": ["true"]}]}
+#: Owner ids (`issuer|subject`) of the fake issuer's alice and bob.
+ALICE = f"{ISSUER}|alice"
+BOB = f"{ISSUER}|bob"
+#: The other owner in the golden requests, shared with the decision-service
+#: side; owner ids are opaque, so any value other than the caller's works.
+GOLDEN_BOB = "bob"
 
 Decide = Callable[[dict[str, Any]], Any]
 
@@ -61,10 +68,10 @@ class Store:
         self.tasks[task_id] = (owner, task)
         return task_id
 
-    async def create_task(self, _: Any, task: TesTask, principal: str) -> str:
+    async def create_task(self, _: Any, task: TesTask, owner: str) -> str:
         """Store a new task."""
         assert task.id is not None
-        self.tasks[task.id] = (principal, task)
+        self.tasks[task.id] = (owner, task)
         return task.id
 
     async def get_task_meta(self, _: Any, task_id: str) -> dict[str, Any] | None:
@@ -77,7 +84,7 @@ class Store:
 
     async def get_task(self, _: Any, task_id: str, **kwargs: Any) -> TesTask | None:
         """Return the task, unfiltered."""
-        assert kwargs.get("principal") is None
+        assert kwargs.get("owner") is None
         return self.tasks[task_id][1] if task_id in self.tasks else None
 
     async def list_tasks(
@@ -87,7 +94,7 @@ class Store:
         rows = [
             task
             for owner, task in self.tasks.values()
-            if filters.principal in {None, owner}
+            if filters.owner in {None, owner}
         ]
         start = int(filters.page_token or 0)
         page = rows[start : start + filters.page_size]
@@ -185,12 +192,15 @@ class Env:
 
     def start(self, **settings: Any) -> TestClient:
         """Build the app with `AuthzSettings(**settings)`; return a client."""
-        oidc = OIDCValidator(AuthSettings(userinfo_enabled=True))
-        asyncio.run(oidc.bootstrap())
+        issuer = IssuerSettings(
+            issuer=ISSUER, audience=AUDIENCE, userinfo={"enabled": True}
+        )
+        oidc = JWTAuthenticator([issuer])
+        asyncio.run(oidc.start())
         app = FastAPI()
         app.add_exception_handler(APIError, handle_api_exception)
         app.include_router(tasks_routes.router, prefix="/ga4gh/tes/v1")
-        app.state.oidc = oidc
+        app.state.authenticators = [oidc]
         app.state.authz = Authz(AuthzSettings(**settings))
         self.pool = Pool()
         app.dependency_overrides[get_db_pool] = lambda: self.pool
@@ -270,7 +280,8 @@ def gate(claims: dict[str, Any], **rule: Any) -> bool:
     """Whether the claim rule admits a principal with `claims`."""
     settings = {"required_claim_name": ENTITLEMENT} | rule
     try:
-        Authz(AuthzSettings(**settings)).gate(Principal(id="a", claims=claims))
+        principal = Principal(issuer=ISSUER, subject="a", via="oidc", claims=claims)
+        Authz(AuthzSettings(**settings)).gate(principal)
     except APIError:
         return False
     return True
@@ -469,7 +480,7 @@ def test_plain_http_warns(
 def test_builtin_owner_rule(env: Env) -> None:
     """Without configuration: create allowed, others' tasks 404, list own."""
     client = env.start()
-    env.store.add("bob", BOB_TASK)
+    env.store.add(BOB, BOB_TASK)
     own = client.post(TASKS, json=TASK).json()["id"]
     assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
     assert client.post(f"{TASKS}/{BOB_TASK}:cancel").status_code == 404  # noqa: PLR2004
@@ -518,7 +529,7 @@ def test_rule_denies_before_decision(env: Env, method: str, path: str) -> None:
     client = env.pdp_on(
         required_claim_name=ENTITLEMENT, required_claim_prefixes=(SUBGROUPS,)
     )
-    env.store.add("bob", BOB_TASK)
+    env.store.add(BOB, BOB_TASK)
     assert client.request(method, path, json=TASK).status_code == 403  # noqa: PLR2004
     assert env.pdp.requests == []
     assert env.pool.acquired == 0
@@ -546,7 +557,7 @@ def test_no_connection_held_during_decision(
         return stub(request)
 
     network.hosts["pdp.example.org"] = spy
-    env.store.add("bob", BOB_TASK)
+    env.store.add(BOB, BOB_TASK)
     client.request(method, path, json=TASK)
     assert held
     assert set(held) == {0}
@@ -570,7 +581,7 @@ def test_create(env: Env) -> None:
     task_id = response.json()["id"]
     assert task_id != submit["id"]
     owner, task = env.store.tasks[task_id]
-    assert owner == "alice"
+    assert owner == ALICE
     assert task.state == TesState.QUEUED
     assert task.logs is None
     golden("create", env.pdp.bodies[0])
@@ -586,7 +597,7 @@ def test_create_ignores_client_headers(env: Env) -> None:
     client.post(TASKS, json=TASK | {"tags": {"owner": "mallory"}})
     request = env.pdp.requests[0]
     assert request.headers["x-request-id"] != "client-id"
-    assert env.pdp.bodies[0]["subject"]["id"] == "alice"
+    assert env.pdp.bodies[0]["subject"]["id"] == ALICE
 
 
 def test_create_denied(env: Env) -> None:
@@ -616,7 +627,7 @@ def test_credential_file(env: Env, tmp_path: Path) -> None:
 
 def test_get_foreign_allowed(env: Env) -> None:
     """The decision service may grant access to others' tasks."""
-    env.store.add("bob", BOB_TASK, tags={"project": "x"})
+    env.store.add(GOLDEN_BOB, BOB_TASK, tags={"project": "x"})
     response = env.pdp_on().get(f"{TASKS}/{BOB_TASK}", params={"view": "BASIC"})
     assert response.status_code == 200  # noqa: PLR2004
     golden("get-other", env.pdp.bodies[0])
@@ -625,7 +636,7 @@ def test_get_foreign_allowed(env: Env) -> None:
 def test_get_and_cancel_denied(env: Env) -> None:
     """Denied get and cancel are 404 and leave the task alone."""
     env.pdp.decide = per_action()
-    env.store.add("bob", BOB_TASK)
+    env.store.add(GOLDEN_BOB, BOB_TASK)
     client = env.pdp_on()
     assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
     assert client.post(f"{TASKS}/{BOB_TASK}:cancel").status_code == 404  # noqa: PLR2004
@@ -637,14 +648,14 @@ def test_get_and_cancel_denied(env: Env) -> None:
 def test_cancel_denied_but_readable(env: Env) -> None:
     """Readable but not cancellable: 403."""
     env.pdp.decide = per_action(GetTask=True)
-    env.store.add("bob", BOB_TASK)
+    env.store.add(BOB, BOB_TASK)
     response = env.pdp_on().post(f"{TASKS}/{BOB_TASK}:cancel")
     assert response.status_code == 403  # noqa: PLR2004
 
 
 def test_cancel_allowed(env: Env) -> None:
     """An allowed cancel moves the task to CANCELING."""
-    env.store.add("alice", ALICE_TASK)
+    env.store.add(ALICE, ALICE_TASK)
     response = env.pdp_on().post(f"{TASKS}/{ALICE_TASK}:cancel")
     assert response.status_code == 200  # noqa: PLR2004
     assert env.store.tasks[ALICE_TASK][1].state == TesState.CANCELING
@@ -672,11 +683,59 @@ def test_missing_task(env: Env, *, allowed: bool) -> None:
     assert len(ids) == len(env.pdp.requests)
 
 
-def test_legacy_task_has_no_owner(env: Env) -> None:
-    """Tasks from before owners were stamped are sent without an owner."""
+def test_legacy_task_matches_nobody(env: Env) -> None:
+    """Tasks from before owners were stamped are nobody's; sent as they are."""
     env.store.add("__legacy__", BOB_TASK)
+    assert env.start().get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
     env.pdp_on().get(f"{TASKS}/{BOB_TASK}")
-    assert "owner" not in env.pdp.bodies[0]["resource"]["properties"]
+    assert env.pdp.bodies[0]["resource"]["properties"]["owner"] == "__legacy__"
+
+
+def test_subject_is_owner(env: Env) -> None:
+    """`subject.id` is the owner id; `iss` and `sub` are the issuer and `sub`."""
+    env.pdp_on().post(TASKS, json=TASK)
+    subject = env.pdp.bodies[0]["subject"]
+    assert subject["id"] == ALICE
+    assert subject["properties"]["iss"] == ISSUER
+    assert subject["properties"]["sub"] == "alice"
+    assert "actor" not in subject["properties"]
+
+
+# -- delegation ----------------------------------------------------------------------
+
+
+def test_builtin_rule_refuses_actor(env: Env) -> None:
+    """Without a decision service, a delegated token (`act`) gets 403."""
+    env.claims["act"] = {"sub": "engine"}
+    client = env.start()
+    env.store.add(ALICE, ALICE_TASK)
+    for method, path in (("POST", TASKS), ("GET", f"{TASKS}/{ALICE_TASK}")):
+        response = client.request(method, path, json=TASK)
+        assert response.status_code == 403  # noqa: PLR2004
+        assert "decision service" in response.json()["message"]
+    assert env.store.tasks.keys() == {ALICE_TASK}
+
+
+@pytest.mark.parametrize(
+    ("act", "actor"),
+    [
+        ({"sub": "engine"}, {"iss": ISSUER, "sub": "engine"}),
+        (
+            {"iss": "https://ci.example.org", "sub": "repo:x", "act": {"sub": "y"}},
+            {"iss": "https://ci.example.org", "sub": "repo:x"},
+        ),
+    ],
+    ids=["issuer-default", "own-issuer-nested-ignored"],
+)
+def test_actor_sent_to_decision_service(
+    env: Env, act: dict[str, Any], actor: dict[str, str]
+) -> None:
+    """The decision service gets the actor next to the subject and decides."""
+    env.claims["act"] = act
+    assert env.pdp_on().post(TASKS, json=TASK).status_code == 200  # noqa: PLR2004
+    subject = env.pdp.bodies[0]["subject"]
+    assert subject["id"] == ALICE
+    assert subject["properties"]["actor"] == actor
 
 
 @pytest.mark.parametrize(
@@ -708,7 +767,7 @@ def test_decision_service_failure(
 ) -> None:
     """Any failure is a 503 with Retry-After, logged; nothing is executed."""
     env.pdp.decide = lambda _: answer
-    env.store.add("bob", BOB_TASK)
+    env.store.add(BOB, BOB_TASK)
     response = env.pdp_on().request(method, path, json=TASK)
     assert response.status_code == 503  # noqa: PLR2004
     assert response.headers["retry-after"] == "1"
@@ -731,7 +790,7 @@ def test_failure_on_second_cancel_call(env: Env, task_id: str, *, cancel: bool) 
         if body["action"]["name"] == "CancelTask"
         else httpx.Response(500)
     )
-    env.store.add("bob", BOB_TASK)
+    env.store.add(BOB, BOB_TASK)
     response = env.pdp_on().post(f"{TASKS}/{task_id}:cancel")
     assert response.status_code == 503  # noqa: PLR2004
 
@@ -765,11 +824,9 @@ def page_through(client: TestClient, page_size: int) -> list[list[str]]:
 def fill(store: Store) -> tuple[list[str], list[str]]:
     """Store three tasks each of alice and bob; return their ids."""
     alice = [
-        store.add("alice", f"00000000-0000-4000-8000-0000000000a{i}") for i in range(3)
+        store.add(ALICE, f"00000000-0000-4000-8000-0000000000a{i}") for i in range(3)
     ]
-    bob = [
-        store.add("bob", f"00000000-0000-4000-8000-0000000000b{i}") for i in range(3)
-    ]
+    bob = [store.add(BOB, f"00000000-0000-4000-8000-0000000000b{i}") for i in range(3)]
     return alice, bob
 
 

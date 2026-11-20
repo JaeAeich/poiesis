@@ -14,7 +14,14 @@ from typing import Any
 
 import httpx
 from kubernetes.client import V1EnvVar
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    model_validator,
+)
+from pydantic.alias_generators import to_camel
 
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 
@@ -224,14 +231,122 @@ def _entries_to_envvars(entries: list[dict[str, Any]]) -> list[V1EnvVar]:
 DEFAULT_POIESIS_IMAGE = "docker.io/jaeaeich/poiesis:latest"
 
 
-class AuthSettings(BaseModel):
-    """OIDC resource-server settings.
+_ISSUERS_ENV = "POIESIS_AUTH_ISSUERS"
+_REMOVED_ENV_PREFIX = "POIESIS_AUTH_OIDC_"
 
-    Poiesis validates incoming JWTs directly against ``issuer``'s JWKS;
-    it is not an OAuth client. When ``enabled`` is true, ``issuer`` and
-    ``audience`` are required at startup — missing values fail loudly
-    rather than silently disabling auth. When ``enabled`` is false the
-    API serves all requests as a fixed anonymous principal.
+
+def _is_http_url(value: str) -> bool:
+    """Whether ``value`` is an absolute http(s) URL with a host."""
+    try:
+        url = httpx.URL(value)
+    except httpx.InvalidURL:
+        return False
+    return url.scheme in {"http", "https"} and bool(url.host)
+
+
+class UserinfoSettings(BaseModel):
+    """Per-issuer userinfo lookup (see `poiesis.api.jwt_auth`)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    # Fetch the issuer's userinfo per token (cached) and keep it on the
+    # principal next to the token claims. Off by default.
+    enabled: bool = False
+
+
+class IssuerSettings(BaseModel):
+    """One trusted token issuer, an entry of ``POIESIS_AUTH_ISSUERS``.
+
+    Keys are camelCase only, as in the Helm values (``auth.issuers[]``),
+    also when built in code; unknown keys are refused. ``jwksUri`` skips
+    OIDC discovery, for issuers that only publish keys (e.g. a gateway
+    signing its own JWTs); it can't be combined with userinfo, whose
+    endpoint comes from discovery.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, extra="forbid", frozen=True)
+
+    # Exact `iss` of the tokens; also the discovery base URL.
+    issuer: str = Field(min_length=1)
+    # Expected `aud` claim.
+    audience: str = Field(min_length=1)
+    # Claim naming the subject; a dotted path walks nested objects.
+    principal_claim: str = Field(default="sub", min_length=1)
+    # Scopes every token of this issuer must carry.
+    required_scopes: tuple[str, ...] = ()
+    userinfo: UserinfoSettings = Field(default_factory=UserinfoSettings)
+    # Static JWKS URL; when set, discovery is skipped.
+    jwks_uri: str | None = None
+    # Seconds to cache the key set before fetching it again.
+    jwks_cache_ttl: int = Field(default=3600, ge=1)
+    # Seconds of leeway on exp / nbf / iat.
+    clock_skew: int = Field(default=30, ge=0)
+    # Seconds allowed for each call to the issuer (discovery, JWKS,
+    # userinfo), in total.
+    timeout: float = Field(default=10.0, gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _check_urls(self) -> IssuerSettings:
+        """Refuse settings that can't work, before any network call."""
+        if "|" in self.issuer:
+            # The owner id is `issuer|subject`; keep it unambiguous.
+            raise ValueError("issuer must not contain '|'")
+        if self.jwks_uri is not None:
+            if not _is_http_url(self.jwks_uri):
+                raise ValueError("jwksUri must be an http(s) URL")
+            if self.userinfo.enabled:
+                raise ValueError(
+                    "userinfo needs OIDC discovery; it can't be combined with jwksUri"
+                )
+        elif not _is_http_url(self.issuer):
+            raise ValueError(
+                "issuer must be an http(s) URL for OIDC discovery (or set jwksUri)"
+            )
+        if "" in self.required_scopes:
+            raise ValueError("requiredScopes must not contain an empty scope")
+        return self
+
+
+def _parse_issuers_env() -> tuple[IssuerSettings, ...]:
+    """Parse ``POIESIS_AUTH_ISSUERS``, a JSON array of issuer objects.
+
+    Empty or unset is no issuers. Also refuses any leftover
+    ``POIESIS_AUTH_OIDC_*`` variable: they were replaced, and silently
+    ignoring one would run with settings the operator didn't intend.
+    """
+    removed = sorted(n for n in os.environ if n.startswith(_REMOVED_ENV_PREFIX))
+    if removed:
+        raise ValueError(
+            ", ".join(removed) + f" is no longer read: {_REMOVED_ENV_PREFIX}* was "
+            f"replaced by {_ISSUERS_ENV} (a JSON array of issuers)"
+        )
+    raw = os.environ.get(_ISSUERS_ENV, "")
+    if not raw.strip():
+        return ()
+    try:
+        entries = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{_ISSUERS_ENV} is not valid JSON: {exc}") from exc
+    if not isinstance(entries, list):
+        message = f"{_ISSUERS_ENV} must encode a JSON array of objects"
+        raise ValueError(message)  # noqa: TRY004 (a startup error, like the rest)
+    issuers: list[IssuerSettings] = []
+    for idx, entry in enumerate(entries):
+        try:
+            issuers.append(IssuerSettings.model_validate(entry))
+        except ValidationError as exc:
+            raise ValueError(f"{_ISSUERS_ENV}[{idx}] is invalid: {exc}") from exc
+    return tuple(issuers)
+
+
+class AuthSettings(BaseModel):
+    """Resource-server settings: the trusted token issuers.
+
+    Poiesis validates incoming JWTs against each configured issuer's
+    keys; it is not an OAuth client. When ``enabled`` is true at least
+    one issuer is required, and issuers must be unique; misconfiguration
+    fails loudly rather than silently disabling auth. When ``enabled``
+    is false the API serves all requests as a fixed anonymous principal.
     """
 
     enabled: bool = Field(
@@ -240,64 +355,22 @@ class AuthSettings(BaseModel):
             not in {"0", "false", "no", "off"}
         ),
     )
-    issuer: str = Field(
-        default_factory=lambda: os.environ.get("POIESIS_AUTH_OIDC_ISSUER", ""),
-    )
-    audience: str = Field(
-        default_factory=lambda: os.environ.get("POIESIS_AUTH_OIDC_AUDIENCE", ""),
-    )
-    jwks_cache_ttl: int = Field(
-        default_factory=lambda: (
-            _parse_int_env("POIESIS_AUTH_OIDC_JWKS_CACHE_TTL", 3600) or 3600
-        ),
-    )
-    clock_skew: int = Field(
-        default_factory=lambda: (
-            _parse_int_env("POIESIS_AUTH_OIDC_CLOCK_SKEW", 30) or 30
-        ),
-    )
-    principal_claim: str = Field(
-        default_factory=lambda: os.environ.get(
-            "POIESIS_AUTH_OIDC_PRINCIPAL_CLAIM", "sub"
-        ),
-    )
-    required_scopes: tuple[str, ...] = Field(
-        default_factory=lambda: _parse_csv_env("POIESIS_AUTH_OIDC_REQUIRED_SCOPES"),
-    )
-    # Seconds allowed for each call to the issuer (discovery, JWKS,
-    # userinfo).
-    timeout: float = Field(
-        default_factory=lambda: _parse_seconds_env("POIESIS_AUTH_OIDC_TIMEOUT", 10.0),
-        gt=0,
-        allow_inf_nan=False,
-    )
-    # Fetch the issuer's userinfo per token (cached) and keep it on the
-    # principal next to the token claims. Off by default.
-    userinfo_enabled: bool = Field(
-        default_factory=lambda: (
-            os.environ.get("POIESIS_AUTH_OIDC_USERINFO_ENABLED", "false").lower()
-            in {"1", "true", "yes", "on"}
-        ),
-    )
+    issuers: tuple[IssuerSettings, ...] = Field(default_factory=_parse_issuers_env)
 
-    def validate_required(self) -> None:
-        """Raise if mandatory fields are missing. Called at app startup.
-
-        No-op when auth is disabled — the validator is never built, so
-        issuer/audience are irrelevant.
-        """
-        if not self.enabled:
-            return
-        missing = [
-            name
-            for name, value in (("issuer", self.issuer), ("audience", self.audience))
-            if not value
-        ]
-        if missing:
+    @model_validator(mode="after")
+    def _check_issuers(self) -> AuthSettings:
+        """Need at least one issuer when enabled, and no issuer twice."""
+        if self.enabled and not self.issuers:
             raise ValueError(
-                "OIDC auth misconfigured: missing "
-                + ", ".join(f"POIESIS_AUTH_OIDC_{m.upper()}" for m in missing)
+                f"auth is enabled but {_ISSUERS_ENV} lists no issuer; "
+                "configure one or set POIESIS_AUTH_ENABLED=false"
             )
+        seen: set[str] = set()
+        for entry in self.issuers:
+            if entry.issuer in seen:
+                raise ValueError(f"{_ISSUERS_ENV} lists {entry.issuer!r} twice")
+            seen.add(entry.issuer)
+        return self
 
 
 class AuthzSettings(BaseModel):

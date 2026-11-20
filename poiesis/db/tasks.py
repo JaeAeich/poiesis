@@ -44,7 +44,7 @@ class TaskView(StrEnum):
 class ListFilters:
     """Filters and pagination cursor for `list_tasks`.
 
-    ``principal`` restricts the list to one owner. ``None`` lists every
+    ``owner`` restricts the list to one owner. ``None`` lists every
     task: internal call sites (workers, migrations), and the route when
     the decision service allows the caller to list all tasks.
     """
@@ -55,19 +55,19 @@ class ListFilters:
     tag_value: list[str] = field(default_factory=list)
     page_size: int = 256
     page_token: str | None = None
-    principal: str | None = None
+    owner: str | None = None
 
 
 # -- writes ------------------------------------------------------------------
 
 
-async def create_task(conn: asyncpg.Connection, task: TesTask, principal: str) -> str:
+async def create_task(conn: asyncpg.Connection, task: TesTask, owner: str) -> str:
     """Persist a new task tree and return its id.
 
     Opens an internal transaction; the entire task aggregate inserts atomically.
-    If `task.id` is unset, a UUID is generated. ``principal`` is the
-    opaque subject identifier supplied by the API layer (OIDC `sub` by
-    default, or the anonymous sentinel when auth is disabled).
+    If `task.id` is unset, a UUID is generated. ``owner`` is the opaque
+    owner id supplied by the API layer (``issuer|subject``, or the
+    anonymous sentinel when auth is disabled).
     """
     task_id = task.id or str(uuid.uuid4())
     resources = task.resources or TesResources()
@@ -79,7 +79,7 @@ async def create_task(conn: asyncpg.Connection, task: TesTask, principal: str) -
             id, state, name, description,
             cpu_cores, preemptible, ram_gb, disk_gb, zones,
             backend_parameters, backend_parameters_strict,
-            volumes, tags, creation_time, principal
+            volumes, tags, creation_time, owner
             )
             VALUES (
             $1, $2, $3, $4,
@@ -102,7 +102,7 @@ async def create_task(conn: asyncpg.Connection, task: TesTask, principal: str) -
             task.volumes,
             _dumps(task.tags),
             _parse_dt(task.creation_time),
-            principal,
+            owner,
         )
 
         for idx, inp in enumerate(task.inputs or []):
@@ -220,24 +220,24 @@ async def get_task(
     conn: asyncpg.Connection,
     task_id: str,
     view: TaskView = TaskView.FULL,
-    principal: str | None = None,
+    owner: str | None = None,
 ) -> TesTask | None:
     """Fetch a task by id at the requested view level.
 
-    Returns ``None`` if the task does not exist OR if ``principal`` is
+    Returns ``None`` if the task does not exist OR if ``owner`` is
     set and does not own the task (route handlers translate ``None`` to
     a 404, so the two cases are indistinguishable to the caller — the
     owner-only policy intentionally does not leak existence).
-    ``principal=None`` is the internal-bypass case used by workers.
+    ``owner=None`` is the internal-bypass case used by workers.
     """
     task_uuid = uuid.UUID(task_id)
-    if principal is None:
+    if owner is None:
         task_row = await conn.fetchrow("SELECT * FROM tasks WHERE id = $1", task_uuid)
     else:
         task_row = await conn.fetchrow(
-            "SELECT * FROM tasks WHERE id = $1 AND principal = $2",
+            "SELECT * FROM tasks WHERE id = $1 AND owner = $2",
             task_uuid,
-            principal,
+            owner,
         )
     if task_row is None:
         return None
@@ -371,12 +371,12 @@ async def get_task_meta(
     No owner filter: the caller decides who may see the task.
     """
     row = await conn.fetchrow(
-        "SELECT principal, state, tags FROM tasks WHERE id = $1", uuid.UUID(task_id)
+        "SELECT owner, state, tags FROM tasks WHERE id = $1", uuid.UUID(task_id)
     )
     if row is None:
         return None
     return {
-        "owner": row["principal"],
+        "owner": row["owner"],
         "state": row["state"],
         "tags": _load_jsonb(row["tags"]) or {},
     }
@@ -417,9 +417,7 @@ async def list_tasks(
 
     tasks: list[TesTask] = []
     for r in rows:
-        full = await get_task(
-            conn, str(r["id"]), view=view, principal=filters.principal
-        )
+        full = await get_task(conn, str(r["id"]), view=view, owner=filters.owner)
         if full is not None:
             tasks.append(full)
     return tasks, next_token
@@ -430,9 +428,9 @@ def _build_filter_clauses(filters: ListFilters) -> tuple[list[str], list[Any]]:
     clauses: list[str] = []
     params: list[Any] = []
 
-    if filters.principal is not None:
-        params.append(filters.principal)
-        clauses.append(f"principal = ${len(params)}")
+    if filters.owner is not None:
+        params.append(filters.owner)
+        clauses.append(f"owner = ${len(params)}")
     if filters.name_prefix is not None:
         params.append(f"{filters.name_prefix}%")
         clauses.append(f"name LIKE ${len(params)}")

@@ -1,10 +1,19 @@
-"""Shared fixtures: a fake OIDC issuer on a fake network (see `fake_issuer`)."""
+"""Shared fixtures: fake issuers on a fake network (see `fake_issuer`)."""
 
+import os
 from typing import Any
 
 import httpx
 import pytest
-from fake_issuer import AUDIENCE, ISSUER, Issuer, Network
+from fake_issuer import AUDIENCE, ISSUER, Issuer, Network, set_issuers
+
+
+@pytest.fixture(autouse=True)
+def _no_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start every test without auth settings from the outer environment."""
+    for name in list(os.environ):
+        if name.startswith("POIESIS_AUTH_"):
+            monkeypatch.delenv(name)
 
 
 @pytest.fixture
@@ -22,10 +31,6 @@ def network(monkeypatch: pytest.MonkeyPatch) -> Network:
 
 @pytest.fixture
 def issuer(network: Network, monkeypatch: pytest.MonkeyPatch) -> Issuer:
-    """A fake issuer on the network, configured as Poiesis's issuer."""
-    fake = Issuer()
-    network.hosts["issuer.example.org"] = fake
-    monkeypatch.setenv("POIESIS_AUTH_ENABLED", "true")
-    monkeypatch.setenv("POIESIS_AUTH_OIDC_ISSUER", ISSUER)
-    monkeypatch.setenv("POIESIS_AUTH_OIDC_AUDIENCE", AUDIENCE)
-    return fake
+    """A fake issuer on the network, configured as Poiesis's only issuer."""
+    set_issuers(monkeypatch, {"issuer": ISSUER, "audience": AUDIENCE})
+    return network.add(Issuer())
