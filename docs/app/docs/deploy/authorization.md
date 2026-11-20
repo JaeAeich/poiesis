@@ -19,6 +19,8 @@ resource limits, GA4GH Passport visas) belongs in the decision service,
 not in Poiesis. Both need `auth.enabled: true`; Poiesis refuses to
 start otherwise.
 
+![Authorization: before and after](/authz.gif)
+
 ## Configuration
 
 Helm values map 1:1 to `POIESIS_AUTHZ_*` environment variables (lists
