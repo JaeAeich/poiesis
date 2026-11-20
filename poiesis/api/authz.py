@@ -76,7 +76,11 @@ class Authz:
                 raise ValueError(f"decision service credential file {path} is empty")
             self._headers["Authorization"] = "Bearer " + credential
         # asyncio.timeout in _ask bounds the whole call; this bounds each phase.
-        self._client = client or httpx.AsyncClient(timeout=self._timeout)
+        # trust_env=False: proxy variables or ~/.netrc must not reroute
+        # (or add credentials to) calls that carry the caller's claims.
+        self._client = client or httpx.AsyncClient(
+            timeout=self._timeout, trust_env=False
+        )
 
     async def aclose(self) -> None:
         """Close the decision service client, if any."""
