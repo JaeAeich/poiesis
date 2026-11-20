@@ -111,6 +111,11 @@ retries) and allows only on `200` with `{"decision": true}`.
   or `client_id`. `claims` holds only the claims listed in
   `decisionService.claims`, looked up like the claim rule's. **The
   access token is never sent.**
+- `subject.id` and `resource.properties.owner` are **opaque owner
+  ids**. Compare them with each other, but don't parse them or assume
+  they equal the token's `sub`: their format may change (e.g. to
+  include the issuer when several issuers are supported). Use
+  `subject.properties.iss` and `sub` for identity-based rules.
 - `action.name` is the TES `operationId`:
 
   | Action       | Resource                                  | Result of a deny |
