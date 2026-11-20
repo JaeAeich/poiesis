@@ -59,8 +59,8 @@ kubectl -n deps wait --for=condition=Available deploy/keycloak --timeout=240s
 kubectl -n po wait --for=condition=Available deploy/poiesis-api --timeout=240s
 ```
 
-The API fetches the issuer's discovery document at startup, so it
-restarts until Keycloak is ready; that's expected.
+The API starts even if Keycloak isn't ready yet; until it has fetched
+Keycloak's keys, authenticated requests get `503` with `Retry-After`.
 
 `poiesis-migrate` is a Job, and a completed Job doesn't run again on
 `apply`. After changing `./migrations/`, delete it first:
@@ -127,9 +127,7 @@ through the port-forward validate in the API too. Request
 `scope=openid` if the API has [userinfo](./authentication.md) on:
 Keycloak only answers userinfo for such tokens. User ids are fixed in
 the realm, so `sub` (and with it task ownership) survives a Keycloak
-restart. Its signing keys don't, and the API caches keys for an hour:
-after restarting Keycloak, restart the API too
-(`kubectl -n po rollout restart deploy/poiesis-api`).
+restart.
 
 For browser flows (authorization code, device flow) from the host,
 make the pinned hostname resolve to the port-forward:
