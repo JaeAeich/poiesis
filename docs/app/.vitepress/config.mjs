@@ -1,94 +1,37 @@
 import { defineConfig } from "vitepress";
+import sidebar from "./sidebar.mjs";
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
     title: "Poiesis",
-    head: [["link", { rel: "icon", href: "/logo/favicon.ico" }]],
-    description: "TES on Kubernetes",
+    description: "A GA4GH Task Execution Service for Kubernetes",
+    head: [
+        ["link", { rel: "icon", href: "/logo/favicon.ico" }],
+        ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
+        ["link", { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" }],
+        [
+            "link",
+            {
+                rel: "stylesheet",
+                href: "https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap",
+            },
+        ],
+    ],
     themeConfig: {
         // https://vitepress.dev/reference/default-theme-config
         logo: "/logo/logo.png",
         nav: [
-            { text: "Home", link: "/" },
-            { text: "Team", link: "/team" },
-            { text: "Swagger UI", link: "/docs/intro/api-reference" },
+            { text: "Docs", link: "/docs/start/what-is-poiesis", activeMatch: "^/docs/" },
+            { text: "Deploy", link: "/deploy" },
         ],
-        sidebar: [
-            {
-                text: "Introduction",
-                items: [
-                    { text: "TES", link: "/docs/intro/tes" },
-                    { text: "Glossary", link: "/docs/intro/glossary" },
-                    { text: "Poiesis", link: "/docs/intro/poiesis" },
-                    { text: "API", link: "/docs/intro/api" },
-                ],
-            },
-            {
-                text: "Usage",
-                items: [
-                    {
-                        text: "Poiesis, TES and usage",
-                        link: "/docs/usage/usage",
-                    },
-                    {
-                        text: "Running Nextflow with Poiesis",
-                        link: "/docs/usage/nextflow",
-                    },
-                    {
-                        text: "Workflow engines",
-                        link: "/docs/usage/workflow-engines",
-                    },
-                ],
-            },
-            {
-                text: "Developer Guide",
-                items: [
-                    {
-                        text: "Architecture",
-                        link: "/docs/dev/architecture",
-                    },
-                ],
-            },
-            {
-                text: "Deployment",
-                items: [
-                    {
-                        text: "Deployment prerequisites",
-                        link: "/docs/deploy/prerequisites",
-                    },
-                    {
-                        text: "Deploying Poiesis",
-                        link: "/docs/deploy/deploying-poiesis",
-                    },
-                    {
-                        text: "Authentication",
-                        link: "/docs/deploy/authentication",
-                    },
-                    {
-                        text: "Authorization",
-                        link: "/docs/deploy/authorization",
-                    },
-                    {
-                        text: "API keys",
-                        link: "/docs/deploy/api-keys",
-                    },
-                    {
-                        text: "Audit log",
-                        link: "/docs/deploy/audit-log",
-                    },
-                ],
-            },
-        ],
+        // docs pages only; home and deploy are full width
+        sidebar: { "/docs/": sidebar },
         search: {
             provider: "local",
         },
         socialLinks: [
             { icon: "github", link: "https://github.com/jaeaeich/poiesis" },
         ],
-        footer: {
-            message: "Released under the Apache License 2.0.",
-            copyright: "Copyright © 2026 jaeaeich (Javed Habib)",
-        },
         outline: {
             level: "deep",
             label: "On this page",
@@ -98,12 +41,11 @@ export default defineConfig({
                 "https://github.com/jaeaeich/poiesis/edit/main/docs/app/:path",
             text: "Edit this page on GitHub",
         },
-        docLayout: "doc",
     },
     markdown: {
         theme: {
-            light: "catppuccin-latte",
-            dark: "catppuccin-macchiato",
+            light: "github-light",
+            dark: "github-dark",
         },
     },
     ignoreDeadLinks: [

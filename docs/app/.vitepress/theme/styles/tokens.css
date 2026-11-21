@@ -1,0 +1,55 @@
+/* Poiesis tokens: logo palette (wheel blue #1f6aae, spiral coral #f0684c), mapped onto VitePress variables. */
+:root {
+  --blue:#1f6aae; --blue-ink:#174f83; --blue-wash:#eef4fa;
+  --coral:#f0684c; --coral-ink:#c4462c; --coral-wash:#fdf0ec;
+  --bg:#ffffff; --surface:#f6f8fb; --line:#e4e9ef; --line-strong:#c3ced9;
+  --fg:#0d2033; --body:#3b4b5d; --muted:#5f6e7f; --halo:#ffffff;
+  --code-bg:#f8fafc; --code-fg:#24364a; --code-key:#174f83; --code-str:#22704f; --code-com:#66737f; --field:#8e9aa8;
+  --sans:"Instrument Sans",ui-sans-serif,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --r:6px; --ease:cubic-bezier(.23,1,.32,1); --ease-io:cubic-bezier(.65,0,.35,1);
+  --shadow:0 1px 2px rgba(13,32,51,.06),0 8px 24px rgba(13,32,51,.08);
+
+  --vp-font-family-base: var(--sans);
+  --vp-font-family-mono: var(--mono);
+  --vp-c-brand-1: var(--blue-ink);
+  --vp-c-brand-2: var(--blue);
+  --vp-c-brand-3: var(--blue);
+  --vp-c-brand-soft: var(--blue-wash);
+  --vp-c-bg: var(--bg);
+  --vp-c-bg-alt: var(--surface);
+  --vp-c-bg-elv: var(--bg);
+  --vp-c-bg-soft: var(--surface);
+  --vp-c-text-1: var(--fg);
+  --vp-c-text-2: var(--body);
+  --vp-c-text-3: var(--muted);
+  --vp-c-divider: var(--line);
+  --vp-c-border: var(--line-strong);
+  --vp-c-gutter: var(--line);
+  --vp-code-bg: var(--surface);
+  --vp-code-color: var(--fg);
+  --vp-code-block-bg: var(--code-bg);
+  --vp-code-copy-code-bg: var(--surface);
+  --vp-c-tip-1: var(--blue-ink); --vp-c-tip-soft: var(--blue-wash);
+  --vp-c-note-1: var(--blue-ink); --vp-c-note-soft: var(--blue-wash);
+  --vp-c-important-1: var(--blue-ink); --vp-c-important-soft: var(--blue-wash);
+  --vp-c-warning-1: var(--coral-ink); --vp-c-warning-soft: var(--coral-wash);
+  --vp-c-caution-1: var(--coral-ink); --vp-c-caution-soft: var(--coral-wash);
+  --vp-c-danger-1: var(--coral-ink); --vp-c-danger-soft: var(--coral-wash);
+  --vp-button-brand-bg: var(--coral); --vp-button-brand-text: #0d2033; --vp-button-brand-border: var(--coral);
+  --vp-button-brand-hover-bg: #e65a3d; --vp-button-brand-hover-text: #0d2033; --vp-button-brand-hover-border: #e65a3d;
+  --vp-nav-bg-color: var(--bg);
+  --vp-sidebar-bg-color: var(--bg);
+  --vp-local-search-highlight-bg: var(--coral);
+}
+html.dark {
+  --blue:#5a9bdb; --blue-ink:#8bbbea; --blue-wash:#10233a;
+  --coral:#f47c62; --coral-ink:#f7967f; --coral-wash:rgba(244,124,98,.11);
+  --bg:#0a1420; --surface:#0f1c2b; --line:#22344a; --line-strong:#30475f;
+  --fg:#e9eff6; --body:#b3c0ce; --muted:#7d8ea2; --halo:#0a1420;
+  --code-bg:#0d1926; --code-fg:#c9d5e2; --code-key:#8bbbea; --code-str:#8fd1b0; --code-com:#7d8ea2; --field:#4a6380;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.35);
+  --vp-button-brand-text: #0a1420; --vp-button-brand-hover-text: #0a1420;
+  --vp-button-brand-hover-bg: var(--coral-ink); --vp-button-brand-hover-border: var(--coral-ink);
+}
+html { -webkit-font-smoothing: antialiased; }

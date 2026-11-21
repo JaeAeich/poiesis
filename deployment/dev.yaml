@@ -105,7 +105,7 @@ spec:
 # (Apache-2.0): master, volume server, filer and S3 gateway in one process.
 # S3 on port 9000, one identity: access key `admin`, secret `password`.
 # Buckets aren't created on demand; make them with `weed shell` (see the
-# deployment guide).
+# quickstart: docs/start/quickstart).
 apiVersion: v1
 kind: Secret
 metadata:
@@ -515,7 +515,7 @@ data:
   POIESIS_AUTH_API_KEYS_MAX_PER_OWNER: "20"
   # Swagger UI login (/docs). The browser fetches the issuer's discovery
   # document itself, so keycloak.deps.svc must resolve on the host (hosts
-  # entry + Keycloak port-forward, see the deployment guide).
+  # entry + Keycloak port-forward, see docs/guides/keycloak).
   POIESIS_AUTH_SWAGGER_UI_ISSUER: http://keycloak.deps.svc:8080/realms/poiesis
   POIESIS_AUTH_SWAGGER_UI_CLIENT_ID: poiesis-cli
   POIESIS_AUTH_SWAGGER_UI_SCOPES: openid
