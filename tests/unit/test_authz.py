@@ -505,11 +505,13 @@ def test_responses_omit_null(env: Env, view: str) -> None:
     """Unset fields are left out, never `null` (py-tes can't parse it)."""
     client = env.start()
     own = client.post(TASKS, json=TASK).json()["id"]
-    task = client.get(f"{TASKS}/{own}", params={"view": view}).json()
-    listed = client.get(TASKS, params={"view": view}).json()
-    assert task["id"] == own
-    assert _nulls(task) == []
-    assert _nulls(listed) == []
+    got = client.get(f"{TASKS}/{own}", params={"view": view})
+    listed = client.get(TASKS, params={"view": view})
+    assert got.status_code == listed.status_code == 200  # noqa: PLR2004
+    assert got.json()["id"] == own
+    assert [t["id"] for t in listed.json()["tasks"]] == [own]
+    assert _nulls(got.json()) == []
+    assert _nulls(listed.json()) == []
 
 
 def test_server_assigned_fields(env: Env) -> None:
