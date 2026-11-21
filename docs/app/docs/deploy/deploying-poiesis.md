@@ -12,7 +12,7 @@ Two namespaces. `deps` holds the dependencies:
 | Workload | Purpose |
 | --- | --- |
 | `postgres` | State store. One replica, PVC-backed. |
-| `minio` | S3-compatible object store for TIF/TOF inputs/outputs. Dev only. |
+| `s3` | [SeaweedFS](https://github.com/seaweedfs/seaweedfs), an S3-compatible object store for TIF/TOF inputs/outputs. Dev only. |
 | `keycloak` | OIDC identity provider with a ready-made `poiesis` realm. Dev only. |
 
 `po` holds Poiesis:
@@ -204,14 +204,26 @@ add to that.
 
 ## S3 inputs and outputs
 
-Seed a test bucket once:
+The dev store is SeaweedFS: S3 at `http://s3.deps.svc.cluster.local:9000`,
+access key `admin`, secret `password`. It doesn't create buckets on
+first write. Seed a test bucket once, from inside the pod (`weed shell`
+makes the bucket, the filer on port 8888 takes the file):
 
 ```bash
-kubectl -n deps exec deploy/minio -- sh -c '
-  mc alias set local http://localhost:9000 admin password &&
-  mc mb -p local/poiesis-test &&
-  echo "hello from s3" | mc pipe local/poiesis-test/input.txt
+kubectl -n deps exec deploy/s3 -- sh -c '
+  echo "s3.bucket.create -name poiesis-test" | weed shell &&
+  echo "hello from s3" | curl -sf -T - http://localhost:8888/buckets/poiesis-test/input.txt
 '
+```
+
+Or from the host with any S3 client, through
+`kubectl -n deps port-forward svc/s3 9000:9000`:
+
+```bash
+export AWS_ACCESS_KEY_ID=admin AWS_SECRET_ACCESS_KEY=password AWS_REGION=us-east-1
+export AWS_ENDPOINT_URL=http://localhost:9000
+aws s3 mb s3://poiesis-test
+echo "hello from s3" | aws s3 cp - s3://poiesis-test/input.txt
 ```
 
 Submit a task that reads it, transforms, and writes back:
@@ -241,19 +253,23 @@ curl -X POST http://localhost:8000/ga4gh/tes/v1/tasks \
 Verify after `COMPLETE`:
 
 ```bash
-kubectl -n deps exec deploy/minio -- sh -c '
-  mc alias set local http://localhost:9000 admin password &&
-  mc cat local/poiesis-test/output.txt
-'
+kubectl -n deps exec deploy/s3 -- \
+  curl -s http://localhost:8888/buckets/poiesis-test/output.txt
 ```
 
-::: warning MinIO licensing
-MinIO is AGPLv3 since 2024. The dev manifest bundles it for local
-testing only. For production, point Poiesis at an external
-S3-compatible endpoint (managed S3, Ceph, SeaweedFS, etc.) by setting
-`S3_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and
-`AWS_REGION` on the API Deployment.
-:::
+Clusters set up before the switch from MinIO still have its
+Deployment, Service and volume. Remove them, re-apply, and restart
+Poiesis so it picks up the new endpoint:
+
+```bash
+kubectl -n deps delete deploy/minio svc/minio pvc/minio
+kubectl apply -f deployment/dev.yaml
+kubectl -n po rollout restart deploy/poiesis-api deploy/poiesis-tctl
+```
+
+For production, point Poiesis at your own S3-compatible store
+(AWS S3, Ceph, SeaweedFS, etc.) with `AWS_ENDPOINT_URL` (empty for
+AWS), `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_REGION`.
 
 ## Tear down
 

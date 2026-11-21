@@ -33,8 +33,8 @@ An access token would expire during the run; see
 ## With S3 staging
 
 Workflows that pass files between processes need an object store, since
-the TaskPod can't see your local filesystem. The dev stack runs MinIO
-in-cluster:
+the TaskPod can't see your local filesystem. The dev stack runs an
+S3 store (SeaweedFS) in-cluster:
 
 ```groovy
 plugins {
@@ -58,7 +58,13 @@ tes.endpoint = 'http://localhost:8000/ga4gh/tes'
 
 Create the `workDir` bucket once before running anything. The
 [deployment guide](../deploy/deploying-poiesis.md#s3-inputs-and-outputs)
-shows the `mc mb` invocation.
+shows how.
+
+Recent Nextflow versions send the AWS SDK's default checksums, which
+the dev store accepts. Older S3-compatible stores (SeaweedFS 3.x, for
+one) reject them with `Content input stream does not support
+mark/reset`; run Nextflow with `AWS_REQUEST_CHECKSUM_CALCULATION=when_required`
+for those.
 
 ## A trivial workflow
 
@@ -88,11 +94,11 @@ workflow {
 }
 ```
 
-Port-forward Poiesis and MinIO, then:
+Port-forward Poiesis and the S3 store, then:
 
 ```bash
-kubectl -n poiesis port-forward svc/poiesis-api 8000:8000 &
-kubectl -n poiesis port-forward svc/minio 9000:9000 &
+kubectl -n po port-forward svc/poiesis-api 8000:8000 &
+kubectl -n deps port-forward svc/s3 9000:9000 &
 nextflow run main.nf
 ```
 
@@ -112,7 +118,9 @@ Upload a file and reference it via `s3://`:
 
 ```bash
 echo -e "Alice\nBob\nCharlie" > names.txt
-mc cp ./names.txt local/poiesis-test/nextflow/inputs/names.txt
+AWS_ACCESS_KEY_ID=admin AWS_SECRET_ACCESS_KEY=password AWS_REGION=us-east-1 \
+  aws --endpoint-url http://localhost:9000 \
+  s3 cp ./names.txt s3://poiesis-test/nextflow/inputs/names.txt
 ```
 
 ```groovy
