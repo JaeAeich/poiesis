@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from fastapi import Request
 
+from poiesis.api import access_log
 from poiesis.api.exceptions import MissingCredentialError, UnauthorizedError
 
 if TYPE_CHECKING:
@@ -191,6 +192,7 @@ async def get_principal(request: Request) -> Principal:
     for authenticator in authenticators:
         principal = await authenticator.authenticate(request)
         if principal is not None:
+            access_log.note_owner(principal.owner)
             return principal
     if request.headers.get("authorization"):
         raise UnauthorizedError("invalid token")

@@ -212,3 +212,6 @@ data:
   {{- end }}
 
   LOG_LEVEL: {{ .Values.logLevel | quote }}
+  {{- with (.Values.logging).format }}
+  POIESIS_LOG_FORMAT: {{ . | quote }}
+  {{- end }}

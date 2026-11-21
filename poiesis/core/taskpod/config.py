@@ -114,6 +114,9 @@ class RuntimeConfig:
         s3_configured: Whether TIF/TOF get S3 credentials. False makes
             submit refuse `s3://` inputs and outputs, which would fail in
             the Pod. Derived by the API from its S3 settings.
+        log_format: Log format passed to trec/tif/tof (``json`` or
+            ``text``). Sourced from ``logging.format``; None passes
+            nothing, and they choose by whether stderr is a terminal.
     """
 
     taskpod_namespace: str
@@ -146,3 +149,4 @@ class RuntimeConfig:
     output_glob_fallback: bool = False
     file_url_roots: tuple[str, ...] = ()
     s3_configured: bool = True
+    log_format: str | None = None

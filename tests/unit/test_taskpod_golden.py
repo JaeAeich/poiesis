@@ -318,6 +318,14 @@ CASES: dict[str, tuple[TesTask, RuntimeConfig]] = {
             ],
         ),
     ),
+    "log-format": (
+        _task(inputs=[_inp("/data/in.txt")], outputs=[_out("/data/out.txt")]),
+        RuntimeConfig(
+            taskpod_namespace="poiesis",
+            poiesis_image="poiesis:golden",
+            log_format="text",
+        ),
+    ),
     "operator-extras-only": (
         _task(),
         RuntimeConfig(

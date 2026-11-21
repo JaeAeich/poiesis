@@ -9,13 +9,31 @@ count (asyncpg's pool isn't shared across processes).
 """
 
 import importlib
+import logging
 
+from gunicorn import glogging
 from gunicorn.app.base import BaseApplication
+
+from poiesis.core.logging_config import setup_logging
 
 _BIND = "0.0.0.0:8000"
 _WORKERS = 1
 _TIMEOUT = 120
 _WORKER_CLASS = "uvicorn.workers.UvicornWorker"
+
+
+class _GunicornLogger(glogging.Logger):
+    """Gunicorn's own lines through the Poiesis log setup; no access log.
+
+    The access log is the app's (`poiesis.api.access_log`), which leaves
+    out query strings.
+    """
+
+    def setup(self, cfg):  # type: ignore[override]
+        """Send ``gunicorn.error`` to the root handler; keep the access log off."""
+        setup_logging()
+        self.error_log.propagate = True
+        self.error_log.setLevel(logging.getLogger().level)
 
 
 def import_app_from_string(import_string):
@@ -63,6 +81,7 @@ def run():
         "workers": _WORKERS,
         "timeout": _TIMEOUT,
         "worker_class": _WORKER_CLASS,
+        "logger_class": _GunicornLogger,
     }
 
     PoiesisApplication("poiesis.api.app:create_app", options).run()

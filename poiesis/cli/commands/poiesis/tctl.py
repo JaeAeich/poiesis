@@ -1,6 +1,7 @@
 """TCtl service CLI command."""
 
 import asyncio
+import logging
 import os
 import sys
 from pathlib import Path
@@ -8,9 +9,11 @@ from typing import Any
 
 import click
 
-from poiesis.cli.commands.poiesis.base import BaseCommand
+from poiesis.cli.commands.poiesis.base import BaseCommand, configure_logging
 from poiesis.core.tctl import run
 from poiesis.k8s.client import load_config
+
+logger = logging.getLogger(__name__)
 
 #: Seconds a task may wait for its Pod to be created and scheduled. Unset:
 #: it waits until the Job's time limit (`taskpods.activeDeadlineSeconds`).
@@ -35,6 +38,7 @@ class TctlCommand(BaseCommand):
 
         @group.command(name="run", help="Run the TCtl reconciler")
         def run_cmd() -> None:
+            configure_logging()
             namespace = _required_env("POIESIS_TASKPOD_NAMESPACE")
             # TaskPods may live in their own namespace; the leader Lease
             # stays next to tctl, where its Role grants Lease access.
@@ -44,11 +48,14 @@ class TctlCommand(BaseCommand):
             unschedulable_timeout = _timeout_env(_UNSCHEDULABLE_TIMEOUT_ENV)
             heartbeat = _path_env(_HEARTBEAT_FILE_ENV)
             load_config()
-            click.echo(
-                f"--- TCtl --- namespace={namespace} "
-                f"lease-namespace={lease_namespace} identity={identity or 'auto'} "
-                f"unschedulable-timeout={unschedulable_timeout or 'none'} "
-                f"heartbeat={heartbeat or 'none'}"
+            logger.info(
+                "tctl: starting; namespace=%s lease-namespace=%s identity=%s "
+                "unschedulable-timeout=%s heartbeat=%s",
+                namespace,
+                lease_namespace,
+                identity or "auto",
+                unschedulable_timeout or "none",
+                heartbeat or "none",
             )
             sys.exit(
                 asyncio.run(

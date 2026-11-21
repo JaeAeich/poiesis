@@ -23,6 +23,7 @@ from poiesis.core.constants import (
     OUTPUT_GLOB_FALLBACK_ENV,
 )
 from poiesis.core.executor_logs import Streams, encode_streams
+from poiesis.core.logging_config import LOG_FORMAT_ENV
 from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
 from poiesis.core.taskpod.config import PodSecurityEnforce
 from poiesis.core.taskpod.paths import is_within, normalised
@@ -173,7 +174,10 @@ def poiesis_env(config: RuntimeConfig) -> list[V1EnvVar]:
     extras second. Settings rejects collisions between the two sets at
     api startup so the order here is informational, not load-bearing.
     """
-    return [*config.extra_env, *config.taskpod_extra_env]
+    env = [*config.extra_env, *config.taskpod_extra_env]
+    if config.log_format is not None:
+        env.append(V1EnvVar(name=LOG_FORMAT_ENV, value=config.log_format))
+    return env
 
 
 def build_ack_container(task: TesTask, config: RuntimeConfig) -> V1Container:

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from poiesis.api.settings import AuthSettings, Settings
 
 from poiesis.api import audit, resource_metadata
+from poiesis.api.access_log import AccessLogMiddleware
 from poiesis.api.apikey_auth import ApiKeyAuthenticator
 from poiesis.api.authz import Authz
 from poiesis.api.constants import get_poiesis_api_constants
@@ -41,13 +42,12 @@ from poiesis.api.routes import health as health_routes
 from poiesis.api.routes import service_info as service_info_routes
 from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.settings import load_settings
-from poiesis.constants import get_poiesis_constants
+from poiesis.core.logging_config import setup_logging
 from poiesis.db import create_pool
 from poiesis.k8s import K8sClient, load_config
 
 logger = logging.getLogger(__name__)
 
-constants = get_poiesis_constants()
 api_constants = get_poiesis_api_constants()
 
 
@@ -172,8 +172,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     Invalid settings raise here, before anything connects anywhere.
     """
-    logging.basicConfig(level=getattr(logging, constants.LOG_LEVEL))
     settings = settings or load_settings()
+    setup_logging(log_format=settings.log_format)
     settings.authz.validate_for(auth_enabled=settings.auth.enabled)
     audit.configure(enabled=settings.audit.enabled)
 
@@ -190,7 +190,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(Exception, handle_unexpected_exception)
     # Every 401 says how to authenticate (RFC 6750, RFC 9728).
     app.add_exception_handler(UnauthorizedError, resource_metadata.handle_unauthorized)
-    # The request id of audit lines, echoed in every response.
+    # One line per request; inside the request id middleware, so it has the id.
+    app.add_middleware(AccessLogMiddleware)
+    # The request id of audit and log lines, echoed in every response.
     app.add_middleware(audit.RequestIdMiddleware)
 
     security = _docs_security(settings.auth)

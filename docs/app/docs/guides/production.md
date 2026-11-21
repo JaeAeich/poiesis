@@ -169,10 +169,50 @@ default TaskPod NetworkPolicy) is planned
 
 ## Observability
 
-- Ship the API's stdout to a log store: the
-  [audit log](../reference/audit-log.md) lines are on it, and Poiesis keeps
-  nothing.
+- Ship the API's stdout and stderr to a log store: the
+  [audit log](../reference/audit-log.md) lines are on stdout, and Poiesis
+  keeps nothing.
 - `logLevel: INFO` (`DEBUG` while setting up).
+
+### Logs
+
+The API, TCtl and each TaskPod's `trec`, `tif` and `tof` write their log
+to stderr, one JSON object per line (`logging.format: json`, the
+default). `logging.format: text` gives coloured lines for reading in a
+terminal; `""` picks text when stderr is a terminal and JSON otherwise.
+The audit log keeps its own format on stdout.
+
+Every line has `timestamp` (RFC 3339, UTC), `level`, `logger` and
+`message`, and `exception` when there is one. API lines written while
+serving a request have its `request_id`, the value returned in the
+`X-Request-ID` response header and used in audit lines. `trec`, `tif`
+and `tof` lines, and TCtl lines about one task, have its `task_id`.
+
+The API writes one access line per request (logger `poiesis.access`):
+`method`, `path`, `status`, `duration_ms`, `request_id` and, when the
+request was authenticated, `owner`. Query strings, headers and bodies
+are never logged. Probe requests (`/healthz`, `/readyz`, `/startupz`)
+are logged at `DEBUG`.
+
+Follow one request, from the request id a client got back:
+
+```sh
+kubectl -n poiesis logs deploy/poiesis-api \
+  | jq -cR 'fromjson? | select(.request_id == "3f2c9a1e-…")'
+```
+
+Follow one task in TCtl and in its TaskPod:
+
+```sh
+kubectl -n poiesis logs deploy/poiesis-tctl \
+  | jq -cR 'fromjson? | select(.task_id == "6d7e0c2a-…")'
+# The TaskPod namespace (taskpods.namespace, default the release's):
+kubectl -n poiesis logs job/task-6d7e0c2a-… --all-containers \
+  | jq -cR 'fromjson? | select(.task_id)'
+```
+
+`fromjson?` skips lines that aren't JSON, such as the executors' output
+or the API command's first line.
 
 ## Service info
 

@@ -191,3 +191,21 @@ def test_system_resources_null_is_omitted() -> None:
         "cpu": 2,
         "memory": "2Gi",
     }
+
+
+@pytest.mark.parametrize(
+    ("sets", "expected"),
+    [((), "json"), (("logging.format=text",), "text"), (("logging.format=",), None)],
+)
+def test_log_format_reaches_the_configmap(
+    sets: tuple[str, ...], expected: str | None
+) -> None:
+    """`logging.format` is POIESIS_LOG_FORMAT; empty leaves it unset."""
+    configmap = next(d for d in render(LINT, sets=sets) if d["kind"] == "ConfigMap")
+    assert configmap["data"].get("POIESIS_LOG_FORMAT") == expected
+
+
+def test_log_format_is_checked() -> None:
+    """An unknown format fails `helm lint`."""
+    result = helm("lint", str(CHART), "-f", LINT, "--set", "logging.format=yaml")
+    assert result.returncode != 0

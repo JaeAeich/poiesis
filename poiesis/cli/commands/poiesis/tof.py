@@ -1,6 +1,7 @@
 """TOF service CLI command."""
 
 import asyncio
+import logging
 import os
 import sys
 from typing import Any
@@ -9,7 +10,7 @@ import asyncpg
 import click
 
 from poiesis.api.tes.models import TesOutputFileLog
-from poiesis.cli.commands.poiesis.base import BaseCommand
+from poiesis.cli.commands.poiesis.base import BaseCommand, configure_logging
 from poiesis.core import filer_error
 from poiesis.core.services.filer.filer_strategy_factory import (
     supported_output_schemes,
@@ -17,6 +18,8 @@ from poiesis.core.services.filer.filer_strategy_factory import (
 from poiesis.core.services.filer.tof import Tof
 from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
+
+logger = logging.getLogger(__name__)
 
 
 class TofCommand(BaseCommand):
@@ -36,8 +39,9 @@ class TofCommand(BaseCommand):
             help="UUID of the task whose outputs should be uploaded.",
         )
         def run_cmd(task_id: str) -> None:
+            configure_logging(task_id)
             dsn = _required_env("DATABASE_URL")
-            click.echo(f"--- TOF --- task={task_id}")
+            logger.info("tof: starting")
             sys.exit(asyncio.run(_run(task_id, dsn)))
 
     def get_info(self) -> dict[str, Any]:
@@ -70,13 +74,13 @@ async def _run(task_id: str, dsn: str) -> int:
         raise
 
     if task is None:
-        click.echo(f"task {task_id} not found", err=True)
+        logger.error("task %s not found", task_id)
         filer_error.write(f"task {task_id} not found in the database")
         return 1
 
     outputs = task.outputs or []
     if not outputs:
-        click.echo("no outputs declared; nothing to upload")
+        logger.info("no outputs declared; nothing to upload")
         return 0
 
     async def record(files: list[TesOutputFileLog]) -> None:
