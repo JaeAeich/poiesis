@@ -22,9 +22,20 @@ auth:
   enabled: true
   issuers:
     - issuer: https://keycloak.example.org/realms/poiesis
-      audience: poiesis
+      # Two audiences while moving from a shared to a per-instance one.
+      audience: [poiesis-node-1, poiesis]
+      # Keycloak's access tokens are typed `JWT`, not `at+jwt`.
+      tokenTypes: [JWT]
+      clients: [poiesis-cli, portal]
       principalClaim: sub
       requiredScopes: [openid]
+      requiredClaim:
+        name: eduperson_entitlement
+        values:
+          - "urn:geant:lifescience-ri.eu:group:example-vo#login.aai.lifescience-ri.eu"
+        prefixes:
+          - "urn:geant:lifescience-ri.eu:group:example-vo:"
+      actors: [gateway-client]
       jwksCacheTtl: 600
       clockSkew: 10
       timeout: 2.5
@@ -33,9 +44,16 @@ auth:
       keyMinting:
         clients: [poiesis-cli]
         maxAuthAge: 600
+    # The same Keycloak under its new URL: sharing the old URL as
+    # namespace keeps its owners' tasks and keys.
+    - issuer: https://login.example.org/realms/poiesis
+      audience: poiesis
+      namespace: https://keycloak.example.org/realms/poiesis
     # A gateway signing its own JWTs: keys only, no discovery.
     - issuer: https://gateway.example.org
       audience: poiesis
+      tokenTypes: []
+      namespace: gateway
       jwksUri: http://gateway.mesh.svc.cluster.local/.well-known/jwks.json
   apiKeys:
     enabled: true
@@ -48,12 +66,6 @@ auth:
     scopes: openid profile
 
 authz:
-  requiredClaim:
-    name: eduperson_entitlement
-    values:
-      - "urn:geant:lifescience-ri.eu:group:example-vo#login.aai.lifescience-ri.eu"
-    prefixes:
-      - "urn:geant:lifescience-ri.eu:group:example-vo:"
   decisionService:
     url: http://localhost:8181/access/v1/evaluation
     timeout: 2
