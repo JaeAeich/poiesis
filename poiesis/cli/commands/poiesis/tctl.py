@@ -28,13 +28,26 @@ class TctlCommand(BaseCommand):
         @group.command(name="run", help="Run the TCtl reconciler")
         def run_cmd() -> None:
             namespace = _required_env("POIESIS_TASKPOD_NAMESPACE")
+            # TaskPods may live in their own namespace; the leader Lease
+            # stays next to tctl, where its Role grants Lease access.
+            lease_namespace = os.environ.get("POIESIS_NAMESPACE") or namespace
             dsn = _required_env("DATABASE_URL")
             identity = os.environ.get("POIESIS_POD_NAME") or None
             load_config()
             click.echo(
-                f"--- TCtl --- namespace={namespace} identity={identity or 'auto'}"
+                f"--- TCtl --- namespace={namespace} "
+                f"lease-namespace={lease_namespace} identity={identity or 'auto'}"
             )
-            sys.exit(asyncio.run(run(namespace, dsn, identity=identity)))
+            sys.exit(
+                asyncio.run(
+                    run(
+                        namespace,
+                        dsn,
+                        lease_namespace=lease_namespace,
+                        identity=identity,
+                    )
+                )
+            )
 
     def get_info(self) -> dict[str, Any]:
         """Service information for `poiesis tctl info`."""

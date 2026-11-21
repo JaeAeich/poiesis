@@ -1,0 +1,4 @@
+# Overlay for `helm lint -f ci/lint-values.yaml -f ci/split-namespace-values.yaml`:
+# TaskPods in a namespace of their own, apart from the release namespace.
+taskpods:
+  namespace: poiesis-tasks

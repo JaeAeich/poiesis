@@ -30,6 +30,8 @@ CANCELING-aware, so re-running the loop against an already-finalised
 task is a no-op.
 
 Leader election uses `coordination.k8s.io/v1` Leases (see `core/leases.py`).
+The Lease lives in the namespace tctl runs in (the release namespace), which
+is not the TaskPod namespace when the two are split.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import asyncpg
 from kubernetes.client import CoordinationV1Api, CoreV1Api
+from kubernetes.client.exceptions import ApiException
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -81,13 +84,16 @@ async def run(
     namespace: str,
     dsn: str,
     *,
+    lease_namespace: str | None = None,
     identity: str | None = None,
 ) -> int:
     """Run the TCtl reconciliation loop until SIGTERM/SIGINT.
 
-    Holds the Lease while reconciling; gives it up cleanly on signal.
-    Returns 0 on clean shutdown.
+    `namespace` is where the TaskPods are; `lease_namespace` is where the
+    leader Lease is kept (default: `namespace`). Holds the Lease while
+    reconciling; gives it up cleanly on signal. Returns 0 on clean shutdown.
     """
+    lease_namespace = lease_namespace or namespace
     identity = identity or f"{socket.gethostname()}-{uuid.uuid4().hex[:8]}"
     cancelled = _install_signal_handlers()
 
@@ -96,24 +102,52 @@ async def run(
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=4)
     try:
         while not cancelled.is_set():
-            acquired = await try_acquire_or_renew(
-                coord_v1,
-                name=_LEASE_NAME,
-                namespace=namespace,
-                identity=identity,
-                lease_duration_seconds=_LEASE_DURATION_SECONDS,
-            )
+            acquired = await _hold_lease(coord_v1, lease_namespace, identity)
             if not acquired:
                 logger.debug("tctl: not leader; sleeping")
                 await _wait_or_cancel(cancelled, _LEASE_RENEW_INTERVAL_SECONDS)
                 continue
             logger.info("tctl: acquired lease as %s", identity)
             await _reconcile_while_leader(
-                core_v1, coord_v1, pool, namespace, identity, cancelled
+                core_v1,
+                coord_v1,
+                pool,
+                namespace,
+                lease_namespace,
+                identity,
+                cancelled,
             )
     finally:
         await pool.close()
     return 0
+
+
+async def _hold_lease(
+    coord_v1: CoordinationV1Api, lease_namespace: str, identity: str
+) -> bool:
+    """Acquire or renew the leader Lease; False if `identity` doesn't hold it.
+
+    A Kubernetes API error (a 403 from missing RBAC, a 5xx, a timeout) counts
+    as not holding the Lease: it is logged and the caller tries again, so
+    tctl neither exits nor reconciles while it can't prove it is the leader.
+    """
+    try:
+        return await try_acquire_or_renew(
+            coord_v1,
+            name=_LEASE_NAME,
+            namespace=lease_namespace,
+            identity=identity,
+            lease_duration_seconds=_LEASE_DURATION_SECONDS,
+        )
+    except ApiException as exc:
+        logger.error(
+            "tctl: lease %s/%s unavailable (%s %s); will retry",
+            lease_namespace,
+            _LEASE_NAME,
+            exc.status,
+            exc.reason,
+        )
+        return False
 
 
 async def _reconcile_while_leader(
@@ -121,18 +155,13 @@ async def _reconcile_while_leader(
     coord_v1: CoordinationV1Api,
     pool: asyncpg.Pool,
     namespace: str,
+    lease_namespace: str,
     identity: str,
     cancelled: asyncio.Event,
 ) -> None:
     """Reconcile every `_RECONCILE_INTERVAL_SECONDS` until lease is lost."""
     while not cancelled.is_set():
-        renewed = await try_acquire_or_renew(
-            coord_v1,
-            name=_LEASE_NAME,
-            namespace=namespace,
-            identity=identity,
-            lease_duration_seconds=_LEASE_DURATION_SECONDS,
-        )
+        renewed = await _hold_lease(coord_v1, lease_namespace, identity)
         if not renewed:
             logger.warning("tctl: lost lease; standing down")
             return

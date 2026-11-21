@@ -50,7 +50,10 @@ out its grace period.
 
 The only writer of terminal state, leader-elected
 (`coordination.k8s.io` Leases): one replica is active at a time, so more
-replicas give faster failover, not throughput. Every 5 seconds the
+replicas give faster failover, not throughput. The Lease is kept in the
+release namespace, also when `taskpods.namespace` puts the tasks
+elsewhere; if a Lease call fails, TCtl logs it and tries again 10
+seconds later without reconciling. Every 5 seconds the
 leader lists the Pods labelled `poiesis.io/task` and the non-terminal
 tasks in Postgres. It has three jobs:
 
