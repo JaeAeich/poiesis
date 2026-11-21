@@ -247,6 +247,8 @@ async def get_task(
             id=str(task_row["id"]),
             state=TesState(task_row["state"]),
             executors=[],
+            # Else the model's default, the time of this request, is shown.
+            creation_time=_format_dt(task_row["creation_time"]),
         )
 
     input_rows = await conn.fetch(
