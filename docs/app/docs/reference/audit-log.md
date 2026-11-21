@@ -25,13 +25,12 @@ An unrecognised `POIESIS_AUDIT_ENABLED` value (anything but
 typo can't turn the trail off.
 
 The lines come from the logger `poiesis.audit`, which has a handler of
-its own: they don't depend on `logLevel` or on the format of the
-application log, and they are not repeated there. Every audit line is a
-complete JSON object on one line, without colours or prefixes; other
-lines on stdout (the application log, the web server's) are not JSON
-objects with an `event` and an `outcome`, so a pipeline can tell them
-apart, e.g. by parsing each line as JSON and keeping those with an
-`event`.
+its own: they don't depend on `logLevel` or `logging.format`, and they
+are not repeated in the application log. Every audit line is a complete
+JSON object on one line, on stdout, without colours or prefixes. The
+application log (on stderr; `kubectl logs` shows both) has JSON lines
+too, but with a `logger` and no `event`, so a pipeline can tell them
+apart by keeping the lines with an `event`.
 
 ## Format
 

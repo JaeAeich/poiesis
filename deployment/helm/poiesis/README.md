@@ -155,6 +155,19 @@ Reserved names rejected at API startup:
 Total serialised JSON capped at ~32 KiB by Kubernetes' env-var size
 limit. For typical extras this is plenty.
 
+### Logs (`logLevel`, `logging.format`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `logLevel`       | string | `INFO` | Application log level. |
+| `logging.format` | string | `json` | `json`: one JSON object per line on stderr. `text`: coloured lines, for a terminal. `""`: text when stderr is a terminal, else JSON. Applies to the API, TCtl and the TaskPod's `trec`, `tif` and `tof`; an unknown value stops them at startup. |
+
+JSON lines have `timestamp`, `level`, `logger`, `message`, and
+`request_id` (API) or `task_id` (`trec`, `tif`, `tof`, TCtl lines about
+one task). The API also writes one `poiesis.access` line per request,
+without query strings or headers. The audit log keeps its own format on
+stdout.
+
 ### Service info (`serviceInfo`)
 
 What `GET /service-info` says about this deployment. Empty keeps the

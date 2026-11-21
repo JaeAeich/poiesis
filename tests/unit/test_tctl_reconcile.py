@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
+import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -19,6 +21,7 @@ from postgres import needs_postgres, run
 
 from poiesis.api.tes.models import TesExecutor, TesState, TesTask
 from poiesis.core import tctl
+from poiesis.core.logging_config import setup_logging
 from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
 
@@ -384,6 +387,22 @@ class TestErrorIsolation:
         assert f"applying the actions of task={T1} raised" in caplog.text
         world.tick()  # decided again on the next pass
         assert set(world.writes) == {T1, T2}
+
+    def test_the_lines_of_one_task_carry_its_id(self, world: World) -> None:
+        """Lines logged while applying a task's actions have its task_id."""
+        stream = io.StringIO()
+        setup_logging(level="INFO", log_format="json", stream=stream)
+        try:
+            world.states = {T1: TesState.RUNNING}
+            world.pods = [pod(T1, "Failed")]
+            world.write_errors[T1] = OSError("connection reset")
+            world.tick()
+        finally:
+            setup_logging()
+        lines = [json.loads(line) for line in stream.getvalue().splitlines()]
+        (raised,) = [x for x in lines if "raised" in x["message"]]
+        assert raised["task_id"] == T1
+        assert "connection reset" in raised["exception"]
 
     def test_a_delete_that_times_out_does_not_stop_the_pass(
         self, world: World, caplog: pytest.LogCaptureFixture

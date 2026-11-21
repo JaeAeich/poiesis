@@ -43,6 +43,13 @@
     },
 
     "logLevel": { "type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR"] },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": { "type": "string", "enum": ["json", "text", ""] }
+      }
+    },
 
     "database": {
       "type": "object",

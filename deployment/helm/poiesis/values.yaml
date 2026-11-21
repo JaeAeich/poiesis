@@ -116,6 +116,11 @@ serviceAccount:
 
 # Logging.
 logLevel: INFO
+logging:
+  # Log line format of the API, TCtl and the TaskPod's trec, tif and tof:
+  # `json` (one object per line), `text` (coloured, for a terminal), or
+  # "" to choose by whether stderr is a terminal. The audit log ignores it.
+  format: json
 
 # -----------------------------------------------------------------------------
 # External dependencies (operator-supplied; chart does NOT create these)

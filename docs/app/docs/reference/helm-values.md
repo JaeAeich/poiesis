@@ -39,6 +39,7 @@ chart references them by name.
 | `extraVolumes`, `extraVolumeMounts` | `[]` | Extra volumes for the API and TCtl; component extras append. Names must not collide. |
 | `extraManifests` | `[]` | Manifests rendered verbatim (strings or templates). |
 | `logLevel` | `INFO` | Application log level. The [audit log](./audit-log.md) ignores it. |
+| `logging.format` | `json` | Log line format of the API, TCtl, `trec`, `tif` and `tof`: `json`, `text` (coloured), or `""` (text on a terminal, else JSON). The audit log ignores it. See [Logs](../guides/production.md#logs). |
 
 ## Service accounts
 

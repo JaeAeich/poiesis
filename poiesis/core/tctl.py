@@ -94,6 +94,7 @@ if TYPE_CHECKING:
 from poiesis.core import ignore_error
 from poiesis.core.executor_logs import read_executor_streams, streams_from_pod
 from poiesis.core.leases import try_acquire_or_renew
+from poiesis.core.logging_config import task_context
 from poiesis.core.reconcile import (
     Action,
     DeleteJob,
@@ -446,14 +447,15 @@ async def _reconcile_once(
         if still_leader is not None and not still_leader():
             logger.warning("tctl: lease no longer held; stopping the pass")
             return
-        try:
-            await _apply(core_v1, batch_v1, pool, namespace, task_id, actions)
-        except Exception:
-            # One task's database or Kubernetes error must not stop the
-            # others; its actions are decided again on the next pass.
-            logger.exception(
-                "tctl: applying the actions of task=%s raised; going on", task_id
-            )
+        with task_context(task_id):
+            try:
+                await _apply(core_v1, batch_v1, pool, namespace, task_id, actions)
+            except Exception:
+                # One task's database or Kubernetes error must not stop the
+                # others; its actions are decided again on the next pass.
+                logger.exception(
+                    "tctl: applying the actions of task=%s raised; going on", task_id
+                )
 
 
 async def _gather(

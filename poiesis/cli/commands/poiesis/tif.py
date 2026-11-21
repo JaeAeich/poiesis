@@ -1,6 +1,7 @@
 """TIF service CLI command."""
 
 import asyncio
+import logging
 import os
 import sys
 from typing import Any
@@ -8,13 +9,15 @@ from typing import Any
 import asyncpg
 import click
 
-from poiesis.cli.commands.poiesis.base import BaseCommand
+from poiesis.cli.commands.poiesis.base import BaseCommand, configure_logging
 from poiesis.core import filer_error
 from poiesis.core.services.filer.filer_strategy_factory import (
     supported_input_schemes,
 )
 from poiesis.core.services.filer.tif import Tif
 from poiesis.db import tasks as tasks_db
+
+logger = logging.getLogger(__name__)
 
 
 class TifCommand(BaseCommand):
@@ -40,8 +43,9 @@ class TifCommand(BaseCommand):
             help="Executor path of a directory to create after staging; repeatable.",
         )
         def run_cmd(task_id: str, dirs: tuple[str, ...]) -> None:
+            configure_logging(task_id)
             dsn = _required_env("DATABASE_URL")
-            click.echo(f"--- TIF --- task={task_id}")
+            logger.info("tif: starting")
             sys.exit(asyncio.run(_run(task_id, dsn, dirs)))
 
     def get_info(self) -> dict[str, Any]:
@@ -74,13 +78,13 @@ async def _run(task_id: str, dsn: str, dirs: tuple[str, ...] = ()) -> int:
         raise
 
     if task is None:
-        click.echo(f"task {task_id} not found", err=True)
+        logger.error("task %s not found", task_id)
         filer_error.write(f"task {task_id} not found in the database")
         return 1
 
     inputs = task.inputs or []
     if not inputs and not dirs:
-        click.echo("no inputs declared; nothing to stage")
+        logger.info("no inputs declared; nothing to stage")
         return 0
 
     await Tif(task_id, inputs, dirs).execute()

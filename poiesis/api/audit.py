@@ -23,7 +23,6 @@ client can quote it.
 
 from __future__ import annotations
 
-import contextvars
 import json
 import logging
 import re
@@ -33,6 +32,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from poiesis.api.auth import is_owner_id
+from poiesis.core.logging_config import request_id_var
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, MutableMapping
@@ -63,9 +63,8 @@ _HEADER = b"x-request-id"
 #: short. Anything else is replaced, so a client can't flood or garble
 #: log lines through it.
 _CLIENT_REQUEST_ID = re.compile(r"[\x21-\x7e]{1,128}")
-_request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "poiesis_request_id", default=None
-)
+# Shared with the application's log lines, which carry it too.
+_request_id = request_id_var
 
 #: Audit events by the operation id of their route. The owner-wide key
 #: listing is an event; listing one's own keys is not.

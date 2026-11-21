@@ -37,6 +37,7 @@ from pydantic.alias_generators import to_camel
 
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.core.constants import FILE_URL_ROOTS_ENV, OUTPUT_GLOB_FALLBACK_ENV
+from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
 from poiesis.core.services.filer.file_urls import parse_file_url_roots
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 
@@ -1033,6 +1034,20 @@ class ServiceInfoSettings(BaseModel):
         return parsed
 
 
+def _parse_log_format_env() -> str | None:
+    """``POIESIS_LOG_FORMAT``: ``json``, ``text`` or unset (chosen by stderr).
+
+    Strict, so a typo stops the API at startup.
+    """
+    raw = (os.environ.get(LOG_FORMAT_ENV) or "").strip().lower()
+    if not raw:
+        return None
+    if raw not in LOG_FORMATS:
+        msg = f"{LOG_FORMAT_ENV} must be one of {', '.join(LOG_FORMATS)}, got {raw!r}"
+        raise ValueError(msg)
+    return raw
+
+
 class Settings(BaseModel):
     """API runtime settings."""
 
@@ -1045,6 +1060,9 @@ class Settings(BaseModel):
     poiesis_namespace: str = Field(
         default_factory=lambda: os.environ.get("POIESIS_NAMESPACE", "poiesis"),
     )
+    # Log format of the API and of trec/tif/tof; None: JSON unless stderr
+    # is a terminal.
+    log_format: str | None = Field(default_factory=_parse_log_format_env)
     # Defaults to poiesis_namespace via runtime_config() — operators can split
     # the control plane from the workload ns by setting POIESIS_TASKPOD_NAMESPACE.
     taskpod_namespace: str | None = Field(
@@ -1227,6 +1245,7 @@ class Settings(BaseModel):
             taskpod_extra_volume_mounts=self.taskpod_extra_volume_mounts,
             output_glob_fallback=self.output_glob_fallback,
             file_url_roots=self.file_url_roots,
+            log_format=self.log_format,
             recorder_resources=_resources(self.recorder_resources),
             filer_resources=_resources(self.filer_resources),
             ack_resources=_resources(self.ack_resources),
