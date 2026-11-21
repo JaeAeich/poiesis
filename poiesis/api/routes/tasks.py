@@ -84,43 +84,45 @@ async def create_task(
     except ValueError as exc:
         raise BadRequestError(str(exc)) from exc
 
-    # Acquired only after the decision, so it never waits holding one.
+    # Acquired only after the decision, so it never waits holding one, and
+    # given back before the Kubernetes calls, so a slow API server can't
+    # drain the pool.
     async with pool.acquire() as conn:
         task_id = await tasks_db.create_task(conn, task, principal.owner, groups)
-        logger.info("Persisted task %s", task_id)
+    logger.info("Persisted task %s", task_id)
 
-        # Submit the Job first; the Pod will wait Pending until the PVC exists.
-        # The PVC is created with an ownerReference back to the Job so
-        # kube-controller-manager garbage-collects it when the Job is deleted.
-        try:
-            created_job = await k8s.create_job(runtime_config.taskpod_namespace, job)
-        except ApiException as exc:
-            await _on_kubernetes_submit_failure(
-                conn, task_id, exc, where="Job", k8s=None, namespace=None, job_name=None
-            )
+    # Submit the Job first; the Pod will wait Pending until the PVC exists.
+    # The PVC is created with an ownerReference back to the Job so
+    # kube-controller-manager garbage-collects it when the Job is deleted.
+    try:
+        created_job = await k8s.create_job(runtime_config.taskpod_namespace, job)
+    except ApiException as exc:
+        await _on_kubernetes_submit_failure(
+            pool, task_id, exc, where="Job", k8s=None, namespace=None, job_name=None
+        )
 
-        job_uid, job_name = _server_assigned_meta(created_job)
-        attach_pvc_owner(pvc, job_uid, job_name)
+    job_uid, job_name = _server_assigned_meta(created_job)
+    attach_pvc_owner(pvc, job_uid, job_name)
 
-        try:
-            await k8s.create_pvc(runtime_config.taskpod_namespace, pvc)
-        except ApiException as exc:
-            await _on_kubernetes_submit_failure(
-                conn,
-                task_id,
-                exc,
-                where="PVC",
-                k8s=k8s,
-                namespace=runtime_config.taskpod_namespace,
-                job_name=job_name,
-            )
+    try:
+        await k8s.create_pvc(runtime_config.taskpod_namespace, pvc)
+    except ApiException as exc:
+        await _on_kubernetes_submit_failure(
+            pool,
+            task_id,
+            exc,
+            where="PVC",
+            k8s=k8s,
+            namespace=runtime_config.taskpod_namespace,
+            job_name=job_name,
+        )
 
     logger.info("TaskPod submitted for task %s (job=%s)", task_id, job_name)
     return TesCreateTaskResponse(id=task_id)
 
 
 async def _on_kubernetes_submit_failure(
-    conn: Any,
+    pool: Any,
     task_id: str,
     exc: ApiException,
     *,
@@ -147,7 +149,7 @@ async def _on_kubernetes_submit_failure(
     if k8s is not None and namespace is not None and job_name is not None:
         await _safe_delete_job(k8s, namespace, job_name)
 
-    await _mark_system_error(conn, task_id, classification.system_log)
+    await _mark_system_error(pool, task_id, classification.system_log)
     raise classification.api_error from exc
 
 
@@ -360,17 +362,20 @@ def _server_assigned_meta(obj: Any) -> tuple[str, str]:
     return metadata.uid, metadata.name
 
 
-async def _mark_system_error(conn: Any, task_id: str, reason: str) -> None:
+async def _mark_system_error(pool: Any, task_id: str, reason: str) -> None:
     """Best-effort transition to SYSTEM_ERROR after a submission failure.
 
     Writes both the terminal state and a system_logs entry so the same
     diagnostic string is visible via ``GetTask`` for client inspection.
+    Takes a pooled connection only for these writes, after the Kubernetes
+    calls (and the Job cleanup) are done.
     """
     try:
-        await state_db.write_terminal_state(
-            conn, task_id, TesState.SYSTEM_ERROR, reason=reason
-        )
-        await state_db.append_system_log(conn, task_id, reason)
+        async with pool.acquire() as conn:
+            await state_db.write_terminal_state(
+                conn, task_id, TesState.SYSTEM_ERROR, reason=reason
+            )
+            await state_db.append_system_log(conn, task_id, reason)
     except (asyncpg.PostgresError, OSError, TimeoutError):
         logger.exception(
             "Failed to mark task %s SYSTEM_ERROR after submission failure", task_id
