@@ -256,6 +256,33 @@ class UserinfoSettings(BaseModel):
     enabled: bool = False
 
 
+class KeyMintingSettings(BaseModel):
+    """Which tokens of an issuer may mint API keys (``keyMinting``).
+
+    Minting turns a short-lived token into a key that lives for weeks,
+    so it is limited to tokens of the listed OAuth clients (the token's
+    ``azp``, else ``client_id``): typically the interactive login client
+    (Swagger UI, a CLI), not service accounts or CI clients. An issuer
+    without ``keyMinting`` can't mint keys at all.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, extra="forbid", frozen=True)
+
+    # Client ids whose tokens may mint keys.
+    clients: tuple[str, ...] = Field(min_length=1)
+    # Seconds since the user's login (`auth_time`) after which minting
+    # is refused until they log in again; off when unset. The issuer
+    # must put `auth_time` in its access tokens.
+    max_auth_age: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _check_clients(self) -> KeyMintingSettings:
+        """Refuse empty client ids."""
+        if "" in self.clients:
+            raise ValueError("keyMinting.clients must not contain an empty id")
+        return self
+
+
 class IssuerSettings(BaseModel):
     """One trusted token issuer, an entry of ``POIESIS_AUTH_ISSUERS``.
 
@@ -286,6 +313,8 @@ class IssuerSettings(BaseModel):
     # Seconds allowed for each call to the issuer (discovery, JWKS,
     # userinfo), in total.
     timeout: float = Field(default=10.0, gt=0, allow_inf_nan=False)
+    # Which of its tokens may mint API keys; none when unset.
+    key_minting: KeyMintingSettings | None = None
 
     @model_validator(mode="after")
     def _check_urls(self) -> IssuerSettings:

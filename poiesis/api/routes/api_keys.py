@@ -11,6 +11,7 @@ handlers and models below at runtime (see `poiesis.api.auth`).
 """
 
 import logging
+import time
 import uuid
 from datetime import datetime
 from http import HTTPStatus
@@ -30,7 +31,13 @@ from poiesis.api.exceptions import (
     ForbiddenError,
     NotFoundError,
 )
-from poiesis.api.settings import TTL_PATTERN, ApiKeySettings, format_ttl, parse_ttl
+from poiesis.api.settings import (
+    TTL_PATTERN,
+    ApiKeySettings,
+    IssuerSettings,
+    format_ttl,
+    parse_ttl,
+)
 from poiesis.db import api_keys as api_keys_db
 
 logger = logging.getLogger(__name__)
@@ -121,6 +128,44 @@ async def key_manager(
     return principal
 
 
+def mint_refusal(
+    principal: Principal, issuer: IssuerSettings | None, now: float
+) -> str | None:
+    """Why ``principal`` may not mint a key (the ``403`` message), or ``None``.
+
+    Its issuer must have ``keyMinting``, the token must come from one of
+    the listed clients, and, with ``maxAuthAge``, the user must have
+    logged in recently (``auth_time``).
+    """
+    minting = issuer.key_minting if issuer is not None else None
+    if minting is None:
+        return "tokens of this issuer can't mint API keys"
+    client = principal.claims.get("azp") or principal.claims.get("client_id")
+    if client not in minting.clients:
+        return f"tokens of client {str(client)[:100]!r} can't mint API keys"
+    if minting.max_auth_age is not None:
+        auth_time = principal.claims.get("auth_time")
+        if not isinstance(auth_time, int | float) or isinstance(auth_time, bool):
+            return "the token has no auth_time; log in again to mint a key"
+        if now - auth_time > minting.max_auth_age:
+            return "the last login is too old to mint a key; log in again"
+    return None
+
+
+async def key_minter(
+    request: Request,
+    principal: Annotated[Principal, Depends(key_manager)],
+) -> Principal:
+    """FastAPI dependency: a key manager whose token may also mint keys."""
+    issuers = request.app.state.settings.auth.issuers
+    issuer = next((i for i in issuers if i.issuer == principal.issuer), None)
+    refusal = mint_refusal(principal, issuer, time.time())
+    if refusal is not None:
+        logger.warning("API key minting refused for %s: %s", principal.owner, refusal)
+        raise ForbiddenError(refusal)
+    return principal
+
+
 @router.post(
     "/api-keys",
     status_code=HTTPStatus.CREATED,
@@ -129,7 +174,7 @@ async def key_manager(
 )
 async def create_api_key(
     body: CreateApiKeyRequest,
-    principal: Annotated[Principal, Depends(key_manager)],
+    principal: Annotated[Principal, Depends(key_minter)],
     settings: Annotated[ApiKeySettings, Depends(get_api_key_settings)],
     pool: Annotated[Any, Depends(get_db_pool)],
 ) -> CreatedApiKey:
@@ -166,7 +211,14 @@ async def create_api_key(
             f"at most {settings.max_per_owner} active API keys per owner; "
             "revoke one first"
         )
-    logger.info("API key %s minted, expires %s", record.id, record.expires_at)
+    logger.info(
+        "API key %s minted for %s by client %s: scopes %s, expires %s",
+        record.id,
+        principal.owner,
+        principal.claims.get("azp") or principal.claims.get("client_id"),
+        ",".join(record.scopes),
+        record.expires_at.isoformat(),
+    )
     return CreatedApiKey(
         id=record.id,
         name=record.name,
@@ -224,4 +276,4 @@ async def revoke_api_key(
         revoked = await api_keys_db.revoke_api_key(conn, key_id, principal.owner)
     if not revoked:
         raise NotFoundError(f"API key {id} not found")
-    logger.info("API key %s revoked", key_id)
+    logger.info("API key %s revoked by %s", key_id, principal.owner)

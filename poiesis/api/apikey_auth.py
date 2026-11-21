@@ -6,9 +6,12 @@ Poiesis API key with an OIDC token (`poiesis.api.routes.api_keys`) and
 hands the key to the engine. :class:`ApiKeyAuthenticator` is the chain's
 link for those keys:
 
-- A key is ``poi_`` plus 43 URL-safe base64 characters (32 random
-    bytes). It never contains a ``.``, so the JWT link, which takes any
-    three-part bearer token, never claims one.
+- A key is ``poi_``, 43 URL-safe base64 characters (32 random bytes)
+    and a 6-character base62 CRC32 checksum of them, like GitHub's
+    tokens: secret scanners can confirm a match offline, and a mistyped
+    or made-up key is refused without a database lookup. It never
+    contains a ``.``, so the JWT link, which takes any three-part bearer
+    token, never claims one.
 - Only its SHA-256 is stored; a request's key is looked up by hash on
     every request (no cache), so a revoked key stops working at once.
 - Accepted as ``Authorization: Bearer poi_…`` and as HTTP Basic with
@@ -34,6 +37,8 @@ import hashlib
 import logging
 import re
 import secrets
+import string
+import zlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -56,8 +61,11 @@ KEY_PREFIX = "poi_"
 TASKS_READ = "tasks:read"
 TASKS_WRITE = "tasks:write"
 SCOPES: tuple[str, ...] = (TASKS_READ, TASKS_WRITE)
-#: The shape of a key: the prefix and ``token_urlsafe(32)``.
-_KEY = re.compile(r"poi_[A-Za-z0-9_-]{43}")
+#: The shape of a key: the prefix, ``token_urlsafe(32)`` and a checksum.
+_KEY = re.compile(r"poi_(?P<body>[A-Za-z0-9_-]{43})(?P<sum>[0-9A-Za-z]{6})")
+_BASE62 = string.digits + string.ascii_letters
+#: Base62 digits of a CRC32 (62**6 > 2**32).
+_CHECKSUM_LENGTH = 6
 #: Seconds between writes of the batched ``last_used_at`` times.
 _FLUSH_INTERVAL = 60.0
 #: ``Retry-After`` seconds advertised while the database can't be reached.
@@ -66,9 +74,29 @@ _DB_RETRY_AFTER = 5
 DB_ERRORS = (asyncpg.PostgresError, asyncpg.InterfaceError, OSError, TimeoutError)
 
 
+def _checksum(body: str) -> str:
+    """Return the base62 CRC32 of a key's random part, 6 characters."""
+    value, digits = zlib.crc32(body.encode()), []
+    for _ in range(_CHECKSUM_LENGTH):
+        value, digit = divmod(value, len(_BASE62))
+        digits.append(_BASE62[digit])
+    return "".join(reversed(digits))
+
+
 def new_key() -> str:
-    """Return a fresh secret key (``poi_`` + 32 random bytes, base64url)."""
-    return KEY_PREFIX + secrets.token_urlsafe(32)
+    """Return a fresh secret key: ``poi_``, 32 random bytes, a checksum."""
+    body = secrets.token_urlsafe(32)
+    return KEY_PREFIX + body + _checksum(body)
+
+
+def well_formed(key: str) -> bool:
+    """Whether ``key`` has a key's shape and a matching checksum.
+
+    The checksum isn't secret: it catches typos, truncation and made-up
+    strings, it doesn't authenticate anything.
+    """
+    match = _KEY.fullmatch(key)
+    return match is not None and _checksum(match["body"]) == match["sum"]
 
 
 def hash_key(key: str) -> bytes:
@@ -141,7 +169,7 @@ class ApiKeyAuthenticator:
         key = key_from_header(request.headers.get("authorization"))
         if key is None:
             return None
-        if _KEY.fullmatch(key) is None:
+        if not well_formed(key):
             logger.warning("Malformed API key")
             raise UnauthorizedError("invalid token")
         try:

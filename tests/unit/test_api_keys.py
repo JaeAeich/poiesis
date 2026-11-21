@@ -18,7 +18,15 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fake_issuer import AUDIENCE, GATEWAY, GATEWAY_JWKS, ISSUER, Issuer, set_issuers
+from fake_issuer import (
+    AUDIENCE,
+    GATEWAY,
+    GATEWAY_JWKS,
+    ISSUER,
+    Issuer,
+    Network,
+    set_issuers,
+)
 from fastapi.testclient import TestClient
 
 from poiesis.api import app as app_module
@@ -27,15 +35,18 @@ from poiesis.api.apikey_auth import (
     hash_key,
     key_from_header,
     new_key,
+    well_formed,
 )
 from poiesis.api.auth import Principal
 from poiesis.api.authz import Authz
 from poiesis.api.exceptions import ServiceUnavailableError, UnauthorizedError
 from poiesis.api.routes import tasks as tasks_routes
+from poiesis.api.routes.api_keys import mint_refusal
 from poiesis.api.settings import (
     ApiKeySettings,
     AuthSettings,
     AuthzSettings,
+    IssuerSettings,
     format_ttl,
     parse_ttl,
 )
@@ -48,6 +59,8 @@ TASKS = "/ga4gh/tes/v1/tasks"
 TASK = {"executors": [{"image": "alpine", "command": ["true"]}]}
 ALICE = f"{ISSUER}|alice"
 TASK_ID = "00000000-0000-4000-8000-00000000000a"
+#: The login client allowed to mint keys (`keyMinting.clients`).
+LOGIN = "poiesis-cli"
 
 
 # -- fakes ----------------------------------------------------------------------
@@ -190,6 +203,23 @@ class K8s:
 
 
 @pytest.fixture
+def issuer(network: Network, monkeypatch: pytest.MonkeyPatch) -> Issuer:
+    """The fake issuer, allowed to mint keys; its tokens come from `LOGIN`."""
+    set_issuers(
+        monkeypatch,
+        {"issuer": ISSUER, "audience": AUDIENCE, "keyMinting": {"clients": [LOGIN]}},
+    )
+    fake = network.add(Issuer())
+    plain = fake.token
+
+    def token(key: Any = None, **claims: Any) -> str:
+        return plain(key, **({"azp": LOGIN} | claims))
+
+    monkeypatch.setattr(fake, "token", token)
+    return fake
+
+
+@pytest.fixture
 def table(monkeypatch: pytest.MonkeyPatch) -> KeyTable:
     """An empty in-memory `api_keys` table, wired in."""
     keys = KeyTable()
@@ -290,15 +320,26 @@ def minted(client: TestClient, issuer: Issuer, **body: Any) -> dict[str, Any]:
 
 
 def test_key_format() -> None:
-    """`poi_` + 43 base64url characters, never a `.`; only a hash is stored."""
+    """`poi_`, 43 base64url characters and a checksum, never a `.`; hashed."""
     keys = {new_key() for _ in range(100)}
     assert len(keys) == 100  # noqa: PLR2004
     for key in keys:
         assert key.startswith("poi_")
-        assert len(key) == 47  # noqa: PLR2004
+        assert len(key) == 53  # noqa: PLR2004
         assert "." not in key
+        assert well_formed(key)
     key = keys.pop()
     assert hash_key(key) == hashlib.sha256(key.encode()).digest()
+
+
+def test_checksum_catches_damage() -> None:
+    """A changed character, a truncation or a made-up key fails the checksum."""
+    key = new_key()
+    flipped = key[:10] + ("A" if key[10] != "A" else "B") + key[11:]
+    assert not well_formed(flipped)
+    assert not well_formed(key[:-1])
+    assert not well_formed(key + "x")
+    assert not well_formed("poi_" + "x" * 49)
 
 
 KEY = "poi_" + "A" * 43
@@ -372,7 +413,7 @@ def test_key_sees_owner_tasks(
 def test_snapshot(client: TestClient, issuer: Issuer, table: KeyTable) -> None:
     """The snapshot keeps the owner's claims without the token's own lifetime."""
     token = issuer.token(
-        jti="t-1", iat=1, nbf=1, auth_time=1, groups=["lab-alpha"], azp="cli"
+        jti="t-1", iat=1, nbf=1, auth_time=1, groups=["lab-alpha"]
     )
     created = mint(client, token).json()
     snapshot = table.rows[uuid.UUID(created["id"])]["claims_snapshot"]
@@ -382,7 +423,7 @@ def test_snapshot(client: TestClient, issuer: Issuer, table: KeyTable) -> None:
             "aud": AUDIENCE,
             "sub": "alice",
             "groups": ["lab-alpha"],
-            "azp": "cli",
+            "azp": LOGIN,
         },
         "userinfo": {},
     }
@@ -461,6 +502,95 @@ def test_cap_per_owner(
         headers = bearer(issuer.token())
         client.delete(f"{KEYS}/{first['id']}", headers=headers)
         assert mint(client, issuer.token()).status_code == HTTPStatus.CREATED
+
+
+def test_mint_needs_key_minting(
+    app_env: pytest.MonkeyPatch, issuer: Issuer, table: KeyTable
+) -> None:
+    """An issuer without `keyMinting` can't mint; listing still works."""
+    set_issuers(app_env, {"issuer": ISSUER, "audience": AUDIENCE})
+    with TestClient(app_module.create_app()) as client:
+        response = mint(client, issuer.token())
+        assert response.status_code == HTTPStatus.FORBIDDEN
+        assert "can't mint" in response.json()["message"]
+        listed = client.get(KEYS, headers=bearer(issuer.token()))
+        assert listed.status_code == HTTPStatus.OK
+    assert table.rows == {}
+
+
+@pytest.mark.parametrize(
+    ("claims", "allowed"),
+    [
+        ({"azp": LOGIN}, True),
+        ({"azp": None, "client_id": LOGIN}, True),
+        ({"azp": "poiesis-ci"}, False),
+        ({"azp": None}, False),
+    ],
+    ids=["azp", "client_id", "service-client", "no-client"],
+)
+def test_mint_clients(
+    client: TestClient, issuer: Issuer, claims: dict[str, Any], *, allowed: bool
+) -> None:
+    """Only tokens of a listed client (`azp`, else `client_id`) mint keys."""
+    # `azp: None` overrides the fixture's default with a null claim.
+    response = mint(client, issuer.token(**claims))
+    expected = HTTPStatus.CREATED if allowed else HTTPStatus.FORBIDDEN
+    assert response.status_code == expected, response.text
+
+
+def _minting(**minting: Any) -> IssuerSettings:
+    return IssuerSettings.model_validate(
+        {"issuer": ISSUER, "audience": AUDIENCE, "keyMinting": minting}
+    )
+
+
+@pytest.mark.parametrize(
+    ("auth_time", "refusal"),
+    [
+        (1000 - 60, None),
+        (1000 - 600, None),
+        (1000 - 601, "too old"),
+        (None, "no auth_time"),
+        ("900", "no auth_time"),
+        (True, "no auth_time"),
+    ],
+)
+def test_mint_max_auth_age(auth_time: Any, refusal: str | None) -> None:
+    """With `maxAuthAge`, minting needs a login at most that many seconds ago."""
+    claims = {"azp": LOGIN} | ({} if auth_time is None else {"auth_time": auth_time})
+    principal = Principal(issuer=ISSUER, subject="alice", via="oidc", claims=claims)
+    issuer = _minting(clients=[LOGIN], maxAuthAge=600)
+    result = mint_refusal(principal, issuer, now=1000)
+    if refusal is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert refusal in result
+
+
+def test_mint_without_issuer_settings() -> None:
+    """An issuer that isn't configured (any more) can't mint."""
+    principal = Principal(
+        issuer=ISSUER, subject="alice", via="oidc", claims={"azp": LOGIN}
+    )
+    assert mint_refusal(principal, None, now=0) is not None
+    assert mint_refusal(principal, _minting(clients=[LOGIN]), now=0) is None
+
+
+@pytest.mark.parametrize(
+    "minting",
+    [
+        {"clients": []},
+        {"clients": [""]},
+        {"clients": [LOGIN], "maxAuthAge": 0},
+        {"clients": [LOGIN], "other": 1},
+    ],
+    ids=["no-clients", "empty-client", "zero-age", "unknown-key"],
+)
+def test_key_minting_settings_invalid(minting: dict[str, Any]) -> None:
+    """`keyMinting` needs at least one client id and a positive age."""
+    with pytest.raises(ValueError, match="keyMinting|clients|maxAuthAge|other"):
+        _minting(**minting)
 
 
 def test_key_cannot_manage_keys(client: TestClient, issuer: Issuer) -> None:
@@ -549,12 +679,13 @@ def test_list_and_revoke_own_only(client: TestClient, issuer: Issuer) -> None:
 @pytest.mark.parametrize(
     "headers",
     [
-        bearer("poi_" + "x" * 43),
+        bearer(new_key()),
         bearer("poi_short"),
-        bearer("poi_" + "x" * 42 + "."),
-        basic("x", "poi_" + "x" * 43),
+        bearer("poi_" + "x" * 48 + "."),
+        bearer("poi_" + "x" * 49),
+        basic("x", new_key()),
     ],
-    ids=["unknown", "short", "dot", "basic-unknown"],
+    ids=["unknown", "short", "dot", "bad-checksum", "basic-unknown"],
 )
 def test_unknown_key_is_401(client: TestClient, headers: dict[str, str]) -> None:
     """A `poi_` credential that isn't a stored key is a 401."""
@@ -566,6 +697,7 @@ def test_unknown_key_is_401(client: TestClient, headers: dict[str, str]) -> None
 def test_malformed_key_skips_database(client: TestClient, table: KeyTable) -> None:
     """A credential that can't be a key is refused without a lookup."""
     client.get(TASKS, headers=bearer("poi_short"))
+    client.get(TASKS, headers=bearer(new_key()[:-1] + "0"))
     assert table.lookups == 0
 
 
