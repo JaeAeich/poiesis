@@ -3,7 +3,8 @@
 Workflow engines read one credential when they start and use it for the
 whole run. Give them a Poiesis [API key](../deploy/api-keys.md), not an
 access token: a token expires within the hour, a key lasts as long as
-you minted it for (30 days by default).
+you minted it for (7 days by default, if your operator turned keys
+on).
 
 Mint a key first, from the Swagger UI at `<API URL>/docs` or with
 `curl` (see [Minting a key](../deploy/api-keys.md#minting-a-key)), and

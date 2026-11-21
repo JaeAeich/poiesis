@@ -176,13 +176,14 @@ auth:
   issuers: []
   # Poiesis API keys (`poi_...`) for clients that outlive an access token,
   # such as workflow engines. Owners mint them at POST /poiesis/v1/api-keys
-  # with an OIDC token; see the "API keys" docs page.
+  # with an OIDC token; see the "API keys" docs page. Off by default: an
+  # add-on for clients that can't refresh tokens.
   apiKeys:
-    enabled: true
+    enabled: false
     # Lifetime when the minting request names none, and the most it may
     # ask for: `<n>d` or `<n>h`. A key's claims are a snapshot from
     # minting, so changes at the IdP reach it only when it expires.
-    defaultTtl: 30d
+    defaultTtl: 7d
     maxTtl: 90d
     # Active (not revoked, not expired) keys an owner may hold.
     maxPerOwner: 20

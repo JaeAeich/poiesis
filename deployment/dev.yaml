@@ -456,7 +456,7 @@ data:
       "audience": "poiesis",
       "keyMinting": {"clients": ["poiesis-cli"]}}]
   POIESIS_AUTH_API_KEYS_ENABLED: "true"
-  POIESIS_AUTH_API_KEYS_DEFAULT_TTL: 30d
+  POIESIS_AUTH_API_KEYS_DEFAULT_TTL: 7d
   POIESIS_AUTH_API_KEYS_MAX_TTL: 90d
   POIESIS_AUTH_API_KEYS_MAX_PER_OWNER: "20"
   # Swagger UI login (/docs). The browser fetches the issuer's discovery

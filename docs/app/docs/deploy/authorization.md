@@ -129,7 +129,10 @@ retries) and allows only on `200` with `{"decision": true}`.
 - `subject.properties.via` names how the caller authenticated: `oidc`
   for an access token, `apikey` for an [API key](./api-keys.md).
   `credential_id` identifies the credential when there is one: the
-  token's `jti`, or the key's id. For a key, `iss`, `sub`, `client_id`
+  token's `jti`, or the key's id. For a key, `key_age` and
+  `snapshot_age` give the seconds since it was minted (the snapshot is
+  taken then), so a policy can refuse old keys or stale claims. For a
+  key, `iss`, `sub`, `client_id`
   and `claims` come from the snapshot of the minting token (see
   [Deprovisioning lag](./api-keys.md#deprovisioning-lag)), so a
   policy written for tokens applies to keys unchanged; `scope` is the

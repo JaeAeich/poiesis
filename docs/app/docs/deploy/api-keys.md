@@ -20,11 +20,14 @@ For engine settings (Nextflow, Snakemake, cwl-tes, py-tes), see
 
 ## Configuration
 
+API keys are **off by default**: they are an add-on for clients that
+can't refresh tokens. Turn them on, and set the limits:
+
 ```yaml
 auth:
   apiKeys:
-    enabled: true      # POIESIS_AUTH_API_KEYS_ENABLED
-    defaultTtl: 30d    # POIESIS_AUTH_API_KEYS_DEFAULT_TTL
+    enabled: true      # POIESIS_AUTH_API_KEYS_ENABLED (default false)
+    defaultTtl: 7d     # POIESIS_AUTH_API_KEYS_DEFAULT_TTL
     maxTtl: 90d        # POIESIS_AUTH_API_KEYS_MAX_TTL
     maxPerOwner: 20    # POIESIS_AUTH_API_KEYS_MAX_PER_OWNER
 ```
@@ -264,6 +267,7 @@ What protects keys:
 | Key extends itself | Keys can't mint, list or revoke keys |
 | Stolen token turned into a long-lived key | Only `keyMinting.clients` may mint, optionally only shortly after a login (`maxAuthAge`); delegated tokens can't |
 | Distrusted issuer | Removing it from `auth.issuers` disables its keys |
+| Stale claims | The decision service gets `key_age` and `snapshot_age` and may refuse old keys |
 | Key committed to a repository | The `poi_` prefix and checksum let secret scanners find keys and confirm them without false positives; revoke what they find |
 | Junk credentials | Malformed keys and wrong checksums get `401` without a database lookup |
 
