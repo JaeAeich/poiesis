@@ -175,6 +175,14 @@ auth:
   #                   are raw: include the delimiter (`urn:...:vo:`).
   #                   Never applies to other issuers' tokens. Unset: all
   #                   of the issuer's tokens are admitted.
+  #   admin           Built-in admin rule for this issuer's tokens:
+  #                   {name, values, prefixes}, matched like requiredClaim.
+  #                   Applies only without a decision service (with one,
+  #                   admin is its policy and this is ignored, with a
+  #                   startup WARNING). Admins may list and revoke any
+  #                   owner's API keys (offboarding), and with
+  #                   authz.adminRead also list, get and cancel every
+  #                   task. Never applies to delegated tokens.
   #   actors          Actors (RFC 8693 `act.sub`, e.g. a gateway's client
   #                   id) whose delegated tokens of this issuer the
   #                   built-in policy accepts when there is no decision
@@ -202,6 +210,7 @@ auth:
   #       tokenTypes: [JWT]
   #       clients: [poiesis-cli, portal]
   #       requiredClaim: {name: groups, values: [/poiesis-users]}
+  #       admin: {name: groups, values: [/poiesis-admins]}
   #       keyMinting: {clients: [poiesis-cli], maxAuthAge: 600}
   #     - issuer: https://gateway.example.org
   #       audience: poiesis
@@ -259,6 +268,19 @@ authz:
   # Most owners one list scope may name; a scope with more is denied (403)
   # and logged, so a runaway policy can't build an unbounded query.
   maxOwners: 1000
+  # Give the built-in admins (auth.issuers[].admin, no decision service)
+  # read and cancel of every task: list all, get and cancel any. Off: an
+  # admin sees their own tasks only, as everyone does; task data
+  # (inputs, outputs, logs, environment) is often granted to one person.
+  # Revoking and listing others' API keys needs no adminRead.
+  adminRead: false
+
+# Audit log: one JSON object per line on the API's stdout (logger
+# `poiesis.audit`) for every task authorization outcome and API key event,
+# whatever logLevel says. Never tokens, keys or claim values. Retention is
+# your log pipeline's.
+audit:
+  enabled: true
 
 # S3-compatible storage. Optional: required only when task inputs/outputs
 # reference s3:// URLs.

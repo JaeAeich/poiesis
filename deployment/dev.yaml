@@ -453,12 +453,16 @@ data:
   # poiesis-cli logins (Swagger UI, password grant) may mint API keys;
   # the poiesis-ci service account may not. No maxAuthAge: Keycloak puts
   # no auth_time in password-grant tokens, which the docs use to mint.
+  # Members of poiesis-admins (the user admin) are built-in admins: they
+  # may list and revoke anyone's API keys. adminRead stays off, so they
+  # see their own tasks only.
   POIESIS_AUTH_ISSUERS: >-
     [{"issuer": "http://keycloak.deps.svc:8080/realms/poiesis",
       "audience": "poiesis",
       "tokenTypes": ["JWT"],
       "clients": ["poiesis-cli", "poiesis-ci"],
-      "keyMinting": {"clients": ["poiesis-cli"]}}]
+      "keyMinting": {"clients": ["poiesis-cli"]},
+      "admin": {"name": "groups", "values": ["poiesis-admins"]}}]
   POIESIS_AUTH_API_KEYS_ENABLED: "true"
   POIESIS_AUTH_API_KEYS_DEFAULT_TTL: 7d
   POIESIS_AUTH_API_KEYS_MAX_TTL: 90d

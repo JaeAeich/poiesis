@@ -131,5 +131,11 @@ data:
   POIESIS_AUTHZ_SHARING: {{ .Values.authz.sharing | default false | quote }}
   {{- /* int: large YAML numbers would otherwise render as 1e+06. */}}
   POIESIS_AUTHZ_MAX_OWNERS: {{ .Values.authz.maxOwners | default 1000 | int | quote }}
+  POIESIS_AUTHZ_ADMIN_READ: {{ .Values.authz.adminRead | default false | quote }}
+
+  # ---- Audit log ---------------------------------------------------------------
+  {{- /* hasKey, not default: `default true` would turn an explicit false on. */}}
+  {{- $audit := .Values.audit | default dict }}
+  POIESIS_AUDIT_ENABLED: {{ (hasKey $audit "enabled" | ternary $audit.enabled true) | quote }}
 
   LOG_LEVEL: {{ .Values.logLevel | quote }}
