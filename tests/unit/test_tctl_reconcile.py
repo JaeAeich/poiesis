@@ -32,15 +32,28 @@ T2 = "00000000-0000-4000-8000-000000000002"
 
 
 def job(task_id: str, age: float = 60, **status: Any) -> dict[str, Any]:
-    """A task Job created `age` seconds ago."""
+    """A task Job created `age` seconds ago, with a time limit of 3600 s."""
     return {
         "metadata": {
             "name": f"task-{task_id}",
             "labels": {"poiesis.io/task": task_id},
             "creation_timestamp": datetime.now(UTC) - timedelta(seconds=age),
         },
+        "spec": {"active_deadline_seconds": 3600},
         "status": status,
     }
+
+
+def deadline(condition: str = "Failed") -> list[dict[str, Any]]:
+    """The conditions of a Job whose time limit ran out."""
+    return [
+        {
+            "type": condition,
+            "status": "True",
+            "reason": "DeadlineExceeded",
+            "message": "Job was active longer than specified deadline",
+        }
+    ]
 
 
 def pod(task_id: str, phase: str = "Running", **status: Any) -> dict[str, Any]:
@@ -83,6 +96,12 @@ class World:
         monkeypatch.setattr(tctl.state_db, "write_terminal_state", self.write)
         monkeypatch.setattr(tctl.state_db, "append_system_log", self.append_log)
         monkeypatch.setattr(tctl.state_db, "recorded_executor_ordinals", self.recorded)
+        #: Tasks whose executor logs were backfilled from their Pod.
+        self.backfilled: list[str] = []
+        monkeypatch.setattr(tctl, "_backfill_executor_logs", self.backfill)
+
+    async def backfill(self, _conn: Any, _core: Any, task_id: str, _pod: Any) -> None:
+        self.backfilled.append(task_id)
 
     async def non_terminal(self, _conn: Any, **_: Any) -> list[str]:
         self.calls.append("db")
@@ -237,6 +256,17 @@ class TestOrphans:
 
 class TestPodlessJobs:
     """Job-level failures end the task with their own reason (#158)."""
+
+    def test_job_past_its_time_limit_reports_it(self, world: World) -> None:
+        """The deadline ran out: the Job controller removed the Pod (#150)."""
+        world.states[T1] = TesState.RUNNING
+        world.jobs = [job(T1, age=3600, conditions=deadline())]
+        world.tick()
+        assert world.writes == {T1: (TesState.SYSTEM_ERROR, "DeadlineExceeded")}
+        assert world.system_logs[T1] == [
+            "task exceeded its time limit of 3600 seconds"
+        ]
+        assert world.deleted == []
 
     def test_failed_job_reports_its_reason(self, world: World) -> None:
         """Any other failure keeps the Job's own reason and message."""
@@ -450,6 +480,14 @@ class TestPendingTimeout:
         assert world.writes == {}
         assert world.deleted == []
 
+    def test_unschedulable_pod_ends_at_the_time_limit(self, world: World) -> None:
+        """The Job's deadline is what ends the wait by default."""
+        world.states[T1] = TesState.QUEUED
+        world.jobs = [job(T1, age=3600, conditions=deadline("FailureTarget"))]
+        world.pods = [unscheduled(T1, age=3600)]
+        world.tick()
+        assert world.writes == {T1: (TesState.SYSTEM_ERROR, "DeadlineExceeded")}
+
     def test_unschedulable_timeout(self, world: World) -> None:
         """Set: counted from the Pod's creation, with the scheduler's message."""
         world.states[T1] = TesState.QUEUED
@@ -512,6 +550,55 @@ class TestPendingTimeout:
         world.pods = [pod(T1, "Pending")]
         world.tick()
         assert world.writes == {}
+
+
+class TestTimeLimit:
+    """A Pod killed by the Job's time limit ends with that cause (#150)."""
+
+    def killed(self, phase: str, **metadata: Any) -> dict[str, Any]:
+        """A Pod whose executor was stopped by SIGKILL."""
+        killed = pod(
+            T1,
+            phase,
+            init_container_statuses=[
+                {
+                    "name": "exec-0",
+                    "state": {"terminated": {"exit_code": 137, "reason": "Error"}},
+                }
+            ],
+        )
+        killed["metadata"] |= metadata
+        return killed
+
+    def test_failed_pod_of_a_job_past_its_deadline(self, world: World) -> None:
+        """Not EXECUTOR_ERROR exit 137: the time limit is the cause."""
+        world.states[T1] = TesState.RUNNING
+        world.jobs = [job(T1, age=3600, conditions=deadline())]
+        world.pods = [self.killed("Failed")]
+        world.tick()
+        assert world.writes == {T1: (TesState.SYSTEM_ERROR, "DeadlineExceeded")}
+        assert world.system_logs[T1] == [
+            "task exceeded its time limit of 3600 seconds"
+        ]
+        assert world.backfilled == [T1]
+        assert world.deleted == []
+
+    def test_terminating_pod_of_a_job_past_its_deadline(self, world: World) -> None:
+        """Newer clusters set `FailureTarget` while the Pod still stops."""
+        world.states[T1] = TesState.RUNNING
+        world.jobs = [job(T1, age=3600, conditions=deadline("FailureTarget"))]
+        world.pods = [self.killed("Running", deletion_timestamp=NOW)]
+        world.tick()
+        assert world.writes == {T1: (TesState.SYSTEM_ERROR, "DeadlineExceeded")}
+
+    def test_failed_pod_of_a_live_job_is_classified_from_its_containers(
+        self, world: World
+    ) -> None:
+        world.states[T1] = TesState.RUNNING
+        world.jobs = [job(T1)]
+        world.pods = [self.killed("Failed")]
+        world.tick()
+        assert world.writes[T1][0] is TesState.EXECUTOR_ERROR
 
 
 @needs_postgres

@@ -506,6 +506,8 @@ def extract_job_failure(job: Mapping[str, Any]) -> tuple[bool, str | None]:
     a `Complete` or `Failed` condition; `failure` is the `Failed`
     condition's `reason: message` (e.g. `BackoffLimitExceeded: Job has
     reached the specified backoff limit`), None for a Job that didn't fail.
+    A Job past its time limit fails too; `job_deadline_terminal` gives it
+    its own state and log line, so callers check that first.
     """
     finished = False
     for cond in (job.get("status") or {}).get("conditions") or []:

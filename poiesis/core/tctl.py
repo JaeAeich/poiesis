@@ -16,6 +16,9 @@ Cases the reconciler covers:
     backfill any executor_logs trec didn't get to before its own
     sidecar SIGTERM (with the tail of each executor's log as stdout),
     append a system_logs entry describing the failure.
+    * Job past its time limit (`DeadlineExceeded`) → SYSTEM_ERROR with
+    "task exceeded its time limit", whether its Pod is gone, finished or
+    still terminating; the killed executor's exit code is not the cause.
     * Pod bound to a node but stuck in `Pending` past
     `_PENDING_TIMEOUT_SECONDS` (image pull, volume mount) → SYSTEM_ERROR
     with the kubelet's pending reason in system_logs.
@@ -81,6 +84,7 @@ from poiesis.core.pod_status import (
     extract_unschedulable_message,
     filer_failure_log,
     is_lifecycle_stop,
+    job_deadline_terminal,
     pod_terminated_terminal,
 )
 from poiesis.core.taskpod import job_name_for
@@ -280,6 +284,7 @@ async def _reconcile_once(
             pod_dict,
             task_id,
             now,
+            job=jobs.get(task_id),
             unschedulable_timeout=unschedulable_timeout,
         )
 
@@ -329,10 +334,31 @@ async def _reconcile_pod(
     task_id: str,
     now: datetime,
     *,
+    job: Mapping[str, Any] | None = None,
     unschedulable_timeout: float | None = None,
 ) -> None:
-    """Apply terminal state for one pod when its phase warrants it."""
+    """Apply terminal state for one pod when its phase warrants it.
+
+    The Job is read first: when its time limit ran out, the Job controller
+    kills the Pod, whose containers then show only a signal's exit code
+    (137, 143). The task ends with the time limit as its cause instead.
+    """
     phase = ((pod.get("status") or {}).get("phase") or "").lower()
+
+    deadline = job_deadline_terminal(job) if job is not None else None
+    if deadline is not None:
+        proposed, reason, line = deadline
+        await _apply_terminal(
+            pool,
+            core_v1=core_v1,
+            task_id=task_id,
+            pod=pod,
+            proposed=proposed,
+            reason=reason,
+            system_logs=[line],
+            source="job-deadline",
+        )
+        return
 
     if phase in {"succeeded", "failed"}:
         pod_reason = extract_terminal_reason(pod)
@@ -394,6 +420,21 @@ async def _reconcile_podless_job(
     """
     if _being_deleted(job):
         return False
+
+    deadline = job_deadline_terminal(job)
+    if deadline is not None:
+        proposed, reason, line = deadline
+        await _apply_terminal(
+            pool,
+            core_v1=None,
+            task_id=task_id,
+            pod=None,
+            proposed=proposed,
+            reason=reason,
+            system_logs=[line],
+            source="job-deadline",
+        )
+        return True
 
     finished, failure = extract_job_failure(job)
     if failure is not None:

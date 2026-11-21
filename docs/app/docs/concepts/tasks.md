@@ -155,7 +155,7 @@ stops the sidecar last, and TRec exits 0 on `SIGTERM`.
     { f: 'api', t: 'db', label: 'QUEUED', cap: 'CreateTask stores the task as QUEUED, then submits a Job and a volume owned by it.' },
     { f: 'trec', t: 'db', label: 'RUNNING', cap: 'trec writes RUNNING when it starts, before inputs are staged, and executor logs as each one ends.' },
     { f: 'tctl', t: 'db', label: 'COMPLETE', tone: 'ok', cap: 'Polling every 5 s, tctl sees the Pod Succeeded and writes the final state. trec never does.' },
-    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a failed tif or tof, a scheduled Pod still Pending after 5 minutes, a Job or Pod that vanished.' }
+    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a failed tif or tof, the time limit, a scheduled Pod still Pending after 5 minutes, a Job or Pod that vanished.' }
   ]
 }" />
 
@@ -177,9 +177,12 @@ taskpods:
 
 The clock starts when the Job is created, so time spent waiting for a
 node, pulling images and staging inputs counts. When it runs out,
-Kubernetes fails the Job and deletes the Pod, and the task fails,
-normally as `SYSTEM_ERROR` with `Job failed: DeadlineExceeded`:
-[TCtl](./architecture.md#tctl) finds the failed Job without a Pod.
+Kubernetes stops the Pod and marks the Job failed with reason
+`DeadlineExceeded`. [TCtl](./architecture.md#tctl) reads that from the
+Job and ends the task as `SYSTEM_ERROR` with reason `DeadlineExceeded`
+and "task exceeded its time limit of N seconds" in `system_logs`,
+whether the Pod is already gone, `Failed` or still stopping. The killed
+executor's exit code (137 or 143) is not reported as the cause.
 
 A new value applies to tasks created after the API restarts with it;
 tasks that already have a Job keep the limit they were created with.

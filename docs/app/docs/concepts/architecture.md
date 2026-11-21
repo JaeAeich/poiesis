@@ -56,15 +56,21 @@ release namespace, also when `taskpods.namespace` puts the tasks
 elsewhere; if a Lease call fails, TCtl logs it and tries again 10
 seconds later without reconciling. Every 5 seconds the
 leader reads the non-terminal tasks from Postgres, then lists the Jobs
-and Pods labelled `poiesis.io/task`. It has six jobs:
+and Pods labelled `poiesis.io/task`. It has seven jobs:
 
 - **Phase reconciliation**: a `Succeeded` Pod becomes `COMPLETE`; a
-  `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, deadline,
-  a failed `tif` or `tof`) or `EXECUTOR_ERROR` (any other failure, and
-  a declared output the executors didn't produce). A failed filer's
-  cause, read from its termination message, goes to `system_logs`; see
+  `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, a failed
+  `tif` or `tof`) or `EXECUTOR_ERROR` (any other failure, and a declared
+  output the executors didn't produce). A failed filer's cause, read
+  from its termination message, goes to `system_logs`; see
   [Staging failures](./storage.md#staging-failures). Executors TRec
   didn't record get their `executor_logs` rows here, output included.
+- **Time limit**: when the Job's `Failed` (or `FailureTarget`) condition
+  says `DeadlineExceeded`, the task becomes `SYSTEM_ERROR` with reason
+  `DeadlineExceeded` and "task exceeded its time limit of N seconds" in
+  `system_logs`. TCtl reads the Job first, so this holds whether the Pod
+  is gone, `Failed`, still stopping or never scheduled; the exit code of
+  the killed executor (137, 143) is not taken as the cause.
 - **Missing-pod reconciliation**: a non-terminal task that has neither
   a Job nor a Pod on every pass for 30 seconds becomes `SYSTEM_ERROR`
   ("Pod disappeared before reaching terminal phase"). TCtl times the 30
@@ -72,10 +78,9 @@ and Pods labelled `poiesis.io/task`. It has six jobs:
   whose Job exists is not missing, whether or not the Job has a Pod yet.
   Cancelled tasks delete the Job, so their Pod vanishes too; `CANCELING`
   takes precedence, so they land as `CANCELED`.
-- **Jobs without a Pod**: a failed Job whose Pod is gone (the deadline
-  ran out, or the Pod was deleted or lost with its node) becomes
-  `SYSTEM_ERROR` with the Job's reason, such as `Job failed:
-  DeadlineExceeded`. A live Job that
+- **Jobs without a Pod**: a failed Job whose Pod is gone (the Pod was
+  deleted or lost with its node) becomes `SYSTEM_ERROR` with the Job's
+  reason, such as `Job failed: BackoffLimitExceeded`. A live Job that
   has created no Pod yet (a ResourceQuota is full, an admission webhook
   rejects the Pod) keeps its task `QUEUED`: see below.
 - **Pending timeout**: a Pod bound to a node but still `Pending` 5
