@@ -1,0 +1,7 @@
+{
+  "cpu-over-max": "resources.cpu_cores=33 exceeds the operator-configured maximum of 32. Ask your administrator to raise taskpods.resources.maxCpuCores or reduce the request.",
+  "gpu-over-max": "resources.backend_parameters.gpu_count=5 exceeds the operator-configured maximum of 4. Ask your administrator to raise taskpods.gpu.maxCount or reduce the request.",
+  "ram-over-max": "resources.ram_gb=256.5 exceeds the operator-configured maximum of 256 GB. Ask your administrator to raise taskpods.resources.maxRamGb or reduce the request.",
+  "strict-not-allowed": "resources.backend_parameters contains unsupported keys under backend_parameters_strict=true: ['gpu_count']",
+  "strict-unsupported-values": "resources.backend_parameters contains unsupported values under backend_parameters_strict=true: gpu_count='-1', node_pool='nope', priority_class='system-node-critical'"
+}

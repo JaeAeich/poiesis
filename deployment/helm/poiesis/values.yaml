@@ -630,7 +630,8 @@ taskpods:
   # Requests and limits of the poiesis-owned TaskPod containers. Needed when
   # the TaskPod namespace has a ResourceQuota on cpu or memory and no
   # LimitRange: Kubernetes then rejects Pods with containers that set none.
-  # Executors get theirs from the task's TES `resources`. Your values merge
+  # Executors get theirs from the task's TES `resources` (see `resources`
+  # below). Your values merge
   # with these defaults key by key; null (e.g. `ack: null`) leaves that
   # container without requests or limits. Invalid values stop the API at
   # startup.
@@ -663,6 +664,63 @@ taskpods:
       limits:
         cpu: 100m
         memory: 256Mi
+
+  # Requests and limits of the executor containers, from the task's TES
+  # resources.cpu_cores and ram_gb. Memory: request = limit = ram_gb (read
+  # as GiB). CPU: request = cpu_cores, and the same limit unless cpuLimit is
+  # false. Executors run one after another, so each gets the full amount and
+  # Kubernetes schedules the Pod on that, not on the sum.
+  resources:
+    # Used when a task sets no cpu_cores / ram_gb. null: no request or limit
+    # (the executor may use what the node has).
+    defaultCpuCores: null
+    defaultRamGb: null
+    # A task asking for more gets HTTP 400 at submit. null: no maximum.
+    maxCpuCores: null
+    maxRamGb: null
+    # false sets CPU requests only, for clusters that avoid CPU limits
+    # (throttling). Memory always gets a limit.
+    cpuLimit: true
+
+  # Scheduling of every TaskPod. Unrelated to the top-level nodeSelector /
+  # tolerations / affinity, which place the API and tctl. imagePullSecrets
+  # (top level) already reach TaskPods.
+  nodeSelector: {}
+  tolerations: []
+  # A task's TES zones are added to affinity as a required node affinity on
+  # topology.kubernetes.io/zone, added to each of your required terms.
+  affinity: {}
+  priorityClassName: ""
+  runtimeClassName: ""
+
+  # Node selector and tolerations added for tasks with TES preemptible: true,
+  # e.g. {nodeSelector: {cloud.google.com/gke-spot: "true"}, tolerations: [...]}.
+  # Empty: preemptible is ignored (TES lets a backend do that).
+  preemptible:
+    nodeSelector: {}
+    tolerations: []
+
+  # GPUs a task asks for with backend_parameters.gpu_count: a limit of that
+  # many on this resource, on each executor. A task over maxCount gets a 400.
+  gpu:
+    resourceName: nvidia.com/gpu
+    maxCount: null
+
+  # TES backend_parameters honoured. Keys not listed are ignored, or a 400
+  # under backend_parameters_strict. They are listed in GET /service-info
+  # (tesResources_backend_parameters). Known keys:
+  #   gpu_count       whole number of GPUs (see gpu above)
+  #   priority_class  one of priorityClasses below; overrides priorityClassName
+  #   node_pool       a key of nodePools below; adds its nodeSelector and
+  #                   tolerations
+  backendParameters:
+    allowed: []
+    priorityClasses: []
+    nodePools: {}
+    # highmem:
+    #   nodeSelector: {pool: highmem}
+    #   tolerations:
+    #     - {key: highmem, operator: Exists, effect: NoSchedule}
 
   # Operator-supplied TaskPod extensions. Append to every per-task pod.
   #

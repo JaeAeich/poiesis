@@ -20,13 +20,13 @@ happens.
 
 ## The containers
 
-| Container | Kind | Does |
-| --- | --- | --- |
-| `trec` | Native sidecar | Watches its own Pod, marks the task `INITIALIZING`, then `RUNNING` when the first executor starts, and writes executor logs to Postgres. |
-| `tif` | Init | Stages `inputs` onto the volume: `s3://`, `http(s)://`, inline `content`, then creates the task's [directories](./task-volumes.md#task-paths) that have no mount of their own. Only if the task has inputs or such directories. |
-| `exec-0` … `exec-N` | Init | Your executors, in order, in your images. |
-| `tof` | Init | Uploads `outputs` from the volume: `s3://`, `http(s)://`. Only if the task has outputs. |
-| `ack` | Main | Exits 0 so the Pod reaches `Succeeded`. Reuses the Poiesis image, so no second image pull. |
+| Container           | Kind           | Does                                                                                                                                                                                                                            |
+| ------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trec`              | Native sidecar | Watches its own Pod, marks the task `INITIALIZING`, then `RUNNING` when the first executor starts, and writes executor logs to Postgres.                                                                                        |
+| `tif`               | Init           | Stages `inputs` onto the volume: `s3://`, `http(s)://`, inline `content`, then creates the task's [directories](./task-volumes.md#task-paths) that have no mount of their own. Only if the task has inputs or such directories. |
+| `exec-0` … `exec-N` | Init           | Your executors, in order, in your images.                                                                                                                                                                                       |
+| `tof`               | Init           | Uploads `outputs` from the volume: `s3://`, `http(s)://`. Only if the task has outputs.                                                                                                                                         |
+| `ack`               | Main           | Exits 0 so the Pod reaches `Succeeded`. Reuses the Poiesis image, so no second image pull.                                                                                                                                      |
 
 `trec` is a native sidecar: an init container with
 `restartPolicy: Always`, a Kubernetes 1.29 feature. It starts before the
@@ -38,7 +38,7 @@ the final state: TCtl does, and backfills any executor logs TRec missed.
 ## Executors
 
 Executors run strictly in order, as init containers named `exec-{N}`.
-If executor *i* fails, executors *i+1…n* never start and the task ends
+If executor _i_ fails, executors _i+1…n_ never start and the task ends
 in `EXECUTOR_ERROR`. Data passes between executors only through the
 paths the task declares; see [Task paths](./task-volumes.md#task-paths).
 
@@ -55,6 +55,69 @@ at `/var/run/secrets/kubernetes.io/serviceaccount`, so executors, which
 run user images, can't call the Kubernetes API.
 
 </Callout>
+
+## Resources and scheduling
+
+A task's `resources` become the Pod's requests, limits and placement.
+Nothing here changes the TES fields; `backend_parameters` keys are an
+extension the operator turns on.
+
+| TES field                           | What Kubernetes gets                                                                                                                           |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cpu_cores`                         | Each executor: `requests.cpu` = `cpu_cores`, and `limits.cpu` the same unless the operator sets `taskpods.resources.cpuLimit: false`.          |
+| `ram_gb`                            | Each executor: `requests.memory` = `limits.memory` = `ram_gb`, read as GiB and rounded up to whole MiB (`8` → `8Gi`, `0.5` → `512Mi`).         |
+| `disk_gb`                           | The size of the [task volume](./task-volumes.md).                                                                                              |
+| `zones`                             | A required node affinity: `topology.kubernetes.io/zone` `In` the zones.                                                                        |
+| `preemptible: true`                 | The operator's `taskpods.preemptible` node selector and tolerations. Ignored when none is configured, which TES allows ("may have no effect"). |
+| `backend_parameters.gpu_count`      | Each executor: `limits.<taskpods.gpu.resourceName>` = the count (`nvidia.com/gpu` by default).                                                 |
+| `backend_parameters.priority_class` | `priorityClassName`, if it is in `taskpods.backendParameters.priorityClasses`.                                                                 |
+| `backend_parameters.node_pool`      | The node selector and tolerations of that entry of `taskpods.backendParameters.nodePools`.                                                     |
+
+Executors run one after another, as init containers, so each gets the
+task's full cpu and memory. Kubernetes schedules the Pod on the largest
+init container's request (plus trec, the sidecar), not on the sum over
+executors: an 8-core task with three executors needs a node with 8 free
+cores, not 24. tif, tof, trec and ack have their own resources
+(`taskpods.systemResources`).
+
+When a task sets no `cpu_cores` or `ram_gb`, the operator's
+`taskpods.resources.defaultCpuCores` and `defaultRamGb` apply; unset,
+the executor gets no request or limit and may use what the node has.
+A task over `maxCpuCores`, `maxRamGb` or `taskpods.gpu.maxCount` gets a
+`400` at submit, before anything is created.
+
+An executor that uses more memory than its limit is killed by the
+kernel (`OOMKilled`). The task ends `EXECUTOR_ERROR`, with a
+`system_logs` line such as `container exec-0 OOMKilled: the executor
+exceeded its memory limit of 8Gi (resources.ram_gb)`. Ask for more
+`ram_gb`. An OOMKill of tif, tof, trec or ack is a `SYSTEM_ERROR`.
+
+`zones` are a hard constraint: a zone with no free node leaves the Pod
+`Pending`, and the task `QUEUED` until the [time limit](#time-limit) or
+`tctl.unschedulableTimeoutSeconds` ends it.
+
+### Backend parameters
+
+Only the keys in `taskpods.backendParameters.allowed` are honoured
+(none by default), and `GET /service-info` lists them in
+`tesResources_backend_parameters`. Keys are matched without case, as
+TES says. Other keys, and values Poiesis can't honour (a `gpu_count`
+that isn't a whole number, a `priority_class` or `node_pool` the
+operator doesn't list), are ignored; with `backend_parameters_strict:
+true` they are a `400`.
+
+```json
+{
+  "resources": {
+    "cpu_cores": 8,
+    "ram_gb": 32,
+    "zones": ["europe-west4-a"],
+    "preemptible": true,
+    "backend_parameters": { "gpu_count": "1", "node_pool": "highmem" },
+    "backend_parameters_strict": true
+  }
+}
+```
 
 ## Executors that may fail
 
@@ -164,7 +227,7 @@ stops the sidecar last, and TRec exits 0 on `SIGTERM`.
     { f: 'trec', t: 'db', label: 'INITIALIZING', cap: 'trec writes INITIALIZING when it starts, while images are pulled and inputs staged.' },
     { f: 'trec', t: 'db', label: 'RUNNING', cap: 'trec writes RUNNING when the first executor starts, and executor logs as each one ends.' },
     { f: 'tctl', t: 'db', label: 'COMPLETE', tone: 'ok', cap: 'Polling every 5 s, tctl sees the Pod Succeeded and writes the final state. trec never does.' },
-    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a failed tif or tof, the time limit, a scheduled Pod still Pending after 5 minutes, a Job or Pod that vanished.' }
+    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: eviction, node loss, a failed tif or tof, the time limit, a scheduled Pod still Pending after 5 minutes, a Job or Pod that vanished.' }
   ]
 }" />
 

@@ -220,9 +220,10 @@ def test_trec_stop_does_not_hide_an_oom_kill() -> None:
     )
     reason = extract_terminal_reason(pod)
     assert reason == "OOMKilled"
-    assert pod_terminated_terminal(reason)[0] is TesState.SYSTEM_ERROR
-    assert tctl._terminal_system_logs(pod, TesState.SYSTEM_ERROR) == [
-        "container exec-0 OOMKilled"
+    assert pod_terminated_terminal(reason)[0] is TesState.EXECUTOR_ERROR
+    assert tctl._terminal_system_logs(pod, TesState.EXECUTOR_ERROR) == [
+        "container exec-0 OOMKilled: the executor ran out of memory and has no "
+        "memory limit; set resources.ram_gb"
     ]
 
 

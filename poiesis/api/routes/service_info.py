@@ -3,7 +3,8 @@
 The TES spec requires `GET /service-info`. The shape is the GA4GH
 service-info envelope plus two TES-specific extensions: `storage`
 (URI schemes the server can stage from/to) and
-`tesResources_backend_parameters` (keys the server honours).
+`tesResources_backend_parameters` (keys the server honours: those the
+operator allows in ``taskpods.backendParameters.allowed``).
 
 The deployment's own fields come from `ServiceInfoSettings`
 (``POIESIS_SERVICE_INFO_*``); the values below are used where those
@@ -86,7 +87,9 @@ async def service_info(request: Request) -> TesServiceInfo:
         ),
         version=_POIESIS_VERSION,
         storage=_supported_storage_schemes(request.app.state.settings),
-        tesResources_backend_parameters=[],
+        tesResources_backend_parameters=sorted(
+            request.app.state.settings.scheduling.config().backend_parameters
+        ),
         **created,
     )
 

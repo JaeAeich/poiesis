@@ -57,7 +57,10 @@ class PodTerminationReason(Enum):
     """Why the Pod terminated, when termination is observed via the Pod object."""
 
     COMPLETED = "Completed"
+    # An executor over its memory limit; a poiesis-owned container (trec,
+    # tif, tof, ack) over its own is SYSTEM_OOM_KILLED.
     OOM_KILLED = "OOMKilled"
+    SYSTEM_OOM_KILLED = "SystemOOMKilled"
     EVICTED = "Evicted"
     NODE_LOST = "NodeLost"
     DEADLINE_EXCEEDED = "DeadlineExceeded"
@@ -327,12 +330,14 @@ def pod_terminated_terminal(
     """Map a Pod-termination reason to a terminal TES state + reason string.
 
     A failed filer (`FILER_ERROR`) is a system error: the executors didn't
-    fail, staging their inputs or outputs did.
+    fail, staging their inputs or outputs did. An executor killed for
+    exceeding its memory (`OOM_KILLED`) is an executor error: the task
+    asked for less memory than it uses (``resources.ram_gb``).
     """
     if pod_reason == PodTerminationReason.COMPLETED.value:
         return TesState.COMPLETE, None
     if pod_reason in {
-        PodTerminationReason.OOM_KILLED.value,
+        PodTerminationReason.SYSTEM_OOM_KILLED.value,
         PodTerminationReason.EVICTED.value,
         PodTerminationReason.NODE_LOST.value,
         PodTerminationReason.DEADLINE_EXCEEDED.value,
@@ -390,8 +395,10 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
     shadow the underlying error of a failed Pod.
 
     A filer (tif, tof) that failed gives `FILER_ERROR`, unless it was
-    OOMKilled, which stays that, or reported that the failure is the
-    user's (`is_filer_failure`), which leaves the container's own reason.
+    OOMKilled, or reported that the failure is the user's
+    (`is_filer_failure`), which leaves the container's own reason. An
+    OOMKilled executor gives `OOM_KILLED`, any other OOMKilled container
+    `SYSTEM_OOM_KILLED`.
     """
     status = pod.get("status") or {}
     raw_reason = status.get("reason")
@@ -412,11 +419,24 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
             continue
         if is_lifecycle_stop(status, cs.get("name") or "", terminated):
             continue
-        if is_filer_failure(cs.get("name") or "", terminated):
-            cs_reason = PodTerminationReason.FILER_ERROR.value
+        cs_reason = _failure_reason(cs.get("name") or "", terminated)
         if cs_reason:
-            return str(cs_reason)
+            return cs_reason
     return PodTerminationReason.ERROR.value
+
+
+def _failure_reason(name: str, terminated: Mapping[str, Any]) -> str | None:
+    """The task's reason for container `name`, which failed.
+
+    `FILER_ERROR` for a filer failure that is the system's, `SYSTEM_OOM_KILLED`
+    for an OOMKilled container that isn't an executor, else its own reason.
+    """
+    if is_filer_failure(name, terminated):
+        return PodTerminationReason.FILER_ERROR.value
+    reason = terminated.get("reason")
+    if reason == PodTerminationReason.OOM_KILLED.value and not _EXECUTOR_RE.match(name):
+        return PodTerminationReason.SYSTEM_OOM_KILLED.value
+    return str(reason) if reason else None
 
 
 def is_filer_failure(name: str, terminated: Mapping[str, Any]) -> bool:

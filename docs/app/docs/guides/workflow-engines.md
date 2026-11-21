@@ -4,19 +4,27 @@ description: Point Nextflow, Snakemake, Sprocket, cwl-tes, py-tes or Cromwell at
 
 # Workflow engines
 
-| Engine | Status | Checked with |
-| --- | --- | --- |
-| Nextflow (`nf-ga4gh`) | Tested | Nextflow 25.10.4, `nf-ga4gh` 1.5.0 |
-| Snakemake (TES executor) | Tested | Snakemake 9.27.2, plugin 0.1.3 |
-| py-tes | Tested | 1.1.4 |
-| Sprocket | Tested | Sprocket 0.34.1 |
-| cwl-tes | Partly tested: API key as Basic password only | main branch |
-| Cromwell | Not tested yet | |
-| Toil | Not tested yet | |
+| Engine                   | Status                                        | Checked with                       |
+| ------------------------ | --------------------------------------------- | ---------------------------------- |
+| Nextflow (`nf-ga4gh`)    | Tested                                        | Nextflow 25.10.4, `nf-ga4gh` 1.5.0 |
+| Snakemake (TES executor) | Tested                                        | Snakemake 9.27.2, plugin 0.1.3     |
+| py-tes                   | Tested                                        | 1.1.4                              |
+| Sprocket                 | Tested                                        | Sprocket 0.34.1                    |
+| cwl-tes                  | Partly tested: API key as Basic password only | main branch                        |
+| Cromwell                 | Not tested yet                                |                                    |
+| Toil                     | Not tested yet                                |                                    |
 
 Tested means real workflows ran end to end. Using another engine?
 [Open an issue](https://github.com/jaeaeich/poiesis/issues/new?title=Engine%20support%3A%20)
 or send a PR with the setup.
+
+## Resources
+
+Engines send each process's cpus and memory as TES `cpu_cores` and
+`ram_gb` (in Nextflow, the `cpus` and `memory` directives).
+Poiesis gives each executor those as requests and limits; a process
+that uses more memory is OOMKilled and ends `EXECUTOR_ERROR`. See
+[Resources and scheduling](../concepts/tasks.md#resources-and-scheduling).
 
 ## Credentials
 
@@ -32,13 +40,13 @@ keep it out of version control. The examples use
 `http://localhost:8000`, the port-forwarded
 [dev stack](../start/quickstart.md).
 
-| Engine | Bearer (preferred) | Basic (key as password) |
-| --- | --- | --- |
-| Nextflow (`nf-ga4gh`) | `tes.oauthToken` | `tes.basicUsername`, `tes.basicPassword` |
-| Snakemake (TES executor) | `--tes-token` | `--tes-user`, `--tes-password` |
-| cwl-tes | not usable (see below) | `--user`, `--password` |
-| py-tes | `HTTPClient(token=…)` | `HTTPClient(user=…, password=…)` |
-| Sprocket | `auth.type = "bearer"` | `auth.type = "basic"` |
+| Engine                   | Bearer (preferred)     | Basic (key as password)                  |
+| ------------------------ | ---------------------- | ---------------------------------------- |
+| Nextflow (`nf-ga4gh`)    | `tes.oauthToken`       | `tes.basicUsername`, `tes.basicPassword` |
+| Snakemake (TES executor) | `--tes-token`          | `--tes-user`, `--tes-password`           |
+| cwl-tes                  | not usable (see below) | `--user`, `--password`                   |
+| py-tes                   | `HTTPClient(token=…)`  | `HTTPClient(user=…, password=…)`         |
+| Sprocket                 | `auth.type = "bearer"` | `auth.type = "basic"`                    |
 
 Nextflow, Snakemake, py-tes and Sprocket were checked with both forms;
 cwl-tes with Basic only.
@@ -173,7 +181,7 @@ Things that trip runs up, none of them about the key:
   (or a mirror), or use an image where that install is a no-op.
 - When a job fails, plugin 0.1.3 tries to read
   `$GITHUB_WORKSPACE/funnel.log` and stops with `KeyError:
-  'GITHUB_WORKSPACE'`; the job's own error is in the TaskPod's logs.
+'GITHUB_WORKSPACE'`; the job's own error is in the TaskPod's logs.
 - The default `snakemake/snakemake` image is amd64-only; on arm64
   nodes pass an arm64 image with `--container-image`.
 

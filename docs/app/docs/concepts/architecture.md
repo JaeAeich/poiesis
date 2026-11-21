@@ -73,9 +73,10 @@ are skipped, except that a `CANCELING` task's Job is still deleted. It
 has these jobs:
 
 - **Phase reconciliation**: a `Succeeded` Pod becomes `COMPLETE`; a
-  `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, a failed
-  `tif` or `tof`) or `EXECUTOR_ERROR` (any other failure, and a declared
-  output the executors didn't produce). A failed filer's cause, read
+  `Failed` one `SYSTEM_ERROR` (eviction, node loss, a failed `tif` or
+  `tof`, an OOMKill of a Poiesis container) or `EXECUTOR_ERROR` (an
+  executor OOMKilled over its memory limit, any other failure, and a
+  declared output the executors didn't produce). A failed filer's cause, read
   from its termination message, goes to `system_logs`; see
   [Staging failures](./storage.md#staging-failures). Executors TRec
   didn't record get their `executor_logs` rows here, output included.
@@ -172,13 +173,13 @@ TCtl is on every path: TRec never finalises a task, clean runs included.
 
 ## Postgres
 
-| Table | Holds |
-| --- | --- |
-| `tasks` | The canonical task row, with `owner` and `groups`. |
-| `task_inputs`, `task_outputs`, `task_executors` | Typed children: a relational TES schema. |
-| `task_logs` | One row per attempt: `system_logs[]`, metadata, timestamps, and the [files `tof` uploaded](./storage.md#output-file-logs) (`outputs`). |
-| `executor_logs` | One row per executor exit: start, end, exit code, output tail. |
-| `api_keys` | [API keys](./api-keys.md): SHA-256 hashes and metadata, never keys. |
+| Table                                           | Holds                                                                                                                                  |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `tasks`                                         | The canonical task row, with `owner` and `groups`.                                                                                     |
+| `task_inputs`, `task_outputs`, `task_executors` | Typed children: a relational TES schema.                                                                                               |
+| `task_logs`                                     | One row per attempt: `system_logs[]`, metadata, timestamps, and the [files `tof` uploaded](./storage.md#output-file-logs) (`outputs`). |
+| `executor_logs`                                 | One row per executor exit: start, end, exit code, output tail.                                                                         |
+| `api_keys`                                      | [API keys](./api-keys.md): SHA-256 hashes and metadata, never keys.                                                                    |
 
 Terminal states go through `write_terminal_state`, a conditional
 `UPDATE` that requires the row to be non-terminal and gives `CANCELING`
@@ -205,11 +206,11 @@ in the chart, a Job in the dev manifest.
 
 ## Trust boundary
 
-| Surface | Enforcement |
-| --- | --- |
+| Surface       | Enforcement                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------ |
 | HTTP handlers | Every TES and API key route requires a principal. `service-info` and the resource metadata are public. |
-| Database | `tasks.owner` is stamped on every insert; reads are scoped by [authorization](./authorization.md). |
-| Workers | TRec and TCtl access the database directly, without an owner filter. |
+| Database      | `tasks.owner` is stamped on every insert; reads are scoped by [authorization](./authorization.md).     |
+| Workers       | TRec and TCtl access the database directly, without an owner filter.                                   |
 
 Workers act as the system, not on behalf of a user. They are inside the
 trust boundary; the API is where authorization applies.
