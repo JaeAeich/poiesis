@@ -251,6 +251,8 @@ out-of-band cleanup process.
 | `Volume zone mismatch` | Scheduler can't find a node in the PV's AZ |
 | `Quota exceeded` | Namespace `ResourceQuota` reached |
 | `Job submission rejected: namespace quota exceeded` | Same as above, surfaced at submit time |
+| `pending timeout: the Job created no Pod` | The Job had no Pod after 5 minutes: a `ResourceQuota` or an admission webhook rejects the Pod (see the Job's events) |
+| `job failed without a pod: <reason>` | The Job failed and its Pod is gone: `DeadlineExceeded` when the time limit ran out, `BackoffLimitExceeded` when the Pod was deleted or lost with its node |
 
 ## What this chart does NOT do
 

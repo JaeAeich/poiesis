@@ -6,9 +6,9 @@ that responsibility so there's exactly one place to debug a task stuck
 in a non-terminal state.
 
 The control loop is a polling reconciler: every `_RECONCILE_INTERVAL_SECONDS`
-the leader lists every TaskPod and every non-terminal task in the DB,
-joins them, and writes terminal state for any combination that warrants
-it. No watch, no event stream, no race between two writers.
+the leader lists every non-terminal task in the DB, then every task Job and
+TaskPod, joins them, and writes terminal state for any combination that
+warrants it. No watch, no event stream, no race between two writers.
 
 Cases the reconciler covers:
 
@@ -18,9 +18,13 @@ Cases the reconciler covers:
     append a system_logs entry describing the failure.
     * Pod stuck in `Pending` past `_PENDING_TIMEOUT_SECONDS` → SYSTEM_ERROR
     with the kubelet's pending reason in system_logs.
-    * Task non-terminal in DB but no matching live pod (and older than
-    `_ORPHAN_GRACE_SECONDS` so we don't race with brand-new tasks
-    whose pod hasn't been created yet) → SYSTEM_ERROR. The writer's
+    * Job without a Pod: a failed Job (deadline exceeded) → SYSTEM_ERROR
+    with the Job's reason; a Job that made no Pod within
+    `_PENDING_TIMEOUT_SECONDS` (ResourceQuota, admission) → SYSTEM_ERROR.
+    Until then the task waits: its Job is alive.
+    * Task non-terminal in DB with neither a live Job nor a Pod, on every
+    pass for `_ORPHAN_GRACE_SECONDS` (so we don't race with brand-new
+    tasks whose Job hasn't been created yet) → SYSTEM_ERROR. The writer's
     CANCELING-precedence rule turns this into CANCELED for cancelled
     tasks; the orphan path covers true pod-gone-without-notice cases
     (manual kubectl delete, node loss before the pod was rescheduled).
@@ -40,12 +44,13 @@ import asyncio
 import logging
 import signal
 import socket
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import asyncpg
-from kubernetes.client import CoordinationV1Api, CoreV1Api
+from kubernetes.client import BatchV1Api, CoordinationV1Api, CoreV1Api
 from kubernetes.client.exceptions import ApiException
 
 if TYPE_CHECKING:
@@ -56,6 +61,8 @@ from poiesis.core import executor_shell, ignore_error
 from poiesis.core.executor_logs import read_executor_streams, streams_from_pod
 from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.pod_status import (
+    created_at,
+    extract_job_failure,
     extract_pending_failure_reason,
     extract_terminal_reason,
     filer_failure_log,
@@ -75,8 +82,9 @@ _RECONCILE_INTERVAL_SECONDS = 5
 #: How long a TaskPod may sit in Pending before the controller times it out.
 #: Covers `ImagePullBackOff`, unbindable PVCs, no schedulable node, etc.
 _PENDING_TIMEOUT_SECONDS = 300
-#: Grace before treating a non-terminal task with no live pod as orphaned.
-#: Covers the window between API CreateTask and the kubelet observing the Pod.
+#: Grace before treating a non-terminal task with no live Job or Pod as
+#: orphaned: how long tctl must have seen it that way, by its own monotonic
+#: clock. Covers the window between the API's row insert and its Job create.
 _ORPHAN_GRACE_SECONDS = 30
 
 
@@ -99,6 +107,7 @@ async def run(
 
     coord_v1 = CoordinationV1Api()
     core_v1 = CoreV1Api()
+    batch_v1 = BatchV1Api()
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=4)
     try:
         while not cancelled.is_set():
@@ -110,6 +119,7 @@ async def run(
             logger.info("tctl: acquired lease as %s", identity)
             await _reconcile_while_leader(
                 core_v1,
+                batch_v1,
                 coord_v1,
                 pool,
                 namespace,
@@ -152,6 +162,7 @@ async def _hold_lease(
 
 async def _reconcile_while_leader(
     core_v1: CoreV1Api,
+    batch_v1: BatchV1Api,
     coord_v1: CoordinationV1Api,
     pool: asyncpg.Pool,
     namespace: str,
@@ -160,13 +171,16 @@ async def _reconcile_while_leader(
     cancelled: asyncio.Event,
 ) -> None:
     """Reconcile every `_RECONCILE_INTERVAL_SECONDS` until lease is lost."""
+    # Per leadership term: a new leader observes for a full grace period
+    # before it calls any task an orphan.
+    first_seen: dict[str, float] = {}
     while not cancelled.is_set():
         renewed = await _hold_lease(coord_v1, lease_namespace, identity)
         if not renewed:
             logger.warning("tctl: lost lease; standing down")
             return
         try:
-            await _reconcile_once(core_v1, pool, namespace)
+            await _reconcile_once(core_v1, batch_v1, pool, namespace, first_seen)
         except Exception:
             logger.exception("tctl: reconcile tick raised; will retry next interval")
         await _wait_or_cancel(cancelled, _RECONCILE_INTERVAL_SECONDS)
@@ -174,10 +188,34 @@ async def _reconcile_while_leader(
 
 async def _reconcile_once(
     core_v1: CoreV1Api,
+    batch_v1: BatchV1Api,
     pool: asyncpg.Pool,
     namespace: str,
+    first_seen: dict[str, float],
 ) -> None:
-    """One pass over all TaskPods + all non-terminal task rows."""
+    """One pass over all non-terminal task rows, task Jobs and TaskPods.
+
+    The task rows are read first, so every task considered for the orphan
+    check existed before the Jobs and Pods were listed: a slow pass can't
+    mistake a task created meanwhile for one without a Pod. `first_seen`
+    maps each non-terminal task to the monotonic time tctl first read it;
+    it is this function's memory between passes.
+    """
+    async with pool.acquire() as conn:
+        non_terminal = await state_db.list_non_terminal_task_ids(
+            cast("asyncpg.Connection", conn), older_than_seconds=0
+        )
+    observed = time.monotonic()
+    for task_id in first_seen.keys() - set(non_terminal):
+        del first_seen[task_id]
+    for task_id in non_terminal:
+        first_seen.setdefault(task_id, observed)
+
+    job_list = await asyncio.to_thread(
+        batch_v1.list_namespaced_job,
+        namespace=namespace,
+        label_selector=_TASK_LABEL,
+    )
     pod_list = await asyncio.to_thread(
         core_v1.list_namespaced_pod,
         namespace=namespace,
@@ -194,7 +232,23 @@ async def _reconcile_once(
         seen_task_ids.add(task_id)
         await _reconcile_pod(core_v1, pool, pod_dict, task_id, now)
 
-    await _reconcile_orphans(pool, seen_task_ids)
+    for job in job_list.items:
+        job_dict = job.to_dict() if hasattr(job, "to_dict") else dict(job)
+        task_id = _task_id_from_pod(job_dict)
+        if task_id is None or task_id in seen_task_ids:
+            continue
+        if await _reconcile_podless_job(pool, job_dict, task_id, now):
+            seen_task_ids.add(task_id)
+
+    await _reconcile_orphans(
+        pool,
+        [
+            task_id
+            for task_id in non_terminal
+            if task_id not in seen_task_ids
+            and observed - first_seen[task_id] >= _ORPHAN_GRACE_SECONDS
+        ],
+    )
 
 
 async def _reconcile_pod(
@@ -237,19 +291,70 @@ async def _reconcile_pod(
         )
 
 
-async def _reconcile_orphans(pool: asyncpg.Pool, seen_task_ids: set[str]) -> None:
+async def _reconcile_podless_job(
+    pool: asyncpg.Pool,
+    job: Mapping[str, Any],
+    task_id: str,
+    now: datetime,
+) -> bool:
+    """Reconcile a task Job that has no Pod; True iff the Job accounts for it.
+
+    A Job that is being deleted or has completed stands for nothing any
+    more: False leaves its task to the orphan check. A failed Job (its
+    deadline ran out and the Job controller removed the Pod) and a Job
+    that made no Pod within `_PENDING_TIMEOUT_SECONDS` (a ResourceQuota or
+    an admission webhook rejects the Pod) end the task with their own
+    reason. Any other Job is alive, and so is its task.
+    """
+    metadata = job.get("metadata") or {}
+    if metadata.get("deletion_timestamp") or metadata.get("deletionTimestamp"):
+        return False
+
+    finished, failure = extract_job_failure(job)
+    if failure is not None:
+        await _apply_terminal(
+            pool,
+            core_v1=None,
+            task_id=task_id,
+            pod=None,
+            proposed=TesState.SYSTEM_ERROR,
+            reason=f"Job failed: {failure}",
+            system_logs=[f"job failed without a pod: {failure}"],
+            source="job-failed",
+        )
+        return True
+    if finished:
+        return False
+
+    created = created_at(job)
+    if (
+        created is not None
+        and (now - created).total_seconds() > _PENDING_TIMEOUT_SECONDS
+    ):
+        await _apply_terminal(
+            pool,
+            core_v1=None,
+            task_id=task_id,
+            pod=None,
+            proposed=TesState.SYSTEM_ERROR,
+            reason="Job created no Pod",
+            system_logs=[
+                "pending timeout: the Job created no Pod "
+                "(see the Job's events: quota, admission)"
+            ],
+            source="job-no-pod",
+        )
+    return True
+
+
+async def _reconcile_orphans(pool: asyncpg.Pool, orphans: list[str]) -> None:
     """Write SYSTEM_ERROR for non-terminal tasks whose pod has disappeared.
 
-    The CANCELING precedence rule on the writer turns the proposal into
-    CANCELED for cancelled tasks; this path covers the rest (manual pod
-    delete, node loss, etc.).
+    `orphans` are the tasks with neither a live Job nor a Pod for the whole
+    grace period. The CANCELING precedence rule on the writer turns the
+    proposal into CANCELED for cancelled tasks; this path covers the rest
+    (manual pod delete, node loss, etc.).
     """
-    async with pool.acquire() as conn:
-        candidates = await state_db.list_non_terminal_task_ids(
-            cast("asyncpg.Connection", conn),
-            older_than_seconds=_ORPHAN_GRACE_SECONDS,
-        )
-    orphans = [tid for tid in candidates if tid not in seen_task_ids]
     for task_id in orphans:
         await _apply_terminal(
             pool,

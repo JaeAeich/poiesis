@@ -54,8 +54,8 @@ replicas give faster failover, not throughput. The Lease is kept in the
 release namespace, also when `taskpods.namespace` puts the tasks
 elsewhere; if a Lease call fails, TCtl logs it and tries again 10
 seconds later without reconciling. Every 5 seconds the
-leader lists the Pods labelled `poiesis.io/task` and the non-terminal
-tasks in Postgres. It has three jobs:
+leader reads the non-terminal tasks from Postgres, then lists the Jobs
+and Pods labelled `poiesis.io/task`. It has four jobs:
 
 - **Phase reconciliation**: a `Succeeded` Pod becomes `COMPLETE`; a
   `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, deadline,
@@ -64,10 +64,19 @@ tasks in Postgres. It has three jobs:
   cause, read from its termination message, goes to `system_logs`; see
   [Staging failures](./storage.md#staging-failures). Executors TRec
   didn't record get their `executor_logs` rows here, output included.
-- **Missing-pod reconciliation**: a non-terminal task older than 30
-  seconds with no Pod becomes `SYSTEM_ERROR`. Cancelled tasks delete the
-  Job, so their Pod vanishes too; `CANCELING` takes precedence, so they
-  land as `CANCELED`.
+- **Missing-pod reconciliation**: a non-terminal task that has neither
+  a Job nor a Pod on every pass for 30 seconds becomes `SYSTEM_ERROR`
+  ("Pod disappeared before reaching terminal phase"). TCtl times the 30
+  seconds on its own clock, and a new leader starts them again. A task
+  whose Job exists is not missing, whether or not the Job has a Pod yet.
+  Cancelled tasks delete the Job, so their Pod vanishes too; `CANCELING`
+  takes precedence, so they land as `CANCELED`.
+- **Jobs without a Pod**: a failed Job whose Pod is gone (the deadline
+  ran out, or the Pod was deleted or lost with its node) becomes
+  `SYSTEM_ERROR` with the Job's reason, such as `Job failed:
+  DeadlineExceeded`. A Job that has created no Pod 5 minutes after it
+  was created (a ResourceQuota or an admission webhook rejects the Pod)
+  becomes `SYSTEM_ERROR` with `Job created no Pod`.
 - **Pending timeout**: a Pod still `Pending` with a `status.startTime`
   older than 5 minutes becomes `SYSTEM_ERROR` (an image that can't be
   pulled). A Pod that is never scheduled (unbindable PVC, no fitting

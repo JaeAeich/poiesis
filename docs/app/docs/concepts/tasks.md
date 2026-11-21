@@ -177,9 +177,9 @@ taskpods:
 
 The clock starts when the Job is created, so time spent waiting for a
 node, pulling images and staging inputs counts. When it runs out,
-Kubernetes deletes the Pod and the task fails, normally as
-`SYSTEM_ERROR`: [TCtl](./architecture.md#tctl) finds the task without
-a Pod.
+Kubernetes fails the Job and deletes the Pod, and the task fails,
+normally as `SYSTEM_ERROR` with `Job failed: DeadlineExceeded`:
+[TCtl](./architecture.md#tctl) finds the failed Job without a Pod.
 
 A new value applies to tasks created after the API restarts with it;
 tasks that already have a Job keep the limit they were created with.

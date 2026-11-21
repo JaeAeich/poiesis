@@ -42,7 +42,9 @@ class Harness:
                 raise self.failures.pop(0)
             return True
 
-        async def reconcile_once(_core: Any, _pool: Any, namespace: str) -> None:
+        async def reconcile_once(
+            _core: Any, _batch: Any, _pool: Any, namespace: str, _seen: Any
+        ) -> None:
             self.reconciled.append(namespace)
             self.cancelled.set()
 
@@ -54,6 +56,7 @@ class Harness:
         monkeypatch.setattr(tctl, "_install_signal_handlers", lambda: self.cancelled)
         monkeypatch.setattr(tctl, "CoordinationV1Api", lambda: None)
         monkeypatch.setattr(tctl, "CoreV1Api", lambda: None)
+        monkeypatch.setattr(tctl, "BatchV1Api", lambda: None)
         monkeypatch.setattr(tctl.asyncpg, "create_pool", create_pool)
         monkeypatch.setattr(tctl, "_LEASE_RENEW_INTERVAL_SECONDS", 0.01)
 

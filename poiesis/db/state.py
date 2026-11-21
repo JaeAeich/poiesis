@@ -162,8 +162,9 @@ async def list_non_terminal_task_ids(
 
     Used by tctl to find orphan tasks — non-terminal rows whose pod has
     disappeared without a Succeeded/Failed transition observable to the
-    reconciler. The grace period filters out tasks the API has just
-    submitted but whose pod hasn't yet appeared in a list call.
+    reconciler. `creation_time` is stamped by the API Pod's clock, not the
+    database's, so `older_than_seconds` is no reliable grace period: tctl
+    passes 0 and times the grace itself.
     """
     rows = await conn.fetch(
         """

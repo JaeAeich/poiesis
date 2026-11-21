@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -486,6 +486,38 @@ def _timestamp(value: object) -> datetime | None:
         return datetime.fromisoformat(str(value))
     except ValueError:
         return None
+
+
+def created_at(obj: Mapping[str, Any]) -> datetime | None:
+    """`metadata.creationTimestamp` of a Pod or Job, made timezone-aware."""
+    metadata = obj.get("metadata") or {}
+    created = _timestamp(
+        metadata.get("creationTimestamp") or metadata.get("creation_timestamp")
+    )
+    if created is not None and created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    return created
+
+
+def extract_job_failure(job: Mapping[str, Any]) -> tuple[bool, str | None]:
+    """Whether a Job has finished, and why it failed if it did.
+
+    Returns `(finished, failure)`: `finished` is True once the Job carries
+    a `Complete` or `Failed` condition; `failure` is the `Failed`
+    condition's `reason: message` (e.g. `DeadlineExceeded: Job was active
+    longer than specified deadline`), None for a Job that didn't fail.
+    """
+    finished = False
+    for cond in (job.get("status") or {}).get("conditions") or []:
+        if cond.get("status") != "True":
+            continue
+        if cond.get("type") == "Failed":
+            reason = str(cond.get("reason") or "Failed")
+            message = cond.get("message")
+            return True, f"{reason}: {message}" if message else reason
+        if cond.get("type") == "Complete":
+            finished = True
+    return finished, None
 
 
 def extract_pending_failure_reason(pod: Mapping[str, Any]) -> str:
