@@ -7,16 +7,19 @@ optional except the first:
    token of a configured issuer (audience, `requiredScopes`), optionally
    enriched with userinfo, or an [API key](./api-keys.md) minted with
    one, limited to its scopes (`tasks:read`, `tasks:write`). Poiesis
-   stamps the caller's owner id (`issuer|subject`) on every task it
+   stamps the caller's owner id (`namespace|subject`) on every task it
    creates.
-2. **Claim rule** (`authz.requiredClaim`): an admission gate, "who may
-   use this service at all", checked on every TES call and on minting,
-   listing and revoking API keys (which the decision service is not
-   asked about: callers only ever manage their own keys).
+2. **Claim rule** (`auth.issuers[].requiredClaim`): an admission gate
+   per issuer, "who of this issuer may use this service at all",
+   checked on every TES call and on minting, listing and revoking API
+   keys (which the decision service is not asked about: callers only
+   ever manage their own keys).
 3. **Decision** (`authz.decisionService`): "what may this caller do".
    Without a decision service, the built-in owner rule applies: anyone
    admitted may create tasks and sees and cancels only their own, and
-   delegated tokens (with an `act` claim) are refused.
+   delegated tokens (with an `act` claim) are refused unless their actor
+   is listed in the issuer's
+   [`actors`](./authentication.md#trusted-actors).
 
 When both the rule and the decision service are set, **both must
 allow**. Everything else (entitlements, roles, admin rights, image or
@@ -28,15 +31,20 @@ start otherwise.
 
 ## Configuration
 
-Helm values map 1:1 to `POIESIS_AUTHZ_*` environment variables (lists
-are JSON arrays, since values such as group URNs may contain commas).
+The decision service's Helm values map 1:1 to
+`POIESIS_AUTHZ_DECISION_SERVICE_*` environment variables (lists are
+JSON arrays, since values such as group URNs may contain commas). Claim
+rules are set per issuer, in `auth.issuers[]` (`POIESIS_AUTH_ISSUERS`).
 
 ```yaml
+auth:
+  issuers:
+    - issuer: https://login.aai.lifescience-ri.eu/oidc/
+      audience: poiesis
+      requiredClaim:     # optional, per issuer; see "Claim rule" below
+        name: eduperson_entitlement
+        values: ["…"]    # and/or prefixes: ["…"]
 authz:
-  requiredClaim:
-    name: ""          # POIESIS_AUTHZ_REQUIRED_CLAIM_NAME; empty = off
-    values: []        # POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES
-    prefixes: []      # POIESIS_AUTHZ_REQUIRED_CLAIM_PREFIXES
   decisionService:
     url: ""           # POIESIS_AUTHZ_DECISION_SERVICE_URL; empty = owner rule
     timeout: 2        # POIESIS_AUTHZ_DECISION_SERVICE_TIMEOUT (seconds)
@@ -46,6 +54,13 @@ authz:
 
 ## Claim rule
 
+An issuer's `requiredClaim` applies to that issuer's callers only:
+its tokens, and API keys minted with them (judged on the key's claims
+snapshot). An issuer without one admits all its callers. Rules match
+(`iss`, claim, value), never the value alone: with several issuers,
+another IdP (a partner Keycloak, a gateway) that puts the same value
+into its tokens is still judged by its own rule.
+
 The rule looks up the claim `name`: the exact name first (so URI-named
 claims such as `https://example.org/groups` work), then as a dotted
 path (`realm_access.roles`); in the access token first, then in
@@ -53,32 +68,43 @@ userinfo if [userinfo](./authentication.md#user-info) is on. The caller
 is admitted if the claim is a string or a list of strings with a value
 that equals one of `values` or starts with one of `prefixes`. A missing
 claim or another type is a `403`, before any decision service call.
-Poiesis refuses to start with a name but no values or prefixes, values
-or prefixes but no name, or an empty value or prefix.
+Poiesis refuses to start (and the chart's schema refuses to install)
+with a rule without a name, without values or prefixes, or with an
+empty value or prefix.
 
 Prefixes are compared as raw strings, so include the delimiter. For
 LS Login groups, admit a group and its subgroups with the group as an
 exact value and its subgroup prefix ending in `:`:
 
 ```yaml
-authz:
-  requiredClaim:
-    name: eduperson_entitlement
-    values:
-      - "urn:geant:lifescience-ri.eu:group:example-vo#login.aai.lifescience-ri.eu"
-    prefixes:
-      - "urn:geant:lifescience-ri.eu:group:example-vo:"
+auth:
+  issuers:
+    - issuer: https://login.aai.lifescience-ri.eu/oidc/
+      audience: poiesis
+      requiredClaim:
+        name: eduperson_entitlement
+        values:
+          - "urn:geant:lifescience-ri.eu:group:example-vo#login.aai.lifescience-ri.eu"
+        prefixes:
+          - "urn:geant:lifescience-ri.eu:group:example-vo:"
 ```
 
 Without the trailing `:`, the prefix would also admit
 `…:group:example-vo2#…`.
 
-Every caller needs the claim, including service clients
-(client-credentials tokens) and callers behind a gateway such as
-proTES, which Poiesis sees as the caller. Their tokens usually carry no
-user entitlements, so they get `403`. For such deployments, leave the
-rule unset and express "entitled users or client X" in the decision
-service (e.g. by `subject.properties.client_id`).
+Every caller of the issuer needs the claim, including its service
+clients (client-credentials tokens) and callers behind a gateway such
+as proTES, which Poiesis sees as the caller. Their tokens usually carry
+no user entitlements, so they get `403`. For such deployments, leave
+the rule unset and express "entitled users or client X" in the decision
+service (e.g. by `subject.properties.client_id`), or give the gateway
+an issuer entry of its own.
+
+The global `authz.requiredClaim` of earlier versions matched the value
+whichever issuer the token came from, and is refused: the chart fails
+to render while it is set, and the API refuses to start while any
+`POIESIS_AUTHZ_REQUIRED_CLAIM_*` variable is set, naming
+`auth.issuers[].requiredClaim` as the replacement.
 
 ## Decision service
 
@@ -98,7 +124,7 @@ retries) and allows only on `200` with `{"decision": true}`.
 {
   "subject": {
     "type": "user",
-    "id": "<owner id: issuer|subject, as stamped on tasks>",
+    "id": "<owner id: namespace|subject, as stamped on tasks>",
     "properties": {
       "iss": "...", "sub": "...", "client_id": "...", "scope": ["..."],
       "via": "oidc", "credential_id": "...",
@@ -122,10 +148,14 @@ retries) and allows only on `200` with `{"decision": true}`.
   `decisionService.claims`, looked up like the claim rule's. **The
   access token is never sent.**
 - `subject.id` and `resource.properties.owner` are **opaque owner
-  ids**, today `<issuer>|<subject>` (the subject being the issuer's
+  ids**, today `<namespace>|<subject>` (the namespace being the
+  issuer's `namespace`, the issuer by default, and the subject its
   `principalClaim`, `sub` by default). Compare them with each other,
-  but don't parse them: their format may change. Use
-  `subject.properties.iss` and `sub` for identity-based rules.
+  but don't parse them: their format may change, and issuers may share
+  a namespace (see
+  [Issuer renames](./authentication.md#issuer-renames)). Use
+  `subject.properties.iss` and `sub` for identity-based rules; `iss`
+  is always the token's issuer.
 - `subject.properties.via` names how the caller authenticated: `oidc`
   for an access token, `apikey` for an [API key](./api-keys.md).
   `credential_id` identifies the credential when there is one: the
@@ -144,7 +174,9 @@ retries) and allows only on `200` with `{"decision": true}`.
   RFC 8693 `act` claim's `sub` and `iss` (default: the token's issuer).
   The subject is still the owner; your policy decides what the actor
   may do on the subject's behalf (see
-  [Delegation](./authentication.md#delegation)).
+  [Delegation](./authentication.md#delegation)). The issuer's `actors`
+  list is not sent and doesn't bind the decision service: it only
+  widens the built-in owner rule.
 - `action.name` is the TES `operationId`:
 
   | Action       | Resource                                  | Result of a deny |
@@ -207,10 +239,11 @@ restart the API pods.
 | Situation                                        | Result                       |
 | ------------------------------------------------ | ---------------------------- |
 | No or invalid token, userinfo failure            | `401`                        |
+| Token type or client not accepted by the issuer  | `401`                        |
 | Missing required scope                           | `403`                        |
 | API key without the operation's scope            | `403`                        |
-| Delegated token, no decision service             | `403`                        |
-| Claim rule fails                                 | `403` on every action        |
+| Delegated token, no decision service, actor not in `actors` | `403`             |
+| The issuer's claim rule fails                    | `403` on every action        |
 | Decision service denies create or both list sets | `403`                        |
 | Decision service denies get                      | `404`                        |
 | Decision service denies cancel                   | `403` if readable, else `404` |

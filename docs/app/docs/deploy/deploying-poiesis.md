@@ -129,6 +129,13 @@ Keycloak only answers userinfo for such tokens. User ids are fixed in
 the realm, so `sub` (and with it task ownership) survives a Keycloak
 restart.
 
+The manifest's issuer entry accepts tokens of the realm's two clients
+only (`clients: [poiesis-cli, poiesis-ci]`) and lists
+`tokenTypes: [JWT]`, since Keycloak types its access tokens `JWT`
+rather than `at+jwt` (see
+[Token type](./authentication.md#token-type)). A token of another
+client of the realm gets `401`.
+
 For browser flows (authorization code, device flow) from the host,
 make the pinned hostname resolve to the port-forward:
 
