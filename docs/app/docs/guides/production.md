@@ -21,7 +21,10 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 - Kubernetes 1.29+. The chart pins `kubeVersion: ">=1.29.0-0"`.
 - Create the Secrets first: the chart only references them, it never
   creates credentials. The database Secret holds `DATABASE_URL`; the S3
-  Secret holds `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+  Secret holds `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, plus
+  `AWS_SESSION_TOKEN` for temporary credentials.
+- TaskPods read the same Secrets by reference (`secretKeyRef`). No
+  credential value is written into a Job or Pod spec.
 - Pin `image.tag` (it defaults to the chart's `appVersion`).
 - Migrations run as a Helm hook before the API starts; give the hook
   database access.
@@ -92,6 +95,9 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 - Rate-limit at the ingress or gateway: Poiesis doesn't.
 - Split tasks into their own namespace with `taskpods.namespace` if
   you want them apart from the control plane.
+  Create the database and S3 Secrets in that namespace too: TaskPods
+  read them there, and the chart does not copy them. See
+  [`taskpods.databaseSecret`](../reference/helm-values.md#taskpods).
 
 Data-plane isolation (an input allowlist, per-task storage credentials, a
 default TaskPod NetworkPolicy) is planned

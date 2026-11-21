@@ -486,6 +486,9 @@ metadata:
 data:
   POIESIS_NAMESPACE: po
   POIESIS_TASKPOD_NAMESPACE: po
+  # TaskPods read their credentials from the Secret above, by reference.
+  POIESIS_TASKPOD_DATABASE_SECRET: poiesis
+  POIESIS_TASKPOD_S3_SECRET: poiesis
   POIESIS_IMAGE: poiesis:dev
   POIESIS_TASKPOD_SERVICE_ACCOUNT: poiesis-taskpod
   POIESIS_POD_SECURITY_ENFORCE: restricted

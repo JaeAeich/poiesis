@@ -23,6 +23,12 @@ data:
   {{- with .Values.imagePullSecrets }}
   POIESIS_IMAGE_PULL_SECRETS: {{ join "," (pluck "name" .) | quote }}
   {{- end }}
+  # Secret names, not values: the API puts secretKeyRefs to them on TaskPods.
+  POIESIS_TASKPOD_DATABASE_SECRET: {{ .Values.taskpods.databaseSecret | default .Values.database.existingSecret | quote }}
+  POIESIS_TASKPOD_DATABASE_SECRET_KEY: {{ .Values.database.existingSecretKey | quote }}
+  {{- with (.Values.taskpods.s3Secret | default .Values.s3.existingSecret) }}
+  POIESIS_TASKPOD_S3_SECRET: {{ . | quote }}
+  {{- end }}
   {{- with .Values.database.caConfigmap }}
   POIESIS_POSTGRES_CA_CONFIGMAP: {{ . | quote }}
   {{- end }}

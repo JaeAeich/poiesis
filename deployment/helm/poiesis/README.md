@@ -51,6 +51,30 @@ Full schema in `values.schema.json`. The fields most deployments customise:
 | `database.existingSecret`         | string  | Name of a pre-existing Secret holding `DATABASE_URL`. |
 | `taskpods.persistence.maxSizeGi`  | integer | Hard cap on `resources.disk_gb` from TES clients. API rejects oversized requests with HTTP 400 before any pod is created. |
 
+### TaskPod credentials (`taskpods.databaseSecret`, `taskpods.s3Secret`)
+
+The API never writes `DATABASE_URL` or the S3 keys into a Job or Pod
+spec. `trec`, `tif` and `tof` read them from Secrets by reference
+(`secretKeyRef`); executors get none of them.
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `taskpods.databaseSecret` | string | `""` | Secret in the TaskPod namespace holding `DATABASE_URL` (key: `database.existingSecretKey`). Empty = `database.existingSecret`. |
+| `taskpods.s3Secret`       | string | `""` | Secret in the TaskPod namespace holding `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and, optionally, `AWS_SESSION_TOKEN`. Empty = `s3.existingSecret`. |
+
+A Pod can only read Secrets in its own namespace. When
+`taskpods.namespace` differs from the release namespace, create both
+Secrets there too. The chart does not copy them, and TaskPods cannot
+start without them:
+
+```sh
+kubectl -n poiesis-tasks create secret generic poiesis-db \
+  --from-literal=DATABASE_URL='postgresql://...'
+kubectl -n poiesis-tasks create secret generic poiesis-s3 \
+  --from-literal=AWS_ACCESS_KEY_ID=... \
+  --from-literal=AWS_SECRET_ACCESS_KEY=...
+```
+
 ### Storage (`taskpods.persistence`)
 
 | Path | Type | Default | Description |

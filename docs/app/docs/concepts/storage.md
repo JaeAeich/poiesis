@@ -66,6 +66,27 @@ kubectl -n poiesis create secret generic poiesis-s3 \
   --from-literal=AWS_SECRET_ACCESS_KEY=…
 ```
 
+For temporary credentials, add an `AWS_SESSION_TOKEN` key. It is optional.
+
+`trec`, `tif` and `tof` read these keys from the Secret by reference
+(`secretKeyRef`), so the values are not in the Job or Pod spec. Executors
+do not get them. The endpoint and region are not secret and are set as
+plain values.
+
+A Pod can only read Secrets in its own namespace. If `taskpods.namespace`
+is not the release namespace, create the Secret there as well; the chart
+does not copy it. Use `taskpods.s3Secret` if it has a different name in
+the task namespace:
+
+```yaml
+taskpods:
+  namespace: poiesis-tasks
+  s3Secret: poiesis-s3 # default: s3.existingSecret
+```
+
+If the Secret is missing in the task namespace, no TaskPod can start, not
+only the ones that use `s3://`.
+
 On EKS, leave `existingSecret` empty and give the service accounts an IAM
 role through IRSA instead:
 
