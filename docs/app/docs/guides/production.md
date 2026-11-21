@@ -68,6 +68,12 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
     free connection, then gets a 503 with `Retry-After`. Raise `maxSize`
     if clients see that under normal load; add replicas if Postgres has
     room.
+- `/readyz` fails only when Postgres doesn't answer. A replica whose
+  pool is full stays ready: under a load that fills every pool, failing
+  it would take all replicas out of the Service at once. Clients get
+  503 with `Retry-After` instead. A pool stuck on a Postgres that
+  stopped answering frees its connections after
+  `database.commandTimeoutSeconds`; the probe fails from then on.
 - `database.commandTimeoutSeconds` (default 30) bounds every statement
   of the API and TCtl, so a connection that stops answering fails the
   request or the TCtl pass instead of holding it.

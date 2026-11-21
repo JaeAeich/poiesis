@@ -164,7 +164,7 @@ starting. See [Service info](../guides/production.md#service-info).
 | `api.image` | `{}` | Image override (registry, repository, tag, pullPolicy), e.g. for canaries; TaskPods use the same image. |
 | `api.resources` | requests `100m`/`256Mi`, limits `1000m`/`512Mi` | Container resources. |
 | `api.probes.startup` | enabled, every 2 s, 30 failures | Startup probe. |
-| `api.probes.readiness` | enabled, every 5 s, timeout 2 s, 3 failures | Readiness probe. |
+| `api.probes.readiness` | enabled, every 5 s, timeout 2 s, 3 failures | Readiness probe (`/readyz`): fails when Postgres doesn't answer `SELECT 1` within about 1.5 s. A pool with every connection in use counts as ready. |
 | `api.probes.liveness` | enabled, every 10 s, timeout 2 s, 3 failures | Liveness probe. |
 | `api.preStopSleepSeconds` | `5` | Seconds the Pod sleeps in a preStop hook before SIGTERM, so Services and ingresses stop sending it requests first. `0` is no hook. |
 | `api.terminationGracePeriodSeconds` | `40` | Grace period. Gunicorn lets running requests finish for up to 30 s after SIGTERM; keep it at least `preStopSleepSeconds` + 30. |
