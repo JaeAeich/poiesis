@@ -27,6 +27,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!docs/app/.vitepress/theme/lib/
 lib64/
 parts/
 sdist/
