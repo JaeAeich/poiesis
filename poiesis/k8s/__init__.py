@@ -9,6 +9,6 @@ If/when we move to an async client (or to the Rust rewrite's
 `kube-rs`), this is the seam that changes.
 """
 
-from poiesis.k8s.client import K8sClient, load_config
+from poiesis.k8s.client import K8sClient, K8sRequestError, load_config
 
-__all__ = ["K8sClient", "load_config"]
+__all__ = ["K8sClient", "K8sRequestError", "load_config"]

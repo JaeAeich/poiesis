@@ -20,6 +20,11 @@ during pod teardown. The kubelet stops the sidecar once the other
 containers have ended, so on SIGTERM trec reads the Pod once more, records
 what the watch hadn't delivered yet, and exits 0 at once: the Pod, and so
 the task, ends when trec does.
+
+Trec holds no database connection between writes: each write opens one,
+retrying with backoff while Postgres can't be reached, and closes it. An
+event is marked recorded only once its write succeeded, so one that
+couldn't be written is tried again with the next Pod status.
 """
 
 from __future__ import annotations
@@ -58,6 +63,85 @@ logger = logging.getLogger(__name__)
 _LAST_STATE_TIMEOUT_SECONDS = 10
 _LAST_STATE_REQUEST_TIMEOUT = (5, 5)
 
+#: Seconds to wait between attempts to connect to Postgres; after the last
+#: one the error is raised. About a minute in all: trec then exits, and
+#: the kubelet restarts it.
+_CONNECT_BACKOFF_SECONDS = (0.5, 1, 2, 4, 8, 15, 30)
+#: Per attempt: seconds to connect, and seconds a statement may run.
+_CONNECT_TIMEOUT_SECONDS = 10
+_COMMAND_TIMEOUT_SECONDS = 30
+#: Errors that mean Postgres can't be reached right now, not a bad query
+#: or bad credentials.
+_CONNECT_ERRORS = (
+    OSError,
+    TimeoutError,
+    asyncpg.PostgresConnectionError,
+    asyncpg.OperatorInterventionError,
+    asyncpg.TooManyConnectionsError,
+)
+
+
+class _Database:
+    """Opens a Postgres connection for each write and closes it after.
+
+    So N running tasks don't hold N connections between their events.
+    Connecting is retried with backoff (`_CONNECT_BACKOFF_SECONDS`); once
+    `stop` is set, the next failure is raised at once.
+    """
+
+    def __init__(self, dsn: str, stop: asyncio.Event | None = None) -> None:
+        """Connect to `dsn`; give up retrying once `stop` is set."""
+        self._dsn = dsn
+        self._stop = stop
+
+    def until(self, stop: asyncio.Event) -> _Database:
+        """The same database, retrying only until `stop` is set."""
+        return _Database(self._dsn, stop)
+
+    async def write(
+        self,
+        statement: Callable[..., Awaitable[object]],
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Run `statement(conn, *args, **kwargs)` on a new connection."""
+        conn = await self._connect()
+        try:
+            await statement(conn, *args, **kwargs)
+        finally:
+            try:
+                await conn.close(timeout=_CONNECT_TIMEOUT_SECONDS)
+            except Exception:  # noqa: BLE001 - a dead connection is just dropped
+                conn.terminate()
+
+    async def _connect(self) -> asyncpg.Connection:
+        """Connect, retrying while Postgres can't be reached."""
+        for delay in (*_CONNECT_BACKOFF_SECONDS, None):
+            try:
+                return await asyncpg.connect(
+                    self._dsn,
+                    timeout=_CONNECT_TIMEOUT_SECONDS,
+                    command_timeout=_COMMAND_TIMEOUT_SECONDS,
+                )
+            except _CONNECT_ERRORS as exc:
+                if delay is None or (self._stop is not None and self._stop.is_set()):
+                    raise
+                logger.warning(
+                    "trec: cannot connect to Postgres (%s); retrying in %ss",
+                    type(exc).__name__,
+                    delay,
+                )
+                await self._sleep(delay)
+        raise AssertionError  # pragma: no cover - the loop returns or raises
+
+    async def _sleep(self, seconds: float) -> None:
+        """Wait `seconds`, or until `stop` is set."""
+        if self._stop is None:
+            await asyncio.sleep(seconds)
+            return
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._stop.wait(), timeout=seconds)
+
 
 async def run(
     task_id: str,
@@ -72,18 +156,13 @@ async def run(
     volume. Returns 0 on a clean exit (terminal pod or SIGTERM), 1 on an
     unrecoverable watch error.
     """
-    conn = await asyncpg.connect(dsn)
-    try:
-        await _mark_initializing(conn, task_id)
-        return await _run_until_terminal(
-            conn, task_id, pod_name, namespace, streams or {}
-        )
-    finally:
-        await conn.close()
+    db = _Database(dsn)
+    await db.write(_mark_initializing, task_id)
+    return await _run_until_terminal(db, task_id, pod_name, namespace, streams or {})
 
 
 async def _run_until_terminal(
-    conn: asyncpg.Connection,
+    db: _Database,
     task_id: str,
     pod_name: str,
     namespace: str,
@@ -92,6 +171,9 @@ async def _run_until_terminal(
     """Drive the Pod watch and apply each event to Postgres."""
     snapshot = TaskStateSnapshot()
     cancelled = _install_signal_handlers()
+    # While watching, a SIGTERM ends a wait for Postgres; the last read
+    # below then tries again within its own time budget.
+    watch_db = db.until(cancelled)
 
     core_v1 = client.CoreV1Api()
 
@@ -118,7 +200,7 @@ async def _run_until_terminal(
                     await wait_for_event
                 logger.info("trec: SIGTERM received; recording the last state")
                 await _record_last_state(
-                    conn, task_id, core_v1, pod_name, namespace, snapshot, read_output
+                    db, task_id, core_v1, pod_name, namespace, snapshot, read_output
                 )
                 logger.info("trec: exiting")
                 return 0
@@ -128,9 +210,15 @@ async def _run_until_terminal(
                 logger.warning("trec: watch stream ended unexpectedly")
                 return 1
             pod_status = (event.pod.get("status") or {}) if event.pod else {}
-            terminal = await _apply_pod_snapshot(
-                conn, task_id, pod_status, snapshot, read_output
-            )
+            try:
+                terminal = await _apply_pod_snapshot(
+                    watch_db, task_id, pod_status, snapshot, read_output
+                )
+            except _CONNECT_ERRORS:
+                if not cancelled.is_set():
+                    raise
+                # Not recorded; the last read applies it again.
+                continue
             if terminal:
                 logger.info("trec: pod reached terminal phase; exiting")
                 return 0
@@ -139,7 +227,7 @@ async def _run_until_terminal(
 
 
 async def _record_last_state(
-    conn: asyncpg.Connection,
+    db: _Database,
     task_id: str,
     core_v1: client.CoreV1Api,
     pod_name: str,
@@ -165,7 +253,7 @@ async def _record_last_state(
                 _request_timeout=_LAST_STATE_REQUEST_TIMEOUT,
             )
             status = pod.to_dict().get("status") or {}
-            await _apply_pod_snapshot(conn, task_id, status, snapshot, read_output)
+            await _apply_pod_snapshot(db, task_id, status, snapshot, read_output)
     except Exception as exc:  # noqa: BLE001 - exiting promptly matters more
         logger.warning("trec: could not record the Pod's last state: %s", exc)
 
@@ -179,7 +267,7 @@ async def _next(events: AsyncGenerator[PodEvent]) -> PodEvent | None:
 
 
 async def _apply_pod_snapshot(
-    conn: asyncpg.Connection,
+    db: _Database,
     task_id: str,
     pod_status: Mapping[str, Any],
     snapshot: TaskStateSnapshot,
@@ -189,15 +277,17 @@ async def _apply_pod_snapshot(
 
     Returns True iff the translator emitted a POD_TERMINATED event, in
     which case the caller should stop watching. The terminal *write* to
-    the tasks row is tctl's job, not trec's.
+    the tasks row is tctl's job, not trec's. An event is added to
+    `snapshot` only once written: if a write raises, that event and the
+    ones after it are emitted again from the next status.
     """
     pod_terminated = False
     events = translate(pod_status, snapshot)
     if not snapshot.running and any(e.kind in _EXECUTOR_KINDS for e in events):
-        await _mark_running(conn, task_id)
+        await db.write(_mark_running, task_id)
         object.__setattr__(snapshot, "running", True)
     for event in events:
-        await _apply_event(conn, task_id, event, read_output)
+        await _apply_event(db, task_id, event, read_output)
         _advance_snapshot(snapshot, event)
         if event.kind is EventKind.POD_TERMINATED:
             pod_terminated = True
@@ -205,7 +295,7 @@ async def _apply_pod_snapshot(
 
 
 async def _apply_event(
-    conn: asyncpg.Connection,
+    db: _Database,
     task_id: str,
     event: TaskEvent,
     read_output: ReadOutput,
@@ -220,9 +310,10 @@ async def _apply_event(
     """
     if event.kind is EventKind.EXECUTOR_FINISHED:
         if event.executor_index is not None and event.exit_code is not None:
+            # Read before connecting: no connection waits on the kubelet.
             stdout, stderr = await read_output(event.executor_index)
-            await state_db.append_executor_log(
-                conn,
+            await db.write(
+                state_db.append_executor_log,
                 task_id,
                 ordinal=event.executor_index,
                 exit_code=event.exit_code,
@@ -234,8 +325,10 @@ async def _apply_event(
         return
 
     if event.kind in _FILER_FINISHED_KINDS and (event.exit_code or 0) != 0:
-        await state_db.append_system_log(
-            conn, task_id, event.reason or _FILER_DEFAULT_REASON[event.kind]
+        await db.write(
+            state_db.append_system_log,
+            task_id,
+            event.reason or _FILER_DEFAULT_REASON[event.kind],
         )
 
 

@@ -440,6 +440,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "requests" },
     { name = "tomli" },
+    { name = "urllib3" },
     { name = "uvicorn" },
 ]
 
@@ -476,6 +477,7 @@ requires-dist = [
     { name = "pydantic" },
     { name = "requests" },
     { name = "tomli" },
+    { name = "urllib3" },
     { name = "uvicorn" },
 ]
 

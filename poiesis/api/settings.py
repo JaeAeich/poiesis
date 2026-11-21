@@ -1048,6 +1048,52 @@ def _parse_log_format_env() -> str | None:
     return raw
 
 
+class DatabaseSettings(BaseModel):
+    """The API's Postgres connection pool.
+
+    Each API replica opens up to ``pool_max_size`` connections. A request
+    waits at most ``acquire_timeout_seconds`` for a free one, then gets a
+    503; a statement that runs longer than ``command_timeout_seconds``
+    fails. Unset values keep the defaults; a bad one stops the API at
+    startup.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    pool_min_size: int = Field(
+        default_factory=lambda: (
+            _parse_int_env("POIESIS_DATABASE_POOL_MIN_SIZE", 1) or 0
+        ),
+    )
+    pool_max_size: int = Field(
+        default_factory=lambda: (
+            _parse_int_env("POIESIS_DATABASE_POOL_MAX_SIZE", 10) or 0
+        ),
+    )
+    acquire_timeout_seconds: float = Field(
+        default_factory=lambda: _parse_seconds_env(
+            "POIESIS_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS", 10
+        ),
+    )
+    command_timeout_seconds: float = Field(
+        default_factory=lambda: _parse_seconds_env(
+            "POIESIS_DATABASE_COMMAND_TIMEOUT_SECONDS", 30
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _check_sizes(self) -> DatabaseSettings:
+        """Refuse a pool that can't open a connection or whose min exceeds max."""
+        if self.pool_max_size < 1:
+            raise ValueError("POIESIS_DATABASE_POOL_MAX_SIZE must be at least 1")
+        if not 0 <= self.pool_min_size <= self.pool_max_size:
+            raise ValueError(
+                "POIESIS_DATABASE_POOL_MIN_SIZE must be between 0 and "
+                f"POIESIS_DATABASE_POOL_MAX_SIZE ({self.pool_max_size})"
+            )
+        return self
+
+
 class Settings(BaseModel):
     """API runtime settings."""
 
@@ -1057,6 +1103,7 @@ class Settings(BaseModel):
             "postgresql://postgres:postgres@localhost:5432/poiesis",
         ),
     )
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     poiesis_namespace: str = Field(
         default_factory=lambda: os.environ.get("POIESIS_NAMESPACE", "poiesis"),
     )

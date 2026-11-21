@@ -53,6 +53,18 @@ deployments customise:
 | `database.existingSecret`         | string  | Name of a pre-existing Secret holding `DATABASE_URL`. |
 | `taskpods.persistence.maxSizeGi`  | integer | Hard cap on `resources.disk_gb` from TES clients. API rejects oversized requests with HTTP 400 before any pod is created. |
 
+### Database pool (`database.pool`, `database.commandTimeoutSeconds`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `database.pool.minSize` | integer | `1` | Connections each API replica keeps open. |
+| `database.pool.maxSize` | integer | `10` | Most connections each API replica opens. |
+| `database.pool.acquireTimeoutSeconds` | integer | `10` | Seconds a request waits for a free connection; then it gets a 503 with `Retry-After`. |
+| `database.commandTimeoutSeconds` | integer | `30` | Seconds a statement of the API or TCtl may run before it fails. Also bounds a hung connection. |
+
+Postgres must allow API replicas × `maxSize` + 4 per TCtl replica + a few
+for running tasks; see the production guide.
+
 ### TaskPod credentials (`taskpods.databaseSecret`, `taskpods.s3Secret`)
 
 The API never writes `DATABASE_URL` or the S3 keys into a Job or Pod

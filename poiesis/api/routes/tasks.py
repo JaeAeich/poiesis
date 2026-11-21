@@ -36,7 +36,7 @@ from poiesis.core.taskpod import (
 from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
 from poiesis.db.tasks import ListFilters, TaskView
-from poiesis.k8s import K8sClient
+from poiesis.k8s import K8sClient, K8sRequestError
 
 _MAX_PAGE_SIZE = 2048
 _DEFAULT_PAGE_SIZE = 256
@@ -84,45 +84,58 @@ async def create_task(
     except ValueError as exc:
         raise BadRequestError(str(exc)) from exc
 
-    # Acquired only after the decision, so it never waits holding one.
+    # Acquired only after the decision, so it never waits holding one, and
+    # given back before the Kubernetes calls, so a slow API server can't
+    # drain the pool.
     async with pool.acquire() as conn:
         task_id = await tasks_db.create_task(conn, task, principal.owner, groups)
-        logger.info("Persisted task %s", task_id)
+    logger.info("Persisted task %s", task_id)
 
-        # Submit the Job first; the Pod will wait Pending until the PVC exists.
-        # The PVC is created with an ownerReference back to the Job so
-        # kube-controller-manager garbage-collects it when the Job is deleted.
-        try:
-            created_job = await k8s.create_job(runtime_config.taskpod_namespace, job)
-        except ApiException as exc:
-            await _on_kubernetes_submit_failure(
-                conn, task_id, exc, where="Job", k8s=None, namespace=None, job_name=None
-            )
+    # Submit the Job first; the Pod will wait Pending until the PVC exists.
+    # The PVC is created with an ownerReference back to the Job so
+    # kube-controller-manager garbage-collects it when the Job is deleted.
+    try:
+        created_job = await k8s.create_job(runtime_config.taskpod_namespace, job)
+    except ApiException as exc:
+        await _on_kubernetes_submit_failure(
+            pool, task_id, exc, where="Job", k8s=None, namespace=None, job_name=None
+        )
+    except K8sRequestError as exc:
+        # No answer: the Job may have been created all the same.
+        await _on_kubernetes_submit_failure(
+            pool,
+            task_id,
+            exc,
+            where="Job",
+            k8s=k8s,
+            namespace=runtime_config.taskpod_namespace,
+            job_name=job_name_for(task_id),
+        )
 
-        job_uid, job_name = _server_assigned_meta(created_job)
-        attach_pvc_owner(pvc, job_uid, job_name)
+    job_uid, job_name = _server_assigned_meta(created_job)
+    attach_pvc_owner(pvc, job_uid, job_name)
 
-        try:
-            await k8s.create_pvc(runtime_config.taskpod_namespace, pvc)
-        except ApiException as exc:
-            await _on_kubernetes_submit_failure(
-                conn,
-                task_id,
-                exc,
-                where="PVC",
-                k8s=k8s,
-                namespace=runtime_config.taskpod_namespace,
-                job_name=job_name,
-            )
+    try:
+        await k8s.create_pvc(runtime_config.taskpod_namespace, pvc)
+    except (ApiException, K8sRequestError) as exc:
+        await _on_kubernetes_submit_failure(
+            pool,
+            task_id,
+            exc,
+            where="PVC",
+            k8s=k8s,
+            namespace=runtime_config.taskpod_namespace,
+            job_name=job_name,
+        )
 
     logger.info("TaskPod submitted for task %s (job=%s)", task_id, job_name)
     return TesCreateTaskResponse(id=task_id)
 
 
 async def _on_kubernetes_submit_failure(
-    conn: Any,
+    pool: Any,
     task_id: str,
-    exc: ApiException,
+    exc: ApiException | K8sRequestError,
     *,
     where: str,
     k8s: K8sClient | None,
@@ -141,13 +154,13 @@ async def _on_kubernetes_submit_failure(
         "%s submission failed for task %s (status=%s reason=%s)",
         where,
         task_id,
-        exc.status,
-        exc.reason,
+        getattr(exc, "status", None),
+        getattr(exc, "reason", exc),
     )
     if k8s is not None and namespace is not None and job_name is not None:
         await _safe_delete_job(k8s, namespace, job_name)
 
-    await _mark_system_error(conn, task_id, classification.system_log)
+    await _mark_system_error(pool, task_id, classification.system_log)
     raise classification.api_error from exc
 
 
@@ -165,7 +178,7 @@ class _SubmitErrorClassification:
 
 
 def _classify_submit_exception(
-    exc: ApiException, where: str
+    exc: ApiException | K8sRequestError, where: str
 ) -> _SubmitErrorClassification:
     """Map a Kubernetes ApiException to an HTTP response + system_logs entry.
 
@@ -177,8 +190,15 @@ def _classify_submit_exception(
     operator misconfigured the deployment but the client gets a clean
     error rather than a retry suggestion.
     - 404 on PVC create → 400 with "namespace missing" guidance.
+    - No answer (timeout, connection failure) → 503 Retry-After.
     - Anything else → 500.
     """
+    if isinstance(exc, K8sRequestError):
+        msg = f"{where} submission failed: Kubernetes API did not answer"
+        return _SubmitErrorClassification(
+            system_log=msg,
+            api_error=ServiceUnavailableError(msg, retry_after_seconds=30),
+        )
     status = exc.status or 0
     body = (exc.body or "").lower() if isinstance(exc.body, str) else ""
     reason_lower = (exc.reason or "").lower()
@@ -269,6 +289,9 @@ async def cancel_task(
         if exc.status != HTTPStatus.NOT_FOUND:
             logger.exception("Job delete failed for task %s", task_uuid)
             raise InternalServerError("Failed to delete task Job") from exc
+    except K8sRequestError as exc:
+        logger.exception("Job delete failed for task %s", task_uuid)
+        raise InternalServerError("Failed to delete task Job") from exc
 
     return TesCancelTaskResponse()
 
@@ -360,17 +383,20 @@ def _server_assigned_meta(obj: Any) -> tuple[str, str]:
     return metadata.uid, metadata.name
 
 
-async def _mark_system_error(conn: Any, task_id: str, reason: str) -> None:
+async def _mark_system_error(pool: Any, task_id: str, reason: str) -> None:
     """Best-effort transition to SYSTEM_ERROR after a submission failure.
 
     Writes both the terminal state and a system_logs entry so the same
     diagnostic string is visible via ``GetTask`` for client inspection.
+    Takes a pooled connection only for these writes, after the Kubernetes
+    calls (and the Job cleanup) are done.
     """
     try:
-        await state_db.write_terminal_state(
-            conn, task_id, TesState.SYSTEM_ERROR, reason=reason
-        )
-        await state_db.append_system_log(conn, task_id, reason)
+        async with pool.acquire() as conn:
+            await state_db.write_terminal_state(
+                conn, task_id, TesState.SYSTEM_ERROR, reason=reason
+            )
+            await state_db.append_system_log(conn, task_id, reason)
     except (asyncpg.PostgresError, OSError, TimeoutError):
         logger.exception(
             "Failed to mark task %s SYSTEM_ERROR after submission failure", task_id
@@ -381,5 +407,8 @@ async def _safe_delete_job(k8s: K8sClient, namespace: str, name: str) -> None:
     """Best-effort Job cleanup after a failed PVC submission."""
     try:
         await k8s.delete_job(namespace, name)
-    except ApiException:
+    except ApiException as exc:
+        if exc.status != HTTPStatus.NOT_FOUND:
+            logger.warning("Job %s cleanup failed (non-fatal)", name)
+    except K8sRequestError:
         logger.warning("Job %s cleanup failed (non-fatal)", name)

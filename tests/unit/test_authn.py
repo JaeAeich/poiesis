@@ -720,7 +720,7 @@ def started_app(monkeypatch: pytest.MonkeyPatch) -> Any:
         async def close(self) -> None:
             pass
 
-    async def create_pool(_: str) -> Pool:
+    async def create_pool(_: str, **__: Any) -> Pool:
         return Pool()
 
     async def list_tasks(*_: Any, **__: Any) -> tuple[list[Any], None]:

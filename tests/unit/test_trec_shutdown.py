@@ -64,6 +64,16 @@ def test_watch_consumer_can_exit_while_the_stream_blocks(
     assert not blocked_watch.is_set()
 
 
+class FakeDb:
+    """A trec database whose writes go to the patched statements, no connection."""
+
+    def until(self, _stop: asyncio.Event) -> FakeDb:
+        return self
+
+    async def write(self, statement: Any, *args: Any, **kwargs: Any) -> None:
+        await statement(None, *args, **kwargs)
+
+
 class FakePod:
     def __init__(self, status: dict[str, Any]) -> None:
         self.status = status
@@ -131,7 +141,8 @@ def test_sigterm_records_the_last_state_and_exits(
     async def main() -> int:
         asyncio.get_running_loop().call_later(0.05, sigterm.set)
         async with asyncio.timeout(5):
-            return await trec._run_until_terminal(None, "t1", "pod-1", "tasks", {})
+            db: Any = FakeDb()
+            return await trec._run_until_terminal(db, "t1", "pod-1", "tasks", {})
 
     assert asyncio.run(main()) == 0
     running = rows.pop(0)
@@ -162,7 +173,8 @@ def test_sigterm_exits_even_if_the_pod_cannot_be_read(
     monkeypatch.setattr(trec, "_install_signal_handlers", lambda: sigterm)
     monkeypatch.setattr(trec.client, "CoreV1Api", BrokenCoreV1)
 
-    result = asyncio.run(trec._run_until_terminal(None, "t1", "p", "tasks", {}))
+    db: Any = FakeDb()
+    result = asyncio.run(trec._run_until_terminal(db, "t1", "p", "tasks", {}))
 
     assert result == 0
     assert "could not record the Pod's last state" in caplog.text

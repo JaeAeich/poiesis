@@ -137,3 +137,21 @@ class ServiceUnavailableError(APIError):
         """Capture an optional ``Retry-After`` hint alongside the message."""
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
+
+
+#: Seconds a client is told to wait after the database pool was busy.
+_POOL_BUSY_RETRY_AFTER_SECONDS = 1
+
+
+async def handle_pool_timeout(request: Request, exc: Exception) -> JSONResponse:
+    """A request that found no free database connection gets a 503.
+
+    The pool was busy, not broken: the client may retry shortly.
+    """
+    logger.warning("Database pool busy for %s: %s", request.url.path, exc)
+    return await handle_api_exception(
+        request,
+        ServiceUnavailableError(
+            "database busy", retry_after_seconds=_POOL_BUSY_RETRY_AFTER_SECONDS
+        ),
+    )

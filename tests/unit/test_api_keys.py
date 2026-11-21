@@ -305,7 +305,7 @@ def app_env(
 ) -> pytest.MonkeyPatch:
     """Fake database and cluster for the real app; returns `monkeypatch`."""
 
-    async def create_pool(_: str) -> Pool:
+    async def create_pool(_: str, **__: Any) -> Pool:
         return Pool()
 
     monkeypatch.setattr(app_module, "create_pool", create_pool)

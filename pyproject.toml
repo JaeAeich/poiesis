@@ -35,6 +35,7 @@ dependencies = [
   "pydantic",
   "requests",
   "tomli",
+  "urllib3",
   "uvicorn",
 ]
 description = "TES on kubernetes"

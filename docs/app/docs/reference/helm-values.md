@@ -58,9 +58,15 @@ chart references them by name.
 | `database.existingSecret` | `""` | Secret holding the full `DATABASE_URL`. Required. |
 | `database.existingSecretKey` | `DATABASE_URL` | Key in that Secret. |
 | `database.caConfigmap` | `""` | ConfigMap with `ca.crt`, mounted read-only at `/etc/ssl/poiesis` in the API, TCtl and every TaskPod's Poiesis containers. |
+| `database.pool.minSize` | `1` | Connections each API replica keeps open. |
+| `database.pool.maxSize` | `10` | Most connections each API replica opens. |
+| `database.pool.acquireTimeoutSeconds` | `10` | Seconds a request waits for a free connection. Then it gets a 503 with `Retry-After: 1`. |
+| `database.commandTimeoutSeconds` | `30` | Seconds a database statement of the API or TCtl may run before it fails. Also bounds a connection that stopped answering. |
 
 The URL has the form
 `postgresql://USER:PASS@HOST:PORT/DB?sslmode=verify-full&sslrootcert=/etc/ssl/poiesis/ca.crt`.
+To size the pool against Postgres, see
+[Production: database](../guides/production.md#database).
 
 ## S3
 
@@ -158,7 +164,7 @@ starting. See [Service info](../guides/production.md#service-info).
 | `api.image` | `{}` | Image override (registry, repository, tag, pullPolicy), e.g. for canaries; TaskPods use the same image. |
 | `api.resources` | requests `100m`/`256Mi`, limits `1000m`/`512Mi` | Container resources. |
 | `api.probes.startup` | enabled, every 2 s, 30 failures | Startup probe. |
-| `api.probes.readiness` | enabled, every 5 s, timeout 2 s, 3 failures | Readiness probe. |
+| `api.probes.readiness` | enabled, every 5 s, timeout 2 s, 3 failures | Readiness probe (`/readyz`): fails when Postgres doesn't answer `SELECT 1` within about 1.5 s. A pool with every connection in use counts as ready. |
 | `api.probes.liveness` | enabled, every 10 s, timeout 2 s, 3 failures | Liveness probe. |
 | `api.preStopSleepSeconds` | `5` | Seconds the Pod sleeps in a preStop hook before SIGTERM, so Services and ingresses stop sending it requests first. `0` is no hook. |
 | `api.terminationGracePeriodSeconds` | `40` | Grace period. Gunicorn lets running requests finish for up to 30 s after SIGTERM; keep it at least `preStopSleepSeconds` + 30. |

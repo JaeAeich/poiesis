@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 import yaml
 
-from poiesis.api.settings import AuthSettings, Settings
+from poiesis.api.settings import AuthSettings, DatabaseSettings, Settings
 
 CHART = Path(__file__).parents[2] / "deployment" / "helm" / "poiesis"
 LINT = str(CHART / "ci" / "lint-values.yaml")
@@ -209,3 +209,23 @@ def test_log_format_is_checked() -> None:
     """An unknown format fails `helm lint`."""
     result = helm("lint", str(CHART), "-f", LINT, "--set", "logging.format=yaml")
     assert result.returncode != 0
+
+
+def test_database_pool_values_reach_the_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`database.pool` and `database.commandTimeoutSeconds` parse in Settings."""
+    sets = (
+        "database.pool.maxSize=25",
+        "database.pool.acquireTimeoutSeconds=3",
+        "database.commandTimeoutSeconds=60",
+    )
+    docs = render(LINT, sets=sets)
+    configmap = next(d for d in docs if d["kind"] == "ConfigMap")["data"]
+    for name, value in configmap.items():
+        if name.startswith("POIESIS_DATABASE_"):
+            monkeypatch.setenv(name, value)
+    database = DatabaseSettings()
+    assert (database.pool_min_size, database.pool_max_size) == (1, 25)
+    assert database.acquire_timeout_seconds == 3  # noqa: PLR2004
+    assert database.command_timeout_seconds == 60  # noqa: PLR2004

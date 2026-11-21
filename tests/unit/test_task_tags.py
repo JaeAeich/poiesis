@@ -87,7 +87,7 @@ def client(
 ) -> Iterator[TestClient]:
     """The started real app with auth off and fake database and cluster."""
 
-    async def create_pool(_: str) -> Pool:
+    async def create_pool(_: str, **__: Any) -> Pool:
         return Pool()
 
     monkeypatch.setenv("POIESIS_AUTH_ENABLED", "false")

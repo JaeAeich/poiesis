@@ -46,6 +46,37 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 - `sslmode=verify-full` with
   `sslrootcert=/etc/ssl/poiesis/ca.crt`, and the CA in a ConfigMap named by
   `database.caConfigmap` (key `ca.crt`).
+- Size the connection pool against Postgres `max_connections`:
+  - Each API replica opens up to `database.pool.maxSize` connections
+    (default 10). Count the most replicas you run:
+    `autoscaling.maxReplicas` when autoscaling is on, else `api.replicas`.
+  - Each TCtl replica opens up to 4; the standby keeps 1 open.
+  - Each running task opens a connection only while TRec writes an
+    event (start, each executor's end) and while `tif` and `tof`
+    start; it holds none in between. Thousands of tasks ending at once
+    still open that many short connections.
+  - Keep a few for the migration Job and for your own access.
+  - Rule of thumb: `max_connections` ≥ API replicas × `maxSize` + 4 ×
+    TCtl replicas + the tasks that start or end at the same moment + a
+    few spare.
+  - Put PgBouncer (transaction pooling) in front of Postgres when that
+    sum is near `max_connections`, or when many tasks start and end
+    together. Poiesis's database client (asyncpg) uses prepared
+    statements, so use PgBouncer 1.21 or later with
+    `max_prepared_statements` set.
+  - A request waits at most `database.pool.acquireTimeoutSeconds` for a
+    free connection, then gets a 503 with `Retry-After`. Raise `maxSize`
+    if clients see that under normal load; add replicas if Postgres has
+    room.
+- `/readyz` fails only when Postgres doesn't answer. A replica whose
+  pool is full stays ready: under a load that fills every pool, failing
+  it would take all replicas out of the Service at once. Clients get
+  503 with `Retry-After` instead. A pool stuck on a Postgres that
+  stopped answering frees its connections after
+  `database.commandTimeoutSeconds`; the probe fails from then on.
+- `database.commandTimeoutSeconds` (default 30) bounds every statement
+  of the API and TCtl, so a connection that stops answering fails the
+  request or the TCtl pass instead of holding it.
 
 ## Storage
 
@@ -145,6 +176,11 @@ default TaskPod NetworkPolicy) is planned
 - On rollouts the API sleeps `api.preStopSleepSeconds` (5 s) before
   SIGTERM, then gunicorn lets running requests finish for up to 30 s.
   Keep `api.terminationGracePeriodSeconds` (40 s) at least their sum.
+- What the API does when the Kubernetes API server is slow or down:
+  each call gives up after 30 seconds (5 to connect). CreateTask then
+  answers 503 with `Retry-After`, ends the task as `SYSTEM_ERROR` with
+  the reason in its system logs, and deletes its Job in case the create
+  went through. No database connection is held while it waits.
 - `tctl.replicas` above 1 for faster failover (leader election means
   only one is active). The chart has no TCtl PodDisruptionBudget: an
   evicted TCtl only delays task state updates until a replica holds the

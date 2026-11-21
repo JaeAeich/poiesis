@@ -21,6 +21,9 @@ _UNSCHEDULABLE_TIMEOUT_ENV = "POIESIS_TCTL_UNSCHEDULABLE_TIMEOUT_SECONDS"
 #: File tctl touches after each loop iteration, for a liveness probe. Unset:
 #: no heartbeat is written.
 _HEARTBEAT_FILE_ENV = "POIESIS_TCTL_HEARTBEAT_FILE"
+#: Seconds a database statement may run, shared with the API. Unset: 30.
+_COMMAND_TIMEOUT_ENV = "POIESIS_DATABASE_COMMAND_TIMEOUT_SECONDS"
+_DEFAULT_COMMAND_TIMEOUT_SECONDS = 30
 
 
 class TctlCommand(BaseCommand):
@@ -47,15 +50,19 @@ class TctlCommand(BaseCommand):
             identity = os.environ.get("POIESIS_POD_NAME") or None
             unschedulable_timeout = _timeout_env(_UNSCHEDULABLE_TIMEOUT_ENV)
             heartbeat = _path_env(_HEARTBEAT_FILE_ENV)
+            command_timeout = (
+                _timeout_env(_COMMAND_TIMEOUT_ENV) or _DEFAULT_COMMAND_TIMEOUT_SECONDS
+            )
             load_config()
             logger.info(
                 "tctl: starting; namespace=%s lease-namespace=%s identity=%s "
-                "unschedulable-timeout=%s heartbeat=%s",
+                "unschedulable-timeout=%s heartbeat=%s db-command-timeout=%ss",
                 namespace,
                 lease_namespace,
                 identity or "auto",
                 unschedulable_timeout or "none",
                 heartbeat or "none",
+                command_timeout,
             )
             sys.exit(
                 asyncio.run(
@@ -66,6 +73,7 @@ class TctlCommand(BaseCommand):
                         identity=identity,
                         unschedulable_timeout=unschedulable_timeout,
                         heartbeat=heartbeat,
+                        command_timeout=command_timeout,
                     )
                 )
             )
