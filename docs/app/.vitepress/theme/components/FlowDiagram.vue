@@ -1,13 +1,26 @@
 <script setup>
+// An animated flow diagram, authored in Markdown:
+// <FlowDiagram :spec="{ title, h?, nodes: { id: { x, y, w?, label, sub? } }, edges: [[a, b]],
+//   hops: [{ f, t, label, cap, tone? }] }" />
+// See lib/figures/flowGeometry.js for the spec's shape.
 import { onMounted, onUnmounted, ref } from "vue";
-import { flow } from "../lib/figures.js";
+import { mountFlowDiagram } from "../lib/figures/flowDiagram.js";
 
-// spec: { title, h?, nodes: { id: { x, y, w?, label, sub? } }, edges: [[a, b]], hops: [{ f, t, label, cap, tone? }] }
-const props = defineProps({ spec: { type: Object, required: true } });
+/** Hosts at least this wide get the stretched canvas, px. */
+const WIDE_HOST = 600;
+
+const props = defineProps({
+  /** @type {import("vue").PropType<import("../lib/figures/flowGeometry.js").FlowSpec>} */
+  spec: { type: Object, required: true },
+});
+
 const host = ref(null);
-let stop = () => {};
-onMounted(() => { stop = flow(host.value, props.spec, { wide: host.value.clientWidth >= 600 }) || (() => {}); });
-onUnmounted(() => stop());
+let unmount = () => {};
+
+onMounted(() => {
+  unmount = mountFlowDiagram(host.value, props.spec, { wide: host.value.clientWidth >= WIDE_HOST });
+});
+onUnmounted(() => unmount());
 </script>
 
 <template>

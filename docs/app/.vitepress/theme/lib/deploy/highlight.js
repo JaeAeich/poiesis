@@ -7,7 +7,7 @@
  */
 
 const COMMENT_LINE = /^\s*#/;
-const TRAILING_COMMENT = /(?=  # )/;
+const TRAILING_COMMENT = /(?= {2}# )/;
 const MAPPING_KEY = /^(\s*-?\s*)([\w.]+)(:)/;
 const MAPPING_VALUE = /(: )(.+)$/;
 const SHELL_COMMAND = /^(kubectl|helm)/;

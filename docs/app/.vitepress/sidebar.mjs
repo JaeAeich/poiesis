@@ -24,7 +24,6 @@ export default [
         text: "Guides",
         items: [
             { text: "Workflow engines", link: "/docs/guides/workflow-engines" },
-            { text: "Nextflow end to end", link: "/docs/guides/nextflow" },
             { text: "Keycloak", link: "/docs/guides/keycloak" },
             { text: "Production checklist", link: "/docs/guides/production" },
         ],

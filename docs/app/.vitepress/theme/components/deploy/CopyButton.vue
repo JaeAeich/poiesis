@@ -55,3 +55,17 @@ onUnmounted(() => clearTimeout(resetTimer));
     <slot v-else />
   </button>
 </template>
+
+<style scoped>
+/* the copy confirms on the button itself */
+.poi button.copied,
+.poi button.copied:hover {
+  color: var(--blue-ink);
+  border-color: var(--blue);
+}
+.poi button.copy-fail,
+.poi button.copy-fail:hover {
+  color: var(--coral-ink);
+  border-color: var(--coral);
+}
+</style>

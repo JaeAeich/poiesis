@@ -1,0 +1,293 @@
+/* Form pieces shared by several deploy step components; loaded by DeployPage.vue. */
+
+/* labelled fields: label, chart key, input, hint */
+.poi .f {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  border-radius: var(--r);
+}
+.poi .f label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  white-space: nowrap;
+  min-width: 0;
+  line-height: 1.4;
+}
+.poi .f label .k {
+  font: 12px var(--mono);
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.poi .f label .req {
+  color: var(--coral-ink);
+}
+.poi .f input[type="text"],
+.poi .f input[type="number"],
+.poi .f select {
+  height: 38px;
+  border: 1px solid var(--field);
+  border-radius: var(--r);
+  padding: 0 12px;
+  font: 14px var(--mono);
+  color: var(--fg);
+  background: var(--bg);
+  width: 100%;
+}
+.poi .f input:focus,
+.poi .f select:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 35%, transparent);
+}
+.poi .f input.ex {
+  background: var(--coral-wash);
+  border-color: color-mix(in srgb, var(--coral) 40%, var(--line-strong));
+}
+.poi .f .hint {
+  font-size: 13px;
+  color: var(--muted);
+}
+.poi .lab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.poi .lab label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+}
+.poi .lab .req {
+  color: var(--coral-ink);
+}
+.poi .row2 .lab .k {
+  display: none;
+}
+.poi .lab .k {
+  margin-left: auto;
+  font: 12px var(--mono);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.poi .sublab {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+  margin: 2px 0 8px;
+}
+
+/* provider tiles */
+.poi .tile .lg svg,
+.poi .tile .lg img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+.poi .tile .lg.logo {
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+.poi .tile.sel .lg.logo {
+  background: var(--bg);
+  border-color: var(--blue);
+}
+.poi .tile.soon .lg.logo {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+/* layout helpers */
+.poi .row2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.poi .acts {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.poi .check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14.5px;
+  margin: 2px 0 14px;
+  color: var(--fg);
+  border-radius: var(--r);
+}
+.poi .check input {
+  margin-top: 4px;
+  accent-color: var(--blue);
+}
+.poi .check small {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.poi .tiles {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.poi .tile {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: var(--bg);
+  text-align: left;
+  color: var(--body);
+}
+.poi .tile .lg {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font: 600 11px var(--mono);
+  background: var(--surface);
+  color: var(--muted);
+  flex: none;
+}
+.poi .tile b {
+  display: block;
+  color: var(--fg);
+  font-weight: 500;
+  font-size: 14.5px;
+}
+.poi .tile small {
+  font-size: 12.5px;
+  color: var(--muted);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.poi .tile > span:last-child {
+  min-width: 0;
+}
+.poi .tile.sel {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-wash);
+}
+.poi .tile.sel .lg {
+  background: var(--blue);
+  color: #fff;
+}
+.poi .tile.soon {
+  background: var(--surface);
+}
+
+/* issuer and API key cards in the authentication chain */
+.poi .link {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.poi .link .lh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+}
+.poi .tag {
+  font: 500 11px var(--mono);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--blue-wash);
+  color: var(--blue-ink);
+  white-space: nowrap;
+}
+.poi .tag.gw {
+  background: var(--surface);
+  color: var(--body);
+  border: 1px solid var(--line);
+}
+.poi .tag.key {
+  background: var(--coral-wash);
+  color: var(--coral-ink);
+}
+.poi .link .nm {
+  font: 13px var(--mono);
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.poi .mini {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.poi .mini:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+.poi .mini:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.poi .mini svg {
+  width: 14px;
+  height: 14px;
+}
+.poi .link .lb {
+  padding: 8px 12px 2px;
+  border-top: 1px solid var(--line);
+}
+.poi .link.hit {
+  border-color: var(--coral);
+  box-shadow: 0 0 0 3px var(--coral-wash);
+}
+
+/* a field the review links to briefly flashes (lib/deploy/use-step-navigation.js) */
+.poi .flash {
+  animation: flash 1.4s var(--ease);
+}
+@keyframes flash {
+  0%,
+  50% {
+    box-shadow: 0 0 0 6px var(--coral-wash);
+    background: var(--coral-wash);
+  }
+}
+
+@media (max-width: 760px) {
+  .poi .row2,
+  .poi .tiles {
+    grid-template-columns: 1fr;
+  }
+}

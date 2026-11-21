@@ -1,0 +1,353 @@
+/* The task figure and flow diagrams (lib/figures/). Global because the same markup is mounted by
+   TaskFigure.vue, FlowDiagram.vue and the deploy page's side panel. */
+
+/* task figure: drawing */
+.poi .tfig {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.poi .tfig svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.poi .tfig .box {
+  fill: var(--bg);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  transition:
+    fill 0.4s var(--ease),
+    stroke 0.4s var(--ease);
+}
+.poi .tfig .t {
+  font: 500 12.5px var(--mono);
+  fill: var(--fg);
+}
+.poi .tfig .ts {
+  font: 11.5px var(--mono);
+  fill: var(--muted);
+}
+.poi .tfig .pod {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 1.25;
+}
+.poi .tfig .wire {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  fill: none;
+  stroke-dasharray: 3 3;
+  transition: stroke 0.3s;
+}
+.poi .tfig .wire.on {
+  stroke: var(--coral);
+  stroke-dasharray: 0;
+}
+
+/* task figure: containers (idle, run, done) */
+.poi .tfig .run .box {
+  stroke: var(--coral);
+  fill: var(--coral-wash);
+}
+.poi .tfig .dot {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+  transition:
+    fill 0.3s,
+    stroke 0.3s,
+    opacity 0.3s;
+}
+.poi .tfig .run .dot {
+  fill: var(--coral);
+  stroke: var(--coral);
+  animation: blink 1s ease-in-out infinite;
+}
+.poi .tfig .chk {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.poi .tfig .done .chk {
+  opacity: 1;
+}
+.poi .tfig .done .dot {
+  opacity: 0;
+}
+.poi .tfig .pbg {
+  fill: var(--line);
+}
+.poi .tfig .pfg {
+  fill: var(--coral);
+}
+.poi .tfig .done .pfg {
+  fill: var(--blue);
+}
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* task figure: volume, files, buckets, phase badge */
+.poi .tfig .vol {
+  transition: opacity 0.6s var(--ease);
+}
+.poi .tfig .vol .box {
+  stroke: var(--blue);
+  stroke-opacity: 0.6;
+}
+.poi .tfig .file {
+  transition: opacity 0.35s var(--ease);
+}
+.poi .tfig .file rect {
+  fill: var(--bg);
+  stroke: var(--blue);
+  stroke-opacity: 0.5;
+}
+.poi .tfig .mover rect {
+  fill: var(--coral);
+}
+.poi .tfig .mover text {
+  fill: #0d2033;
+  font: 500 11.5px var(--mono);
+}
+.poi .tfig .bucket path,
+.poi .tfig .bucket ellipse {
+  fill: var(--bg);
+  stroke: var(--line-strong);
+  transition: stroke 0.3s;
+}
+.poi .tfig .bucket.on path,
+.poi .tfig .bucket.on ellipse {
+  stroke: var(--coral);
+}
+.poi .tfig .badge rect {
+  fill: var(--bg);
+  stroke: var(--line-strong);
+  transition:
+    fill 0.3s,
+    stroke 0.3s;
+}
+.poi .tfig .badge text {
+  font: 500 11px var(--mono);
+  fill: var(--muted);
+}
+.poi .tfig .badge.Running rect {
+  stroke: var(--coral);
+  fill: var(--coral-wash);
+}
+.poi .tfig .badge.Running text {
+  fill: var(--coral-ink);
+}
+.poi .tfig .badge.Succeeded rect {
+  stroke: var(--blue);
+  fill: var(--blue-wash);
+}
+.poi .tfig .badge.Succeeded text {
+  fill: var(--blue-ink);
+}
+
+/* task figure: timeline and captions */
+.poi .tl {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 8px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+.poi .tl .segs {
+  flex: 1;
+  display: grid;
+  gap: 6px;
+}
+.poi .tl .seg {
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  text-align: left;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.poi .tl .seg i {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.poi .tl .seg i b {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left;
+  background: var(--coral);
+}
+.poi .tl .seg span {
+  font: 11.5px var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.poi .tl .seg.cur span {
+  color: var(--fg);
+}
+.poi .tl .seg.past i b {
+  background: var(--blue);
+}
+.poi .tcap {
+  display: grid;
+  padding: 2px 14px 14px 58px;
+  background: var(--bg);
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+.poi .tfig.compact .seg span {
+  display: none;
+}
+.poi .tfig.compact .tcap {
+  padding-left: 14px;
+}
+@media (max-width: 760px) {
+  .poi .tl .seg span {
+    display: none;
+  }
+  .poi .tcap {
+    padding-left: 14px;
+  }
+}
+
+/* shared by both: play button, stacked captions that cross-fade */
+.poi .tl .play,
+.poi .fcap .play {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  display: grid;
+  place-items: center;
+  color: var(--fg);
+}
+.poi .tl .play svg,
+.poi .fcap .play svg {
+  width: 13px;
+  height: 13px;
+}
+.poi .fcap .play {
+  width: 30px;
+  height: 30px;
+}
+.poi .tcap > span,
+.poi .fcap .c > span {
+  grid-area: 1/1;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.2s,
+    visibility 0s 0.2s;
+}
+.poi .tcap > span.on,
+.poi .fcap .c > span.on {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.2s 0.16s;
+}
+
+/* flow diagram */
+.poi .flow {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.poi .flow svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.poi .flow .nd rect {
+  fill: var(--bg);
+  stroke: var(--line-strong);
+  transition:
+    fill 0.35s var(--ease),
+    stroke 0.35s var(--ease);
+}
+.poi .flow .nd text {
+  font: 500 12px var(--mono);
+  fill: var(--fg);
+}
+.poi .flow .nd text.s {
+  font: 400 10.5px var(--mono);
+  fill: var(--muted);
+}
+.poi .flow .nd.on rect {
+  stroke: var(--coral);
+  fill: var(--coral-wash);
+}
+.poi .flow .ed2 {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  transition: stroke 0.3s;
+}
+.poi .flow .ed2.on {
+  stroke: var(--coral);
+  stroke-dasharray: 0;
+}
+.poi .flow .pk rect {
+  fill: var(--coral);
+}
+.poi .flow .pk.ok rect {
+  fill: var(--blue);
+}
+.poi .flow .pk.bad rect {
+  fill: var(--coral-ink);
+}
+.poi .flow .pk text {
+  fill: #0d2033;
+  font: 500 10.5px var(--mono);
+}
+.poi .flow :is(.pk.ok, .pk.bad) text {
+  fill: #fff;
+}
+.poi .flow .fcap {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 10px 12px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--fg);
+}
+.poi .flow .fcap .c {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.poi .flow .fcap .n {
+  font: 12px var(--mono);
+  color: var(--muted);
+  flex: none;
+}
+.poi .flow .fcap .r {
+  margin-left: auto;
+}
+.poi .flow .fcap button {
+  flex: none;
+}

@@ -5,7 +5,10 @@
     "docs:preview": "npm run copy-spec && vitepress preview",
     "copy-spec": "cp ../../poiesis/api/tes/spec/*.openapi.yaml public/openapi.yaml",
     "llms": "node scripts/build-llms.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .vitepress/theme eslint.config.mjs .prettierrc.json package.json",
+    "format:check": "prettier --check .vitepress/theme eslint.config.mjs .prettierrc.json package.json"
   },
   "dependencies": {
     "@vercel/analytics": "^1.5.0",
@@ -13,6 +16,12 @@
     "vitepress-openapi": "^0.0.3-alpha.72"
   },
   "devDependencies": {
-    "vitest": "^3.2.4"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "eslint-plugin-vue": "^10.12.1",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "vitest": "^3.2.4",
+    "vue-eslint-parser": "^10.4.2"
   }
 }

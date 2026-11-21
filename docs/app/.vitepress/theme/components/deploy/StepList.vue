@@ -53,3 +53,93 @@ const isDone = (index) => wizard.completed.has(index) && index !== wizard.step;
     </li>
   </ol>
 </template>
+
+<style scoped>
+/* a vertical rail of numbered steps; the current one is open */
+.poi .steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 1px solid var(--line);
+}
+.poi .step {
+  position: relative;
+  padding: 0 0 6px 28px;
+}
+.poi .hd-h {
+  margin: 0;
+  font: inherit;
+}
+.poi .step .hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 10px 0;
+  text-align: left;
+  color: var(--body);
+}
+.poi .step .hd .n {
+  position: absolute;
+  left: -12px;
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 500 11px var(--mono);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  transition:
+    background-color 0.25s,
+    border-color 0.25s,
+    color 0.25s,
+    box-shadow 0.25s;
+}
+.poi .step .hd .ttl {
+  font-weight: 500;
+  font-size: 16px;
+}
+.poi .step .hd .opt {
+  font: 11.5px var(--mono);
+  color: var(--muted);
+}
+.poi .step .hd .sum {
+  margin-left: auto;
+  font: 12.5px var(--mono);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+.poi .step.done .hd .n {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--bg);
+}
+.poi .step.cur .hd .n {
+  border-color: var(--coral);
+  color: var(--coral-ink);
+  box-shadow: 0 0 0 4px var(--coral-wash);
+}
+.poi .step.cur .hd .ttl {
+  color: var(--fg);
+}
+.poi .step .bd {
+  display: none;
+  padding: 0 0 22px;
+}
+.poi .step.cur .bd {
+  display: block;
+  animation: in 0.3s var(--ease);
+}
+@media (max-width: 760px) {
+  .poi .step .hd .sum {
+    display: none;
+  }
+}
+</style>

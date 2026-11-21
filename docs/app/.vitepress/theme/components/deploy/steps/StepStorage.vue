@@ -33,8 +33,7 @@ const { config } = useDeploy();
         <template v-else>{{ backend.mark }}</template>
       </span>
       <span>
-        <b>{{ backend.name }}</b
-        ><small>Planned · #{{ backend.issue }}</small>
+        <b>{{ backend.name }}</b><small>Planned · #{{ backend.issue }}</small>
       </span>
     </div>
   </div>

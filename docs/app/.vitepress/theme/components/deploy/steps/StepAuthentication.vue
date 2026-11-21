@@ -39,3 +39,30 @@ const { config, wizard, addIssuer, toggleApiKeys } = useDeploy();
   <RequestTrial />
   <StepActions :step="step" />
 </template>
+
+<style scoped>
+.poi .chain {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.poi .adds {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.poi .soonchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r);
+  padding: 0 10px;
+  height: 32px;
+}
+</style>

@@ -1,15 +1,6 @@
 // Shared helpers for the Poiesis theme.
 // Browser-only code runs inside mount functions (onMounted), never at module top level.
 
-const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
-
-/**
- * Escape a value for use inside HTML text or a double-quoted attribute.
- * @param {unknown} value
- * @returns {string}
- */
-export const esc = (value) => String(value).replace(/[&<>"]/g, (char) => HTML_ESCAPES[char]);
-
 /**
  * Linear interpolation from `from` to `to`.
  * @param {number} from

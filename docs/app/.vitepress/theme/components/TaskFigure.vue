@@ -1,23 +1,34 @@
 <script setup>
+// The "how a task runs" figure. Portrait under NARROW_WIDTH; it is rebuilt only when the host
+// crosses that width.
 import { onMounted, onUnmounted, ref } from "vue";
-import { taskFigure } from "../lib/figures.js";
+import { mountTaskFigure } from "../lib/figures/taskFigure.js";
+import { NARROW_WIDTH } from "../lib/figures/taskLayout.js";
 
 const props = defineProps({ compact: { type: Boolean, default: false } });
+
 const host = ref(null);
-let stop = () => {}, ro;
+let unmount = () => {};
+let observer = null;
+
 onMounted(() => {
   const el = host.value;
   let narrow = null;
-  const build = () => { stop(); stop = taskFigure(el, { compact: props.compact }) || (() => {}); };
-  // portrait under 600px; rebuild only when the width crosses that line
-  ro = new ResizeObserver(() => {
+  observer = new ResizeObserver(() => {
     if (!el.clientWidth) return;
-    const n = el.clientWidth < 600;
-    if (n !== narrow) { narrow = n; build(); }
+    const isNarrow = el.clientWidth < NARROW_WIDTH;
+    if (isNarrow === narrow) return;
+    narrow = isNarrow;
+    unmount();
+    unmount = mountTaskFigure(el, { compact: props.compact });
   });
-  ro.observe(el);
+  observer.observe(el);
 });
-onUnmounted(() => { ro && ro.disconnect(); stop(); });
+
+onUnmounted(() => {
+  observer?.disconnect();
+  unmount();
+});
 </script>
 
 <template>

@@ -148,6 +148,9 @@ jobs:
           cache: npm
           cache-dependency-path: docs/app/package-lock.json
       - run: npm ci --no-audit --no-fund
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm test
       # dead internal links fail the build
       - run: npm run docs:build
 

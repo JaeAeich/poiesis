@@ -94,7 +94,7 @@ describe("valuesYamlLines", () => {
     const annotation =
       '    annotations:\n      eks.amazonaws.com/role-arn: "arn:aws:iam::1:role/x"\n';
     expect(yaml).toContain(`serviceAccount:\n  api:\n${annotation}  taskpod:\n${annotation}`);
-    expect(yaml).not.toMatch(/^s3:\n(.*\n)*?  existingSecret/m);
+    expect(yaml).not.toMatch(/^s3:\n(.*\n)*? {2}existingSecret/m);
   });
 
   it("marks every example value and only those", () => {
@@ -187,7 +187,7 @@ describe("valuesYamlLines", () => {
     expect(yaml).toContain("taskpods:\n  persistence:\n    accessModes: [ReadWriteMany]\n");
     expect(yaml).toContain("\naudit:\n  enabled: false\n");
     expect(yaml).toContain("\nnetworkPolicy:\n  enabled: true\n");
-    expect(yaml).toMatch(/\nserviceInfo:\n  environment: prod\n$/);
+    expect(yaml).toMatch(/\nserviceInfo:\n {2}environment: prod\n$/);
   });
 
   it("tags each line with the step that wrote it", () => {

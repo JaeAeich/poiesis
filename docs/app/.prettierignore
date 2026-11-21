@@ -1,0 +1,12 @@
+# build output and caches
+.vitepress/dist
+.vitepress/cache
+node_modules
+
+# static assets; openapi.yaml and llms*.txt are generated at build time
+public
+
+# test fixtures are captured output and must stay byte for byte
+**/__tests__/fixtures
+
+package-lock.json

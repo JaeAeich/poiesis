@@ -45,3 +45,21 @@ const { config } = useDeploy();
   </div>
   <StepActions :step="step" />
 </template>
+
+<style scoped>
+/* on phones the preset tiles give way to one line */
+.poi .soon-line {
+  display: none;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+@media (max-width: 760px) {
+  .poi .tile.preset {
+    display: none;
+  }
+  .poi .soon-line {
+    display: block;
+  }
+}
+</style>
