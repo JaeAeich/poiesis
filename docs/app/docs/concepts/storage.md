@@ -173,7 +173,9 @@ complete, so a failed download leaves no file at the input's path.
 | `429`, `500`, `502`, `503`, `504`, connection error, timeout, body cut short | Retries twice, after 1 s and 2 s, each time from the input URL. |
 | Anything else | Fails the task; nothing is staged. An expired presigned URL answers `403`. |
 
-Directories can't be downloaded over HTTP(S).
+A failed download ends the task in `SYSTEM_ERROR` (see
+[Staging failures](#staging-failures)). Directories can't be downloaded
+over HTTP(S).
 
 ## HTTP(S) outputs
 
@@ -203,7 +205,7 @@ Responses:
 | `307`, `308` | Sends the file again to the new URL, unless the request has reached an `https://` URL and the new one isn't. The first request carries the file too, so up to the whole file reaches a redirecting server. |
 | `301`, `302`, `303` | Fails: following would turn the `PUT` into a `GET`. |
 | `429`, `500`, `502`, `503`, `504`, connection error, timeout | Retries twice, after 1 s and 2 s, each time from the output URL. |
-| Anything else | Fails; the `tof` log shows the start of the response body. |
+| Anything else | Fails; the task's `system_logs` and the `tof` log show the start of the response body. |
 
 - `tof` sets no size limit, but providers cap a single `PUT`: 5 GB on
   Amazon S3.
@@ -214,3 +216,36 @@ Responses:
   unencrypted; use `https://` outside a trusted network.
 - The URL is stored with the task, including any signature in its query
   string, so issue presigned URLs with a short expiry.
+
+## Staging failures
+
+When `tif` or `tof` fails, the task's `system_logs` say why. The filer
+writes one line to its container's termination message, and TCtl copies
+it into the log:
+
+```text
+container tif exited with code 1: input /inputs/reads.fq: HTTPError: GET https://bucket.example/reads.fq returned 403: <Error><Code>AccessDenied</Code>...
+```
+
+The line is at most 1 KiB. Query strings and the credentials of a URL
+are cut from it, since the query of a presigned URL is its signature.
+
+| What failed | Task state |
+| --- | --- |
+| Storage unreachable, a `5xx`, a timeout | `SYSTEM_ERROR` |
+| Access denied, an expired or rejected URL, a missing input | `SYSTEM_ERROR` |
+| A full task volume, or the task can't be read from the database | `SYSTEM_ERROR` |
+| A declared output the executors didn't produce | `EXECUTOR_ERROR` |
+
+The rule: a failed filer is `SYSTEM_ERROR`, because no executor failed.
+The one exception is an output whose `path` isn't on the task's volume
+when `tof` runs, or is a file where a `DIRECTORY` was declared. The
+executors didn't produce what the task declared, so the task ends in
+`EXECUTOR_ERROR` and the log names the output:
+
+```text
+container tof exited with code 1: output /outputs/sorted.bam was not produced by the executors
+```
+
+A glob that matches no file is not a failure (see
+[Glob outputs](#glob-outputs)).

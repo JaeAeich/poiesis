@@ -29,7 +29,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from poiesis.api.tes.models import TesState
-from poiesis.core import ignore_error
+from poiesis.core import filer_error, ignore_error
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -62,6 +62,7 @@ class PodTerminationReason(Enum):
     NODE_LOST = "NodeLost"
     DEADLINE_EXCEEDED = "DeadlineExceeded"
     PVC_BIND_FAILURE = "PVCBindFailure"
+    FILER_ERROR = "FilerError"
     ERROR = "Error"
     UNKNOWN = "Unknown"
 
@@ -321,7 +322,11 @@ def _pod_terminated_event(pod_status: Mapping[str, Any]) -> TaskEvent | None:
 def pod_terminated_terminal(
     pod_reason: str | None,
 ) -> tuple[TesState, str | None]:
-    """Map a Pod-termination reason to a terminal TES state + reason string."""
+    """Map a Pod-termination reason to a terminal TES state + reason string.
+
+    A failed filer (`FILER_ERROR`) is a system error: the executors didn't
+    fail, staging their inputs or outputs did.
+    """
     if pod_reason == PodTerminationReason.COMPLETED.value:
         return TesState.COMPLETE, None
     if pod_reason in {
@@ -330,6 +335,7 @@ def pod_terminated_terminal(
         PodTerminationReason.NODE_LOST.value,
         PodTerminationReason.DEADLINE_EXCEEDED.value,
         PodTerminationReason.PVC_BIND_FAILURE.value,
+        PodTerminationReason.FILER_ERROR.value,
     }:
         return TesState.SYSTEM_ERROR, pod_reason
     return TesState.EXECUTOR_ERROR, pod_reason
@@ -380,6 +386,10 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
     completed (exit 0: trec, a filer, an earlier executor, `ack`), and trec
     or `ack` stopped as the Pod ends (`is_lifecycle_stop`), so they don't
     shadow the underlying error of a failed Pod.
+
+    A filer (tif, tof) that failed gives `FILER_ERROR`, unless it was
+    OOMKilled, which stays that, or reported that the failure is the
+    user's (`is_filer_failure`), which leaves the container's own reason.
     """
     status = pod.get("status") or {}
     raw_reason = status.get("reason")
@@ -400,9 +410,44 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
             continue
         if is_lifecycle_stop(status, cs.get("name") or "", terminated):
             continue
+        if is_filer_failure(cs.get("name") or "", terminated):
+            cs_reason = PodTerminationReason.FILER_ERROR.value
         if cs_reason:
             return str(cs_reason)
     return PodTerminationReason.ERROR.value
+
+
+def is_filer_failure(name: str, terminated: Mapping[str, Any]) -> bool:
+    """True if `name` is a filer whose failure is the system's.
+
+    That is tif or tof exiting non-zero for any reason but two. An
+    OOMKilled filer is reported as OOMKilled. A filer whose termination
+    message says the user is at fault, as tof's does for a declared output
+    the executors didn't produce, failed as an executor would have.
+    """
+    if name not in (TIF_NAME, TOF_NAME):
+        return False
+    if ignore_error.terminated_exit_code(terminated) in (None, 0):
+        return False
+    if terminated.get("reason") == PodTerminationReason.OOM_KILLED.value:
+        return False
+    cause = filer_error.cause(terminated)
+    return cause is None or not cause[1]
+
+
+def filer_failure_log(name: str, terminated: Mapping[str, Any]) -> str | None:
+    """System log line for a filer that failed and said why.
+
+    Returns None for other containers and for a filer that left no cause
+    in its termination message.
+    """
+    if name not in (TIF_NAME, TOF_NAME):
+        return None
+    exit_code = ignore_error.terminated_exit_code(terminated)
+    cause = filer_error.cause(terminated)
+    if exit_code in (None, 0) or cause is None:
+        return None
+    return f"container {name} exited with code {exit_code}: {cause[0]}"
 
 
 def is_lifecycle_stop(

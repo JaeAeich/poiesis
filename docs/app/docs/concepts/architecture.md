@@ -55,9 +55,12 @@ leader lists the Pods labelled `poiesis.io/task` and the non-terminal
 tasks in Postgres. It has three jobs:
 
 - **Phase reconciliation**: a `Succeeded` Pod becomes `COMPLETE`; a
-  `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, deadline)
-  or `EXECUTOR_ERROR` (any other failure). Executors TRec didn't record
-  get their `executor_logs` rows here, output included.
+  `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, deadline,
+  a failed `tif` or `tof`) or `EXECUTOR_ERROR` (any other failure, and
+  a declared output the executors didn't produce). A failed filer's
+  cause, read from its termination message, goes to `system_logs`; see
+  [Staging failures](./storage.md#staging-failures). Executors TRec
+  didn't record get their `executor_logs` rows here, output included.
 - **Missing-pod reconciliation**: a non-terminal task older than 30
   seconds with no Pod becomes `SYSTEM_ERROR`. Cancelled tasks delete the
   Job, so their Pod vanishes too; `CANCELING` takes precedence, so they

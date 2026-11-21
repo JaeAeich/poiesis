@@ -135,7 +135,8 @@ files and then `exec`s the command:
 The `BASIC` view leaves `stdout`, `stderr` and `system_logs` out;
 `MINIMAL` has no logs.
 `system_logs` holds lines from Poiesis itself, such as a non-zero exit of
-`tif` or `tof`. TRec stopping when the Pod ends isn't one: Kubernetes
+`tif` or `tof` with its [cause](./storage.md#staging-failures). TRec
+stopping when the Pod ends isn't one: Kubernetes
 stops the sidecar last, and TRec exits 0 on `SIGTERM`.
 
 ## Who records what
@@ -154,7 +155,7 @@ stops the sidecar last, and TRec exits 0 on `SIGTERM`.
     { f: 'api', t: 'db', label: 'QUEUED', cap: 'CreateTask stores the task as QUEUED, then submits a Job and a volume owned by it.' },
     { f: 'trec', t: 'db', label: 'RUNNING', cap: 'trec writes RUNNING when it starts, before inputs are staged, and executor logs as each one ends.' },
     { f: 'tctl', t: 'db', label: 'COMPLETE', tone: 'ok', cap: 'Polling every 5 s, tctl sees the Pod Succeeded and writes the final state. trec never does.' },
-    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a started Pod still Pending after 5 minutes, a Pod that vanished.' }
+    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a failed tif or tof, a started Pod still Pending after 5 minutes, a Pod that vanished.' }
   ]
 }" />
 

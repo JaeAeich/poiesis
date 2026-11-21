@@ -55,6 +55,7 @@ from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.pod_status import (
     extract_pending_failure_reason,
     extract_terminal_reason,
+    filer_failure_log,
     is_lifecycle_stop,
     pod_terminated_terminal,
 )
@@ -383,10 +384,13 @@ def _terminal_system_logs(
                 if name in wrapped
                 else None
             )
+            filer_failure = filer_failure_log(name, terminated)
             if reason == "OOMKilled":
                 lines.append(f"container {name} OOMKilled")
             elif shell_failure is not None:
                 lines.append(shell_failure)
+            elif filer_failure is not None:
+                lines.append(filer_failure)
             elif exit_code not in (None, 0):
                 lines.append(f"container {name} exited with code {exit_code}")
     if not lines:

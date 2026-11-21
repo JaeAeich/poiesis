@@ -9,6 +9,7 @@ import asyncpg
 import click
 
 from poiesis.cli.commands.poiesis.base import BaseCommand
+from poiesis.core import filer_error
 from poiesis.core.services.filer.filer_strategy_factory import (
     supported_output_schemes,
 )
@@ -53,14 +54,22 @@ class TofCommand(BaseCommand):
 
 async def _run(task_id: str, dsn: str) -> int:
     """Fetch the task from Postgres and upload its outputs."""
-    conn = await asyncpg.connect(dsn)
     try:
-        task = await tasks_db.get_task(conn, task_id, view=tasks_db.TaskView.FULL)
-    finally:
-        await conn.close()
+        conn = await asyncpg.connect(dsn)
+        try:
+            task = await tasks_db.get_task(conn, task_id, view=tasks_db.TaskView.FULL)
+        finally:
+            await conn.close()
+    except Exception as e:
+        # The cause reaches the task's system logs through the container's
+        # termination message, as a failed transfer's does.
+        e.add_note("reading the task from the database")
+        filer_error.record(e)
+        raise
 
     if task is None:
         click.echo(f"task {task_id} not found", err=True)
+        filer_error.write(f"task {task_id} not found in the database")
         return 1
 
     outputs = task.outputs or []
