@@ -115,6 +115,57 @@ data:
   AWS_REGION: {{ . | quote }}
   {{- end }}
 
+  # ---- Object stores -----------------------------------------------------------
+  # The API passes these to tif/tof only; Secret names, never values.
+  {{- $s3 := .Values.s3 }}
+  {{- if $s3.enabled }}
+  POIESIS_S3_ENABLED: "true"
+  {{- end }}
+  {{- with $s3.roleArn }}
+  POIESIS_S3_ROLE_ARN: {{ . | quote }}
+  {{- end }}
+  {{- if $s3.virtualHostedStyle }}
+  POIESIS_S3_VIRTUAL_HOSTED_STYLE: "true"
+  {{- end }}
+  {{- with $s3.serverSideEncryption }}
+  POIESIS_S3_SERVER_SIDE_ENCRYPTION: {{ . | quote }}
+  {{- end }}
+  {{- with $s3.kmsKeyId }}
+  {{- if not (has $s3.serverSideEncryption (list "aws:kms" "aws:kms:dsse")) }}
+  {{- fail "s3.kmsKeyId needs s3.serverSideEncryption: aws:kms or aws:kms:dsse" }}
+  {{- end }}
+  POIESIS_S3_SSE_KMS_KEY_ID: {{ . | quote }}
+  {{- end }}
+  {{- if $s3.requesterPays }}
+  POIESIS_S3_REQUESTER_PAYS: "true"
+  {{- end }}
+  {{- $gcs := .Values.gcs }}
+  {{- if $gcs.enabled }}
+  {{- if not $gcs.existingSecret }}
+  {{- fail "gcs.enabled needs gcs.existingSecret (a service-account key): GKE Workload Identity would reach executors too" }}
+  {{- end }}
+  POIESIS_GCS_ENABLED: "true"
+  POIESIS_TASKPOD_GCS_SECRET: {{ $gcs.existingSecret | quote }}
+  {{- end }}
+  {{- $azure := .Values.azure }}
+  {{- if $azure.enabled }}
+  {{- if not $azure.accountName }}
+  {{- fail "azure.enabled needs azure.accountName" }}
+  {{- end }}
+  {{- if ne (empty $azure.clientId) (empty $azure.tenantId) }}
+  {{- fail "azure.clientId and azure.tenantId are set together" }}
+  {{- end }}
+  POIESIS_AZURE_ENABLED: "true"
+  POIESIS_AZURE_ACCOUNT_NAME: {{ $azure.accountName | quote }}
+  {{- with $azure.existingSecret }}
+  POIESIS_TASKPOD_AZURE_SECRET: {{ . | quote }}
+  {{- end }}
+  {{- with $azure.clientId }}
+  POIESIS_AZURE_CLIENT_ID: {{ . | quote }}
+  POIESIS_AZURE_TENANT_ID: {{ $azure.tenantId | quote }}
+  {{- end }}
+  {{- end }}
+
   # ---- Auth --------------------------------------------------------------------
   # When auth.enabled is false the API skips issuer bootstrap and treats every
   # request as anonymous; only the toggle env is emitted so a misconfigured

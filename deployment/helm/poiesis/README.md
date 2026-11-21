@@ -3,7 +3,8 @@
 GA4GH TES (Task Execution Service) on Kubernetes. Single-Pod task
 architecture, Postgres-backed, leader-elected backstop reconciler. This
 chart deploys only the poiesis control plane — Postgres and (optional)
-S3-compatible storage are operator-supplied.
+object storage (S3 or S3-compatible; Google Cloud Storage and Azure Blob,
+experimental) are operator-supplied.
 
 ## Quick start
 
@@ -88,6 +89,42 @@ kubectl -n poiesis-tasks create secret generic poiesis-s3 \
   --from-literal=AWS_ACCESS_KEY_ID=... \
   --from-literal=AWS_SECRET_ACCESS_KEY=...
 ```
+
+### Object stores (`s3`, `gcs`, `azure`)
+
+tif and tof stage inputs from and upload outputs to `s3://`, `gs://` and
+`az://` URLs. A scheme is accepted at submit, and listed in service-info,
+only when its provider is on. `gcs` and `azure` are experimental: they
+are covered by unit tests only, not run against the real services.
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `s3.enabled`              | bool   | `false` | Offer `s3://` without static keys (instance credentials). `s3.existingSecret` or `s3.roleArn` also turn S3 on. |
+| `s3.endpoint`             | string | `""`    | `AWS_ENDPOINT_URL`; empty for AWS. An `http://` endpoint is allowed. |
+| `s3.region`               | string | `""`    | `AWS_REGION`. |
+| `s3.existingSecret`       | string | `""`    | Secret with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and, optionally, `AWS_SESSION_TOKEN`. |
+| `s3.roleArn`              | string | `""`    | IAM role tif/tof assume with a ServiceAccount token for `sts.amazonaws.com` (IRSA). The token is mounted into tif and tof only. |
+| `s3.virtualHostedStyle`   | bool   | `false` | Virtual-hosted-style requests. `false` = path-style, which SeaweedFS and MinIO need. |
+| `s3.serverSideEncryption` | string | `""`    | `AES256`, `aws:kms` or `aws:kms:dsse`. |
+| `s3.kmsKeyId`             | string | `""`    | KMS key for `aws:kms` / `aws:kms:dsse`. |
+| `s3.requesterPays`        | bool   | `false` | Pay for requests to requester-pays buckets. |
+| `gcs.enabled`             | bool   | `false` | Offer `gs://`. Needs `gcs.existingSecret`. |
+| `gcs.existingSecret`      | string | `""`    | Secret in the TaskPod namespace with `GOOGLE_SERVICE_ACCOUNT_KEY` (a JSON key). |
+| `azure.enabled`           | bool   | `false` | Offer `az://container/blob`. Needs `azure.accountName`. |
+| `azure.accountName`       | string | `""`    | Storage account. |
+| `azure.existingSecret`    | string | `""`    | Secret in the TaskPod namespace with `AZURE_STORAGE_ACCOUNT_KEY`. |
+| `azure.clientId`, `azure.tenantId` | string | `""` | Workload identity: tif/tof get a ServiceAccount token for `api://AzureADTokenExchange`. Set both or neither. |
+
+With `s3.roleArn` or `azure.clientId`, the API projects a ServiceAccount
+token for the provider into tif and tof only, at
+`/var/run/secrets/poiesis/identity/<aws|azure>/token`. Executors never
+get it: the TaskPod does not automount a token, and only trec gets the
+Kubernetes API token. Do not annotate the TaskPod ServiceAccount for the
+EKS or AKS webhooks (`eks.amazonaws.com/role-arn`,
+`azure.workload.identity/client-id`): they inject the token into every
+container, executors included. The trust policy (AWS) or federated
+credential (Azure) names the subject
+`system:serviceaccount:<taskpod namespace>:<taskpod ServiceAccount>`.
 
 ### Storage (`taskpods.persistence`)
 
