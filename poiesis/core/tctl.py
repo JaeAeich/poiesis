@@ -9,6 +9,9 @@ The control loop is a polling reconciler: every `_RECONCILE_INTERVAL_SECONDS`
 the leader lists every non-terminal task in the DB, then every task Job and
 TaskPod, joins them, and writes terminal state for any combination that
 warrants it. No watch, no event stream, no race between two writers.
+Each pass gathers its inputs once (`_gather`), decides what to do about
+each task without any I/O (`core/reconcile.py`) and applies the actions
+(`_apply`).
 
 Cases the reconciler covers:
 
@@ -61,6 +64,7 @@ import signal
 import socket
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, cast
@@ -70,22 +74,24 @@ from kubernetes.client import BatchV1Api, CoordinationV1Api, CoreV1Api
 from kubernetes.client.exceptions import ApiException
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
-from poiesis.api.tes.models import TesState
-from poiesis.core import executor_shell, ignore_error
+    from poiesis.api.tes.models import TesState
+
+from poiesis.core import ignore_error
 from poiesis.core.executor_logs import read_executor_streams, streams_from_pod
 from poiesis.core.leases import try_acquire_or_renew
-from poiesis.core.pod_status import (
-    created_at,
-    extract_job_failure,
-    extract_pending_failure_reason,
-    extract_terminal_reason,
-    extract_unschedulable_message,
-    filer_failure_log,
-    is_lifecycle_stop,
-    job_deadline_terminal,
-    pod_terminated_terminal,
+from poiesis.core.reconcile import (
+    Action,
+    DeleteJob,
+    TaskView,
+    Timeouts,
+    WriteTerminal,
+    decide,
+)
+from poiesis.core.reconcile import parse_kubelet_ts as _parse_kubelet_ts
+from poiesis.core.reconcile import (  # noqa: F401 (still importable from here)
+    terminal_system_logs as _terminal_system_logs,
 )
 from poiesis.core.taskpod import job_name_for
 from poiesis.db import state as state_db
@@ -220,6 +226,42 @@ async def _reconcile_while_leader(  # noqa: PLR0913 (one pass's inputs and the L
         await _wait_or_cancel(cancelled, _RECONCILE_INTERVAL_SECONDS)
 
 
+@dataclass(frozen=True)
+class _Snapshot:
+    """What one pass read, before deciding anything.
+
+    Attributes:
+        non_terminal: Non-terminal task ids, in the DB's order.
+        canceling: `CANCELING` task ids, in the DB's order.
+        seen_for: Seconds tctl has seen each non-terminal task (`first_seen`).
+        jobs: Each task's Job, by task id, in list order.
+        pods: Each task's Pods, by task id, in list order.
+        now: The wall-clock time read after the lists.
+    """
+
+    non_terminal: list[str]
+    canceling: list[str]
+    seen_for: dict[str, float]
+    jobs: dict[str, Mapping[str, Any]]
+    pods: dict[str, list[Mapping[str, Any]]]
+    now: datetime
+
+    def tasks(self) -> list[TaskView]:
+        """Every task the pass knows of: with a Pod, a Job, or in the DB."""
+        task_ids = dict.fromkeys(
+            [*self.pods, *self.jobs, *self.non_terminal, *self.canceling]
+        )
+        canceling = set(self.canceling)
+        return [
+            TaskView(
+                task_id,
+                canceling=task_id in canceling,
+                seen_for=self.seen_for.get(task_id),
+            )
+            for task_id in task_ids
+        ]
+
+
 async def _reconcile_once(
     core_v1: CoreV1Api,
     batch_v1: BatchV1Api,
@@ -231,11 +273,51 @@ async def _reconcile_once(
 ) -> None:
     """One pass over all non-terminal task rows, task Jobs and TaskPods.
 
+    Gathers the inputs once (`_gather`), decides each task's actions
+    (`reconcile.decide`) and applies them (`_apply`). A cancelled task's Job
+    delete goes first, for every task: its Pods are stopped, and with the
+    Job and Pod gone a later pass's orphan check finalises the task as
+    CANCELED. The other actions follow, task by task.
+    """
+    snapshot = await _gather(core_v1, batch_v1, pool, namespace, first_seen)
+    timeouts = Timeouts(
+        pending=_PENDING_TIMEOUT_SECONDS,
+        unschedulable=unschedulable_timeout,
+        orphan_grace=_ORPHAN_GRACE_SECONDS,
+    )
+    plans = {
+        task.task_id: decide(
+            task,
+            snapshot.jobs.get(task.task_id),
+            snapshot.pods.get(task.task_id, []),
+            snapshot.now,
+            timeouts,
+        )
+        for task in snapshot.tasks()
+    }
+
+    for task_id in snapshot.canceling:
+        retried = [a for a in plans[task_id] if isinstance(a, DeleteJob) and a.retry]
+        await _apply(core_v1, batch_v1, pool, namespace, task_id, retried)
+    for task_id, actions in plans.items():
+        rest = [a for a in actions if not (isinstance(a, DeleteJob) and a.retry)]
+        await _apply(core_v1, batch_v1, pool, namespace, task_id, rest)
+
+
+async def _gather(
+    core_v1: CoreV1Api,
+    batch_v1: BatchV1Api,
+    pool: asyncpg.Pool,
+    namespace: str,
+    first_seen: dict[str, float],
+) -> _Snapshot:
+    """Read the task rows, then the task Jobs and TaskPods.
+
     The task rows are read first, so every task considered for the orphan
     check existed before the Jobs and Pods were listed: a slow pass can't
     mistake a task created meanwhile for one without a Pod. `first_seen`
     maps each non-terminal task to the monotonic time tctl first read it;
-    it is this function's memory between passes.
+    it is the pass's memory between passes, updated here.
     """
     async with pool.acquire() as conn:
         non_terminal = await state_db.list_non_terminal_task_ids(
@@ -261,57 +343,20 @@ async def _reconcile_once(
         label_selector=_TASK_LABEL,
     )
 
-    jobs = _jobs_by_task(job_list.items)
-
-    # A cancelled task's Job goes first: its Pods are stopped, and with the
-    # Job and Pod gone the orphan check below finalises the task as CANCELED.
-    for task_id in canceling:
-        if task_id in jobs and not _being_deleted(jobs[task_id]):
-            await _delete_job(batch_v1, namespace, task_id)
-
-    now = datetime.now(UTC)
-    seen_task_ids: set[str] = set()
+    pods: dict[str, list[Mapping[str, Any]]] = {}
     for pod in pod_list.items:
         pod_dict = pod.to_dict() if hasattr(pod, "to_dict") else dict(pod)
         task_id = _task_id_from_pod(pod_dict)
-        if task_id is None:
-            continue
-        seen_task_ids.add(task_id)
-        await _reconcile_pod(
-            core_v1,
-            batch_v1,
-            pool,
-            pod_dict,
-            task_id,
-            now,
-            job=jobs.get(task_id),
-            unschedulable_timeout=unschedulable_timeout,
-        )
+        if task_id is not None:
+            pods.setdefault(task_id, []).append(pod_dict)
 
-    for task_id, job_dict in jobs.items():
-        if task_id in seen_task_ids:
-            continue
-        if await _reconcile_podless_job(
-            batch_v1,
-            pool,
-            namespace,
-            job_dict,
-            task_id,
-            now,
-            unschedulable_timeout=unschedulable_timeout,
-        ):
-            seen_task_ids.add(task_id)
-
-    await _reconcile_orphans(
-        batch_v1,
-        pool,
-        namespace,
-        [
-            task_id
-            for task_id in non_terminal
-            if task_id not in seen_task_ids
-            and observed - first_seen[task_id] >= _ORPHAN_GRACE_SECONDS
-        ],
+    return _Snapshot(
+        non_terminal=list(non_terminal),
+        canceling=list(canceling),
+        seen_for={task_id: observed - first_seen[task_id] for task_id in non_terminal},
+        jobs=_jobs_by_task(job_list.items),
+        pods=pods,
+        now=datetime.now(UTC),
     )
 
 
@@ -326,181 +371,34 @@ def _jobs_by_task(jobs: list[Any]) -> dict[str, Mapping[str, Any]]:
     return by_task
 
 
-async def _reconcile_pod(
+async def _apply(
     core_v1: CoreV1Api,
     batch_v1: BatchV1Api,
     pool: asyncpg.Pool,
-    pod: Mapping[str, Any],
-    task_id: str,
-    now: datetime,
-    *,
-    job: Mapping[str, Any] | None = None,
-    unschedulable_timeout: float | None = None,
-) -> None:
-    """Apply terminal state for one pod when its phase warrants it.
-
-    The Job is read first: when its time limit ran out, the Job controller
-    kills the Pod, whose containers then show only a signal's exit code
-    (137, 143). The task ends with the time limit as its cause instead.
-    """
-    phase = ((pod.get("status") or {}).get("phase") or "").lower()
-
-    deadline = job_deadline_terminal(job) if job is not None else None
-    if deadline is not None:
-        proposed, reason, line = deadline
-        await _apply_terminal(
-            pool,
-            core_v1=core_v1,
-            task_id=task_id,
-            pod=pod,
-            proposed=proposed,
-            reason=reason,
-            system_logs=[line],
-            source="job-deadline",
-        )
-        return
-
-    if phase in {"succeeded", "failed"}:
-        pod_reason = extract_terminal_reason(pod)
-        proposed, reason = pod_terminated_terminal(pod_reason)
-        system_logs = _terminal_system_logs(pod, proposed)
-        await _apply_terminal(
-            pool,
-            core_v1=core_v1,
-            task_id=task_id,
-            pod=pod,
-            proposed=proposed,
-            reason=reason,
-            system_logs=system_logs,
-            source="pod-terminal",
-        )
-        return
-
-    timeout = (
-        _pending_timeout(pod, now, unschedulable_timeout)
-        if phase == "pending"
-        else None
-    )
-    if timeout is not None:
-        pending_reason = extract_pending_failure_reason(pod)
-        namespace = (pod.get("metadata") or {}).get("namespace")
-        wrote = await _apply_terminal(
-            pool,
-            core_v1=core_v1,
-            task_id=task_id,
-            pod=pod,
-            proposed=TesState.SYSTEM_ERROR,
-            reason=pending_reason,
-            system_logs=_pending_system_logs(pod, timeout, pending_reason),
-            source=timeout.replace(" ", "-"),
-        )
-        if wrote and namespace:
-            await _delete_job(batch_v1, namespace, task_id)
-
-
-async def _reconcile_podless_job(
-    batch_v1: BatchV1Api,
-    pool: asyncpg.Pool,
     namespace: str,
-    job: Mapping[str, Any],
     task_id: str,
-    now: datetime,
-    *,
-    unschedulable_timeout: float | None = None,
-) -> bool:
-    """Reconcile a task Job that has no Pod; True iff the Job accounts for it.
-
-    A Job that is being deleted or has completed stands for nothing any
-    more: False leaves its task to the orphan check. A failed Job (its
-    time limit ran out and the Job controller removed the Pod) ends the
-    task with its own reason. Any other Job is alive, and its task waits
-    for a Pod: a ResourceQuota or an admission webhook may hold the Pod
-    back until capacity frees up. Only `unschedulable_timeout`, when set,
-    ends that wait.
-    """
-    if _being_deleted(job):
-        return False
-
-    deadline = job_deadline_terminal(job)
-    if deadline is not None:
-        proposed, reason, line = deadline
-        await _apply_terminal(
-            pool,
-            core_v1=None,
-            task_id=task_id,
-            pod=None,
-            proposed=proposed,
-            reason=reason,
-            system_logs=[line],
-            source="job-deadline",
-        )
-        return True
-
-    finished, failure = extract_job_failure(job)
-    if failure is not None:
-        await _apply_terminal(
-            pool,
-            core_v1=None,
-            task_id=task_id,
-            pod=None,
-            proposed=TesState.SYSTEM_ERROR,
-            reason=f"Job failed: {failure}",
-            system_logs=[f"job failed without a pod: {failure}"],
-            source="job-failed",
-        )
-        return True
-    if finished:
-        return False
-
-    created = created_at(job)
-    if (
-        unschedulable_timeout is not None
-        and created is not None
-        and (now - created).total_seconds() > unschedulable_timeout
-    ):
-        wrote = await _apply_terminal(
-            pool,
-            core_v1=None,
-            task_id=task_id,
-            pod=None,
-            proposed=TesState.SYSTEM_ERROR,
-            reason="Job created no Pod",
-            system_logs=[
-                "unschedulable timeout: the Job created no Pod "
-                "(see the Job's events: quota, admission)"
-            ],
-            source="job-no-pod",
-        )
-        if wrote:
-            await _delete_job(batch_v1, namespace, task_id)
-    return True
-
-
-async def _reconcile_orphans(
-    batch_v1: BatchV1Api,
-    pool: asyncpg.Pool,
-    namespace: str,
-    orphans: list[str],
+    actions: Sequence[Action],
 ) -> None:
-    """Write SYSTEM_ERROR for non-terminal tasks whose pod has disappeared.
+    """Apply one task's actions in order.
 
-    `orphans` are the tasks with neither a live Job nor a Pod for the whole
-    grace period. The CANCELING precedence rule on the writer turns the
-    proposal into CANCELED for cancelled tasks; this path covers the rest
-    (manual pod delete, node loss, etc.).
+    A `DeleteJob(retry=False)` runs only if the `WriteTerminal` before it
+    finalised the task.
     """
-    for task_id in orphans:
-        wrote = await _apply_terminal(
-            pool,
-            core_v1=None,
-            task_id=task_id,
-            pod=None,
-            proposed=TesState.SYSTEM_ERROR,
-            reason="Pod disappeared before reaching terminal phase",
-            system_logs=["pod disappeared before reaching terminal phase"],
-            source="orphan",
-        )
-        if wrote:
+    wrote = False
+    for action in actions:
+        if isinstance(action, WriteTerminal):
+            pod = action.backfill_from_pod
+            wrote = await _apply_terminal(
+                pool,
+                core_v1=core_v1 if pod is not None else None,
+                task_id=task_id,
+                pod=pod,
+                proposed=action.state,
+                reason=action.reason,
+                system_logs=list(action.system_logs),
+                source=action.source,
+            )
+        elif action.retry or wrote:
             await _delete_job(batch_v1, namespace, task_id)
 
 
@@ -523,9 +421,10 @@ async def _apply_terminal(
     terminal state but missing per-executor rows) and append the
     system_logs strings describing the failure mode.
 
-    Returns True iff this call finalised the task. A caller whose write
-    doesn't come from a finished Pod or Job then deletes the task's Job
-    (`_delete_job`), so that nothing of the task keeps running.
+    Returns True iff this call finalised the task. A write that doesn't
+    come from a finished Pod or Job is then followed by a delete of the
+    task's Job (`DeleteJob(retry=False)`), so that nothing of the task
+    keeps running.
     """
     async with pool.acquire() as conn:
         c = cast("asyncpg.Connection", conn)
@@ -582,12 +481,6 @@ async def _delete_job(batch_v1: BatchV1Api, namespace: str, task_id: str) -> Non
             )
         return
     logger.info("tctl: deleted the Job of task=%s", task_id)
-
-
-def _being_deleted(obj: Mapping[str, Any]) -> bool:
-    """True iff the object carries a `deletionTimestamp`."""
-    metadata = obj.get("metadata") or {}
-    return bool(metadata.get("deletion_timestamp") or metadata.get("deletionTimestamp"))
 
 
 async def _backfill_executor_logs(
@@ -654,112 +547,6 @@ async def _backfill_executor_logs(
             stdout=stdout,
             stderr=stderr,
         )
-
-
-def _terminal_system_logs(
-    pod: Mapping[str, Any],
-    proposed: TesState,
-) -> list[str]:
-    """Emit human-readable diagnostics for non-COMPLETE terminal writes.
-
-    Walks every container status and surfaces termination reasons that
-    operators care about: OOMKill, non-zero exit, specific waiting
-    reasons. trec and `ack` stopped as the Pod ends are left out
-    (`is_lifecycle_stop`). Returns an empty list for COMPLETE (happy path
-    needs no system_logs noise).
-    """
-    if proposed is TesState.COMPLETE:
-        return []
-
-    lines: list[str] = []
-    wrapped = executor_shell.wrapped_executors(pod)
-    status = pod.get("status") or {}
-    for key in (
-        "init_container_statuses",
-        "initContainerStatuses",
-        "container_statuses",
-        "containerStatuses",
-    ):
-        for entry in status.get(key) or []:
-            name = entry.get("name") or "?"
-            terminated = (entry.get("state") or {}).get("terminated")
-            if not terminated or is_lifecycle_stop(status, name, terminated):
-                continue
-            reason = terminated.get("reason")
-            exit_code = terminated.get("exit_code") or terminated.get("exitCode")
-            shell_failure = (
-                executor_shell.start_failure_log(name, terminated, wrapped[name])
-                if name in wrapped
-                else None
-            )
-            filer_failure = filer_failure_log(name, terminated)
-            if reason == "OOMKilled":
-                lines.append(f"container {name} OOMKilled")
-            elif shell_failure is not None:
-                lines.append(shell_failure)
-            elif filer_failure is not None:
-                lines.append(filer_failure)
-            elif exit_code not in (None, 0):
-                lines.append(f"container {name} exited with code {exit_code}")
-    if not lines:
-        lines.append(f"task ended in {proposed.value}")
-    return lines
-
-
-def _pending_system_logs(
-    pod: Mapping[str, Any], timeout: str, reason: str
-) -> list[str]:
-    """The system_logs of a timeout in Pending: the reason, then the scheduler's.
-
-    `timeout` names which timeout ran out (`_pending_timeout`); `reason` is
-    a stable classification. The scheduler's own message says which nodes
-    it tried and why none fits, so it is kept as a second line.
-    """
-    lines = [f"{timeout}: {reason}"]
-    message = extract_unschedulable_message(pod)
-    if message:
-        lines.append(f"scheduler: {message}")
-    return lines
-
-
-def _parse_kubelet_ts(value: Any) -> datetime | None:
-    """Best-effort parse of a kubelet ISO-8601 timestamp."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
-
-
-def _pending_timeout(
-    pod: Mapping[str, Any], now: datetime, unschedulable_timeout: float | None
-) -> str | None:
-    """Which timeout a Pending `pod` has run out of, if any.
-
-    A Pod bound to a node has a `status.startTime`; after
-    `_PENDING_TIMEOUT_SECONDS` from it, "pending timeout". A Pod the
-    scheduler hasn't placed (no node with room, unbindable PVC, taints) has
-    none: on a busy cluster that is queueing, not a fault. It is timed from
-    `metadata.creationTimestamp` against `unschedulable_timeout`, and
-    never when that is None: "unschedulable timeout".
-    """
-    status = pod.get("status") or {}
-    started = _parse_kubelet_ts(status.get("startTime") or status.get("start_time"))
-    if started is not None:
-        if started.tzinfo is None:
-            started = started.replace(tzinfo=UTC)
-        if (now - started).total_seconds() > _PENDING_TIMEOUT_SECONDS:
-            return "pending timeout"
-        return None
-    if unschedulable_timeout is None:
-        return None
-    created = created_at(pod)
-    if created is not None and (now - created).total_seconds() > unschedulable_timeout:
-        return "unschedulable timeout"
-    return None
 
 
 def _task_id_from_pod(pod: Mapping[str, Any]) -> str | None:
