@@ -113,7 +113,8 @@ The password is the user name. User ids are fixed in the realm, so `sub`
 The dev issuer entry accepts both clients (`clients: [poiesis-cli,
 poiesis-ci]`), lists `tokenTypes: [JWT]`, lets `poiesis-cli` mint keys,
 and makes `poiesis-admins` the built-in admins. Tokens carry
-`aud: poiesis` and a `groups` claim, and live five minutes.
+`aud: poiesis` (`poiesis-cli` tokens also a `groups` claim of plain
+names) and live five minutes.
 
 Keycloak pins the issuer to the in-cluster URL,
 `http://keycloak.deps.svc:8080/realms/poiesis`, so tokens fetched through

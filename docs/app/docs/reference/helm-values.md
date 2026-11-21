@@ -31,11 +31,11 @@ chart references them by name.
 | `image.tag` | `""` | Empty uses the chart's `appVersion`. |
 | `image.pullPolicy` | `IfNotPresent` | Pull policy. |
 | `imagePullSecrets` | `[]` | Applied to the API, TCtl, the migration hook and every TaskPod. |
-| `podSecurityContext`, `containerSecurityContext` | `{}` | Security contexts for the API, TCtl and the hook; default to a profile derived from `podSecurityEnforce`. |
+| `podSecurityContext`, `containerSecurityContext` | `{}` | Security contexts for the API, TCtl and the hook, merged over a profile derived from `podSecurityEnforce`. |
 | `podSecurityEnforce` | `restricted` | PodSecurity profile for Poiesis-owned containers (API, TCtl, hook, and `trec`/`tif`/`tof`/`ack`): `restricted`, `baseline` or `off`. Executors run user images and are exempt. |
 | `nodeSelector`, `tolerations`, `affinity` | `{}`, `[]`, `{}` | Default scheduling; per-component values win. |
-| `extraEnv`, `extraEnvFrom` | `[]` | Extra environment for every component; component extras append. |
-| `extraVolumes`, `extraVolumeMounts` | `[]` | Extra volumes for every component; component extras append. Names must not collide. |
+| `extraEnv`, `extraEnvFrom` | `[]` | Extra environment for the API and TCtl; component extras append. |
+| `extraVolumes`, `extraVolumeMounts` | `[]` | Extra volumes for the API and TCtl; component extras append. Names must not collide. |
 | `extraManifests` | `[]` | Manifests rendered verbatim (strings or templates). |
 | `logLevel` | `INFO` | Application log level. The [audit log](./audit-log.md) ignores it. |
 
@@ -153,7 +153,7 @@ starting. See [Service info](../guides/production.md#service-info).
 | Key | Default | What it does |
 | --- | --- | --- |
 | `api.replicas` | `1` | API replicas. |
-| `api.image` | `{}` | Image override (registry, repository, tag, pullPolicy), e.g. for canaries. |
+| `api.image` | `{}` | Image override (registry, repository, tag, pullPolicy), e.g. for canaries; TaskPods use the same image. |
 | `api.resources` | requests `100m`/`256Mi`, limits `1000m`/`512Mi` | Container resources. |
 | `api.probes.startup` | enabled, every 2 s, 30 failures | Startup probe. |
 | `api.probes.readiness` | enabled, every 5 s, timeout 2 s | Readiness probe. |
@@ -195,7 +195,7 @@ Baked into TaskPod manifests by the API when a task is created. See
 | `taskpods.persistence.annotations` | `{}` | Annotations on every task volume. |
 | `taskpods.persistence.retainAfterSeconds` | `3600` | `ttlSecondsAfterFinished` of the Job; `null` keeps Job and volume. |
 | `taskpods.outputGlobFallback` | `false` | Upload everything under `path_prefix` when an output glob matches nothing. |
-| `taskpods.extraEnv` | `[]` | Env for `trec`, `tif`, `tof`. Reserved: `DATABASE_URL`, `AWS_*`, `POIESIS_*`. |
+| `taskpods.extraEnv` | `[]` | Env for `trec`, `tif`, `tof`. Reserved: `DATABASE_URL`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `POIESIS_*`. |
 | `taskpods.extraVolumes` | `[]` | Volumes added to every TaskPod. Reserved names: `task-data`, `postgres-ca`, `tmp`. |
 | `taskpods.extraVolumeMounts` | `[]` | Mounts for Poiesis containers and executors (reference data). |
 
@@ -206,9 +206,9 @@ Kubernetes env-var limit); use a mounted ConfigMap for very large sets.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `networkPolicy.enabled` | `false` | Render a NetworkPolicy for the API. |
-| `networkPolicy.ingressFromPodSelector` | `{}` | Pods allowed to reach the API. |
-| `networkPolicy.extraEgress` | `[]` | Extra egress rules. |
+| `networkPolicy.enabled` | `false` | Render NetworkPolicies for the API and TCtl. |
+| `networkPolicy.ingressFromPodSelector` | `{}` | Further pods (besides the release's own) allowed to reach the API. |
+| `networkPolicy.extraEgress` | `[]` | Extra egress rules for the API and TCtl. |
 
 ## migrations
 

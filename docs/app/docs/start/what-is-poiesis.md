@@ -6,8 +6,8 @@ description: Poiesis is a GA4GH TES v1.1 server for Kubernetes. Every task runs 
 
 Poiesis is a [GA4GH Task Execution Service](./tes.md) (TES `v1.1.0`) for
 Kubernetes. Workflow engines send it tasks over a REST API; it runs each
-task as **one Pod with its own volume**. One container image, one
-PostgreSQL schema, no broker.
+task as **one Pod with its own volume**. One container image (plus one
+for migrations), one PostgreSQL schema, no broker.
 
 <TaskFigure />
 
@@ -26,10 +26,10 @@ PostgreSQL schema, no broker.
 | Component | Role |
 | --- | --- |
 | **API** | FastAPI service exposing TES under `/ga4gh/tes/v1`. No scheduler, no reconciler. |
-| **TaskPod** | One Pod per task: `trec` (sidecar), then `tif`, `exec-0..N`, `tof`, `ack`. |
-| **TRec** | In-pod recorder. Watches the surrounding Pod, writes state and logs. |
-| **TCtl** | Leader-elected Deployment. Records OOMKill, eviction, node loss, unbindable PVC and pending timeouts. |
-| **Postgres** | Relational store. A conditional-UPDATE writer makes TRec and TCtl race-correct. |
+| **TaskPod** | One Pod per task: `trec` (sidecar), then `tif`, `exec-0..N`, `tof`, `ack`. `tif` and `tof` only if the task has inputs or outputs. |
+| **TRec** | In-pod recorder. Watches the surrounding Pod, marks the task `RUNNING` and writes executor logs. |
+| **TCtl** | Leader-elected Deployment. Writes every final state from the Pod's phase, including OOMKill, eviction, node loss, pending timeouts and vanished Pods. |
+| **Postgres** | Relational store. Conditional `UPDATE`s make concurrent state writes (TRec, TCtl, a cancel) race-correct. |
 
 See [Tasks and TaskPods](../concepts/tasks.md) and
 [Architecture](../concepts/architecture.md) for how they fit together.

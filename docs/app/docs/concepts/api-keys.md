@@ -5,7 +5,8 @@ description: Long-lived poi_ keys for workflow engines - configuration, minting 
 # API keys
 
 Workflow engines read one credential when they start and then poll
-for hours or days. IdP access tokens live 5 to 60 minutes, so a long
+for hours or days. IdP access tokens usually live minutes (five in
+the dev realm), so a long
 run that was started with a token gets `401`s halfway through, even
 though its tasks are fine. Poiesis API keys fix that: an owner logs in
 once, mints a key for the run and gives the key to the engine.
@@ -277,7 +278,7 @@ an admin call also when the owner is the caller's own; without it, `GET`
 lists the caller's keys as before. An `owner` that isn't
 `namespace|subject` is a `400`, and `DELETE` without `owner` a `422`.
 Both calls are in the [audit log](../reference/audit-log.md)
-(`apikey.revoke_owner` with the count, `apikey.list_owner`).
+(`apikey.revoke_owner`, `apikey.list_owner`, each with the count).
 
 Revoking keys doesn't stop the user's tokens: disable the user at the
 IdP too. A user who can still log in may mint new keys.
@@ -329,8 +330,6 @@ sees. So:
 
 ## Security model
 
-![API keys: how they are minted and used, and what changed](/api-keys-summary.png)
-
 What protects keys:
 
 | Threat | Protection |
@@ -361,8 +360,9 @@ To scan for leaked keys, match `poi_[A-Za-z0-9_-]{43}[0-9A-Za-z]{6}`;
 the last 6 characters are the base62 CRC32 of the 43 before them.
 
 Every mint and revocation, refused ones included, is in the
-[audit log](../reference/audit-log.md) with the key id, owner and client (for
-mints also scopes and expiry), never the key; refused mints are also
+[audit log](../reference/audit-log.md) with the owner, client and, where
+there is one, the key id (for allowed mints also scopes and expiry),
+never the key; refused mints are also
 logged at `WARNING` with the reason.
 
 ## Behaviour the client sees

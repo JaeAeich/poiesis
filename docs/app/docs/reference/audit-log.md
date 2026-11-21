@@ -45,7 +45,7 @@ Every line has:
 | --- | --- |
 | `ts` | Time of the decision, RFC 3339, UTC, milliseconds. |
 | `event` | What was asked, see [Events](#events). |
-| `outcome` | `allow`, `deny`, or `error` when the decision service failed (the client got `503`). |
+| `outcome` | `allow`, `deny`, or `error` when the decision service (or, for an owner's keys, the database) failed (the client got `503`). |
 | `request_id` | The request's id, also sent back in the `X-Request-ID` response header (see [Request id](#request-id)). |
 
 and, about the caller, when known:
@@ -53,7 +53,7 @@ and, about the caller, when known:
 | Field | Meaning |
 | --- | --- |
 | `owner` | The caller's owner id (`namespace\|subject`), as stamped on their tasks. |
-| `issuer` | The issuer of the caller's token (or of the token a key was minted with). |
+| `issuer` | The issuer of the caller's token (for a key, the configured issuer with the key's namespace). |
 | `via` | How the caller authenticated: `oidc` (access token), `apikey` or `anonymous` (auth disabled). |
 | `credential_id` | The token's `jti`, or the API key's id. |
 | `client` | The token's OAuth client (`azp`, else `client_id`). |

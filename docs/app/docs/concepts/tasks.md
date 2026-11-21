@@ -14,24 +14,23 @@ happens.
   uploads outputs. All share the task's [volume](./task-volumes.md).
 - An executor that exits non-zero stops the task, unless it sets
   [`ignore_error`](#executors-that-may-fail).
-- `trec` writes state and logs to Postgres as the Pod runs; `tctl`
-  steps in only when the Pod can't report for itself.
+- `trec` marks the task `RUNNING` and writes executor logs to Postgres
+  as the Pod runs; `tctl` writes every final state.
 
 ## The containers
 
 | Container | Kind | Does |
 | --- | --- | --- |
-| `trec` | Native sidecar | Watches its own Pod and writes state and executor logs to Postgres. |
-| `tif` | Init | Stages `inputs` onto the volume: `s3://`, `http(s)://`, `file://`, inline `content`. |
+| `trec` | Native sidecar | Watches its own Pod, marks the task `RUNNING` and writes executor logs to Postgres. |
+| `tif` | Init | Stages `inputs` onto the volume: `s3://`, `http(s)://`, `file://`, inline `content`. Only if the task has inputs. |
 | `exec-0` … `exec-N` | Init | Your executors, in order, in your images. |
-| `tof` | Init | Uploads `outputs` from the volume: `s3://`, `http(s)://`, `file://`. |
+| `tof` | Init | Uploads `outputs` from the volume: `s3://`, `http(s)://`, `file://`. Only if the task has outputs. |
 | `ack` | Main | Exits 0 so the Pod reaches `Succeeded`. Reuses the Poiesis image, so no second image pull. |
 
 `trec` is a native sidecar: an init container with
 `restartPolicy: Always`, a Kubernetes 1.29 feature. It starts before the
-other init containers and stays up for the whole Pod. On `SIGTERM` it
-reads the Pod once more, so the final state lands even if the watch
-hasn't delivered the `Succeeded` event yet.
+other init containers and stays up for the whole Pod. It never writes
+the final state: TCtl does, and backfills any executor logs TRec missed.
 
 <PoiDiagram name="taskpod" />
 
@@ -100,7 +99,8 @@ Kubernetes stops the Pod when an init container fails, so Poiesis runs an
   `pods/log: get`), `stdout` stays empty and TRec or TCtl logs a
   warning. The task itself is unaffected.
 
-The `BASIC` view leaves `stdout` and `stderr` out; `MINIMAL` has no logs.
+The `BASIC` view leaves `stdout`, `stderr` and `system_logs` out;
+`MINIMAL` has no logs.
 `system_logs` holds lines from Poiesis itself, such as a non-zero exit of
 `tif` or `tof`.
 
@@ -113,27 +113,33 @@ The `BASIC` view leaves `stdout` and `stderr` out; `MINIMAL` has no logs.
     api: { x: 4, y: 20, w: 118, label: 'API', sub: 'QUEUED, CANCELING' },
     trec: { x: 151, y: 20, w: 118, label: 'trec', sub: 'in the Pod' },
     db: { x: 298, y: 78, w: 118, label: 'Postgres', sub: 'write once' },
-    tctl: { x: 151, y: 136, w: 118, label: 'tctl', sub: 'backstop' }
+    tctl: { x: 151, y: 136, w: 118, label: 'tctl', sub: 'final states' }
   },
   edges: [['api','db'],['trec','db'],['tctl','db']],
   hops: [
     { f: 'api', t: 'db', label: 'QUEUED', cap: 'CreateTask stores the task as QUEUED, then submits a Job and a volume owned by it.' },
-    { f: 'trec', t: 'db', label: 'RUNNING', cap: 'trec writes RUNNING when the first executor starts, and executor logs as each one ends.' },
-    { f: 'trec', t: 'db', label: 'COMPLETE', tone: 'ok', cap: 'On a clean run trec writes the final state itself.' },
-    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'tctl writes it when the Pod could not: OOMKill, eviction, node loss, a Pod pending for over 5 minutes.' }
+    { f: 'trec', t: 'db', label: 'RUNNING', cap: 'trec writes RUNNING when it starts, before inputs are staged, and executor logs as each one ends.' },
+    { f: 'tctl', t: 'db', label: 'COMPLETE', tone: 'ok', cap: 'Polling every 5 s, tctl sees the Pod Succeeded and writes the final state. trec never does.' },
+    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a started Pod still Pending after 5 minutes, a Pod that vanished.' }
   ]
 }" />
 
-State changes go through one conditional `UPDATE` that requires the row
-to be non-terminal and gives `CANCELING` precedence, so whichever of TRec
-and TCtl writes first wins, without application locks. See
+Final states go through a conditional `UPDATE` that requires the row
+to be non-terminal and gives `CANCELING` precedence, so a final state
+lands once and a racing cancel wins, without application locks. See
 [Architecture](./architecture.md#tctl) for what TCtl reconciles.
+
+## Time limit
+
+Each task's Job sets `activeDeadlineSeconds: 3600`, which the chart
+doesn't expose. A task still running after an hour is stopped by
+Kubernetes and fails.
 
 ## Cancelling
 
 `POST /tasks/{id}:cancel` writes `CANCELING` and deletes the Job. The Pod
-disappears before reaching a terminal phase; TCtl sees the deletion and
-writes the final state, which lands as `CANCELED` because `CANCELING`
+disappears before reaching a terminal phase; TCtl finds the task
+without a Pod and writes the final state, which lands as `CANCELED` because `CANCELING`
 takes precedence.
 
 ## Tags

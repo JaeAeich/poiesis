@@ -40,8 +40,8 @@ keep it out of version control. The examples use
 | py-tes | `HTTPClient(token=…)` | `HTTPClient(user=…, password=…)` |
 | Sprocket | `auth.type = "bearer"` | `auth.type = "basic"` |
 
-Nextflow, Snakemake and py-tes were checked with both forms; Sprocket
-with both.
+Nextflow, Snakemake, py-tes and Sprocket were checked with both forms;
+cwl-tes with Basic only.
 
 ## Nextflow
 

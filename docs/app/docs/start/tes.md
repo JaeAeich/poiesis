@@ -58,11 +58,11 @@ The full contract is on the [TES API](../reference/api.md) page.
   },
   edges: [['q','r'],['r','c'],['r','e'],['r','s'],['q','x']],
   hops: [
-    { f: 'q', t: 'r', label: 'exec-0', cap: 'The task is QUEUED while its Pod starts and inputs are staged. The first executor makes it RUNNING.' },
+    { f: 'q', t: 'r', label: 'trec starts', cap: 'The task is QUEUED until its Pod starts. trec, the first container, marks it RUNNING, before inputs are staged.' },
     { f: 'r', t: 'c', label: 'exit 0', tone: 'ok', cap: 'Every executor succeeded and the outputs are uploaded: COMPLETE.' },
     { f: 'r', t: 'e', label: 'exit 1', tone: 'bad', cap: 'An executor failed: EXECUTOR_ERROR.' },
-    { f: 'r', t: 's', label: 'OOMKill', tone: 'bad', cap: 'The infrastructure failed (staging, eviction, node loss): SYSTEM_ERROR.' },
-    { f: 'q', t: 'x', label: 'cancel', cap: 'A cancel at any point ends in CANCELED.' }
+    { f: 'r', t: 's', label: 'OOMKill', tone: 'bad', cap: 'The infrastructure failed (OOMKill, eviction, node loss): SYSTEM_ERROR.' },
+    { f: 'q', t: 'x', label: 'cancel', cap: 'A cancel at any point goes through CANCELING and ends in CANCELED.' }
   ]
 }" />
 
@@ -70,6 +70,7 @@ Terminal states are `COMPLETE`, `EXECUTOR_ERROR`, `SYSTEM_ERROR` and
 `CANCELED`. `SYSTEM_ERROR` covers failures that aren't your executor's:
 an image that can't be pulled, a volume that can't be bound, a node that
 disappears. Poiesis doesn't use `INITIALIZING`, `PAUSED` or `PREEMPTED`:
-a task stays `QUEUED` until its first executor starts.
+a task stays `QUEUED` until its Pod starts, and is `RUNNING` from then on,
+input staging included.
 
 [Specification on GitHub](https://github.com/ga4gh/task-execution-schemas).

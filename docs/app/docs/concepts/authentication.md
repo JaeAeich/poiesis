@@ -20,7 +20,8 @@ Each request goes through an **authenticator chain**, in order:
    one, such as workflow engines. See [API keys](./api-keys.md).
 
 The first link that recognises the credential decides: it returns the
-caller, or refuses (`401`, or `503` if it can't check right now). A
+caller, or refuses (`401`, `403` for a missing required scope, or `503`
+if it can't check right now). A
 credential no link recognises, or none at all, is a `401`.
 
 By default, authorization is an **owner-only rule**: every task row
@@ -128,11 +129,12 @@ POIESIS_AUTH_ISSUERS='[
 Each entry needs `issuer` and `audience`; everything else has the
 defaults shown. Poiesis refuses to start (and the chart's JSON schema
 refuses to install) when auth is enabled with no issuer, an entry lacks
-`issuer` or `audience`, an issuer is listed twice, an entry has an
+`issuer` or `audience`, an entry has an
 unknown key, an empty value in a list (`audience`, `tokenTypes`,
 `clients`, `actors`, `requiredScopes`), an empty `clients` list, a
 `namespace` that is empty or contains `|`, an incomplete
-`requiredClaim` or `admin`, or `userinfo` combined with `jwksUri`. The old
+`requiredClaim` or `admin`, or `userinfo` combined with `jwksUri`; an
+issuer listed twice refuses to start (the schema can't see that). The old
 `auth.oidc.*` values and `POIESIS_AUTH_OIDC_*` variables are gone: any
 `POIESIS_AUTH_OIDC_*` variable left in the environment refuses to start,
 naming `POIESIS_AUTH_ISSUERS` as its replacement.
@@ -141,8 +143,8 @@ API keys (`auth.apiKeys`) and the Swagger UI login (`auth.swaggerUi`)
 are set next to the issuers; see [API keys](./api-keys.md).
 
 There is no `clientSecret` — Poiesis is a resource server, not an OAuth
-client, and never talks to a token endpoint. The only network calls go
-to the configured issuers: an anonymous GET of the discovery document
+client, and never talks to a token endpoint. Its only network calls for
+authentication go to the configured issuers: an anonymous GET of the discovery document
 (`<issuer>/.well-known/openid-configuration`, unless `jwksUri` is set)
 and of the JWKS, and, if enabled, the userinfo lookup. `timeout` (a
 positive number of seconds) bounds each of these calls in total, from
@@ -195,8 +197,8 @@ ID tokens, logout tokens. Only access tokens may call Poiesis.
 [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068#section-2.1) access
 tokens say so in their header, `typ: at+jwt`, and by default
 (`tokenTypes: [at+jwt]`) Poiesis accepts no other `typ`. This matters
-most where `audience` is a client id (common with LS Login, where `aud`
-is the client): an ID token of that client has the same `aud`.
+most where `audience` is a client id: an ID token of that client has
+the same `aud`.
 
 - Values compare without regard to case, and `application/` is
   optional (RFC 7515), so `at+jwt` and `application/at+jwt` are the
@@ -430,7 +432,7 @@ the decision service decides about every actor, listed or not.
 For local development and air-gapped single-tenant deployments set
 `auth.enabled: false`. The API then:
 
-- skips issuer bootstrap at startup (logs a `WARN`),
+- skips issuer bootstrap at startup (logs a `WARNING`),
 - accepts every request without a token,
 - assigns each request a fixed anonymous principal,
 - stamps the literal string `__anonymous__` on the `owner` column.
@@ -443,7 +445,7 @@ column; it makes everyone the same owner.
 
 | Surface          | Enforcement                                                              |
 | ---------------- | ------------------------------------------------------------------------ |
-| HTTP handler     | `Depends(get_principal)` on every TES and API key route. `service-info` and the resource metadata are unauthed. |
+| HTTP handler     | `Depends(get_principal)` on every TES and API key route. `service-info`, the probes (`/healthz`, `/readyz`, `/startupz`) and the resource metadata are unauthed. |
 | Database         | `tasks.owner` stamped on every insert; reads are scoped by authz.        |
 | Workers          | TaskPods and `tctl` access the DB directly without an owner filter.      |
 
@@ -487,7 +489,15 @@ public URL, Poiesis serves **OAuth 2.0 Protected Resource Metadata**
 ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), and every `401`
 points to it:
 
-![Discovery: before and after, case by case](/discovery.gif)
+<FlowDiagram :spec="{ title: 'Discovering the issuer', h: 230,
+  nodes: { c: { x: 10, y: 92, w: 100, label: 'Client', sub: 'knows the URL' }, api: { x: 300, y: 92, w: 110, label: 'Poiesis' },
+           md: { x: 155, y: 16, w: 110, label: 'Metadata', sub: 'RFC 9728' }, iss: { x: 155, y: 170, w: 110, label: 'Issuer', sub: 'OIDC' } },
+  edges: [['c','api'], ['c','md'], ['c','iss']],
+  hops: [ { f: 'c', t: 'api', label: 'GET /tasks', cap: 'A client calls Poiesis with no token.' },
+          { f: 'api', t: 'c', label: '401', tone: 'bad', cap: 'The 401 names the metadata URL in WWW-Authenticate.' },
+          { f: 'c', t: 'md', label: 'GET', cap: 'The metadata lists the issuers it can log in at.' },
+          { f: 'c', t: 'iss', label: 'log in', cap: 'The client gets a token from that issuer.' },
+          { f: 'c', t: 'api', label: 'Bearer …', tone: 'ok', cap: 'It retries with the token.' } ] }" />
 
 ```console
 $ curl -i https://poiesis.example.org/ga4gh/tes/v1/tasks
@@ -558,8 +568,6 @@ Poiesis, decide who is allowed to authenticate.
 
 What changes for a deployment that ran with `auth.oidc`:
 
-![Authentication before and after the authenticator chain](/auth-before-after.png)
-
 Migration `000003` renames `tasks.principal` to `tasks.owner`, adds a
 `tasks.groups` column and creates the `api_keys` table. It does **not**
 rewrite existing owners, since the database can't know which issuer
@@ -578,12 +586,10 @@ to nobody and match no caller; reassign them with an `UPDATE` if
 needed.
 
 Replace `auth.oidc` in your Helm values with a one-entry
-`auth.issuers` list (same keys, plus `issuer` per entry), or, without
+`auth.issuers` list (the same keys, as one list entry), or, without
 Helm, the `POIESIS_AUTH_OIDC_*` variables with `POIESIS_AUTH_ISSUERS`.
 
 ### Upgrading to issuer hardening
-
-![Issuer hardening: before and after, case by case](/issuer-hardening.gif)
 
 Existing owners keep working: the default `namespace` is the issuer,
 as before, and `clients` and `actors` are off until set. Two changes

@@ -16,8 +16,8 @@ optional except the first:
 2. **Claim rule** (`auth.issuers[].requiredClaim`): an admission gate
    per issuer, "who of this issuer may use this service at all",
    checked on every TES call and on minting, listing and revoking API
-   keys (which the decision service is not asked about: callers only
-   ever manage their own keys).
+   keys (managing one's own keys isn't asked of the decision service;
+   another owner's keys are, see [below](#api-keys-of-an-owner)).
 3. **Decision** (`authz.decisionService`): "what may this caller do".
    Without a decision service, the built-in owner rule applies: anyone
    admitted may create tasks and sees and cancels only their own, and
@@ -35,7 +35,9 @@ When both the rule and the decision service are set, **both must
 allow**. Everything else (entitlements, roles, admin rights beyond the
 built-in admin, image or resource limits, GA4GH Passport visas) belongs
 in the decision service, not in Poiesis. Both need
-`auth.enabled: true`; Poiesis refuses to start otherwise.
+`auth.enabled: true`: with auth off every caller is anonymous, and
+Poiesis refuses to start with decision service settings, `sharing` or
+`adminRead` set.
 
 Every decision is written to the [audit log](../reference/audit-log.md).
 
@@ -259,16 +261,19 @@ Poiesis, TESK, Funnel and other TES implementations alike.
   a namespace (see
   [Issuer renames](./authentication.md#issuer-renames)). Use
   `subject.properties.iss` and `sub` for identity-based rules; `iss`
-  is always the token's issuer.
+  is always a configured issuer (for a key, see below), never a
+  namespace.
 - `subject.properties.via` names how the caller authenticated: `oidc`
   for an access token, `apikey` for an [API key](./api-keys.md).
   `credential_id` identifies the credential when there is one: the
   token's `jti`, or the key's id. For a key, `key_age` and
   `snapshot_age` give the seconds since it was minted (the snapshot is
   taken then), so a policy can refuse old keys or stale claims. For a
-  key, `iss`, `sub`, `client_id` and `claims` come from the snapshot
-  of the minting token (see
-  [Deprovisioning lag](./api-keys.md#deprovisioning-lag)), so a policy
+  key, `sub`, `client_id` and `claims` come from the snapshot of the
+  minting token (see
+  [Deprovisioning lag](./api-keys.md#deprovisioning-lag)) and `iss` is
+  the configured issuer with the key's namespace (see
+  [Issuers and namespaces](./api-keys.md#issuers-and-namespaces)), so a policy
   written for tokens applies to keys unchanged; `scope` is the key's
   own (`tasks:read`, `tasks:write`). Use `via` to treat keys
   differently.

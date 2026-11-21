@@ -32,7 +32,8 @@ Two namespaces. `deps` holds the dependencies:
 
 Three ServiceAccounts with namespace-scoped Roles:
 
-- `poiesis-api`: create and delete Jobs and PVCs, read Pods.
+- `poiesis-api`: create and delete Jobs, create PVCs, read Pods and Pod
+  logs. Kubernetes deletes each PVC with its Job.
 - `poiesis-taskpod`: read Pods and Pod logs. Used by TRec inside
   TaskPods; executors don't get its token.
 - `poiesis-tctl`: watch Pods, read Pod logs, create, read and update

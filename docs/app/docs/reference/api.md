@@ -30,13 +30,14 @@ namespace, and are mounted only when auth and API keys are on:
 See [API keys](../concepts/api-keys.md) and
 [Offboarding](../concepts/api-keys.md#offboarding).
 
-Two more public routes:
+More public routes:
 
 - `GET /.well-known/oauth-protected-resource`: RFC 9728 metadata, when
-  `auth.resource` is set. See [Discovery](../concepts/authentication.md#discovery).
+  auth is on and `auth.resource` is set (its path, if any, is appended). See [Discovery](../concepts/authentication.md#discovery).
 - `GET /docs` and `GET /openapi.json` on a running server document both
   APIs, with an optional login; see
   [From the Swagger UI](../concepts/api-keys.md#from-the-swagger-ui).
+- `GET /healthz`, `/readyz` and `/startupz`: the Kubernetes probes.
 
 <Callout type="info">
 

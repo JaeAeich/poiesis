@@ -65,7 +65,7 @@ only offers ReadWriteMany (NFS, CephFS), set
 
 ## Task paths
 
-The volume is mounted at `/transfer` in every container: there TIF stages
+The volume is mounted at `/transfer` in every container but `ack`: there TIF stages
 inputs and TOF collects outputs. Executors also see the volume at the
 paths the task declares: each declared path is a mount of the same place
 on the volume, so a file an executor writes under `/data` is the file TOF
@@ -88,8 +88,10 @@ else an executor writes stays in its own container and is lost.
 
 <Callout type="warn">
 
-Poiesis doesn't create the directories of task `volumes`. An engine that
-expects an empty directory to exist at a volume path (Sprocket does) may
+Poiesis doesn't create the directories of task `volumes`. A volume path
+with a mount of its own appears (the kubelet creates mount points), but
+one below another mounted path doesn't exist until an executor makes it.
+An engine that expects an empty directory there (Sprocket does) may
 fail; see [Sprocket](../guides/workflow-engines.md#sprocket).
 
 </Callout>

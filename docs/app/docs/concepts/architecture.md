@@ -27,42 +27,44 @@ FastAPI under `/ga4gh/tes/v1` (see [TES API](../reference/api.md)).
 ## TaskPod
 
 Init containers run strictly in order. `trec` starts before them and
-stays alive for the whole Pod. All containers share the task volume at
-`/transfer`. See [Tasks and TaskPods](./tasks.md).
+stays alive for the whole Pod. Every container but `ack` mounts the task
+volume at `/transfer`. See [Tasks and TaskPods](./tasks.md).
 
 ## TRec
 
 The in-pod recorder. It watches its own Pod and writes:
 
-- `RUNNING` when the first executor starts;
+- `RUNNING` when it starts, before `tif` and the executors;
 - one `executor_logs` row per executor: start, end, exit code, and the
   last 64 KiB of the container log as `stdout`;
-- `system_logs` lines when `tif` or `tof` exit non-zero;
-- the terminal state: `COMPLETE`, `EXECUTOR_ERROR` or `SYSTEM_ERROR`.
+- `system_logs` lines when `tif` or `tof` exit non-zero.
 
-On `SIGTERM` it reads the Pod once more, so the terminal state lands even
-when the watch hasn't delivered the `Succeeded` event yet.
+It never writes the terminal state; TCtl does. It exits when the Pod
+reaches a terminal phase or on `SIGTERM`.
 
 ## TCtl
 
-A leader-elected backstop (`coordination.k8s.io` Leases): one replica is
-active at a time, so more replicas give faster failover, not throughput.
-Its Pod informer is scoped to the label `poiesis.io/task`. It has three
-jobs:
+The only writer of terminal state, leader-elected
+(`coordination.k8s.io` Leases): one replica is active at a time, so more
+replicas give faster failover, not throughput. Every 5 seconds the
+leader lists the Pods labelled `poiesis.io/task` and the non-terminal
+tasks in Postgres. It has three jobs:
 
-- **Phase reconciliation**: a `Succeeded` or `Failed` Pod becomes a
-  terminal state. Executors TRec didn't record get their `executor_logs`
-  rows here, output included.
-- **Deleted-pod reconciliation**: cancelled tasks delete the Job, and the
-  Pod vanishes before reaching a terminal phase. TCtl handles the
-  `DELETED` event and writes the terminal state (`CANCELING` takes
-  precedence, so it lands as `CANCELED`).
-- **Pending timeout**: a Pod whose `status.startTime` is older than 5
-  minutes becomes `SYSTEM_ERROR` (bad image, unbindable PVC, no
-  schedulable node).
+- **Phase reconciliation**: a `Succeeded` Pod becomes `COMPLETE`; a
+  `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, deadline)
+  or `EXECUTOR_ERROR` (any other failure). Executors TRec didn't record
+  get their `executor_logs` rows here, output included.
+- **Missing-pod reconciliation**: a non-terminal task older than 30
+  seconds with no Pod becomes `SYSTEM_ERROR`. Cancelled tasks delete the
+  Job, so their Pod vanishes too; `CANCELING` takes precedence, so they
+  land as `CANCELED`.
+- **Pending timeout**: a Pod still `Pending` with a `status.startTime`
+  older than 5 minutes becomes `SYSTEM_ERROR` (an image that can't be
+  pulled). A Pod that is never scheduled (unbindable PVC, no fitting
+  node) has no `startTime`; it ends when the Job's
+  `activeDeadlineSeconds` (one hour) runs out.
 
-It also catches OOMKills before TRec started, evictions and node loss.
-TCtl is off the happy path: TRec handles clean runs.
+TCtl is on every path: TRec never finalises a task, clean runs included.
 
 ## Postgres
 
@@ -74,9 +76,10 @@ TCtl is off the happy path: TRec handles clean runs.
 | `executor_logs` | One row per executor exit: start, end, exit code, output tail. |
 | `api_keys` | [API keys](./api-keys.md): SHA-256 hashes and metadata, never keys. |
 
-State transitions go through `write_terminal_state`, a conditional
+Terminal states go through `write_terminal_state`, a conditional
 `UPDATE` that requires the row to be non-terminal and gives `CANCELING`
-precedence. That makes the TRec/TCtl race write-once without application
+precedence. TRec's `RUNNING` update applies only to a `QUEUED` row. That
+keeps TCtl's write and a racing cancel write-once without application
 locks.
 
 Migrations live under `./migrations/` and are applied by

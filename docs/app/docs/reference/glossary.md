@@ -12,7 +12,7 @@ The single Kubernetes Pod that runs a whole TES [task](#task), wrapped in
 a [Job](#kubernetes-job). Init containers ([TIF](#task-input-filer-tif),
 [executors](#executor), [TOF](#task-output-filer-tof)), a main
 [Ack](#ack) container, and a [TRec](#task-recorder-trec) native sidecar
-that records state to PostgreSQL. See [Tasks and TaskPods](../concepts/tasks.md).
+that records progress to PostgreSQL. See [Tasks and TaskPods](../concepts/tasks.md).
 
 ### Task Input Filer (TIF)
 
@@ -38,17 +38,17 @@ Poiesis image, so no second image pull.
 ### Task Recorder (TRec)
 
 Native sidecar (an init container with `restartPolicy: Always`, K8s
-1.29+) that watches its own Pod and writes state and executor logs to
-Postgres. On `SIGTERM` it reads the Pod once more, so the final state
-lands even when the watch hasn't delivered the `Succeeded` event.
+1.29+) that watches its own Pod, marks the task `RUNNING` and writes
+executor logs (and filer failures) to Postgres. It never writes the
+terminal state; that is [TCtl](#task-controller-tctl)'s.
 
 ### Task Controller (TCtl)
 
-Leader-elected Deployment (`coordination.k8s.io` Leases). The backstop:
-it writes the terminal state for failures TRec can't report, such as an
-OOMKill before TRec started, eviction, node loss, a volume that can't be
-bound, `activeDeadlineSeconds` exceeded, or a Pod pending for over 5
-minutes.
+Leader-elected Deployment (`coordination.k8s.io` Leases), the sole
+writer of terminal task state: when the Pod succeeds or fails (an
+OOMKill, eviction, `activeDeadlineSeconds` exceeded, …), when it stays
+`Pending` for over 5 minutes (e.g. a volume that can't be bound), or
+when a task's Pod is gone (node loss, a manual delete).
 
 ### Task volume
 
