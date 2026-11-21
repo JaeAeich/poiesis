@@ -3,6 +3,19 @@ Poiesis {{ .Chart.AppVersion }} installed as {{ .Release.Name }} in namespace {{
 Taskpods land in: {{ include "poiesis.taskpodNamespace" . }}
 PSS profile:      {{ .Values.podSecurityEnforce }}
 DB secret:        {{ .Values.database.existingSecret }}/{{ .Values.database.existingSecretKey }}
+{{- $taskDb := .Values.taskpods.databaseSecret | default .Values.database.existingSecret }}
+{{- $taskS3 := .Values.taskpods.s3Secret | default .Values.s3.existingSecret }}
+
+TaskPod credentials (read by reference, never copied into Job specs):
+  database:       Secret {{ $taskDb }}, key {{ .Values.database.existingSecretKey }}
+{{- if $taskS3 }}
+  S3:             Secret {{ $taskS3 }}
+{{- end }}
+{{- if ne (include "poiesis.taskpodNamespace" .) .Release.Namespace }}
+  TaskPods run in {{ include "poiesis.taskpodNamespace" . }}, not {{ .Release.Namespace }}. The chart does
+  not copy Secrets: create the Secret(s) above in {{ include "poiesis.taskpodNamespace" . }} too, or
+  TaskPods cannot start (CreateContainerConfigError).
+{{- end }}
 
 Per-task storage:
   default size:   {{ .Values.taskpods.persistence.defaultSizeGi }} GiB

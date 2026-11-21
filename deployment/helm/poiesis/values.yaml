@@ -325,8 +325,9 @@ s3:
   endpoint: ""
   # AWS_REGION.
   region: ""
-  # Existing Secret with AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY. Empty
-  # when using IRSA / IMDS credentials.
+  # Existing Secret with AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY, and
+  # AWS_SESSION_TOKEN for temporary credentials. Empty when using IRSA /
+  # IMDS credentials.
   existingSecret: ""
 
 # -----------------------------------------------------------------------------
@@ -446,6 +447,14 @@ taskpods:
   # Namespace TaskPods land in. Empty means same as release namespace.
   # When split, the chart renders the API + taskpod Roles in this namespace.
   namespace: ""
+
+  # Secrets that trec, tif and tof read DATABASE_URL and the S3 keys from.
+  # A Pod can only read Secrets in its own namespace: when `namespace` above
+  # differs from the release namespace, create these Secrets there too. The
+  # chart does not copy them. Empty means the same name as
+  # database.existingSecret / s3.existingSecret; the keys are the same.
+  databaseSecret: ""
+  s3Secret: ""
 
   persistence:
     # Default size when a TES request omits resources.disk_gb.

@@ -102,6 +102,8 @@ tctl:
       memory: 128Mi
 
 taskpods:
+  databaseSecret: poiesis-db-tasks
+  s3Secret: poiesis-s3-tasks
   persistence:
     defaultSizeGi: 10
     maxSizeGi: 100

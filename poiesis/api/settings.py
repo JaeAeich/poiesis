@@ -17,7 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
-from kubernetes.client import V1EnvVar
+from kubernetes.client import V1EnvVar, V1EnvVarSource, V1SecretKeySelector
 from pydantic import (
     AnyUrl,
     BaseModel,
@@ -180,6 +180,7 @@ _RESERVED_ENV_NAMES: frozenset[str] = frozenset(
         "AWS_ENDPOINT_URL",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
         "AWS_REGION",
         "POIESIS_POD_NAME",
         "POIESIS_POD_NAMESPACE",
@@ -256,6 +257,20 @@ def _entries_to_envvars(entries: list[dict[str, Any]]) -> list[V1EnvVar]:
         else:
             out.append(V1EnvVar(name=name))
     return out
+
+
+def _secret_env(
+    name: str, secret: str, key: str, *, optional: bool = False
+) -> V1EnvVar:
+    """Env var read from a Secret key in the TaskPod's namespace."""
+    return V1EnvVar(
+        name=name,
+        value_from=V1EnvVarSource(
+            secret_key_ref=V1SecretKeySelector(
+                name=secret, key=key, optional=True if optional else None
+            )
+        ),
+    )
 
 
 DEFAULT_POIESIS_IMAGE = "docker.io/jaeaeich/poiesis:latest"
@@ -1057,8 +1072,26 @@ class Settings(BaseModel):
     aws_secret_access_key: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_SECRET_ACCESS_KEY") or None,
     )
+    aws_session_token: str | None = Field(
+        default_factory=lambda: os.environ.get("AWS_SESSION_TOKEN") or None,
+    )
     aws_region: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_REGION") or None,
+    )
+    # Secrets in the TaskPod namespace that trec/tif/tof read their
+    # credentials from. Unset: the values are copied into each Job spec.
+    taskpod_database_secret: str | None = Field(
+        default_factory=lambda: (
+            os.environ.get("POIESIS_TASKPOD_DATABASE_SECRET") or None
+        ),
+    )
+    taskpod_database_secret_key: str = Field(
+        default_factory=lambda: (
+            os.environ.get("POIESIS_TASKPOD_DATABASE_SECRET_KEY") or "DATABASE_URL"
+        ),
+    )
+    taskpod_s3_secret: str | None = Field(
+        default_factory=lambda: os.environ.get("POIESIS_TASKPOD_S3_SECRET") or None,
     )
     auth: AuthSettings = Field(default_factory=AuthSettings)
     authz: AuthzSettings = Field(default_factory=AuthzSettings)
@@ -1067,12 +1100,10 @@ class Settings(BaseModel):
 
     def runtime_config(self) -> RuntimeConfig:
         """Materialise the TaskPod RuntimeConfig used by the spec builder."""
-        env = [V1EnvVar(name="DATABASE_URL", value=self.database_url)]
-        # Propagate s3 creds only when set; tasks with no s3 i/o don't need them.
+        env = self._credential_env()
+        # Not secret, so literal values.
         for name, value in (
             ("AWS_ENDPOINT_URL", self.aws_endpoint_url),
-            ("AWS_ACCESS_KEY_ID", self.aws_access_key_id),
-            ("AWS_SECRET_ACCESS_KEY", self.aws_secret_access_key),
             ("AWS_REGION", self.aws_region),
         ):
             if value is not None:
@@ -1099,6 +1130,65 @@ class Settings(BaseModel):
             output_glob_fallback=self.output_glob_fallback,
             file_url_roots=self.file_url_roots,
         )
+
+    def _credential_env(self) -> list[V1EnvVar]:
+        """Database URL and S3 credentials for trec, tif and tof.
+
+        References to Secrets in the TaskPod namespace when their names are
+        set, so no value reaches a Job or Pod spec. Otherwise (local runs)
+        the API's own values are copied in, with one warning.
+        """
+        env: list[V1EnvVar] = []
+        copied: list[str] = []
+        if self.taskpod_database_secret:
+            env.append(
+                _secret_env(
+                    "DATABASE_URL",
+                    self.taskpod_database_secret,
+                    self.taskpod_database_secret_key,
+                )
+            )
+        else:
+            env.append(V1EnvVar(name="DATABASE_URL", value=self.database_url))
+            copied.append("DATABASE_URL")
+        if self.taskpod_s3_secret:
+            secret = self.taskpod_s3_secret
+            # Only temporary credentials have a session token, so its key
+            # is optional.
+            env.extend(
+                (
+                    _secret_env("AWS_ACCESS_KEY_ID", secret, "AWS_ACCESS_KEY_ID"),
+                    _secret_env(
+                        "AWS_SECRET_ACCESS_KEY", secret, "AWS_SECRET_ACCESS_KEY"
+                    ),
+                    _secret_env(
+                        "AWS_SESSION_TOKEN",
+                        secret,
+                        "AWS_SESSION_TOKEN",
+                        optional=True,
+                    ),
+                )
+            )
+        else:
+            # Propagate s3 creds only when set; tasks with no s3 i/o don't
+            # need them.
+            for name, value in (
+                ("AWS_ACCESS_KEY_ID", self.aws_access_key_id),
+                ("AWS_SECRET_ACCESS_KEY", self.aws_secret_access_key),
+                ("AWS_SESSION_TOKEN", self.aws_session_token),
+            ):
+                if value is not None:
+                    env.append(V1EnvVar(name=name, value=value))
+                    copied.append(name)
+        if copied:
+            logger.warning(
+                "Copying %s into every TaskPod Job spec as plain values: anyone "
+                "who can read Jobs or Pods in the TaskPod namespace can read "
+                "them. Set POIESIS_TASKPOD_DATABASE_SECRET and "
+                "POIESIS_TASKPOD_S3_SECRET to reference Secrets instead.",
+                ", ".join(copied),
+            )
+        return env
 
 
 def load_settings() -> Settings:

@@ -66,7 +66,7 @@ The URL has the form
 | --- | --- | --- |
 | `s3.endpoint` | `""` | `AWS_ENDPOINT_URL`; empty for AWS. |
 | `s3.region` | `""` | `AWS_REGION`. |
-| `s3.existingSecret` | `""` | Secret with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`; empty with IRSA or IMDS credentials. |
+| `s3.existingSecret` | `""` | Secret with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN`; empty with IRSA or IMDS credentials. |
 
 Needed only when inputs or outputs use `s3://`. See
 [Storage and staging](../concepts/storage.md).
@@ -187,6 +187,8 @@ Baked into TaskPod manifests by the API when a task is created. See
 | Key | Default | What it does |
 | --- | --- | --- |
 | `taskpods.namespace` | `""` | Namespace for TaskPods; empty is the release namespace. When split, the chart renders the API and TaskPod Roles there. |
+| `taskpods.databaseSecret` | `""` | Secret in the TaskPod namespace that `trec`, `tif` and `tof` read `DATABASE_URL` from, by reference. Empty is `database.existingSecret`. The key is `database.existingSecretKey`. |
+| `taskpods.s3Secret` | `""` | The same for the S3 keys. Empty is `s3.existingSecret`. |
 | `taskpods.persistence.defaultSizeGi` | `10` | Volume size when a task omits `resources.disk_gb`. |
 | `taskpods.persistence.maxSizeGi` | `100` | Largest `disk_gb`; more is `400`. Required by the schema. |
 | `taskpods.persistence.storageClass` | `""` | `""` cluster default; `"-"` sets `storageClassName: ""`; else a named class. |
@@ -197,7 +199,7 @@ Baked into TaskPod manifests by the API when a task is created. See
 | `taskpods.activeDeadlineSeconds` | `3600` | [Time limit](../concepts/tasks.md#time-limit) of a task in seconds (`activeDeadlineSeconds` of the Job), at least 1; `null` is no limit. |
 | `taskpods.outputGlobFallback` | `false` | Upload everything under `path_prefix` when an output glob matches nothing. |
 | `taskpods.fileUrlRoots` | `[]` | Directories `file://` URLs may point into; empty turns the scheme off. See [Local paths](../concepts/storage.md#local-paths). |
-| `taskpods.extraEnv` | `[]` | Env for `trec`, `tif`, `tof`. Reserved: `DATABASE_URL`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `POIESIS_*`. |
+| `taskpods.extraEnv` | `[]` | Env for `trec`, `tif`, `tof`. Reserved: `DATABASE_URL`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `POIESIS_*`. |
 | `taskpods.extraVolumes` | `[]` | Volumes added to every TaskPod. Reserved names: `task-data`, `postgres-ca`, `tmp`. |
 | `taskpods.extraVolumeMounts` | `[]` | Mounts for Poiesis containers and executors (reference data). |
 

@@ -218,6 +218,8 @@
       "required": ["persistence"],
       "properties": {
         "namespace":         { "type": "string" },
+        "databaseSecret":    { "type": "string" },
+        "s3Secret":          { "type": "string" },
         "outputGlobFallback": { "type": "boolean" },
         "fileUrlRoots": {
           "type": "array",
