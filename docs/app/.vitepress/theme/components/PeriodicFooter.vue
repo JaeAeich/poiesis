@@ -24,7 +24,8 @@ const art = e => ({
 });
 
 // load the art only when the footer comes near the screen
-const root = ref(null), near = ref(false);
+const root = ref(null), near = ref(false), active = ref(-1);
+const tap = i => { active.value = active.value === i ? -1 : i; };
 let io;
 onMounted(() => {
   io = new IntersectionObserver(es => { if (es.some(x => x.isIntersecting)) { near.value = true; io.disconnect(); } }, { rootMargin: "400px" });
@@ -43,7 +44,7 @@ onUnmounted(() => io && io.disconnect());
           <div><b>Project</b><span>GA4GH TES v1.1</span><span>Apache 2.0</span><span>Helm chart</span></div>
         </div>
         <div class="elements" aria-label="Poiesis, spelled with elements: polonium, iodine, einsteinium, iodine, sulfur">
-          <div v-for="(e, i) in els" :key="i" class="el" :class="{ es: e.s === 'Es' }" :data-k="e.k" tabindex="0" :style="near ? art(e) : null">
+          <div v-for="(e, i) in els" :key="i" class="el" :class="{ es: e.s === 'Es', on: active === i }" @click="tap(i)" :data-k="e.k" tabindex="0" :style="near ? art(e) : null">
             <i class="art" aria-hidden="true"></i>
             <svg class="acc" viewBox="0 0 100 112" aria-hidden="true">
               <template v-if="e.k === 'curie'">
@@ -65,6 +66,7 @@ onUnmounted(() => io && io.disconnect());
             <span class="fact">{{ e.fact }}</span>
           </div>
         </div>
+        <p class="tap-fact" aria-live="polite">{{ active >= 0 ? els[active].fact : "Tap an element." }}</p>
         <div class="fbase"><span>© 2026 Poiesis contributors · Illustrations: public domain, Wikimedia Commons</span><a class="by" href="https://jaeaeich.com">Made by jaeaeich</a><span>Built for workflows that matter</span></div>
       </div>
     </footer>
@@ -103,46 +105,50 @@ html.dark .poi-footer .el.es b{color:var(--coral)}
 .poi-footer .el .econf{font:clamp(8px,.85vw,11.5px)/1.3 var(--mono);color:var(--muted);white-space:nowrap;letter-spacing:-.03em;overflow:hidden;text-overflow:ellipsis}
 .poi-footer .el .fact{opacity:0;transform:translateY(6px);font:500 clamp(10px,.95vw,13.5px)/1.4 var(--sans);color:var(--fg)}
 /* hover / focus */
-.poi-footer .el:hover,.poi-footer .el:focus-visible{transform:translateY(-6px);border-color:var(--blue);background:none}
-.poi-footer .el.es:hover,.poi-footer .el.es:focus-visible{border-color:var(--coral);background:none}
-.poi-footer .el:hover .art,.poi-footer .el:focus-visible .art{opacity:.82;transform:scale(1)}
-.poi-footer .el:hover .acc,.poi-footer .el:focus-visible .acc,.poi-footer .el:hover::after,.poi-footer .el:focus-visible::after{opacity:1}
-.poi-footer .el:hover b,.poi-footer .el:focus-visible b{transform:translate(-30%,-36%) scale(.42);color:var(--fg)}
-.poi-footer .el.es:hover b,.poi-footer .el.es:focus-visible b{color:var(--coral-ink)}
-.poi-footer .el:hover :is(.econf,.cnt,.z,.m),.poi-footer .el:focus-visible :is(.econf,.cnt,.z,.m){opacity:0}
-.poi-footer .el:hover .fact,.poi-footer .el:focus-visible .fact{opacity:1;transform:none;transition-delay:.12s}
+.poi-footer .el:is(:hover,.on),.poi-footer .el:focus-visible{transform:translateY(-6px);border-color:var(--blue);background:none}
+.poi-footer .el.es:is(:hover,.on),.poi-footer .el.es:focus-visible{border-color:var(--coral);background:none}
+.poi-footer .el:is(:hover,.on) .art,.poi-footer .el:focus-visible .art{opacity:.82;transform:scale(1)}
+.poi-footer .el:is(:hover,.on) .acc,.poi-footer .el:focus-visible .acc,.poi-footer .el:is(:hover,.on)::after,.poi-footer .el:focus-visible::after{opacity:1}
+.poi-footer .el:is(:hover,.on) b,.poi-footer .el:focus-visible b{transform:translate(-30%,-36%) scale(.42);color:var(--fg)}
+.poi-footer .el.es:is(:hover,.on) b,.poi-footer .el.es:focus-visible b{color:var(--coral-ink)}
+.poi-footer .el:is(:hover,.on) :is(.econf,.cnt,.z,.m),.poi-footer .el:focus-visible :is(.econf,.cnt,.z,.m){opacity:0}
+.poi-footer .el:is(:hover,.on) .fact,.poi-footer .el:focus-visible .fact{opacity:1;transform:none;transition-delay:.12s}
 /* accents */
 .poi-footer .acc *{transform-box:view-box}
 .poi-footer .vial .glass{fill:none;stroke:var(--fg);stroke-width:.5;opacity:.8}
 .poi-footer .vial .glowfill{fill:#7fe6c8}
-.poi-footer .el:hover .vial .halo{animation:poi-pulse 2.2s ease-in-out infinite;transform-origin:40px 62px}
+.poi-footer .el:is(:hover,.on) .vial .halo{animation:poi-pulse 2.2s ease-in-out infinite;transform-origin:40px 62px}
 @keyframes poi-pulse{50%{transform:scale(1.45);opacity:.55}}
 .poi-footer .chalk{font:italic 500 10px Georgia,"Times New Roman",serif;fill:transparent;stroke:var(--fg);stroke-width:.3;stroke-dasharray:70;stroke-dashoffset:70;opacity:.85}
-.poi-footer .el:hover .chalk{animation:poi-write 2.4s .25s ease-out forwards}
+.poi-footer .el:is(:hover,.on) .chalk{animation:poi-write 2.4s .25s ease-out forwards}
 @keyframes poi-write{60%{fill:transparent;stroke-dashoffset:0}to{stroke-dashoffset:0;fill:var(--fg)}}
 .poi-footer .el[data-k=kelp] .art{transform-origin:50% 100%}
-.poi-footer .el[data-k=kelp]:hover .art{animation:poi-sway 4s ease-in-out infinite alternate}
+.poi-footer .el[data-k=kelp]:is(:hover,.on) .art{animation:poi-sway 4s ease-in-out infinite alternate}
 @keyframes poi-sway{from{transform:rotate(-1.6deg)}to{transform:rotate(1.6deg)}}
 .poi-footer .bub circle{fill:none;stroke:var(--blue);stroke-width:.5}
-.poi-footer .el:hover .bub circle{animation:poi-bub 3.4s ease-in infinite}
+.poi-footer .el:is(:hover,.on) .bub circle{animation:poi-bub 3.4s ease-in infinite}
 .poi-footer .bub circle:nth-child(2){animation-delay:-1s!important}.poi-footer .bub circle:nth-child(3){animation-delay:-2s!important}.poi-footer .bub circle:nth-child(4){animation-delay:-2.7s!important}
 @keyframes poi-bub{from{transform:translateY(0);opacity:0}15%{opacity:1}to{transform:translate(3px,-80px);opacity:0}}
 .poi-footer .vap path{fill:none;stroke:#9b7cf4;stroke-width:1.4;stroke-linecap:round;opacity:0}
-.poi-footer .el:hover .vap path{animation:poi-rise 2.6s ease-in infinite}
+.poi-footer .el:is(:hover,.on) .vap path{animation:poi-rise 2.6s ease-in infinite}
 .poi-footer .vap path:nth-child(2){animation-delay:-.9s!important}.poi-footer .vap path:nth-child(3){animation-delay:-1.7s!important}
 @keyframes poi-rise{0%{transform:translateY(6px);opacity:0}30%{opacity:.9}100%{transform:translateY(-14px);opacity:0}}
 .poi-footer .flame ellipse{fill:var(--coral);opacity:0;filter:blur(1.2px)}
-.poi-footer .el:hover .flame ellipse{animation:poi-flick .5s ease-in-out infinite alternate}
+.poi-footer .el:is(:hover,.on) .flame ellipse{animation:poi-flick .5s ease-in-out infinite alternate}
 @keyframes poi-flick{from{opacity:.25}to{opacity:.6}}
 .poi-footer .emb circle{fill:var(--coral)}
-.poi-footer .el:hover .emb circle{animation:poi-ember 2.2s ease-out infinite}
+.poi-footer .el:is(:hover,.on) .emb circle{animation:poi-ember 2.2s ease-out infinite}
 .poi-footer .emb circle:nth-child(2){animation-delay:-.4s!important;--dx:-9px}.poi-footer .emb circle:nth-child(3){animation-delay:-.9s!important;--dx:8px}
 .poi-footer .emb circle:nth-child(4){animation-delay:-1.4s!important;--dx:-4px}.poi-footer .emb circle:nth-child(5){animation-delay:-1.8s!important;--dx:12px}
 @keyframes poi-ember{from{transform:translate(0,0);opacity:0}15%{opacity:1}to{transform:translate(var(--dx,4px),-34px);opacity:0}}
-/* phones: just the symbol and number */
+/* phones: the art and animation on tap; the fact sits under the row */
+.poi-footer .tap-fact{display:none;margin:14px 0 0;min-height:2.8em;font-size:13px;line-height:1.4;color:var(--body)}
 @media (max-width:760px){
-  .poi-footer .el .art,.poi-footer .el .acc,.poi-footer .el .cnt,.poi-footer .el .econf,.poi-footer .el .fact,.poi-footer .el .m{display:none}
-  .poi-footer .el:hover b{transform:none}.poi-footer .el:hover .z{opacity:1}.poi-footer .el::after{display:none}
+  .poi-footer .el .cnt,.poi-footer .el .econf,.poi-footer .el .fact,.poi-footer .el .m{display:none}
+  .poi-footer .el:is(:hover,.on) b{transform:translate(-26%,-34%) scale(.5)}
+  .poi-footer .el:is(:hover,.on) .z{opacity:0}
+  .poi-footer .el::after{display:none}
+  .poi-footer .tap-fact{display:block}
 }
 @media (prefers-reduced-motion:reduce){.poi-footer .el,.poi-footer .el *{animation:none!important;transition:none!important}}
 </style>
