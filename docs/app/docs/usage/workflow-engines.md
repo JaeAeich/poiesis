@@ -38,9 +38,18 @@ tes.oauthToken = 'poi_k7H2pQ…'
 ```
 
 The plugin appends `/v1` to `tes.endpoint`, so it ends in `/ga4gh/tes`.
-To keep the key out of the pipeline's `nextflow.config`, put the
-`tes.oauthToken` line in a separate file and add it at launch with
-`nextflow run main.nf -c poiesis-key.config`.
+
+Keep the key out of `nextflow.config` (it tends to get committed):
+store it as a [Nextflow secret](https://www.nextflow.io/docs/latest/secrets.html)
+and refer to it.
+
+```bash
+nextflow secrets set POIESIS_KEY poi_k7H2pQ…
+```
+
+```groovy
+tes.oauthToken = secrets.POIESIS_KEY
+```
 
 Basic works too, with any user name:
 
@@ -78,12 +87,16 @@ TaskPods don't share a file system with the host running Snakemake, so
 the executor needs remote storage such as S3 (`--default-storage-*`
 and the matching storage plugin).
 
-::: warning Status polling
-py-tes 0.4 can't read the `null` fields in Poiesis's task responses
-and stops with `j must be a str or dict` when it polls a submitted
-task. Authentication works; the run itself doesn't, until either side
-is fixed.
-:::
+Things that trip runs up, none of them about the key:
+
+- At the start of every job the plugin runs `pip install` for the
+  storage plugin inside the TaskPod, so TaskPods need to reach PyPI
+  (or a mirror), or use an image where that install is a no-op.
+- When a job fails, plugin 0.1.3 tries to read
+  `$GITHUB_WORKSPACE/funnel.log` and stops with `KeyError:
+  'GITHUB_WORKSPACE'`; the job's own error is in the TaskPod's logs.
+- The default `snakemake/snakemake` image is amd64-only; on arm64
+  nodes pass an arm64 image with `--container-image`.
 
 ## cwl-tes
 

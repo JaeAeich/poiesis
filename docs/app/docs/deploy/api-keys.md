@@ -16,6 +16,8 @@ looks at them.
 For engine settings (Nextflow, Snakemake, cwl-tes, py-tes), see
 [Workflow engines](../usage/workflow-engines.md).
 
+![API keys: before and after, case by case](/api-keys.gif)
+
 ## Configuration
 
 ```yaml
@@ -147,6 +149,32 @@ The request body:
 | `ttl` | no | Lifetime, `<n>d` or `<n>h`; default `defaultTtl`. |
 | `scopes` | no | `tasks:read`, `tasks:write`; default both. |
 
+### From a script or CLI
+
+A CLI gets the token with the OAuth **device flow**: it prints a code
+and a link, the user approves in any browser (also on another
+machine, handy on HPC login nodes), and the CLI polls for the token.
+Against the dev realm (`poiesis-cli` requires PKCE here too):
+
+```bash
+KC=http://keycloak.deps.svc:8080/realms/poiesis/protocol/openid-connect
+VERIFIER=$(openssl rand -base64 48 | tr -d '=+/\n' | cut -c1-64)
+CHALLENGE=$(printf %s "$VERIFIER" | openssl dgst -sha256 -binary \
+  | openssl base64 | tr '+/' '-_' | tr -d '=')
+curl -s -d client_id=poiesis-cli -d scope=openid \
+  -d code_challenge="$CHALLENGE" -d code_challenge_method=S256 \
+  "$KC/auth/device"
+# → user_code, verification_uri_complete, device_code: open the link
+curl -s -d grant_type=urn:ietf:params:oauth:grant-type:device_code \
+  -d client_id=poiesis-cli -d device_code="$DEVICE_CODE" \
+  -d code_verifier="$VERIFIER" "$KC/token"
+# → access_token; mint with it as above
+```
+
+Device-flow tokens come from a browser login, so they carry `auth_time`
+and work with `maxAuthAge`. The CLI's client id must be in the issuer's
+`keyMinting.clients`. `oidc-agent` (`oidc-token <account>`) works too.
+
 ## Scopes
 
 | Scope | Allows |
@@ -222,6 +250,8 @@ offboarding users. Removing an issuer from `auth.issuers` disables all
 keys of its owners at once.
 
 ## Security model
+
+![API keys: how they are minted and used, and what changed](/api-keys-summary.png)
 
 What protects keys:
 
