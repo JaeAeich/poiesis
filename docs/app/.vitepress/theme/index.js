@@ -1,5 +1,11 @@
 import DefaultTheme from "vitepress/theme-without-fonts";
 import { inject } from "@vercel/analytics";
+// Global styles load after VitePress's and before our components', so each cascades over the last.
+import "./styles/tokens.css";
+import "./styles/primitives.css";
+import "./styles/figures.css";
+import "./styles/docs.css";
+import "./styles/swagger.css";
 import Layout from "./Layout.vue";
 import PoiesisHome from "./components/PoiesisHome.vue";
 import DeployPage from "./components/DeployPage.vue";
@@ -8,10 +14,6 @@ import PoiDiagram from "./components/PoiDiagram.vue";
 import FlowDiagram from "./components/FlowDiagram.vue";
 import Callout from "./components/Callout.vue";
 import SwaggerViewer from "./components/SwaggerViewer.vue";
-import "./styles/tokens.css";
-import "./styles/poiesis.css";
-import "./styles/docs.css";
-import "./swagger.css";
 
 // Vercel Analytics only in production builds, in the browser
 if (process.env.NODE_ENV === "production" && typeof window !== "undefined") {

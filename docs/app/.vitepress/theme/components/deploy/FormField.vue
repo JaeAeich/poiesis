@@ -59,6 +59,52 @@ const popoverOpen = computed(() => Boolean(props.help) && ui.openPopover === pro
       :class="{ ex: example }"
       @input="emit('update', $event.target.value)"
     />
+    <!-- eslint-disable-next-line vue/no-v-html -- hints are static markup from fields.js -->
     <div v-if="hintHtml" class="hint" v-html="hintHtml"></div>
   </div>
 </template>
+
+<style scoped>
+/* the "?" button and the help popover it opens */
+.poi .ib {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--muted);
+  font: 600 10px/1 var(--sans);
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  align-self: center;
+}
+.poi .ib:hover,
+.poi .f.pop-on .ib {
+  border-color: var(--blue);
+  color: var(--blue-ink);
+  background: var(--blue-wash);
+}
+.poi .pop {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 6;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--body);
+  white-space: normal;
+}
+.poi .f.pop-on .pop {
+  display: block;
+  animation: in 0.18s var(--ease);
+}
+</style>

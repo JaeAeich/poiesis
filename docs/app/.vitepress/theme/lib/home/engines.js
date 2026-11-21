@@ -148,9 +148,11 @@ export function mountEngines(root, { reduce }) {
   };
   cleanup.on(field, "pointerup", release);
   cleanup.on(field, "pointercancel", release);
-  // a logo is a link; dragging it must not follow the link
+  // logos never navigate; the "?" bubble is a link, but dragging it must not follow it
   cleanup.on(field, "click", (event) => {
-    if (event.target.closest(".pl") && lastDragDistance >= CLICK_MAX_MOVE) event.preventDefault();
+    const logo = event.target.closest(".pl");
+    if (logo && (lastDragDistance >= CLICK_MAX_MOVE || logo.tagName !== "A"))
+      event.preventDefault();
     lastDragDistance = 0;
   });
 

@@ -20,3 +20,16 @@ const IMAGES = { gc: "logos/google-cloud.svg", az: "logos/azure.svg" };
   </template>
   <img v-else :src="withBase('/' + IMAGES[name])" alt="" />
 </template>
+
+<style scoped>
+/* AWS has separate light and dark marks */
+.poi img.dk {
+  display: none;
+}
+html.dark .poi img.dk {
+  display: block;
+}
+html.dark .poi img.lt {
+  display: none;
+}
+</style>

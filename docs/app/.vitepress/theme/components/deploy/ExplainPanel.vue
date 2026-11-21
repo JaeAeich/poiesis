@@ -90,6 +90,7 @@ onUnmounted(() => {
       <template v-if="spec">
         <PanelFigure v-if="hasFigure" :key="ui.panelRevision" :spec="spec" :active="ui.panelOpen" />
         <ul class="pts">
+          <!-- eslint-disable-next-line vue/no-v-html -- static markup from explain.js -->
           <li v-for="point in spec.points" :key="point"><span v-html="point"></span></li>
         </ul>
         <div class="pnav"><a class="btn ghost sm" :href="docsHref">Read the docs</a></div>
@@ -97,3 +98,119 @@ onUnmounted(() => {
     </div>
   </aside>
 </template>
+
+<style scoped>
+/* "How it works": a side sheet on desktop, a bottom sheet on phones */
+.poi .scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 18, 30, 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+  z-index: 40;
+}
+.poi .scrim.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+.poi .panel {
+  position: fixed;
+  z-index: 41;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  transition:
+    transform 0.45s var(--ease),
+    visibility 0s 0.45s;
+  visibility: hidden;
+}
+@media (min-width: 761px) {
+  .poi .panel {
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: min(480px, 92vw);
+    border-left: 1px solid var(--line);
+    transform: translateX(102%);
+  }
+}
+@media (max-width: 760px) {
+  .poi .panel {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 84dvh;
+    border-radius: 16px 16px 0 0;
+    border-top: 1px solid var(--line);
+    transform: translateY(102%);
+  }
+}
+.poi .panel.on {
+  transform: none;
+  visibility: visible;
+  transition: transform 0.45s var(--ease);
+}
+.poi .panel .grab {
+  display: none;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  margin: 8px auto 0;
+}
+@media (max-width: 760px) {
+  .poi .panel .grab {
+    display: block;
+  }
+}
+
+/* header, body, talking points, step navigation */
+.poi .panel .ph {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.poi .panel .ph h2 {
+  font-size: 18px;
+}
+.poi .panel .ph .x {
+  margin-left: auto;
+}
+.poi .panel .pb {
+  padding: 18px;
+  overflow: auto;
+}
+.poi .panel .pts {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  font-size: 15px;
+}
+.poi .panel .pts li {
+  display: flex;
+  gap: 12px;
+}
+.poi .panel .pts li::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--coral);
+  margin-top: 10px;
+}
+.poi .panel .pnav {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+</style>

@@ -39,3 +39,48 @@ function onToggle(name, event) {
   </details>
   <StepActions :step="step" />
 </template>
+
+<style scoped>
+/* collapsible groups with a chevron */
+.poi .adv-group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: var(--bg);
+}
+.poi .adv-group > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  font-weight: 500;
+  color: var(--fg);
+  font-size: 15px;
+}
+.poi .adv-group > summary::-webkit-details-marker {
+  display: none;
+}
+.poi .adv-group > summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.2s;
+}
+.poi .adv-group[open] > summary::before {
+  transform: rotate(45deg);
+}
+.poi .adv-group > summary small {
+  margin-left: auto;
+  font: 12px var(--mono);
+  color: var(--muted);
+  font-weight: 400;
+}
+.poi .adv-group .in {
+  padding: 4px 14px 6px;
+}
+</style>

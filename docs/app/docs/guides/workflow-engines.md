@@ -79,8 +79,66 @@ tes.basicUsername = 'nextflow'
 tes.basicPassword = 'poi_k7H2pQ…'
 ```
 
-Set only one of the two: both write the `Authorization` header. See
-[Nextflow end to end](./nextflow.md) for storage and a full example.
+Set only one of the two: both write the `Authorization` header.
+
+TaskPods can't see your local file system, so processes that pass files
+need an object store as the `workDir`. With the
+[dev stack](../start/quickstart.md)'s S3 store:
+
+```groovy
+workDir = 's3://poiesis-test/nextflow'
+
+aws {
+  accessKey = 'admin'
+  secretKey = 'password'
+  client {
+    endpoint = 'http://localhost:9000'
+    s3PathStyleAccess = true
+  }
+}
+```
+
+Create the bucket once before the first run (see
+[S3 inputs and outputs](../start/quickstart.md#s3-inputs-and-outputs)).
+Older S3-compatible stores (SeaweedFS 3.x, for one) reject the AWS
+SDK's default checksums with `Content input stream does not support
+mark/reset`; for those, run Nextflow with
+`AWS_REQUEST_CHECKSUM_CALCULATION=when_required`. The dev store accepts
+them.
+
+An end-to-end run, with the two configs above in `nextflow.config` and
+this `main.nf`:
+
+```groovy
+process SAY_HI {
+  container 'ubuntu:latest'
+
+  input:
+  val person
+
+  output:
+  stdout
+
+  script:
+  """
+  echo "Hello ${person} from the TES executor!"
+  """
+}
+
+workflow {
+  Channel.of('Alice', 'Bob', 'Charlie') | SAY_HI | view
+}
+```
+
+```bash
+kubectl -n po port-forward svc/poiesis-api 8000:8000 &
+kubectl -n deps port-forward svc/s3 9000:9000 &
+nextflow run main.nf
+```
+
+Each process runs as its own TaskPod, and the three greetings print
+when they finish. Written against Nextflow 25.04.2; authentication
+checked with 25.10.4 and `nf-ga4gh` 1.5.0.
 
 ## Snakemake
 

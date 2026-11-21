@@ -1,0 +1,220 @@
+/* Shared by every .poi root (home, deploy, footer, figures): base element styles, layout,
+   buttons, the segmented control and motion preferences. Component styles live with their
+   components. */
+
+/* base */
+.poi,
+.poi * {
+  box-sizing: border-box;
+}
+.poi a {
+  color: var(--blue-ink);
+  text-decoration: none;
+}
+.poi a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.poi h1,
+.poi h2,
+.poi h3 {
+  color: var(--fg);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-wrap: balance;
+}
+.poi p {
+  text-wrap: pretty;
+}
+.poi code,
+.poi kbd,
+.poi pre,
+.poi textarea {
+  font-family: var(--mono);
+}
+.poi code {
+  font-size: 0.875em;
+}
+.poi :not(pre) > code {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.05em 0.35em;
+  color: var(--fg);
+}
+.poi :focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.poi button {
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+}
+.poi [hidden] {
+  display: none !important;
+}
+
+/* layout and text */
+.poi .wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.poi .muted {
+  color: var(--muted);
+}
+.poi .eyebrow {
+  font: 500 12px/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+@media (max-width: 760px) {
+  .poi .wrap {
+    padding: 0 16px;
+  }
+}
+
+/* buttons */
+.poi .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 500;
+  font-size: 14.5px;
+  white-space: nowrap;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.15s;
+}
+.poi .btn:hover {
+  text-decoration: none;
+  border-color: var(--muted);
+}
+.poi .btn:active {
+  transform: translateY(1px);
+}
+.poi .btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.poi .btn.primary {
+  background: var(--coral);
+  border-color: var(--coral);
+  color: #0d2033;
+}
+.poi .btn.primary:hover {
+  background: #e65a3d;
+  border-color: #e65a3d;
+}
+html.dark .poi .btn.primary {
+  background: var(--coral);
+  border-color: var(--coral);
+  color: #0a1420;
+}
+html.dark .poi .btn.primary:hover {
+  background: var(--coral-ink);
+  border-color: var(--coral-ink);
+}
+.poi .btn.sm {
+  height: 30px;
+  padding: 0 11px;
+  font-size: 13.5px;
+  border-radius: 7px;
+}
+.poi .btn.ghost {
+  border-color: transparent;
+  background: none;
+  color: var(--blue-ink);
+  padding: 0 8px;
+}
+.poi .btn.ghost:hover {
+  background: var(--blue-wash);
+}
+.poi .btn svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.poi .icon-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r);
+  border: 0;
+  background: none;
+  color: var(--body);
+}
+.poi .icon-btn:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+.poi .icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* segmented control */
+.poi .seg2 {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  padding: 2px;
+  margin-bottom: 14px;
+  background: var(--surface);
+}
+.poi .seg2 button {
+  border: 0;
+  background: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  color: var(--body);
+}
+.poi .seg2 button.on {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgba(13, 32, 51, 0.12);
+}
+
+/* entrance animations used by several components */
+@keyframes in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes tr {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* reduced motion: animations end at once; only colour and opacity still fade */
+@media (prefers-reduced-motion: reduce) {
+  .poi,
+  .poi *,
+  .poi *::before,
+  .poi *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0s !important;
+    transition-property: opacity, color, background-color, border-color, fill, stroke !important;
+  }
+}

@@ -213,3 +213,188 @@ defineExpose({
     </div>
   </div>
 </template>
+
+<style scoped>
+/* the file card: tabs and actions, editor, footer */
+.poi .file {
+  position: sticky;
+  top: 88px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--code-bg);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.poi .file .fh {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 6px 0 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.poi .file .tab {
+  border: 0;
+  background: none;
+  padding: 8px 12px 10px;
+  font: 13px var(--mono);
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.poi .file .tab.on {
+  color: var(--fg);
+  border-bottom-color: var(--coral);
+}
+.poi .file .fh .sp {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  padding-bottom: 4px;
+}
+.poi .file .edit-btn {
+  height: 28px;
+  font-size: 13px;
+  padding: 0 10px;
+  margin-right: 4px;
+}
+.poi .file .edit-btn.on {
+  background: var(--blue-wash);
+  border-color: var(--blue);
+  color: var(--blue-ink);
+}
+.poi .banner {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  font-size: 13px;
+  background: var(--blue-wash);
+  color: var(--fg);
+  border-bottom: 1px solid var(--line);
+}
+.poi .banner.on {
+  display: flex;
+}
+.poi .file .ff {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--bg);
+}
+.poi .file .ff .legend::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--coral);
+  margin-right: 6px;
+}
+
+/* editor: highlighted <pre> with a transparent <textarea> over it while editing */
+.poi .ed {
+  position: relative;
+  max-height: calc(100dvh - 220px);
+  min-height: 320px;
+  overflow: auto;
+}
+.poi .ed pre,
+.poi .ed textarea {
+  margin: 0;
+  padding: 14px 16px 14px 58px;
+  font: 13px/1.7 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+  border: 0;
+  background: none;
+  width: 100%;
+  letter-spacing: 0;
+}
+.poi .ed pre {
+  color: var(--code-fg);
+  counter-reset: ln;
+}
+.poi .ed textarea {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  color: transparent;
+  caret-color: var(--fg);
+  resize: none;
+  outline: none;
+  overflow: hidden;
+  display: none;
+}
+.poi .ed textarea::selection {
+  background: color-mix(in srgb, var(--blue) 30%, transparent);
+  color: transparent;
+}
+.poi .ed.editing textarea {
+  display: block;
+}
+.poi .ed.editing {
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--blue) 35%, transparent);
+}
+.poi .ed .ln {
+  display: block;
+  position: relative;
+  border-left: 2px solid transparent;
+  margin-left: -58px;
+  padding-left: 56px;
+  transition: background 0.3s;
+}
+.poi .ed .ln::before {
+  counter-increment: ln;
+  content: counter(ln);
+  position: absolute;
+  left: 0;
+  width: 40px;
+  text-align: right;
+  color: var(--code-com);
+  opacity: 0.7;
+}
+.poi .ed .ln.hl {
+  background: color-mix(in srgb, var(--blue) 9%, transparent);
+  border-left-color: var(--blue);
+}
+
+/* highlight tokens (lib/deploy/highlight.js) */
+.poi .ed .k {
+  color: var(--code-key);
+}
+.poi .ed .s {
+  color: var(--code-str);
+}
+.poi .ed .c {
+  color: var(--code-com);
+}
+.poi .ed .ex {
+  color: var(--coral-ink);
+}
+.poi .ed .exv {
+  color: var(--coral-ink);
+  background: var(--coral-wash);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+@media (max-width: 980px) {
+  .poi .file {
+    position: static;
+  }
+  .poi .ed {
+    max-height: 560px;
+  }
+}
+</style>

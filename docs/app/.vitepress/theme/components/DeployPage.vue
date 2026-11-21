@@ -118,3 +118,81 @@ onUnmounted(() => {
     </div>
   </main>
 </template>
+
+<style src="./deploy/shared.css"></style>
+
+<style scoped>
+/* header: title, example button, mode switch */
+.poi .dhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 56px 0 4px;
+}
+.poi .dhead h1 {
+  font-size: 40px;
+  letter-spacing: -0.032em;
+}
+.poi .dsub {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15.5px;
+  max-width: 40em;
+}
+.poi .dhead .btn {
+  height: 38px;
+}
+.poi .dhead .right {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.poi .seg2.big {
+  margin: 0;
+}
+
+/* steps beside the file; stacked on narrow screens */
+.poi .cfg {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: 40px;
+  padding: 36px 0 96px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .poi .cfg {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .poi .dhead {
+    padding-top: 36px;
+  }
+}
+
+/* "Copied" and other short notices */
+.poi .toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translate(-50%, 20px);
+  opacity: 0;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 14px;
+  padding: 8px 14px;
+  border-radius: var(--r);
+  transition:
+    opacity 0.25s var(--ease),
+    transform 0.25s var(--ease);
+  pointer-events: none;
+  z-index: 60;
+}
+.poi .toast.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+</style>
