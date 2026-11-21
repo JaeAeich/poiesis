@@ -233,9 +233,14 @@ async def cancel_task(
 ) -> TesCancelTaskResponse:
     """Mark the task CANCELING and delete its wrapping Kubernetes Job.
 
-    TES treats cancel on a terminal task as a no-op success. The TaskPod
-    self-finalises to CANCELED via TRec's SIGTERM handler; if TRec is dead,
-    TCtl writes CANCELED when it observes the Pod terminate.
+    TES treats cancel on a terminal task as a no-op success. This route
+    never writes `CANCELED`, and neither does TRec: TCtl is the single
+    writer of terminal state. With the Job deleted the Pod disappears;
+    TCtl's orphan pass finds the task without a Job or Pod and proposes
+    `SYSTEM_ERROR`, which the writer's `CANCELING` precedence lands as
+    `CANCELED`. A Pod that reaches a terminal phase first lands as
+    `CANCELED` the same way. If the delete here fails, TCtl deletes the
+    Job of the `CANCELING` task on its next pass.
     """
     try:
         task_uuid = str(uuid.UUID(id))

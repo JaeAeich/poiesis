@@ -1,8 +1,10 @@
 """Task state-machine transitions.
 
-The single code path for terminal writes. Callers (the in-Pod recorder and
-the global controller) compose these onto a shared connection so they
-race-correctly through Postgres row-level locking, not application-level locks.
+The single code path for terminal writes. Its callers are the global
+controller (TCtl), for every task that was submitted, and the API, for a
+task whose submission to Kubernetes failed; the in-Pod recorder (TRec)
+never writes a terminal state. They race correctly through Postgres
+row-level locking, not application-level locks.
 
 Two operations matter:
 

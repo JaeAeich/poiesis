@@ -18,8 +18,8 @@ class TctlCommand(BaseCommand):
     name = "tctl"
     help = "Task Controller — backstop reconciler"
     description = (
-        "Leader-elected controller that watches TaskPods and writes "
-        "terminal state for failures the in-Pod recorder cannot self-report."
+        "Leader-elected controller that polls task Jobs and TaskPods and "
+        "writes every task's terminal state; the in-Pod recorder writes none."
     )
 
     def add_run_command(self, group: click.Group) -> None:
