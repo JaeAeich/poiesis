@@ -12,7 +12,7 @@ const engines = [
   { name: "Nextflow", detail: "nf-ga4gh 1.5.0", st: "", label: "Tested · 25.10.4", logo: NF, size: 96 },
   { name: "Snakemake", detail: "TES executor 0.1.3", st: "", label: "Tested · 9.27.2", logo: img("snakemake.svg"), size: 88 },
   { name: "py-tes", detail: "GA4GH Python client", st: "", label: "Tested · 1.1.4", logo: img("ga4gh.png"), size: 76 },
-  { name: "TES compliance suite", detail: "GA4GH conformance tests", st: "no", label: "Not run yet", logo: img("ga4gh.png"), size: 70 },
+  { name: "TES compliance suite", detail: "GA4GH conformance tests", st: "", label: "Passing", logo: img("ga4gh.png"), size: 70 },
   { name: "Sprocket", detail: "WDL · 0.34.1, two workarounds for now", st: "part", label: "Partly tested", logo: img("sprocket.png", "crop"), size: 80 },
   { name: "cwl-tes", detail: "API key as Basic password", st: "part", label: "Partly tested", logo: CWL, size: 68 },
   { name: "Cromwell", detail: "WDL", st: "no", label: "Not tested yet", logo: img("cromwell.png"), size: 82 },
