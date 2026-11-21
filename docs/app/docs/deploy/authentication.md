@@ -296,6 +296,10 @@ Poiesis, decide who is allowed to authenticate.
 
 ## Migrating an existing deployment
 
+What changes for a deployment that ran with `auth.oidc`:
+
+![Authentication before and after the authenticator chain](/auth-before-after.png)
+
 Migration `000003` renames `tasks.principal` to `tasks.owner`, adds a
 `tasks.groups` column and creates the `api_keys` table. It does **not**
 rewrite existing owners, since the database can't know which issuer
