@@ -84,4 +84,10 @@ disappears, an input or output that can't be staged.
 
 Poiesis doesn't use `PAUSED` or `PREEMPTED`.
 
+## Fields Poiesis accepts but ignores
+
+- `inputs[].streamable`: TES lets a server ignore it. `tif` always
+  downloads an input onto the task's volume; nothing is streamed or
+  FUSE-mounted.
+
 [Specification on GitHub](https://github.com/ga4gh/task-execution-schemas).
