@@ -119,6 +119,14 @@ TCtl is on every path: TRec never finalises a task, clean runs included.
 - **One task**: an error while writing one task's state or deleting
   its Job is logged with the task's id, and the pass goes on with the
   next task. The next pass decides that task again.
+- **The Lease**: the leader renews it every 10 seconds on its own
+  timer, also while a pass runs, so a long pass doesn't lose it. If a
+  renewal fails, or none has succeeded for 20 seconds (the Lease's 30
+  seconds less a 10-second margin for clock skew), the pass stops before
+  the next task and TCtl stands down. Another replica can take the Lease
+  only after it expires. If two leaders ever overlap, the conditional
+  terminal write (see [Postgres](#postgres)) still lets only one write
+  land per task.
 
 ## Postgres
 

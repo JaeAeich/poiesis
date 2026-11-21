@@ -55,6 +55,9 @@ Every Kubernetes call has a request timeout, and the Job and Pod lists are
 read page by page. A pass that can't read a whole list acts on nothing.
 
 Leader election uses `coordination.k8s.io/v1` Leases (see `core/leases.py`).
+The leader renews its Lease on its own timer (`_keep_lease`), also while a
+pass runs; a pass stops before the next task's actions once the Lease is
+lost or its last renewal is too old to be sure no one else holds it.
 The Lease lives in the namespace tctl runs in (the release namespace), which
 is not the TaskPod namespace when the two are split.
 """
@@ -62,6 +65,7 @@ is not the TaskPod namespace when the two are split.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import signal
 import socket
@@ -105,6 +109,10 @@ _TASK_LABEL = "poiesis.io/task"
 _LEASE_NAME = "poiesis-tctl-leader"
 _LEASE_DURATION_SECONDS = 30
 _LEASE_RENEW_INTERVAL_SECONDS = 10
+#: How long before the Lease could expire tctl stops acting as leader: a
+#: renewal started at `t` is trusted until `t + duration - margin`. Covers
+#: clock skew with the instance that would take the Lease over.
+_LEASE_SAFETY_MARGIN_SECONDS = 10
 #: How often the reconciler walks the world.
 _RECONCILE_INTERVAL_SECONDS = 5
 #: How long a TaskPod bound to a node may sit in Pending before the
@@ -155,6 +163,7 @@ async def run(
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=4)
     try:
         while not cancelled.is_set():
+            started = time.monotonic()
             acquired = await _hold_lease(coord_v1, lease_namespace, identity)
             if not acquired:
                 logger.debug("tctl: not leader; sleeping")
@@ -170,6 +179,7 @@ async def run(
                 lease_namespace,
                 identity,
                 cancelled,
+                _Leadership(started),
                 unschedulable_timeout,
             )
     finally:
@@ -214,6 +224,58 @@ async def _hold_lease(
         return False
 
 
+class _Leadership:
+    """Whether this instance may still act as the leader.
+
+    It may until a renewal fails, and only while the last successful
+    renewal is recent enough that no other instance can have taken the
+    Lease over: a renewal started at monotonic time `t` is trusted until
+    `t + _LEASE_DURATION_SECONDS - _LEASE_SAFETY_MARGIN_SECONDS`. A renewal
+    that hangs therefore stops the pass too, before the Lease expires.
+    """
+
+    def __init__(self, renewed_at: float) -> None:
+        """Start as leader, from a successful acquire or renewal at `renewed_at`."""
+        self._lost = False
+        self._valid_until = 0.0
+        self.renewed(renewed_at)
+
+    def renewed(self, at: float) -> None:
+        """Record a successful renewal started at monotonic time `at`."""
+        self._valid_until = at + _LEASE_DURATION_SECONDS - _LEASE_SAFETY_MARGIN_SECONDS
+
+    def lose(self) -> None:
+        """Record a failed renewal: this instance is no longer the leader."""
+        self._lost = True
+
+    def held(self) -> bool:
+        """True while this instance may still act as the leader."""
+        return not self._lost and time.monotonic() < self._valid_until
+
+
+async def _keep_lease(
+    coord_v1: CoordinationV1Api,
+    lease_namespace: str,
+    identity: str,
+    leadership: _Leadership,
+    cancelled: asyncio.Event,
+) -> None:
+    """Renew the Lease every `_LEASE_RENEW_INTERVAL_SECONDS`, until it fails.
+
+    Runs as its own task beside the reconcile loop, so a pass longer than
+    the Lease duration doesn't lose the Lease.
+    """
+    while not cancelled.is_set():
+        await _wait_or_cancel(cancelled, _LEASE_RENEW_INTERVAL_SECONDS)
+        if cancelled.is_set():
+            return
+        started = time.monotonic()
+        if not await _hold_lease(coord_v1, lease_namespace, identity):
+            leadership.lose()
+            return
+        leadership.renewed(started)
+
+
 async def _reconcile_while_leader(  # noqa: PLR0913 (one pass's inputs and the Lease)
     core_v1: CoreV1Api,
     batch_v1: BatchV1Api,
@@ -223,29 +285,45 @@ async def _reconcile_while_leader(  # noqa: PLR0913 (one pass's inputs and the L
     lease_namespace: str,
     identity: str,
     cancelled: asyncio.Event,
+    leadership: _Leadership,
     unschedulable_timeout: float | None = None,
 ) -> None:
-    """Reconcile every `_RECONCILE_INTERVAL_SECONDS` until lease is lost."""
+    """Reconcile every `_RECONCILE_INTERVAL_SECONDS` until the Lease is lost.
+
+    The Lease is renewed by `_keep_lease` meanwhile. A pass checks
+    `leadership` before each task's actions and stops once it no longer
+    holds.
+    """
     # Per leadership term: a new leader observes for a full grace period
     # before it calls any task an orphan.
     first_seen: dict[str, float] = {}
-    while not cancelled.is_set():
-        renewed = await _hold_lease(coord_v1, lease_namespace, identity)
-        if not renewed:
-            logger.warning("tctl: lost lease; standing down")
-            return
-        try:
-            await _reconcile_once(
-                core_v1,
-                batch_v1,
-                pool,
-                namespace,
-                first_seen,
-                unschedulable_timeout=unschedulable_timeout,
-            )
-        except Exception:
-            logger.exception("tctl: reconcile tick raised; will retry next interval")
-        await _wait_or_cancel(cancelled, _RECONCILE_INTERVAL_SECONDS)
+    renewer = asyncio.create_task(
+        _keep_lease(coord_v1, lease_namespace, identity, leadership, cancelled)
+    )
+    try:
+        while not cancelled.is_set():
+            if not leadership.held():
+                logger.warning("tctl: lost lease; standing down")
+                return
+            try:
+                await _reconcile_once(
+                    core_v1,
+                    batch_v1,
+                    pool,
+                    namespace,
+                    first_seen,
+                    unschedulable_timeout=unschedulable_timeout,
+                    still_leader=leadership.held,
+                )
+            except Exception:
+                logger.exception(
+                    "tctl: reconcile tick raised; will retry next interval"
+                )
+            await _wait_or_cancel(cancelled, _RECONCILE_INTERVAL_SECONDS)
+    finally:
+        renewer.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await renewer
 
 
 @dataclass(frozen=True)
@@ -292,6 +370,7 @@ async def _reconcile_once(
     first_seen: dict[str, float],
     *,
     unschedulable_timeout: float | None = None,
+    still_leader: Callable[[], bool] | None = None,
 ) -> None:
     """One pass over all non-terminal task rows, task Jobs and TaskPods.
 
@@ -301,7 +380,8 @@ async def _reconcile_once(
     Job and Pod gone a later pass's orphan check finalises the task as
     CANCELED. The other actions follow, task by task. An error while
     applying one task's actions is logged and the pass goes on with the
-    next task.
+    next task. `still_leader` is asked before each task's actions; once it
+    says no, the pass stops.
     """
     snapshot = await _gather(core_v1, batch_v1, pool, namespace, first_seen)
     timeouts = Timeouts(
@@ -330,6 +410,9 @@ async def _reconcile_once(
     for task_id, actions in steps:
         if not actions:
             continue
+        if still_leader is not None and not still_leader():
+            logger.warning("tctl: lease no longer held; stopping the pass")
+            return
         try:
             await _apply(core_v1, batch_v1, pool, namespace, task_id, actions)
         except Exception:

@@ -9,7 +9,7 @@ terminal state.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from click.testing import CliRunner
@@ -18,6 +18,9 @@ from kubernetes.client.exceptions import ApiException
 from poiesis.cli.commands.poiesis import tctl as tctl_cli
 from poiesis.core import leases, tctl
 
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
 RELEASE_NS = "poiesis"
 TASK_NS = "poiesis-tasks"
 
@@ -25,6 +28,10 @@ TASK_NS = "poiesis-tasks"
 class Pool:
     async def close(self) -> None:
         pass
+
+
+async def _no_wait(_still_leader: Callable[[], bool]) -> None:
+    pass
 
 
 class Harness:
@@ -36,6 +43,12 @@ class Harness:
         self.timeouts: list[float | None] = []
         self.failures: list[Exception] = []
         self.cancelled = asyncio.Event()
+        #: Passes before tctl is stopped.
+        self.passes = 1
+        #: What a pass does before it ends, given its `still_leader`.
+        self.during_pass: Callable[[Callable[[], bool]], Awaitable[None]] = (
+            _no_wait
+        )
 
         async def lease(_coord: Any, **kwargs: Any) -> bool:
             self.lease_namespaces.append(kwargs["namespace"])
@@ -51,10 +64,13 @@ class Harness:
             _seen: Any,
             *,
             unschedulable_timeout: float | None,
+            still_leader: Callable[[], bool],
         ) -> None:
             self.reconciled.append(namespace)
             self.timeouts.append(unschedulable_timeout)
-            self.cancelled.set()
+            await self.during_pass(still_leader)
+            if len(self.reconciled) >= self.passes:
+                self.cancelled.set()
 
         async def create_pool(*_: Any, **__: Any) -> Pool:
             return Pool()
@@ -143,24 +159,92 @@ def test_lease_calls_have_a_request_timeout() -> None:
     assert calls == [("read", (5, 10)), ("create", (5, 10))]
 
 
-def test_leader_stands_down_when_the_renewal_fails(
+def test_lease_is_renewed_during_a_long_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A leader that can't renew stops reconciling until it holds the Lease."""
+    """A pass longer than the renew interval keeps the Lease (#163)."""
     harness = Harness(monkeypatch)
     calls = 0
 
     async def lease(_coord: Any, **_: Any) -> bool:
         nonlocal calls
         calls += 1
-        if calls == 2:  # noqa: PLR2004 - the first renewal as leader
+        return True
+
+    async def long_pass(still_leader: Callable[[], bool]) -> None:
+        await asyncio.sleep(0.2)  # 20 renew intervals
+        assert still_leader()
+
+    monkeypatch.setattr(tctl, "try_acquire_or_renew", lease)
+    harness.during_pass = long_pass
+    assert harness.run() == 0
+    assert calls > 5  # noqa: PLR2004 - the acquire, then renewals during the pass
+
+
+def test_failed_renewal_stops_the_running_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pass sees the loss at once; the next pass waits for the Lease."""
+    harness = Harness(monkeypatch)
+    calls = 0
+
+    async def lease(_coord: Any, **_: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 2:  # noqa: PLR2004 - the first renewal, during the pass
             raise ApiException(status=500, reason="boom")
         return True
 
+    passes: list[bool] = []
+
+    async def pass_until_lost(still_leader: Callable[[], bool]) -> None:
+        if not passes:
+            async with asyncio.timeout(1):
+                while still_leader():
+                    await asyncio.sleep(0.005)
+        passes.append(still_leader())
+
     monkeypatch.setattr(tctl, "try_acquire_or_renew", lease)
-    assert harness.run(lease_namespace=RELEASE_NS) == 0
-    assert calls == 4  # noqa: PLR2004 - acquire, failed renew, acquire, renew
-    assert harness.reconciled == [TASK_NS]
+    monkeypatch.setattr(tctl, "_RECONCILE_INTERVAL_SECONDS", 0.01)
+    harness.during_pass = pass_until_lost
+    harness.passes = 2
+    assert harness.run() == 0
+    # The first pass ended by the failed renewal; the second came only after
+    # tctl had stood down and acquired the Lease again (call 3).
+    assert passes == [False, True]
+    assert calls >= 3  # noqa: PLR2004
+
+
+def test_renewal_that_hangs_stops_the_pass_before_the_lease_expires(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No answer is not a renewal: the pass stops at duration minus margin."""
+    harness = Harness(monkeypatch)
+    calls = 0
+
+    async def lease(_coord: Any, **_: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            await asyncio.sleep(60)  # the API server doesn't answer
+        return True
+
+    stopped_after: list[float] = []
+
+    async def pass_until_lost(still_leader: Callable[[], bool]) -> None:
+        started = asyncio.get_running_loop().time()
+        async with asyncio.timeout(2):
+            while still_leader():
+                await asyncio.sleep(0.005)
+        stopped_after.append(asyncio.get_running_loop().time() - started)
+
+    monkeypatch.setattr(tctl, "try_acquire_or_renew", lease)
+    monkeypatch.setattr(tctl, "_LEASE_DURATION_SECONDS", 0.3)
+    monkeypatch.setattr(tctl, "_LEASE_SAFETY_MARGIN_SECONDS", 0.1)
+    harness.during_pass = pass_until_lost
+    assert harness.run() == 0
+    (elapsed,) = stopped_after
+    assert 0.1 < elapsed < 0.3  # noqa: PLR2004
 
 
 def test_cli_passes_both_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -23,7 +23,7 @@ from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Callable
 
 NS = "tasks"
 NOW = datetime.now(UTC)
@@ -87,6 +87,8 @@ class World:
         self.unschedulable_timeout: float | None = None
         #: Runs when the Pods are listed, i.e. in the middle of a pass.
         self.on_pod_list = lambda: None
+        #: Asked by the pass before each task's actions; None: always leader.
+        self.still_leader: Callable[[], bool] | None = None
         #: Raised once by the terminal write of a task.
         self.write_errors: dict[str, Exception] = {}
         #: Objects per list page; None returns each list in one page.
@@ -205,6 +207,7 @@ class World:
                 NS,
                 self.first_seen,
                 unschedulable_timeout=self.unschedulable_timeout,
+                still_leader=self.still_leader,
             )
         )
 
@@ -372,6 +375,19 @@ class TestErrorIsolation:
         world.tick()
         assert set(world.writes) == {T2}
         assert f"applying the actions of task={T1} raised" in caplog.text
+
+
+def test_pass_stops_once_the_lease_is_no_longer_held(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Asked before each task's actions; nothing is applied after a no (#163)."""
+    world.states = {T1: TesState.RUNNING, T2: TesState.RUNNING}
+    world.pods = [pod(T1, "Failed"), pod(T2, "Failed")]
+    answers = iter([True, False])
+    world.still_leader = lambda: next(answers)
+    world.tick()
+    assert set(world.writes) == {T1}
+    assert "lease no longer held; stopping the pass" in caplog.text
 
 
 class TestPodlessJobs:
