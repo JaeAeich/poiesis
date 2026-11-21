@@ -175,6 +175,7 @@ def test_find_flags_revoked_and_expired() -> None:
             assert found.claims_snapshot == {"claims": {"groups": ["lab-alpha"]}}
             assert not found.revoked
             assert not found.expired
+            assert found.created_at == record.created_at
             assert await api_keys_db.find_api_key(conn, os.urandom(32)) is None
 
             await conn.execute(

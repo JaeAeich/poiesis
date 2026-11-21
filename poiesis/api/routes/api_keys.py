@@ -79,7 +79,7 @@ class CreateApiKeyRequest(_Camel):
         default=None,
         pattern=TTL_PATTERN,
         description="Lifetime, `<n>d` or `<n>h`; default and maximum are "
-        "configured by the operator (30d and 90d unless changed).",
+        "configured by the operator (7d and 90d unless changed).",
         examples=["30d"],
     )
     scopes: list[Scope] | None = Field(

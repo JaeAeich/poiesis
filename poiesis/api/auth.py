@@ -58,6 +58,9 @@ class Principal:
     subject: str
     via: str  # "oidc", "apikey" or "anonymous"
     credential_id: str | None = None
+    # When the credential was issued (seconds since the epoch): an API
+    # key's minting time, which is also when its claims were snapshot.
+    credential_issued_at: float | None = None
     actor: Actor | None = None
     scopes: frozenset[str] = frozenset()
     claims: dict[str, Any] = field(default_factory=dict)

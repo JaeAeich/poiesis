@@ -196,6 +196,9 @@ class ApiKeyAuthenticator:
             subject=subject,
             via="apikey",
             credential_id=str(record.id),
+            credential_issued_at=(
+                record.created_at.timestamp() if record.created_at else None
+            ),
             scopes=frozenset(record.scopes),
             claims=claims if isinstance(claims, dict) else {},
             userinfo=userinfo if isinstance(userinfo, dict) else {},

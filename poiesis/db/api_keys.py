@@ -41,6 +41,8 @@ class ApiKeyCredential:
     claims_snapshot: dict[str, Any] = field(default_factory=dict)
     revoked: bool = False
     expired: bool = False
+    # When the key was minted, which is also when its snapshot was taken.
+    created_at: datetime | None = None
 
 
 async def create_api_key(  # noqa: PLR0913 (one column per argument)
@@ -130,7 +132,7 @@ async def find_api_key(
     row = await conn.fetchrow(
         """
         SELECT
-            id, owner, scopes, claims_snapshot,
+            id, owner, scopes, claims_snapshot, created_at,
             revoked_at IS NOT NULL AS revoked,
             expires_at <= now() AS expired
         FROM api_keys
@@ -149,6 +151,7 @@ async def find_api_key(
         claims_snapshot=snapshot if isinstance(snapshot, dict) else {},
         revoked=row["revoked"],
         expired=row["expired"],
+        created_at=row["created_at"],
     )
 
 

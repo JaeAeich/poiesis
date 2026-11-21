@@ -411,22 +411,24 @@ def _ttl_env(name: str, default: str) -> timedelta:
 
 
 class ApiKeySettings(BaseModel):
-    """Poiesis API keys (see `poiesis.api.apikey_auth`).
+    """Poiesis API keys (see `poiesis.api.apikey_auth`); off by default.
 
-    Every key expires: ``default_ttl`` applies when the minting request
-    names no lifetime, ``max_ttl`` caps any lifetime asked for, and an
-    owner holds at most ``max_per_owner`` active keys at once.
+    Keys are an add-on for clients that can't refresh tokens, such as
+    workflow engines: an operator turns them on. Every key expires:
+    ``default_ttl`` applies when the minting request names no lifetime,
+    ``max_ttl`` caps any lifetime asked for, and an owner holds at most
+    ``max_per_owner`` active keys at once.
     """
 
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = Field(
         default_factory=lambda: _parse_bool_env(
-            "POIESIS_AUTH_API_KEYS_ENABLED", default=True
+            "POIESIS_AUTH_API_KEYS_ENABLED", default=False
         ),
     )
     default_ttl: timedelta = Field(
-        default_factory=lambda: _ttl_env("POIESIS_AUTH_API_KEYS_DEFAULT_TTL", "30d"),
+        default_factory=lambda: _ttl_env("POIESIS_AUTH_API_KEYS_DEFAULT_TTL", "7d"),
     )
     max_ttl: timedelta = Field(
         default_factory=lambda: _ttl_env("POIESIS_AUTH_API_KEYS_MAX_TTL", "90d"),

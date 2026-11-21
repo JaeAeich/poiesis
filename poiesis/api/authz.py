@@ -26,6 +26,7 @@ import asyncio
 import ipaddress
 import logging
 import re
+import time
 import uuid
 from pathlib import Path
 from typing import Annotated, Any
@@ -205,6 +206,12 @@ class Authz:
         if principal.via == "apikey":
             # The key's own scopes, not those of the token that minted it.
             scope = sorted(principal.scopes)
+            if principal.credential_issued_at is not None:
+                # Seconds since minting; the claims snapshot is as old, so
+                # a policy can refuse keys or claims older than it likes.
+                age = max(0, int(time.time() - principal.credential_issued_at))
+                properties["key_age"] = age
+                properties["snapshot_age"] = age
         if isinstance(scope, str):
             scope = scope.split()
         if isinstance(scope, list):

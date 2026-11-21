@@ -30,6 +30,7 @@ from fake_issuer import (
 from fastapi.testclient import TestClient
 
 from poiesis.api import app as app_module
+from poiesis.api import authz as authz_module
 from poiesis.api.apikey_auth import (
     ApiKeyAuthenticator,
     hash_key,
@@ -151,6 +152,7 @@ class KeyTable:
                     claims_snapshot=row["claims_snapshot"],
                     revoked=row["revoked_at"] is not None,
                     expired=row["expires_at"] <= datetime.now(UTC),
+                    created_at=row["created_at"],
                 )
         return None
 
@@ -204,11 +206,15 @@ class K8s:
 
 @pytest.fixture
 def issuer(network: Network, monkeypatch: pytest.MonkeyPatch) -> Issuer:
-    """The fake issuer, allowed to mint keys; its tokens come from `LOGIN`."""
+    """The fake issuer, allowed to mint keys; its tokens come from `LOGIN`.
+
+    API keys are off by default; these tests turn them on.
+    """
     set_issuers(
         monkeypatch,
         {"issuer": ISSUER, "audience": AUDIENCE, "keyMinting": {"clients": [LOGIN]}},
     )
+    monkeypatch.setenv("POIESIS_AUTH_API_KEYS_ENABLED", "true")
     fake = network.add(Issuer())
     plain = fake.token
 
@@ -830,8 +836,13 @@ def test_principal(table: KeyTable) -> None:
     """The principal is the owner, via the key, with the snapshot's claims."""
     key = new_key()
     snapshot = {"claims": {"sub": "alice", "groups": ["g"]}, "userinfo": {"e": "x"}}
+    minted = datetime(2026, 11, 1, tzinfo=UTC)
     key_id = table.insert(
-        key, owner=f"{GATEWAY}|a|b", scopes=("tasks:read",), claims_snapshot=snapshot
+        key,
+        owner=f"{GATEWAY}|a|b",
+        scopes=("tasks:read",),
+        claims_snapshot=snapshot,
+        created_at=minted,
     )
     principal = principal_for(table, key, (ISSUER, GATEWAY))
     assert principal == Principal(
@@ -839,6 +850,7 @@ def test_principal(table: KeyTable) -> None:
         subject="a|b",
         via="apikey",
         credential_id=str(key_id),
+        credential_issued_at=minted.timestamp(),
         scopes=frozenset({"tasks:read"}),
         claims={"sub": "alice", "groups": ["g"]},
         userinfo={"e": "x"},
@@ -967,14 +979,16 @@ def test_last_used_flushed_in_background(table: KeyTable) -> None:
 # -- decision service ------------------------------------------------------------
 
 
-def test_subject_names_the_key() -> None:
-    """The AuthZEN subject says how the caller authenticated."""
+def test_subject_names_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The AuthZEN subject says how the caller authenticated, and key ages."""
+    monkeypatch.setattr(authz_module, "time", SimpleNamespace(time=lambda: 10_000.0))
     authz = Authz(AuthzSettings())
     key = Principal(
         issuer=ISSUER,
         subject="alice",
         via="apikey",
         credential_id="k-1",
+        credential_issued_at=10_000.0 - 3600,
         scopes=frozenset({"tasks:read"}),
         # The minting token's scope stays in the snapshot, but isn't sent.
         claims={"scope": "openid profile"},
@@ -985,20 +999,24 @@ def test_subject_names_the_key() -> None:
         "via": "apikey",
         "credential_id": "k-1",
         "scope": ["tasks:read"],
+        "key_age": 3600,
+        "snapshot_age": 3600,
         "claims": {},
     }
     assert authz._subject(token)["properties"]["via"] == "oidc"
     assert "credential_id" not in authz._subject(token)["properties"]
+    assert "key_age" not in authz._subject(token)["properties"]
 
 
 # -- settings -----------------------------------------------------------------------
 
 
-def test_settings_defaults() -> None:
-    """Keys are on, 30 days by default, at most 90 days and 20 per owner."""
+def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keys are off, 7 days by default, at most 90 days and 20 per owner."""
+    monkeypatch.delenv("POIESIS_AUTH_API_KEYS_ENABLED", raising=False)
     settings = ApiKeySettings()
-    assert settings.enabled
-    assert settings.default_ttl == timedelta(days=30)
+    assert not settings.enabled
+    assert settings.default_ttl == timedelta(days=7)
     assert settings.max_ttl == timedelta(days=90)
     assert settings.max_per_owner == 20  # noqa: PLR2004
 
@@ -1022,7 +1040,7 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     ("name", "value", "message"),
     [
         ("POIESIS_AUTH_API_KEYS_DEFAULT_TTL", "91d", "exceeds"),
-        ("POIESIS_AUTH_API_KEYS_MAX_TTL", "29d", "exceeds"),
+        ("POIESIS_AUTH_API_KEYS_MAX_TTL", "6d", "exceeds"),
         ("POIESIS_AUTH_API_KEYS_MAX_TTL", "0d", "<n>d"),
         ("POIESIS_AUTH_API_KEYS_DEFAULT_TTL", "-1d", "<n>d"),
         ("POIESIS_AUTH_API_KEYS_DEFAULT_TTL", "30", "<n>d"),
@@ -1123,9 +1141,15 @@ def test_chain_order(client: TestClient) -> None:
     assert names == ["jwt", "apikey"]
 
 
-def test_disabled_keys(app_env: pytest.MonkeyPatch, issuer: Issuer) -> None:
-    """With keys off there are no key routes and keys don't authenticate."""
-    app_env.setenv("POIESIS_AUTH_API_KEYS_ENABLED", "false")
+@pytest.mark.parametrize("enabled", ["false", None], ids=["off", "default"])
+def test_disabled_keys(
+    app_env: pytest.MonkeyPatch, issuer: Issuer, enabled: str | None
+) -> None:
+    """With keys off (the default) there are no key routes or key link."""
+    if enabled is None:
+        app_env.delenv("POIESIS_AUTH_API_KEYS_ENABLED")
+    else:
+        app_env.setenv("POIESIS_AUTH_API_KEYS_ENABLED", enabled)
     with TestClient(app_module.create_app()) as client:
         names = chain(client)
         assert names == ["jwt"]
