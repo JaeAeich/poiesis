@@ -34,6 +34,10 @@ export default defineConfig({
                         text: "Running Nextflow with Poiesis",
                         link: "/docs/usage/nextflow",
                     },
+                    {
+                        text: "Workflow engines",
+                        link: "/docs/usage/workflow-engines",
+                    },
                 ],
             },
             {
@@ -63,6 +67,10 @@ export default defineConfig({
                     {
                         text: "Authorization",
                         link: "/docs/deploy/authorization",
+                    },
+                    {
+                        text: "API keys",
+                        link: "/docs/deploy/api-keys",
                     },
                 ],
             },

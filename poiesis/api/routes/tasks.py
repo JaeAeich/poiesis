@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Query
 from kubernetes.client.exceptions import ApiException
 
 from poiesis.api.auth import Principal
-from poiesis.api.authz import Authz, authorized_principal, get_authz
+from poiesis.api.authz import Authz, get_authz, task_reader, task_writer
 from poiesis.api.deps import get_db_pool, get_k8s, get_runtime_config
 from poiesis.api.exceptions import (
     APIError,
@@ -58,7 +58,7 @@ async def create_task(
     task: TesTask,
     k8s: Annotated[K8sClient, Depends(get_k8s)],
     runtime_config: Annotated[RuntimeConfig, Depends(get_runtime_config)],
-    principal: Annotated[Principal, Depends(authorized_principal)],
+    principal: Annotated[Principal, Depends(task_writer)],
     authz: Annotated[Authz, Depends(get_authz)],
     pool: Annotated[Any, Depends(get_db_pool)],
 ) -> TesCreateTaskResponse:
@@ -227,7 +227,7 @@ async def cancel_task(
     id: str,
     k8s: Annotated[K8sClient, Depends(get_k8s)],
     runtime_config: Annotated[RuntimeConfig, Depends(get_runtime_config)],
-    principal: Annotated[Principal, Depends(authorized_principal)],
+    principal: Annotated[Principal, Depends(task_writer)],
     authz: Annotated[Authz, Depends(get_authz)],
     pool: Annotated[Any, Depends(get_db_pool)],
 ) -> TesCancelTaskResponse:
@@ -270,7 +270,7 @@ async def cancel_task(
 )
 async def get_task(
     id: str,
-    principal: Annotated[Principal, Depends(authorized_principal)],
+    principal: Annotated[Principal, Depends(task_reader)],
     authz: Annotated[Authz, Depends(get_authz)],
     pool: Annotated[Any, Depends(get_db_pool)],
     view: Annotated[TaskView, Query()] = TaskView.MINIMAL,
@@ -320,7 +320,7 @@ def _list_filters(
 )
 async def list_tasks(
     filters: Annotated[ListFilters, Depends(_list_filters)],
-    principal: Annotated[Principal, Depends(authorized_principal)],
+    principal: Annotated[Principal, Depends(task_reader)],
     authz: Annotated[Authz, Depends(get_authz)],
     pool: Annotated[Any, Depends(get_db_pool)],
     view: Annotated[TaskView, Query()] = TaskView.MINIMAL,

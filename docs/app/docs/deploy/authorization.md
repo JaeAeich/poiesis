@@ -5,10 +5,14 @@ optional except the first:
 
 1. **Authentication** ([Authentication](./authentication.md)): a valid
    token of a configured issuer (audience, `requiredScopes`), optionally
-   enriched with userinfo. Poiesis stamps the caller's owner id
-   (`issuer|subject`) on every task it creates.
+   enriched with userinfo, or an [API key](./api-keys.md) minted with
+   one, limited to its scopes (`tasks:read`, `tasks:write`). Poiesis
+   stamps the caller's owner id (`issuer|subject`) on every task it
+   creates.
 2. **Claim rule** (`authz.requiredClaim`): an admission gate, "who may
-   use this service at all", checked on every TES call.
+   use this service at all", checked on every TES call and on minting,
+   listing and revoking API keys (which the decision service is not
+   asked about: callers only ever manage their own keys).
 3. **Decision** (`authz.decisionService`): "what may this caller do".
    Without a decision service, the built-in owner rule applies: anyone
    admitted may create tasks and sees and cancels only their own, and
@@ -97,6 +101,7 @@ retries) and allows only on `200` with `{"decision": true}`.
     "id": "<owner id: issuer|subject, as stamped on tasks>",
     "properties": {
       "iss": "...", "sub": "...", "client_id": "...", "scope": ["..."],
+      "via": "oidc", "credential_id": "...",
       "actor": {"iss": "...", "sub": "..."},
       "claims": {"eduperson_entitlement": ["..."]}
     }
@@ -121,6 +126,20 @@ retries) and allows only on `200` with `{"decision": true}`.
   `principalClaim`, `sub` by default). Compare them with each other,
   but don't parse them: their format may change. Use
   `subject.properties.iss` and `sub` for identity-based rules.
+- `subject.properties.via` names how the caller authenticated: `oidc`
+  for an access token, `apikey` for an [API key](./api-keys.md).
+  `credential_id` identifies the credential when there is one: the
+  token's `jti`, or the key's id. For a key, `key_age` and
+  `snapshot_age` give the seconds since it was minted (the snapshot is
+  taken then), so a policy can refuse old keys or stale claims. For a
+  key, `iss`, `sub`, `client_id`
+  and `claims` come from the snapshot of the minting token (see
+  [Deprovisioning lag](./api-keys.md#deprovisioning-lag)), so a
+  policy written for tokens applies to keys unchanged; `scope` is the
+  key's own (`tasks:read`, `tasks:write`). Use `via` to treat keys
+  differently. Both fields were added to the
+  `tes-authzen/1` profile without changing its name: a service that
+  ignores unknown properties is unaffected.
 - `subject.properties.actor` is present only for a delegated token: the
   RFC 8693 `act` claim's `sub` and `iss` (default: the token's issuer).
   The subject is still the owner; your policy decides what the actor
@@ -189,6 +208,7 @@ restart the API pods.
 | ------------------------------------------------ | ---------------------------- |
 | No or invalid token, userinfo failure            | `401`                        |
 | Missing required scope                           | `403`                        |
+| API key without the operation's scope            | `403`                        |
 | Delegated token, no decision service             | `403`                        |
 | Claim rule fails                                 | `403` on every action        |
 | Decision service denies create or both list sets | `403`                        |

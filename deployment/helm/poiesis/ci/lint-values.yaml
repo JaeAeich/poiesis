@@ -9,3 +9,6 @@ auth:
   issuers:
     - issuer: https://keycloak.example.org/realms/poiesis
       audience: poiesis
+  swaggerUi:
+    issuer: https://keycloak.example.org/realms/poiesis
+    clientId: poiesis-cli

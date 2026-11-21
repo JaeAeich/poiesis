@@ -10,6 +10,8 @@ import json
 import logging
 import math
 import os
+import re
+from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -254,6 +256,33 @@ class UserinfoSettings(BaseModel):
     enabled: bool = False
 
 
+class KeyMintingSettings(BaseModel):
+    """Which tokens of an issuer may mint API keys (``keyMinting``).
+
+    Minting turns a short-lived token into a key that lives for weeks,
+    so it is limited to tokens of the listed OAuth clients (the token's
+    ``azp``, else ``client_id``): typically the interactive login client
+    (Swagger UI, a CLI), not service accounts or CI clients. An issuer
+    without ``keyMinting`` can't mint keys at all.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, extra="forbid", frozen=True)
+
+    # Client ids whose tokens may mint keys.
+    clients: tuple[str, ...] = Field(min_length=1)
+    # Seconds since the user's login (`auth_time`) after which minting
+    # is refused until they log in again; off when unset. The issuer
+    # must put `auth_time` in its access tokens.
+    max_auth_age: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _check_clients(self) -> KeyMintingSettings:
+        """Refuse empty client ids."""
+        if "" in self.clients:
+            raise ValueError("keyMinting.clients must not contain an empty id")
+        return self
+
+
 class IssuerSettings(BaseModel):
     """One trusted token issuer, an entry of ``POIESIS_AUTH_ISSUERS``.
 
@@ -284,6 +313,8 @@ class IssuerSettings(BaseModel):
     # Seconds allowed for each call to the issuer (discovery, JWKS,
     # userinfo), in total.
     timeout: float = Field(default=10.0, gt=0, allow_inf_nan=False)
+    # Which of its tokens may mint API keys; none when unset.
+    key_minting: KeyMintingSettings | None = None
 
     @model_validator(mode="after")
     def _check_urls(self) -> IssuerSettings:
@@ -339,6 +370,125 @@ def _parse_issuers_env() -> tuple[IssuerSettings, ...]:
     return tuple(issuers)
 
 
+def _parse_bool_env(name: str, *, default: bool) -> bool:
+    """Parse an on/off env value; anything but an "off" word is true."""
+    raw = os.environ.get(name, "")
+    if raw == "":
+        return default
+    return raw.lower() not in {"0", "false", "no", "off"}
+
+
+#: A key lifetime: a positive number of days or hours, at most six digits
+#: (so the value always fits a ``timedelta``).
+_TTL = re.compile(r"^([1-9][0-9]{0,5})([dh])$")
+TTL_PATTERN = _TTL.pattern
+
+
+def parse_ttl(value: str) -> timedelta:
+    """Parse a key lifetime such as ``30d`` or ``12h``; raise ``ValueError``."""
+    match = _TTL.match(value)
+    if match is None:
+        raise ValueError(
+            f"invalid lifetime {value!r}: use <n>d or <n>h, e.g. 30d or 12h"
+        )
+    number, unit = int(match.group(1)), match.group(2)
+    return timedelta(days=number) if unit == "d" else timedelta(hours=number)
+
+
+def format_ttl(ttl: timedelta) -> str:
+    """Format a lifetime the way :func:`parse_ttl` reads it."""
+    hours = int(ttl.total_seconds()) // 3600
+    return f"{hours // 24}d" if hours % 24 == 0 else f"{hours}h"
+
+
+def _ttl_env(name: str, default: str) -> timedelta:
+    """Parse a lifetime env value; empty/unset is ``default``."""
+    raw = os.environ.get(name, "") or default
+    try:
+        return parse_ttl(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name}: {exc}") from exc
+
+
+class ApiKeySettings(BaseModel):
+    """Poiesis API keys (see `poiesis.api.apikey_auth`); off by default.
+
+    Keys are an add-on for clients that can't refresh tokens, such as
+    workflow engines: an operator turns them on. Every key expires:
+    ``default_ttl`` applies when the minting request names no lifetime,
+    ``max_ttl`` caps any lifetime asked for, and an owner holds at most
+    ``max_per_owner`` active keys at once.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = Field(
+        default_factory=lambda: _parse_bool_env(
+            "POIESIS_AUTH_API_KEYS_ENABLED", default=False
+        ),
+    )
+    default_ttl: timedelta = Field(
+        default_factory=lambda: _ttl_env("POIESIS_AUTH_API_KEYS_DEFAULT_TTL", "7d"),
+    )
+    max_ttl: timedelta = Field(
+        default_factory=lambda: _ttl_env("POIESIS_AUTH_API_KEYS_MAX_TTL", "90d"),
+    )
+    max_per_owner: int = Field(
+        default_factory=lambda: (
+            _parse_int_env("POIESIS_AUTH_API_KEYS_MAX_PER_OWNER", 20) or 0
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _check_limits(self) -> ApiKeySettings:
+        """Refuse limits that can't hold: non-positive or default above max."""
+        if self.default_ttl <= timedelta(0) or self.max_ttl <= timedelta(0):
+            raise ValueError("API key lifetimes must be positive")
+        if self.default_ttl > self.max_ttl:
+            raise ValueError(
+                "POIESIS_AUTH_API_KEYS_DEFAULT_TTL "
+                f"({format_ttl(self.default_ttl)}) exceeds "
+                f"POIESIS_AUTH_API_KEYS_MAX_TTL ({format_ttl(self.max_ttl)})"
+            )
+        if self.max_per_owner < 1:
+            raise ValueError("POIESIS_AUTH_API_KEYS_MAX_PER_OWNER must be at least 1")
+        return self
+
+
+class SwaggerUiSettings(BaseModel):
+    """The login offered by the Swagger UI at ``/docs``, for minting keys.
+
+    Documentation only: the UI gets an OpenID Connect scheme (authorization
+    code with PKCE, from ``issuer``'s discovery document) and the public
+    client ``client_id``; the tokens it obtains are validated like any
+    other, by the authenticator chain.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # One of the configured issuers (exact match), with OIDC discovery.
+    issuer: str = Field(min_length=1)
+    # A public client of that issuer allowing <api>/docs/oauth2-redirect.
+    client_id: str = Field(min_length=1)
+    # Space-separated scopes the UI asks for.
+    scopes: str = Field(default="openid", min_length=1)
+
+
+def _parse_swagger_ui_env() -> SwaggerUiSettings | None:
+    """Parse ``POIESIS_AUTH_SWAGGER_UI_*``; no issuer and no client is off."""
+    issuer = os.environ.get("POIESIS_AUTH_SWAGGER_UI_ISSUER", "")
+    client_id = os.environ.get("POIESIS_AUTH_SWAGGER_UI_CLIENT_ID", "")
+    scopes = os.environ.get("POIESIS_AUTH_SWAGGER_UI_SCOPES", "") or "openid"
+    if not issuer and not client_id:
+        return None
+    if not (issuer and client_id):
+        raise ValueError(
+            "the Swagger UI login needs both POIESIS_AUTH_SWAGGER_UI_ISSUER "
+            "and POIESIS_AUTH_SWAGGER_UI_CLIENT_ID"
+        )
+    return SwaggerUiSettings(issuer=issuer, client_id=client_id, scopes=scopes)
+
+
 class AuthSettings(BaseModel):
     """Resource-server settings: the trusted token issuers.
 
@@ -350,12 +500,11 @@ class AuthSettings(BaseModel):
     """
 
     enabled: bool = Field(
-        default_factory=lambda: (
-            os.environ.get("POIESIS_AUTH_ENABLED", "true").lower()
-            not in {"0", "false", "no", "off"}
-        ),
+        default_factory=lambda: _parse_bool_env("POIESIS_AUTH_ENABLED", default=True),
     )
     issuers: tuple[IssuerSettings, ...] = Field(default_factory=_parse_issuers_env)
+    api_keys: ApiKeySettings = Field(default_factory=ApiKeySettings)
+    swagger_ui: SwaggerUiSettings | None = Field(default_factory=_parse_swagger_ui_env)
 
     @model_validator(mode="after")
     def _check_issuers(self) -> AuthSettings:
@@ -365,11 +514,24 @@ class AuthSettings(BaseModel):
                 f"auth is enabled but {_ISSUERS_ENV} lists no issuer; "
                 "configure one or set POIESIS_AUTH_ENABLED=false"
             )
-        seen: set[str] = set()
+        seen: dict[str, IssuerSettings] = {}
         for entry in self.issuers:
             if entry.issuer in seen:
                 raise ValueError(f"{_ISSUERS_ENV} lists {entry.issuer!r} twice")
-            seen.add(entry.issuer)
+            seen[entry.issuer] = entry
+        if self.enabled and self.swagger_ui is not None:
+            # The UI reads the issuer's discovery document in the browser.
+            login = seen.get(self.swagger_ui.issuer)
+            if login is None:
+                raise ValueError(
+                    f"POIESIS_AUTH_SWAGGER_UI_ISSUER {self.swagger_ui.issuer!r} "
+                    f"is not one of the issuers in {_ISSUERS_ENV}"
+                )
+            if login.jwks_uri is not None:
+                raise ValueError(
+                    "POIESIS_AUTH_SWAGGER_UI_ISSUER needs OIDC discovery; "
+                    f"{login.issuer!r} is configured with jwksUri"
+                )
         return self
 
 

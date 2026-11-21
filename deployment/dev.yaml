@@ -174,7 +174,8 @@ spec:
 # the host validate in the API too. Users (password = username):
 #   alice, carol -> group lab-alpha    bob -> lab-beta    admin -> poiesis-admins
 # Clients:
-#   poiesis-cli  public; auth code + PKCE, device flow, password grant (dev only)
+#   poiesis-cli  public; auth code + PKCE, device flow, password grant (dev only);
+#                also the Swagger UI login at http://localhost:{8000,18000}/docs
 #   poiesis-ci   confidential, client credentials; secret: poiesis-ci-secret
 # User ids are fixed, so `sub` (and the task owner `<issuer>|<sub>`) survives
 # Keycloak restarts. Keycloak keeps no data volume: `kubectl -n deps rollout
@@ -294,10 +295,12 @@ data:
           "standardFlowEnabled": true,
           "directAccessGrantsEnabled": true,
           "redirectUris": [
-            "http://localhost:8000/*"
+            "http://localhost:8000/*",
+            "http://localhost:18000/docs/oauth2-redirect"
           ],
           "webOrigins": [
-            "+"
+            "+",
+            "http://localhost:18000"
           ],
           "attributes": {
             "pkce.code.challenge.method": "S256",
@@ -445,9 +448,23 @@ data:
   POIESIS_POD_SECURITY_ENFORCE: restricted
   LOG_LEVEL: INFO
   POIESIS_AUTH_ENABLED: "true"
+  # Only poiesis-cli logins (Swagger UI, password grant) may mint API keys;
+  # the poiesis-ci service account may not. No maxAuthAge: Keycloak puts
+  # no auth_time in password-grant tokens, which the docs use to mint.
   POIESIS_AUTH_ISSUERS: >-
     [{"issuer": "http://keycloak.deps.svc:8080/realms/poiesis",
-      "audience": "poiesis"}]
+      "audience": "poiesis",
+      "keyMinting": {"clients": ["poiesis-cli"]}}]
+  POIESIS_AUTH_API_KEYS_ENABLED: "true"
+  POIESIS_AUTH_API_KEYS_DEFAULT_TTL: 7d
+  POIESIS_AUTH_API_KEYS_MAX_TTL: 90d
+  POIESIS_AUTH_API_KEYS_MAX_PER_OWNER: "20"
+  # Swagger UI login (/docs). The browser fetches the issuer's discovery
+  # document itself, so keycloak.deps.svc must resolve on the host (hosts
+  # entry + Keycloak port-forward, see the deployment guide).
+  POIESIS_AUTH_SWAGGER_UI_ISSUER: http://keycloak.deps.svc:8080/realms/poiesis
+  POIESIS_AUTH_SWAGGER_UI_CLIENT_ID: poiesis-cli
+  POIESIS_AUTH_SWAGGER_UI_SCOPES: openid
 ---
 apiVersion: v1
 kind: ServiceAccount

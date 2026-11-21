@@ -7,6 +7,18 @@ with `401`. It does not run a login flow, issue tokens, or store
 passwords. Clients obtain a token from an issuer and present it as
 `Authorization: Bearer <jwt>` on every request.
 
+Each request goes through an **authenticator chain**, in order:
+
+1. **JWT**: a bearer token with three dot-separated parts, validated
+   against the issuer it names (this page).
+2. **API key**: a Poiesis key (`poi_…`) as a bearer token or a Basic
+   password, minted by an owner with a token, for clients that outlive
+   one, such as workflow engines. See [API keys](./api-keys.md).
+
+The first link that recognises the credential decides: it returns the
+caller, or refuses (`401`, or `503` if it can't check right now). A
+credential no link recognises, or none at all, is a `401`.
+
 By default, authorization is an **owner-only rule**: every task row
 carries an `owner` column, and callers see and cancel only the rows
 whose `owner` is their own. An optional claim rule and an external
@@ -59,6 +71,9 @@ unknown key, or `userinfo` is combined with `jwksUri`. The old
 `auth.oidc.*` values and `POIESIS_AUTH_OIDC_*` variables are gone: any
 `POIESIS_AUTH_OIDC_*` variable left in the environment refuses to start,
 naming `POIESIS_AUTH_ISSUERS` as its replacement.
+
+API keys (`auth.apiKeys`) and the Swagger UI login (`auth.swaggerUi`)
+are set next to the issuers; see [API keys](./api-keys.md).
 
 There is no `clientSecret` — Poiesis is a resource server, not an OAuth
 client, and never talks to a token endpoint. The only network calls go
@@ -248,7 +263,7 @@ column; it makes everyone the same owner.
 
 | Surface          | Enforcement                                                              |
 | ---------------- | ------------------------------------------------------------------------ |
-| HTTP handler     | `Depends(get_principal)` on every TES route. `service-info` is unauthed. |
+| HTTP handler     | `Depends(get_principal)` on every TES and API key route. `service-info` is unauthed. |
 | Database         | `tasks.owner` stamped on every insert; reads are scoped by authz.        |
 | Workers          | TaskPods and `tctl` access the DB directly without an owner filter.      |
 
@@ -274,6 +289,8 @@ applies.
   cannot see). Same for `POST /tasks/{id}:cancel`.
 - **`GET /tasks`** → returns only tasks whose `owner` is yours.
 
+API keys behave the same, plus their own cases (revoked, expired, a
+missing scope); see [API keys](./api-keys.md#behaviour-the-client-sees).
 With a claim rule or a decision service, see
 [Authorization](./authorization.md#behaviour-the-client-sees).
 
@@ -281,15 +298,21 @@ With a claim rule or a decision service, see
 
 Out of Poiesis's scope, but the standard answers:
 
-- **Workflow engines and CLIs**: OAuth 2.0 device flow against one of
-  the configured issuers.
+- **Workflow engines**: an [API key](./api-keys.md), minted once with
+  a token; engines read their credential once, and runs outlive tokens.
+  See [Workflow engines](../usage/workflow-engines.md).
+- **CLIs and scripts**: OAuth 2.0 device flow against one of the
+  configured issuers, or a token from
+  [oidc-agent](https://indigo-dc.gitbook.io/oidc-agent/).
 - **Service accounts** (CI, automated submitters): client-credentials
   grant, or the CI system's own OIDC tokens (e.g. GitHub Actions) with
   that system listed as an issuer. The token's `sub` is the
   service-account identifier, so service-account-owned tasks are
   first-class.
 - **Interactive humans**: whatever your IdP's frontend uses
-  (authorization code + PKCE for SPAs, etc.).
+  (authorization code + PKCE for SPAs, etc.). The Swagger UI at
+  `/docs` can log in this way to mint API keys; see
+  [From the Swagger UI](./api-keys.md#from-the-swagger-ui).
 
 Poiesis accepts any valid token from a configured issuer. The IdPs, not
 Poiesis, decide who is allowed to authenticate.

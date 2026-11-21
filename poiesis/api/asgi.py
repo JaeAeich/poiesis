@@ -1,6 +1,7 @@
 """Gunicorn entrypoint for the Poiesis API.
 
-Runs `poiesis.api.app:app` under Gunicorn with a single Uvicorn worker.
+Runs the app built by `poiesis.api.app:create_app` under Gunicorn with
+a single Uvicorn worker; the worker builds it, reading the settings.
 Bind/port/timeout are intentionally hardcoded — every Poiesis process
 in production runs behind a Kubernetes Service on the same port, and
 scaling is done by adding Pod replicas, not by widening per-pod worker
@@ -55,7 +56,7 @@ def run():
                     self.cfg.set(key.lower(), value)
 
         def load(self):  # type: ignore[override]
-            return import_app_from_string(self.app_import_path)
+            return import_app_from_string(self.app_import_path)()
 
     options = {
         "bind": _BIND,
@@ -64,4 +65,4 @@ def run():
         "worker_class": _WORKER_CLASS,
     }
 
-    PoiesisApplication("poiesis.api.app:app", options).run()
+    PoiesisApplication("poiesis.api.app:create_app", options).run()
