@@ -23,7 +23,7 @@ from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Callable
 
 NS = "tasks"
 NOW = datetime.now(UTC)
@@ -80,13 +80,24 @@ class World:
         self.system_logs: dict[str, list[str]] = {}
         self.calls: list[str] = []
         self.deleted: list[str] = []
-        self.delete_error: ApiException | None = None
+        self.delete_error: Exception | None = None
         self.clock = 1000.0
         self.first_seen: dict[str, float] = {}
         #: The operator's unschedulable timeout; None waits (the default).
         self.unschedulable_timeout: float | None = None
         #: Runs when the Pods are listed, i.e. in the middle of a pass.
         self.on_pod_list = lambda: None
+        #: Asked by the pass before each task's actions; None: always leader.
+        self.still_leader: Callable[[], bool] | None = None
+        #: The Warning events of the Jobs, and an error their list raises.
+        self.events: list[dict[str, Any]] = []
+        self.events_error: Exception | None = None
+        #: Raised once by the terminal write of a task.
+        self.write_errors: dict[str, Exception] = {}
+        #: Objects per list page; None returns each list in one page.
+        self.page_size: int | None = None
+        #: Raised once by the list of `kind` ("jobs", "pods") at `token`.
+        self.list_errors: dict[tuple[str, str | None], Exception] = {}
 
         monkeypatch.setattr(tctl.time, "monotonic", lambda: self.clock)
         monkeypatch.setattr(
@@ -98,9 +109,14 @@ class World:
         monkeypatch.setattr(tctl.state_db, "recorded_executor_ordinals", self.recorded)
         #: Tasks whose executor logs were backfilled from their Pod.
         self.backfilled: list[str] = []
-        monkeypatch.setattr(tctl, "_backfill_executor_logs", self.backfill)
+        monkeypatch.setattr(tctl, "_read_executor_logs", self.read_logs)
+        monkeypatch.setattr(tctl, "_write_executor_logs", self.backfill)
 
-    async def backfill(self, _conn: Any, _core: Any, task_id: str, _pod: Any) -> None:
+    async def read_logs(self, _pool: Any, _core: Any, _task_id: str, p: Any) -> Any:
+        """Stands for the rows read from Pod `p`: `p` itself."""
+        return [p]
+
+    async def backfill(self, _conn: Any, task_id: str, _rows: Any) -> None:
         self.backfilled.append(task_id)
 
     async def non_terminal(self, _conn: Any, **_: Any) -> list[str]:
@@ -117,6 +133,9 @@ class World:
     async def write(
         self, _conn: Any, task_id: str, proposed: TesState, reason: str | None = None
     ) -> state_db.TerminalWriteResult:
+        error = self.write_errors.pop(task_id, None)
+        if error is not None:
+            raise error
         current = self.states.get(task_id)
         if current is None or current in state_db.TERMINAL_STATES:
             return state_db.TerminalWriteResult.NO_OP
@@ -136,22 +155,54 @@ class World:
         self.system_logs.setdefault(task_id, []).append(message)
 
     @contextlib.asynccontextmanager
-    async def acquire(self) -> AsyncIterator[None]:
-        yield None
+    async def acquire(self) -> AsyncIterator[SimpleNamespace]:
+        yield SimpleNamespace(transaction=contextlib.nullcontext)
 
     def list_namespaced_job(self, **kwargs: Any) -> SimpleNamespace:
-        assert kwargs == {"namespace": NS, "label_selector": "poiesis.io/task"}
         self.calls.append("jobs")
-        return SimpleNamespace(items=list(self.jobs))
+        return self.page("jobs", self.jobs, kwargs)
 
     def list_namespaced_pod(self, **kwargs: Any) -> SimpleNamespace:
-        assert kwargs == {"namespace": NS, "label_selector": "poiesis.io/task"}
         self.calls.append("pods")
-        self.on_pod_list()
-        return SimpleNamespace(items=list(self.pods))
+        if kwargs.get("_continue") is None:
+            self.on_pod_list()
+        return self.page("pods", self.pods, kwargs)
+
+    def page(
+        self, kind: str, objects: list[dict[str, Any]], kwargs: dict[str, Any]
+    ) -> Any:
+        """One page of `objects`, `page_size` long, as the list API returns it."""
+        assert kwargs.pop("_request_timeout") == tctl._REQUEST_TIMEOUT_SECONDS
+        token = kwargs.pop("_continue")
+        assert kwargs == {
+            "namespace": NS,
+            "label_selector": "poiesis.io/task",
+            "limit": tctl._LIST_PAGE_SIZE,
+        }
+        error = self.list_errors.pop((kind, token), None)
+        if error is not None:
+            raise error
+        start = int(token or 0)
+        size = self.page_size or len(objects) or 1
+        end = start + size
+        return SimpleNamespace(
+            items=list(objects[start:end]),
+            metadata=SimpleNamespace(
+                _continue=str(end) if end < len(objects) else None
+            ),
+        )
+
+    def list_namespaced_event(self, **kwargs: Any) -> SimpleNamespace:
+        assert kwargs["namespace"] == NS
+        assert kwargs["_request_timeout"] == tctl._REQUEST_TIMEOUT_SECONDS
+        self.calls.append(f"events {kwargs['field_selector']}")
+        if self.events_error is not None:
+            raise self.events_error
+        return SimpleNamespace(items=list(self.events))
 
     def delete_namespaced_job(self, **kwargs: Any) -> None:
         assert kwargs["namespace"] == NS
+        assert kwargs["_request_timeout"] == tctl._REQUEST_TIMEOUT_SECONDS
         assert kwargs["propagation_policy"] == "Background"
         self.deleted.append(kwargs["name"])
         if self.delete_error is not None:
@@ -172,6 +223,7 @@ class World:
                 NS,
                 self.first_seen,
                 unschedulable_timeout=self.unschedulable_timeout,
+                still_leader=self.still_leader,
             )
         )
 
@@ -237,14 +289,19 @@ class TestOrphans:
         assert world.writes[T1][0] is TesState.CANCELED
         assert world.deleted == [f"task-{T1}"]  # after the write, as for any orphan
 
-    def test_a_completed_job_without_pod_does_not_keep_the_task(
+    def test_a_completed_job_without_pod_completes_the_task(
         self, world: World
     ) -> None:
+        """The Job saw its Pod succeed: not an orphan, not an error (#163)."""
         world.states[T1] = TesState.RUNNING
         world.jobs = [job(T1, conditions=[{"type": "Complete", "status": "True"}])]
         world.tick()
-        world.tick(after=31)
-        assert world.writes[T1][0] is TesState.SYSTEM_ERROR
+        assert world.writes == {T1: (TesState.COMPLETE, None)}
+        assert world.system_logs[T1] == [
+            "the Job reports that its pod succeeded, but the pod was gone before "
+            "tctl read it: executor logs that trec did not record are missing"
+        ]
+        assert world.deleted == []  # a finished Job is left to its TTL
 
     def test_pod_keeps_the_task(self, world: World) -> None:
         world.states[T1] = TesState.RUNNING
@@ -252,6 +309,180 @@ class TestOrphans:
         world.tick()
         world.tick(after=120)
         assert world.writes == {}
+
+
+class TestLists:
+    """Job and Pod lists are paginated; a pass acts on whole lists only (#163)."""
+
+    def test_pages_are_joined(self, world: World) -> None:
+        world.page_size = 1
+        world.states = {T1: TesState.RUNNING, T2: TesState.RUNNING}
+        world.pods = [pod(T1), pod(T2, "Failed")]
+        world.first_seen = {T1: world.clock - 31, T2: world.clock - 31}
+        world.tick()
+        assert world.writes == {T2: (TesState.EXECUTOR_ERROR, "Error")}
+        assert world.calls == ["db", "jobs", "pods", "pods"]
+
+    def test_expired_continue_token_restarts_the_list(self, world: World) -> None:
+        world.page_size = 1
+        world.states = {T1: TesState.RUNNING, T2: TesState.RUNNING}
+        world.pods = [pod(T1), pod(T2)]
+        world.first_seen = {T1: world.clock - 31, T2: world.clock - 31}
+        world.list_errors[("pods", "1")] = ApiException(status=410, reason="Gone")
+        world.tick()
+        assert world.writes == {}  # both Pods were read: no orphan
+        assert world.calls == ["db", "jobs", "pods", "pods", "pods", "pods"]
+
+    @pytest.mark.parametrize(
+        "error",
+        [ApiException(status=500, reason="boom"), TimeoutError("read timed out")],
+    )
+    def test_a_list_that_fails_midway_stops_the_pass(
+        self, world: World, error: Exception
+    ) -> None:
+        """T2's Pod is on the unread page: it must not be called an orphan."""
+        world.page_size = 1
+        world.states = {T1: TesState.RUNNING, T2: TesState.RUNNING}
+        world.pods = [pod(T1, "Failed"), pod(T2)]
+        world.first_seen = {T1: world.clock - 31, T2: world.clock - 31}
+        world.list_errors[("pods", "1")] = error
+        with pytest.raises(type(error)):
+            world.tick()
+        assert world.writes == {}
+        assert world.deleted == []
+
+    def test_continue_token_that_keeps_expiring_stops_the_pass(
+        self, world: World
+    ) -> None:
+        world.page_size = 1
+        world.states = {T1: TesState.RUNNING}
+        world.jobs = [job(T1), job(T2)]
+        gone = ApiException(status=410, reason="Gone")
+
+        def list_job(**kwargs: Any) -> SimpleNamespace:
+            if kwargs.get("_continue") is not None:
+                raise gone
+            return World.list_namespaced_job(world, **kwargs)
+
+        world.list_namespaced_job = list_job  # ty: ignore
+        with pytest.raises(ApiException):
+            world.tick()
+        assert world.writes == {}
+
+
+class TestErrorIsolation:
+    """One task's error doesn't stop the pass for the others (#163)."""
+
+    def test_a_failing_write_is_logged_and_the_pass_goes_on(
+        self, world: World, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        world.states = {T1: TesState.RUNNING, T2: TesState.RUNNING}
+        world.pods = [pod(T1, "Failed"), pod(T2, "Failed")]
+        world.write_errors[T1] = OSError("connection reset")
+        world.tick()
+        assert set(world.writes) == {T2}
+        assert f"applying the actions of task={T1} raised" in caplog.text
+        world.tick()  # decided again on the next pass
+        assert set(world.writes) == {T1, T2}
+
+    def test_a_delete_that_times_out_does_not_stop_the_pass(
+        self, world: World, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Only ApiException is handled in `_delete_job`; a timeout isn't one."""
+        world.states = {T1: TesState.CANCELING, T2: TesState.RUNNING}
+        world.jobs = [job(T1)]
+        world.pods = [pod(T2, "Failed")]
+        world.delete_error = TimeoutError("read timed out")
+        world.tick()
+        assert set(world.writes) == {T2}
+        assert f"applying the actions of task={T1} raised" in caplog.text
+
+
+def test_pass_stops_once_the_lease_is_no_longer_held(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Asked before each task's actions; nothing is applied after a no (#163)."""
+    world.states = {T1: TesState.RUNNING, T2: TesState.RUNNING}
+    world.pods = [pod(T1, "Failed"), pod(T2, "Failed")]
+    answers = iter([True, False])
+    world.still_leader = lambda: next(answers)
+    world.tick()
+    assert set(world.writes) == {T1}
+    assert "lease no longer held; stopping the pass" in caplog.text
+
+
+def test_pod_stuck_terminating_on_a_lost_node_ends_the_task(world: World) -> None:
+    """Without the Job's time limit the task stayed RUNNING forever (#163)."""
+    world.states[T1] = TesState.RUNNING
+    no_limit = job(T1)
+    no_limit["spec"] = {}
+    world.jobs = [no_limit]
+    stuck = pod(T1)
+    stuck["metadata"]["deletion_timestamp"] = datetime.now(UTC) - timedelta(
+        seconds=200
+    )
+    world.pods = [stuck]
+    world.tick()
+    assert world.writes == {}  # within the grace: the kubelet may still stop it
+    stuck["metadata"]["deletion_timestamp"] -= timedelta(seconds=200)
+    world.tick()
+    assert world.writes == {T1: (TesState.SYSTEM_ERROR, "Pod stuck terminating")}
+    assert world.deleted == [f"task-{T1}"]
+
+
+class TestJobEvents:
+    """A Job that made no Pod: its latest Warning event names the cause (#163)."""
+
+    QUOTA = (
+        'pods "task-x-abcde" is forbidden: exceeded quota: tasks, '
+        "requested: cpu=4, used: cpu=8, limited: cpu=8"
+    )
+
+    def ended(self, world: World) -> None:
+        world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 600
+        world.jobs = [job(T1, age=700)]
+        world.tick()
+
+    def test_latest_warning_is_logged(self, world: World) -> None:
+        world.events = [
+            {"reason": "FailedCreate", "message": "old", "last_timestamp": NOW},
+            {
+                "reason": "FailedCreate",
+                "message": self.QUOTA,
+                "lastTimestamp": (NOW + timedelta(seconds=5)).isoformat(),
+            },
+        ]
+        self.ended(world)
+        assert world.system_logs[T1] == [
+            "unschedulable timeout: the Job created no Pod "
+            "(see the Job's events: quota, admission)",
+            f"job event FailedCreate: {self.QUOTA}",
+        ]
+        assert (
+            f"events involvedObject.kind=Job,involvedObject.name=task-{T1},"
+            "type=Warning"
+        ) in world.calls
+
+    def test_no_events_no_line(self, world: World) -> None:
+        self.ended(world)
+        assert len(world.system_logs[T1]) == 1
+
+    def test_failed_event_read_still_ends_the_task(
+        self, world: World, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        world.events_error = ApiException(status=403, reason="Forbidden")
+        self.ended(world)
+        assert world.writes == {T1: (TesState.SYSTEM_ERROR, "Job created no Pod")}
+        assert "could not read the events of the Job" in caplog.text
+
+    def test_events_are_not_read_on_other_passes(self, world: World) -> None:
+        world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 600
+        world.jobs = [job(T1, age=500)]
+        world.pods = [pod(T2, "Failed")]
+        world.tick()
+        assert not [c for c in world.calls if c.startswith("events")]
 
 
 class TestPodlessJobs:
@@ -263,9 +494,7 @@ class TestPodlessJobs:
         world.jobs = [job(T1, age=3600, conditions=deadline())]
         world.tick()
         assert world.writes == {T1: (TesState.SYSTEM_ERROR, "DeadlineExceeded")}
-        assert world.system_logs[T1] == [
-            "task exceeded its time limit of 3600 seconds"
-        ]
+        assert world.system_logs[T1] == ["task exceeded its time limit of 3600 seconds"]
         assert world.deleted == []
 
     def test_failed_job_reports_its_reason(self, world: World) -> None:
@@ -577,9 +806,7 @@ class TestTimeLimit:
         world.pods = [self.killed("Failed")]
         world.tick()
         assert world.writes == {T1: (TesState.SYSTEM_ERROR, "DeadlineExceeded")}
-        assert world.system_logs[T1] == [
-            "task exceeded its time limit of 3600 seconds"
-        ]
+        assert world.system_logs[T1] == ["task exceeded its time limit of 3600 seconds"]
         assert world.backfilled == [T1]
         assert world.deleted == []
 
@@ -654,3 +881,144 @@ def test_old_creation_time_does_not_shorten_the_grace() -> None:
         assert ended.state == TesState.SYSTEM_ERROR
 
     run(test)
+
+
+@needs_postgres
+def test_state_and_diagnostics_land_together(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing system log write rolls the state back; the next pass redoes it.
+
+    Before #163 the state committed first: the failed log left the task
+    terminal without its diagnostics, and the next pass was a no-op.
+    """
+    failed = pod(
+        T1,
+        "Failed",
+        init_container_statuses=[
+            {"name": "trec", "state": {"terminated": {"exit_code": 0}}},
+            {"name": "exec-0", "state": {"terminated": {"exit_code": 1}}},
+        ],
+    )
+
+    def no_logs(**_: Any) -> Any:
+        raise ApiException(status=500, reason="no logs")
+
+    kube = SimpleNamespace(
+        list_namespaced_job=lambda **_: SimpleNamespace(items=[]),
+        list_namespaced_pod=lambda **_: SimpleNamespace(items=[failed]),
+        read_namespaced_pod_log=no_logs,
+    )
+    append = state_db.append_system_log
+    failures = [OSError("connection reset")]
+
+    async def flaky_append(conn: Any, task_id: str, message: str) -> None:
+        if failures:
+            raise failures.pop()
+        await append(conn, task_id, message)
+
+    monkeypatch.setattr(tctl.state_db, "append_system_log", flaky_append)
+
+    async def test(pool: Any) -> None:
+        task = TesTask(
+            state=TesState.QUEUED,
+            executors=[TesExecutor(image="alpine", command=["false"])],
+        )
+        async with pool.acquire() as conn:
+            task_id = await tasks_db.create_task(conn, task, "owner")
+        failed["metadata"]["labels"]["poiesis.io/task"] = task_id
+
+        await tctl._reconcile_once(kube, kube, pool, NS, {})  # ty: ignore
+        async with pool.acquire() as conn:
+            after_failure = await tasks_db.get_task(conn, task_id)
+        await tctl._reconcile_once(kube, kube, pool, NS, {})  # ty: ignore
+        async with pool.acquire() as conn:
+            after_retry = await tasks_db.get_task(conn, task_id)
+
+        assert after_failure is not None
+        assert after_failure.state == TesState.QUEUED
+        assert after_retry is not None
+        assert after_retry.state == TesState.EXECUTOR_ERROR
+        (log,) = after_retry.logs or []
+        # The reason (from the write), then the diagnostics: each once.
+        assert log.system_logs == ["Error", "container exec-0 exited with code 1"]
+        assert [(e.exit_code, e.stdout) for e in log.logs] == [(1, None)]
+
+    run(test)
+
+
+def test_no_database_connection_is_held_across_kubernetes_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The executor logs are read before the transaction opens (#163)."""
+    held = 0
+    events: list[str] = []
+
+    class Conn:
+        @contextlib.asynccontextmanager
+        async def transaction(self) -> AsyncIterator[None]:
+            events.append("begin")
+            yield
+            events.append("commit")
+
+    class Pool:
+        @contextlib.asynccontextmanager
+        async def acquire(self) -> AsyncIterator[Conn]:
+            nonlocal held
+            held += 1
+            try:
+                yield Conn()
+            finally:
+                held -= 1
+
+    async def read_streams(*_: Any) -> tuple[str, None]:
+        assert held == 0
+        events.append("read log")
+        return "out\n", None
+
+    async def recorded(_conn: Any, _task_id: str) -> set[int]:
+        return set()
+
+    async def write(*_: Any, **__: Any) -> state_db.TerminalWriteResult:
+        events.append("write")
+        return state_db.TerminalWriteResult.APPLIED
+
+    async def append_executor_log(*_: Any, **row: Any) -> None:
+        events.append(f"executor log {row['stdout']!r}")
+
+    async def append_system_log(*_: Any) -> None:
+        events.append("system log")
+
+    monkeypatch.setattr(tctl, "read_executor_streams", read_streams)
+    monkeypatch.setattr(tctl.state_db, "recorded_executor_ordinals", recorded)
+    monkeypatch.setattr(tctl.state_db, "write_terminal_state", write)
+    monkeypatch.setattr(tctl.state_db, "append_executor_log", append_executor_log)
+    monkeypatch.setattr(tctl.state_db, "append_system_log", append_system_log)
+    failed = pod(
+        T1,
+        "Failed",
+        init_container_statuses=[
+            {"name": "exec-0", "state": {"terminated": {"exit_code": 1}}}
+        ],
+    )
+
+    wrote = asyncio.run(
+        tctl._apply_terminal(
+            Pool(),  # ty: ignore
+            core_v1=object(),  # ty: ignore
+            task_id=T1,
+            pod=failed,
+            proposed=TesState.EXECUTOR_ERROR,
+            reason="Error",
+            system_logs=["container exec-0 exited with code 1"],
+            source="pod-terminal",
+        )
+    )
+
+    assert wrote
+    assert events == [
+        "read log",
+        "begin",
+        "write",
+        "executor log 'out\\n'",
+        "system log",
+        "commit",
+    ]

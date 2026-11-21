@@ -444,6 +444,19 @@ tctl:
   # fails after 5 minutes.
   unschedulableTimeoutSeconds: null
 
+  probes:
+    # tctl touches /tmp/poiesis-tctl-heartbeat after each loop iteration,
+    # leader or standby. The probe fails when the file is older than
+    # maxHeartbeatAgeSeconds: a pass that hangs gets tctl restarted. Keep
+    # it above your longest pass; one with many log reads against a slow
+    # API server can take minutes.
+    liveness:
+      enabled: true
+      maxHeartbeatAgeSeconds: 600
+      periodSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+
   image: {}
 
   resources:

@@ -179,6 +179,9 @@ starting. See [Service info](../guides/production.md#service-info).
 | --- | --- | --- |
 | `tctl.replicas` | `1` | Leader election keeps one active; more give faster failover, not throughput. The chart renders no PodDisruptionBudget for TCtl: with one replica it would block node drains, and an evicted TCtl only delays task state updates. |
 | `tctl.unschedulableTimeoutSeconds` | `null` | Seconds a task may wait for its Pod to be created and scheduled before it ends `SYSTEM_ERROR`, at least 1. `null` waits until the [time limit](../concepts/tasks.md#time-limit). |
+| `tctl.probes.liveness.enabled` | `true` | Liveness probe: TCtl touches `/tmp/poiesis-tctl-heartbeat` after each loop iteration, and the probe fails when the file is missing or older than `maxHeartbeatAgeSeconds`. |
+| `tctl.probes.liveness.maxHeartbeatAgeSeconds` | `600` | Heartbeat age at which the probe fails. Keep it above your longest pass. |
+| `tctl.probes.liveness.periodSeconds`, `.timeoutSeconds`, `.failureThreshold` | `30`, `5`, `3` | Probe timing. |
 | `tctl.image` | `{}` | Image override. |
 | `tctl.resources` | requests `50m`/`128Mi`, limits `500m`/`256Mi` | Container resources. |
 | `tctl.extraEnv`, `.extraEnvFrom`, `.extraVolumes`, `.extraVolumeMounts`, `.extraContainers` | `[]` | Appended to the chart-wide extras. |

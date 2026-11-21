@@ -26,6 +26,15 @@ from poiesis.core.reconcile import (
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 TASK = "00000000-0000-4000-8000-000000000001"
 SCHEDULER = "0/3 nodes are available: 3 Insufficient cpu."
+GONE_AFTER_SUCCESS = WriteTerminal(
+    TesState.COMPLETE,
+    None,
+    (
+        "the Job reports that its pod succeeded, but the pod was gone before "
+        "tctl read it: executor logs that trec did not record are missing",
+    ),
+    "job-complete",
+)
 ORPHAN = WriteTerminal(
     TesState.SYSTEM_ERROR,
     "Pod disappeared before reaching terminal phase",
@@ -118,6 +127,19 @@ def unscheduled(age: float | None, **metadata: Any) -> dict[str, Any]:
     return waiting
 
 
+def terminating(
+    phase: str, overdue: float, *, camel: bool = False, exit_code: int | None = None
+) -> dict[str, Any]:
+    """A Pod in `phase` whose deletion deadline passed `overdue` seconds ago."""
+    containers = [] if exit_code is None else [terminated("exec-0", exit_code, "Error")]
+    stuck = pod(phase, init_container_statuses=containers)
+    if camel:
+        stuck["metadata"]["deletionTimestamp"] = ago(overdue).isoformat()
+    else:
+        stuck["metadata"]["deletion_timestamp"] = ago(overdue)
+    return stuck
+
+
 SUCCEEDED = finished(
     "Succeeded",
     terminated("exec-0", 0, "Completed"),
@@ -178,12 +200,27 @@ CASES = [
         seen_for=30,
     ),
     Case(
-        "Job complete, no Pod, seen 30 s: orphan",
-        [ORPHAN, DeleteJob(retry=False)],
+        "Job complete, no Pod, seen 30 s: COMPLETE, output logs lost",
+        [GONE_AFTER_SUCCESS],
         job=job(60, condition("Complete")),
         seen_for=30,
     ),
-    Case("Job complete, no Pod, just seen", [], job=job(60, condition("Complete"))),
+    Case(
+        "Job complete, no Pod, just seen: COMPLETE, output logs lost",
+        [GONE_AFTER_SUCCESS],
+        job=job(60, condition("Complete")),
+    ),
+    Case(
+        "Job complete and being deleted, no Pod: COMPLETE, output logs lost",
+        [GONE_AFTER_SUCCESS],
+        job=deleting(job(60, condition("Complete"))),
+    ),
+    Case(
+        "CANCELING, Job complete, no Pod: delete, then the write (lands CANCELED)",
+        [DeleteJob(retry=True), GONE_AFTER_SUCCESS],
+        job=job(60, condition("Complete")),
+        canceling=True,
+    ),
     Case("Job being deleted, no Pod, just seen", [], job=deleting(job())),
     Case(
         "Job being deleted, no Pod, seen 30 s: orphan",
@@ -313,10 +350,27 @@ CASES = [
         pods=[FAILED],
     ),
     Case(
-        "finished Pod of a task not non-terminal in the DB: proposed anyway",
-        [write(TesState.COMPLETE, None, source="pod-terminal", pod=SUCCEEDED)],
+        "finished Pod of a task not non-terminal in the DB: skipped",
+        [],
         job=job(),
         pods=[SUCCEEDED],
+        seen_for=None,
+    ),
+    Case(
+        "Job past its time limit, task not non-terminal in the DB: skipped",
+        [],
+        job=job(3600, DEADLINE),
+        seen_for=None,
+    ),
+    Case(
+        "CANCELING only in the second read, finished Pod: still decided",
+        [
+            DeleteJob(retry=True),
+            write(TesState.COMPLETE, None, source="pod-terminal", pod=SUCCEEDED),
+        ],
+        job=job(),
+        pods=[SUCCEEDED],
+        canceling=True,
         seen_for=None,
     ),
     # The Job's time limit.
@@ -387,9 +441,29 @@ CASES = [
         job=job(3600, DEADLINE, deadline=None),
     ),
     Case(
-        "Job past its time limit, being deleted, no Pod: left to the orphan check",
-        [],
+        "Job past its time limit, being deleted, no Pod: DeadlineExceeded",
+        [
+            write(
+                TesState.SYSTEM_ERROR,
+                "DeadlineExceeded",
+                "task exceeded its time limit of 3600 seconds",
+                source="job-deadline",
+            )
+        ],
         job=deleting(job(3600, DEADLINE)),
+    ),
+    Case(
+        "Job failed otherwise, being deleted, no Pod: SYSTEM_ERROR with its reason",
+        [
+            write(
+                TesState.SYSTEM_ERROR,
+                "Job failed: BackoffLimitExceeded: Job has reached the limit",
+                "job failed without a pod: BackoffLimitExceeded: "
+                "Job has reached the limit",
+                source="job-failed",
+            )
+        ],
+        job=deleting(job(60, BACKOFF)),
     ),
     # A Job without a Pod.
     Case(
@@ -436,14 +510,17 @@ CASES = [
         unschedulable=600,
     ),
     Case(
-        "live Job, no Pod for 700 s, timeout 600 s: SYSTEM_ERROR, delete",
+        "live Job, no Pod for 700 s, timeout 600 s: SYSTEM_ERROR with its events",
         [
-            write(
+            WriteTerminal(
                 TesState.SYSTEM_ERROR,
                 "Job created no Pod",
-                "unschedulable timeout: the Job created no Pod "
-                "(see the Job's events: quota, admission)",
-                source="job-no-pod",
+                (
+                    "unschedulable timeout: the Job created no Pod "
+                    "(see the Job's events: quota, admission)",
+                ),
+                "job-no-pod",
+                explain_from_job_events=True,
             ),
             DeleteJob(retry=False),
         ],
@@ -560,16 +637,8 @@ CASES = [
         pods=[pod("Running"), SECOND_FAILED],
     ),
     Case(
-        "Pod past pending timeout, then a Failed one: both proposed",
+        "Pod past pending timeout, then a Failed one: the Failed one wins",
         [
-            write(
-                TesState.SYSTEM_ERROR,
-                "ErrImagePull",
-                "pending timeout: ErrImagePull",
-                source="pending-timeout",
-                pod=STUCK,
-            ),
-            DeleteJob(retry=False),
             write(
                 TesState.EXECUTOR_ERROR,
                 "Error",
@@ -581,13 +650,105 @@ CASES = [
         job=job(),
         pods=[STUCK, SECOND_FAILED],
     ),
+    Case(
+        "Pod past pending timeout, then a Succeeded one: the Succeeded one wins",
+        [write(TesState.COMPLETE, None, source="pod-terminal", pod=SUCCEEDED)],
+        job=job(),
+        pods=[STUCK, SUCCEEDED],
+    ),
+    Case(
+        "two Pods past pending timeout: the first one",
+        [
+            write(
+                TesState.SYSTEM_ERROR,
+                "ErrImagePull",
+                "pending timeout: ErrImagePull",
+                source="pending-timeout",
+                pod=STUCK,
+            ),
+            DeleteJob(retry=False),
+        ],
+        job=job(),
+        pods=[STUCK, scheduled(500, name=f"task-{TASK}-fghij")],
+    ),
+    # A Pod stuck terminating (its node stopped answering).
+    Case(
+        "Running Pod 299 s past its deletion deadline: waits",
+        [],
+        job=job(),
+        pods=[terminating("Running", 299)],
+    ),
+    Case(
+        "Running Pod 301 s past its deletion deadline: SYSTEM_ERROR, delete",
+        [
+            write(
+                TesState.SYSTEM_ERROR,
+                "Pod stuck terminating",
+                "pod stuck terminating: still running 301 s past its deletion "
+                "deadline; its node is likely unreachable",
+                source="terminating-timeout",
+                pod=terminating("Running", 301),
+            ),
+            DeleteJob(retry=False),
+        ],
+        job=job(),
+        pods=[terminating("Running", 301)],
+    ),
+    Case(
+        "CANCELING, Job being deleted, Pod stuck terminating: write (lands CANCELED)",
+        [
+            write(
+                TesState.SYSTEM_ERROR,
+                "Pod stuck terminating",
+                "pod stuck terminating: still running 400 s past its deletion "
+                "deadline; its node is likely unreachable",
+                source="terminating-timeout",
+                pod=terminating("Running", 400),
+            ),
+            DeleteJob(retry=False),
+        ],
+        job=deleting(job()),
+        pods=[terminating("Running", 400)],
+        canceling=True,
+    ),
+    Case(
+        "Pending Pod stuck terminating, camelCase string timestamp",
+        [
+            write(
+                TesState.SYSTEM_ERROR,
+                "Pod stuck terminating",
+                "pod stuck terminating: still pending 400 s past its deletion "
+                "deadline; its node is likely unreachable",
+                source="terminating-timeout",
+                pod=terminating("Pending", 400, camel=True),
+            ),
+            DeleteJob(retry=False),
+        ],
+        pods=[terminating("Pending", 400, camel=True)],
+    ),
+    Case(
+        "Failed Pod past its deletion deadline: the phase wins",
+        [
+            write(
+                TesState.EXECUTOR_ERROR,
+                "Error",
+                "container exec-0 exited with code 1",
+                source="pod-terminal",
+                pod=terminating("Failed", 400, exit_code=1),
+            )
+        ],
+        job=job(),
+        pods=[terminating("Failed", 400, exit_code=1)],
+    ),
 ]
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c.rule for c in CASES])
 def test_decide(case: Case) -> None:
     task = TaskView(TASK, canceling=case.canceling, seen_for=case.seen_for)
-    timeouts = Timeouts(pending=300, unschedulable=case.unschedulable, orphan_grace=30)
+    timeouts = Timeouts(
+        pending=300, unschedulable=case.unschedulable, orphan_grace=30, terminating=300
+    )
     assert decide(task, case.job, case.pods, NOW, timeouts) == case.expected
 
 
@@ -599,8 +760,10 @@ def test_naive_start_time_is_utc() -> None:
     """A start time without a zone, as some clients give it, is UTC."""
     stuck = scheduled(400)
     stuck["status"]["start_time"] = ago(400).replace(tzinfo=None).isoformat()
-    timeouts = Timeouts(pending=300, unschedulable=None, orphan_grace=30)
-    actions = decide(TaskView(TASK), None, [stuck], NOW, timeouts)
+    timeouts = Timeouts(
+        pending=300, unschedulable=None, orphan_grace=30, terminating=300
+    )
+    actions = decide(TaskView(TASK, seen_for=0), None, [stuck], NOW, timeouts)
     assert [type(a) for a in actions] == [WriteTerminal, DeleteJob]
 
 

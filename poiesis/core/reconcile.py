@@ -8,17 +8,23 @@ the inputs and applies the actions.
 
 The order of the checks, for a task:
 
-    1. `CANCELING` with a Job not being deleted → delete the Job.
-    2. With Pods, each Pod in turn: the Job past its time limit, else a
-    finished Pod, else a Pending Pod past its pending or unschedulable
-    timeout. Nothing more is checked.
-    3. Without a Pod, the Job: being deleted or complete stands for nothing
-    (go on to 4); past its time limit or failed ends the task; otherwise it
-    is alive and the task waits, unless the unschedulable timeout ran out.
+    1. `CANCELING` with a Job not being deleted → delete the Job. A task
+    the pass didn't read as non-terminal (already terminal, or unknown)
+    gets nothing more.
+    2. With Pods, each Pod: the Job past its time limit, else a finished
+    Pod, else a Pod stuck terminating past the terminating grace, else a
+    Pending Pod past its pending or unschedulable timeout. The first Pod
+    that ends the task by the time limit or by finishing wins; else the
+    first that times out. Nothing more is checked.
+    3. Without a Pod, the Job: past its time limit or failed ends the task
+    as such; complete ends it COMPLETE (the Job saw its Pod succeed); being
+    deleted stands for nothing (go on to 4); otherwise it is alive and the
+    task waits, unless the unschedulable timeout ran out.
     4. Non-terminal in the DB, seen by tctl for the orphan grace → orphan.
 
-A terminal write that doesn't come from a finished Pod or Job (pending or
-unschedulable timeout, orphan) is followed by `DeleteJob(retry=False)`.
+A terminal write that doesn't come from a finished Pod or Job (pending,
+unschedulable or terminating timeout, orphan) is followed by
+`DeleteJob(retry=False)`.
 """
 
 from __future__ import annotations
@@ -73,11 +79,14 @@ class Timeouts:
             and scheduled; None waits until the Job's time limit.
         orphan_grace: How long tctl must have seen a task without a live
             Job or Pod before calling it an orphan.
+        terminating: How long past its deletion deadline a Pod may still
+            be terminating before tctl takes its node for lost.
     """
 
     pending: float
     unschedulable: float | None
     orphan_grace: float
+    terminating: float
 
 
 @dataclass(frozen=True)
@@ -93,6 +102,9 @@ class WriteTerminal:
         source: Which check proposed it, for tctl's log line.
         backfill_from_pod: The Pod whose executor logs are backfilled if
             the write lands; None when the write doesn't come from a Pod.
+        explain_from_job_events: Add the latest Warning event of the
+            task's Job (a quota or admission refusal) to the system logs;
+            read when the write is applied, not on every pass.
     """
 
     state: TesState
@@ -100,6 +112,7 @@ class WriteTerminal:
     system_logs: tuple[str, ...]
     source: str
     backfill_from_pod: Mapping[str, Any] | None = None
+    explain_from_job_events: bool = False
 
 
 @dataclass(frozen=True)
@@ -138,10 +151,17 @@ def decide(
     actions: list[Action] = []
     if task.canceling and job is not None and not being_deleted(job):
         actions.append(DeleteJob(retry=True))
+    if not task.canceling and task.seen_for is None:
+        # Terminal in the DB, or not a task of this installation: its
+        # finished Pod would only make a no-op write on every pass until
+        # the Job's TTL removes it.
+        return actions
 
     if pods:
-        for pod in pods:
-            actions.extend(_decide_pod(job, pod, now, timeouts))
+        decided = [_decide_pod(job, pod, now, timeouts) for pod in pods]
+        final = [pod_actions for ends, pod_actions in decided if ends]
+        timed_out = [pod_actions for _, pod_actions in decided if pod_actions]
+        actions.extend(next(iter(final or timed_out), []))
         return actions
 
     if job is not None:
@@ -168,24 +188,44 @@ def _decide_pod(
     pod: Mapping[str, Any],
     now: datetime,
     timeouts: Timeouts,
-) -> list[Action]:
-    """Terminal state for one Pod, when its phase warrants it.
+) -> tuple[bool, list[Action]]:
+    """Terminal state for one Pod, and whether it is the task's outcome.
 
-    The Job is read first: when its time limit ran out, the Job controller
-    kills the Pod, whose containers then show only a signal's exit code
-    (137, 143). The task ends with the time limit as its cause instead.
+    True means the actions report how the task ended (the Job's time limit,
+    a finished Pod); `decide` prefers them over a timeout of another Pod of
+    the same task. The Job is read first: when its time limit ran out, the
+    Job controller kills the Pod, whose containers then show only a
+    signal's exit code (137, 143). The task ends with the time limit as its
+    cause instead.
     """
     phase = ((pod.get("status") or {}).get("phase") or "").lower()
 
     deadline = job_deadline_terminal(job) if job is not None else None
     if deadline is not None:
         proposed, reason, line = deadline
-        return [WriteTerminal(proposed, reason, (line,), "job-deadline", pod)]
+        return True, [WriteTerminal(proposed, reason, (line,), "job-deadline", pod)]
 
     if phase in {"succeeded", "failed"}:
         proposed, reason = pod_terminated_terminal(extract_terminal_reason(pod))
         system_logs = tuple(terminal_system_logs(pod, proposed))
-        return [WriteTerminal(proposed, reason, system_logs, "pod-terminal", pod)]
+        return True, [WriteTerminal(proposed, reason, system_logs, "pod-terminal", pod)]
+
+    overdue = terminating_for(pod, now)
+    if overdue is not None and overdue > timeouts.terminating:
+        line = (
+            f"pod stuck terminating: still {phase or 'unknown'} {int(overdue)} s "
+            "past its deletion deadline; its node is likely unreachable"
+        )
+        return False, [
+            WriteTerminal(
+                TesState.SYSTEM_ERROR,
+                "Pod stuck terminating",
+                (line,),
+                "terminating-timeout",
+                pod,
+            ),
+            DeleteJob(retry=False),
+        ]
 
     timeout = (
         pending_timeout(pod, now, timeouts.pending, timeouts.unschedulable)
@@ -193,7 +233,7 @@ def _decide_pod(
         else None
     )
     if timeout is None:
-        return []
+        return False, []
     pending_reason = extract_pending_failure_reason(pod)
     actions: list[Action] = [
         WriteTerminal(
@@ -206,7 +246,7 @@ def _decide_pod(
     ]
     if (pod.get("metadata") or {}).get("namespace"):
         actions.append(DeleteJob(retry=False))
-    return actions
+    return False, actions
 
 
 def _decide_podless_job(
@@ -214,17 +254,18 @@ def _decide_podless_job(
 ) -> tuple[bool, list[Action]]:
     """Actions for a task Job without a Pod, and whether it accounts for the task.
 
-    A Job that is being deleted or has completed stands for nothing any
-    more: False leaves its task to the orphan check. A failed Job (its
-    time limit ran out and the Job controller removed the Pod) ends the
-    task with its own reason. Any other Job is alive, and its task waits
-    for a Pod: a ResourceQuota or an admission webhook may hold the Pod
-    back until capacity frees up. Only the unschedulable timeout, when
-    set, ends that wait.
+    The Job's conditions are read first, also on a Job being deleted: they
+    are the only record left of how its Pod ended. A Job past its time
+    limit ends the task with that cause, a failed one with its own reason.
+    A complete Job saw its Pod succeed: every container exited 0, `tof`
+    included, so the outputs were uploaded; the task is COMPLETE, and the
+    system log says that the executor logs trec didn't record are missing.
+    A Job being deleted without such a condition stands for nothing any
+    more: False leaves its task to the orphan check. Any other Job is
+    alive, and its task waits for a Pod: a ResourceQuota or an admission
+    webhook may hold the Pod back until capacity frees up. Only the
+    unschedulable timeout, when set, ends that wait.
     """
-    if being_deleted(job):
-        return False, []
-
     deadline = job_deadline_terminal(job)
     if deadline is not None:
         proposed, reason, line = deadline
@@ -241,6 +282,15 @@ def _decide_podless_job(
             )
         ]
     if finished:
+        return True, [
+            WriteTerminal(
+                TesState.COMPLETE,
+                None,
+                (POD_GONE_AFTER_SUCCESS,),
+                "job-complete",
+            )
+        ]
+    if being_deleted(job):
         return False, []
 
     created = created_at(job)
@@ -258,10 +308,18 @@ def _decide_podless_job(
                     "(see the Job's events: quota, admission)",
                 ),
                 "job-no-pod",
+                explain_from_job_events=True,
             ),
             DeleteJob(retry=False),
         ]
     return True, []
+
+
+#: The system log of a task whose Job completed but whose Pod tctl never read.
+POD_GONE_AFTER_SUCCESS = (
+    "the Job reports that its pod succeeded, but the pod was gone before tctl "
+    "read it: executor logs that trec did not record are missing"
+)
 
 
 def being_deleted(obj: Mapping[str, Any]) -> bool:
@@ -332,6 +390,25 @@ def pending_system_logs(pod: Mapping[str, Any], timeout: str, reason: str) -> li
     if message:
         lines.append(f"scheduler: {message}")
     return lines
+
+
+def terminating_for(pod: Mapping[str, Any], now: datetime) -> float | None:
+    """Seconds since a Pod's deletion deadline, if it is being deleted.
+
+    `metadata.deletionTimestamp` is when the kubelet should have stopped
+    the Pod (the request plus its grace period). A Pod still listed long
+    after it is on a node that doesn't answer: only the kubelet, or a
+    forced delete, removes it. None when the Pod isn't being deleted.
+    """
+    metadata = pod.get("metadata") or {}
+    deadline = parse_kubelet_ts(
+        metadata.get("deletion_timestamp") or metadata.get("deletionTimestamp")
+    )
+    if deadline is None:
+        return None
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)
+    return (now - deadline).total_seconds()
 
 
 def parse_kubelet_ts(value: Any) -> datetime | None:

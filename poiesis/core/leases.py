@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 from kubernetes.client import (
     CoordinationV1Api,
@@ -35,6 +36,7 @@ async def try_acquire_or_renew(
     namespace: str,
     identity: str,
     lease_duration_seconds: int,
+    request_timeout: tuple[float, float] | None = None,
 ) -> bool:
     """Try to become the leader holding `<namespace>/<name>`.
 
@@ -45,9 +47,11 @@ async def try_acquire_or_renew(
     - If the Lease is held by us, renew `renewTime`.
     - If the Lease is held by someone else and unexpired, give up.
     - If the Lease is held by someone else but expired, take it over.
+
+    `request_timeout` is the (connect, read) timeout of each API call.
     """
     now = datetime.now(UTC)
-    existing = await _get_lease(coord_v1, name, namespace)
+    existing = await _get_lease(coord_v1, name, namespace, request_timeout)
     if existing is None:
         return await _create_lease(
             coord_v1,
@@ -56,6 +60,7 @@ async def try_acquire_or_renew(
             identity,
             lease_duration_seconds,
             now,
+            request_timeout,
         )
 
     spec = existing.spec or V1LeaseSpec()
@@ -64,12 +69,16 @@ async def try_acquire_or_renew(
     duration = spec.lease_duration_seconds or lease_duration_seconds
 
     if holder == identity:
-        return await _renew_lease(coord_v1, existing, identity, duration, now)
+        return await _renew_lease(
+            coord_v1, existing, identity, duration, now, request_timeout
+        )
 
     if renew_time is not None and not _lease_expired(renew_time, duration, now):
         return False
 
-    return await _renew_lease(coord_v1, existing, identity, duration, now)
+    return await _renew_lease(
+        coord_v1, existing, identity, duration, now, request_timeout
+    )
 
 
 def _lease_expired(
@@ -86,9 +95,15 @@ async def _get_lease(
     coord_v1: CoordinationV1Api,
     name: str,
     namespace: str,
+    request_timeout: tuple[float, float] | None,
 ) -> V1Lease | None:
     try:
-        return await asyncio.to_thread(coord_v1.read_namespaced_lease, name, namespace)
+        return await asyncio.to_thread(
+            _untyped(coord_v1).read_namespaced_lease,
+            name,
+            namespace,
+            _request_timeout=request_timeout,
+        )
     except ApiException as exc:
         if exc.status == 404:  # noqa: PLR2004
             return None
@@ -102,6 +117,7 @@ async def _create_lease(
     identity: str,
     duration_seconds: int,
     now: datetime,
+    request_timeout: tuple[float, float] | None,
 ) -> bool:
     body = V1Lease(
         metadata=V1ObjectMeta(name=name, namespace=namespace),
@@ -114,7 +130,12 @@ async def _create_lease(
         ),
     )
     try:
-        await asyncio.to_thread(coord_v1.create_namespaced_lease, namespace, body)
+        await asyncio.to_thread(
+            _untyped(coord_v1).create_namespaced_lease,
+            namespace,
+            body,
+            _request_timeout=request_timeout,
+        )
     except ApiException as exc:
         if exc.status == 409:  # noqa: PLR2004
             return False
@@ -128,6 +149,7 @@ async def _renew_lease(
     identity: str,
     duration_seconds: int,
     now: datetime,
+    request_timeout: tuple[float, float] | None,
 ) -> bool:
     spec = existing.spec or V1LeaseSpec()
     transitions = spec.lease_transitions or 0
@@ -147,13 +169,22 @@ async def _renew_lease(
     assert namespace is not None
     try:
         await asyncio.to_thread(
-            coord_v1.replace_namespaced_lease, name, namespace, existing
+            _untyped(coord_v1).replace_namespaced_lease,
+            name,
+            namespace,
+            existing,
+            _request_timeout=request_timeout,
         )
     except ApiException as exc:
         if exc.status == 409:  # noqa: PLR2004
             return False
         raise
     return True
+
+
+def _untyped(coord_v1: CoordinationV1Api) -> Any:
+    """The client, for a call with `_request_timeout`, which its stubs don't list."""
+    return coord_v1
 
 
 __all__ = ["try_acquire_or_renew"]

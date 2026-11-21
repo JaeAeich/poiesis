@@ -1,9 +1,10 @@
 {{/*
 TCtl: leases for leader election in the release namespace; pod, pod log and
 job read in the taskpod namespace for the reconcile loop (the log read
-backfills executor output; a task with a live Job is not an orphan). Job
-delete, for cancelled tasks and tasks tctl timed out; that is its only
-write to Kubernetes.
+backfills executor output; a task with a live Job is not an orphan). Event
+list, to name the quota or admission refusal of a Job that created no Pod
+when the unschedulable timeout ends its task. Job delete, for cancelled
+tasks and tasks tctl timed out; that is its only write to Kubernetes.
 */}}
 {{- $tpNs := include "poiesis.taskpodNamespace" . -}}
 {{- $relNs := .Release.Namespace -}}
@@ -51,6 +52,9 @@ rules:
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [list]
   - apiGroups: ["batch"]
     resources: [jobs]
     verbs: [get, list, watch, delete]
