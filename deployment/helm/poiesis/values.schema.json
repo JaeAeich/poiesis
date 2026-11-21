@@ -63,6 +63,27 @@
         "issuers": {
           "type": "array",
           "items": { "$ref": "#/$defs/issuerSpec" }
+        },
+        "apiKeys": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled":     { "type": "boolean" },
+            "defaultTtl":  { "type": "string", "pattern": "^[1-9][0-9]{0,5}[dh]$" },
+            "maxTtl":      { "type": "string", "pattern": "^[1-9][0-9]{0,5}[dh]$" },
+            "maxPerOwner": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "swaggerUi": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "issuer":   { "type": "string" },
+            "clientId": { "type": "string" },
+            "scopes":   { "type": "string", "minLength": 1 }
+          },
+          "if": { "required": ["issuer"], "properties": { "issuer": { "minLength": 1 } } },
+          "then": { "required": ["clientId"], "properties": { "clientId": { "minLength": 1 } } }
         }
       },
       "if": { "properties": { "enabled": { "const": true } } },

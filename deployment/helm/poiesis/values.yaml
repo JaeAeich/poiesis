@@ -167,6 +167,29 @@ auth:
   #       audience: poiesis
   #       jwksUri: http://gateway.mesh.svc/.well-known/jwks.json
   issuers: []
+  # Poiesis API keys (`poi_...`) for clients that outlive an access token,
+  # such as workflow engines. Owners mint them at POST /poiesis/v1/api-keys
+  # with an OIDC token; see the "API keys" docs page.
+  apiKeys:
+    enabled: true
+    # Lifetime when the minting request names none, and the most it may
+    # ask for: `<n>d` or `<n>h`. A key's claims are a snapshot from
+    # minting, so changes at the IdP reach it only when it expires.
+    defaultTtl: 30d
+    maxTtl: 90d
+    # Active (not revoked, not expired) keys an owner may hold.
+    maxPerOwner: 20
+  # Login offered by the Swagger UI at /docs (authorization code + PKCE),
+  # so owners can mint keys from the browser. Documentation only: tokens
+  # are validated as usual. Empty `issuer` turns it off.
+  swaggerUi:
+    # One of `issuers` above (exact match), with OIDC discovery.
+    issuer: ""
+    # Public client of that issuer that allows the redirect URI
+    # <API URL>/docs/oauth2-redirect and the API's origin.
+    clientId: ""
+    # Space-separated scopes requested.
+    scopes: openid
 
 # Authorization (see the "Authorization" docs page). Both parts are off by
 # default; when both are set, both must allow. Needs auth.enabled.

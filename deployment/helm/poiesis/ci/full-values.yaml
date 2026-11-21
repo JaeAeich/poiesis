@@ -34,6 +34,15 @@ auth:
     - issuer: https://gateway.example.org
       audience: poiesis
       jwksUri: http://gateway.mesh.svc.cluster.local/.well-known/jwks.json
+  apiKeys:
+    enabled: true
+    defaultTtl: 7d
+    maxTtl: 720h
+    maxPerOwner: 5
+  swaggerUi:
+    issuer: https://keycloak.example.org/realms/poiesis
+    clientId: poiesis-cli
+    scopes: openid profile
 
 authz:
   requiredClaim:

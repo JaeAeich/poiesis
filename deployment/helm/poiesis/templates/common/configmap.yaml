@@ -81,6 +81,38 @@ data:
   POIESIS_AUTH_ENABLED: {{ .Values.auth.enabled | quote }}
   {{- if .Values.auth.enabled }}
   POIESIS_AUTH_ISSUERS: {{ .Values.auth.issuers | toJson | quote }}
+  {{- with .Values.auth.apiKeys }}
+  {{- if hasKey . "enabled" }}
+  POIESIS_AUTH_API_KEYS_ENABLED: {{ .enabled | quote }}
+  {{- end }}
+  {{- with .defaultTtl }}
+  POIESIS_AUTH_API_KEYS_DEFAULT_TTL: {{ . | quote }}
+  {{- end }}
+  {{- with .maxTtl }}
+  POIESIS_AUTH_API_KEYS_MAX_TTL: {{ . | quote }}
+  {{- end }}
+  {{- with .maxPerOwner }}
+  POIESIS_AUTH_API_KEYS_MAX_PER_OWNER: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+  {{- with .Values.auth.swaggerUi }}
+  {{- if .issuer }}
+  {{- /* The UI logs in at a trusted issuer; the API also checks this. */}}
+  {{- $login := .issuer }}
+  {{- $trusted := false }}
+  {{- range $.Values.auth.issuers }}
+  {{- if eq .issuer $login }}
+  {{- $trusted = true }}
+  {{- end }}
+  {{- end }}
+  {{- if not $trusted }}
+  {{- fail (printf "auth.swaggerUi.issuer %q must be one of auth.issuers" $login) }}
+  {{- end }}
+  POIESIS_AUTH_SWAGGER_UI_ISSUER: {{ .issuer | quote }}
+  POIESIS_AUTH_SWAGGER_UI_CLIENT_ID: {{ .clientId | quote }}
+  POIESIS_AUTH_SWAGGER_UI_SCOPES: {{ .scopes | default "openid" | quote }}
+  {{- end }}
+  {{- end }}
   {{- end }}
 
   # ---- Authorization -----------------------------------------------------------
