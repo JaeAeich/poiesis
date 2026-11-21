@@ -302,6 +302,8 @@ next to the golden requests.
 
 ### Sharing
 
+![tes-authzen/2 and sharing: before and after, case by case](/tes-authzen-2.gif)
+
 Tasks reference and contain data (inputs, outputs, logs, environment)
 that is usually granted to one person, so **a task is visible to its
 owner only by default**, whatever the decision service answers.
