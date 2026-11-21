@@ -17,6 +17,7 @@ from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
 from fake_issuer import (
     AUDIENCE,
@@ -174,6 +175,21 @@ class KeyTable:
         row["revoked_at"] = row["revoked_at"] or datetime.now(UTC)
         return True
 
+    async def revoke_owner_api_keys(self, _: Any, owner: str) -> int:
+        """Revoke the owner's active keys; return how many."""
+        self.check()
+        now = datetime.now(UTC)
+        active = [
+            row
+            for row in self.rows.values()
+            if row["owner"] == owner
+            and row["revoked_at"] is None
+            and row["expires_at"] > now
+        ]
+        for row in active:
+            row["revoked_at"] = now
+        return len(active)
+
     async def touch_api_keys(self, _: Any, used: dict[uuid.UUID, datetime]) -> None:
         """Record one batch of usage times."""
         self.check()
@@ -238,6 +254,7 @@ def table(monkeypatch: pytest.MonkeyPatch) -> KeyTable:
         "find_api_key",
         "list_api_keys",
         "revoke_api_key",
+        "revoke_owner_api_keys",
         "touch_api_keys",
     ):
         monkeypatch.setattr(api_keys_db, name, getattr(keys, name))
@@ -1358,3 +1375,374 @@ def test_openapi_without_auth(app_env: pytest.MonkeyPatch) -> None:
         assert "securitySchemes" not in spec.get("components", {})
         assert KEYS not in spec["paths"]
         assert "initOAuth" not in client.get("/docs").text
+
+
+# -- admins: all keys of an owner ---------------------------------------------------
+
+ADMINS = "poiesis-admins"
+BOB = f"{ISSUER}|bob"
+ROOT = f"{ISSUER}|root"
+PDP = "https://pdp.example.org/access/v1/evaluation"
+#: The fake issuer with an admin rule, as configured for these tests.
+ADMIN_ISSUER = {
+    "issuer": ISSUER,
+    "audience": AUDIENCE,
+    "keyMinting": {"clients": [LOGIN]},
+    "admin": {"name": "groups", "values": [ADMINS]},
+}
+
+
+@pytest.fixture
+def admin_client(app_env: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """The started real app; the fake issuer's admins are in `poiesis-admins`."""
+    set_issuers(app_env, ADMIN_ISSUER)
+    with TestClient(app_module.create_app()) as test_client:
+        yield test_client
+
+
+def admin(issuer: Issuer, **claims: Any) -> dict[str, str]:
+    """The headers of the admin `root`."""
+    return bearer(issuer.token(sub="root", groups=[ADMINS], **claims))
+
+
+def bobs_keys(client: TestClient, issuer: Issuer, table: KeyTable) -> list[str]:
+    """Mint two keys for bob, add a revoked and an expired one; the two keys."""
+    keys = [mint(client, issuer.token(sub="bob")).json()["key"] for _ in range(2)]
+    past = datetime.now(UTC) - timedelta(seconds=1)
+    table.insert(new_key(), BOB, revoked_at=past)
+    table.insert(new_key(), BOB, expires_at=past)
+    return keys
+
+
+def test_admin_revokes_owner_keys(
+    admin_client: TestClient, issuer: Issuer, table: KeyTable
+) -> None:
+    """An admin revokes every active key of an owner; others' keys stay.
+
+    The count is the active keys; a second call revokes none. adminRead
+    is off (the default): revoking keys exposes no task data.
+    """
+    settings = admin_client.app.state.settings  # type: ignore[attr-defined]
+    assert not settings.authz.admin_read
+    keys = bobs_keys(admin_client, issuer, table)
+    alice = minted(admin_client, issuer)["key"]
+    response = admin_client.delete(KEYS, params={"owner": BOB}, headers=admin(issuer))
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert response.json() == {"revoked": 2}
+    for key in keys:
+        response = admin_client.get(TASKS, headers=bearer(key))
+        assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert admin_client.get(TASKS, headers=bearer(alice)).status_code == HTTPStatus.OK
+    again = admin_client.delete(KEYS, params={"owner": BOB}, headers=admin(issuer))
+    assert again.json() == {"revoked": 0}
+    nobody = admin_client.delete(
+        KEYS, params={"owner": f"{ISSUER}|nobody"}, headers=admin(issuer)
+    )
+    assert nobody.json() == {"revoked": 0}
+
+
+def test_admin_lists_owner_keys(
+    admin_client: TestClient, issuer: Issuer, table: KeyTable
+) -> None:
+    """An admin lists an owner's keys, metadata only, as for one's own."""
+    bobs_keys(admin_client, issuer, table)
+    minted(admin_client, issuer)
+    response = admin_client.get(KEYS, params={"owner": BOB}, headers=admin(issuer))
+    assert response.status_code == HTTPStatus.OK
+    listed = response.json()
+    assert len(listed) == 4  # noqa: PLR2004
+    assert all("key" not in k and "keyHash" not in k for k in listed)
+    own = bearer(issuer.token(sub="bob"))
+    assert listed == admin_client.get(KEYS, headers=own).json()
+
+
+def test_admin_targets_own_owner(admin_client: TestClient, issuer: Issuer) -> None:
+    """An admin may name their own owner too."""
+    minted_root = mint(admin_client, issuer.token(sub="root", groups=[ADMINS]))
+    assert minted_root.status_code == HTTPStatus.CREATED
+    listed = admin_client.get(KEYS, params={"owner": ROOT}, headers=admin(issuer))
+    assert len(listed.json()) == 1
+    response = admin_client.delete(KEYS, params={"owner": ROOT}, headers=admin(issuer))
+    assert response.json() == {"revoked": 1}
+
+
+@pytest.mark.parametrize("owner", [ALICE, BOB], ids=["own", "other"], scope="function")
+def test_non_admin_refused(
+    admin_client: TestClient, issuer: Issuer, table: KeyTable, owner: str
+) -> None:
+    """Without the admin rule, naming an owner is 403, even one's own."""
+    bobs_keys(admin_client, issuer, table)
+    alice = bearer(issuer.token(groups=["users"]))
+    for method in ("GET", "DELETE"):
+        response = admin_client.request(
+            method, KEYS, params={"owner": owner}, headers=alice
+        )
+        assert response.status_code == HTTPStatus.FORBIDDEN
+    assert all(row["revoked_at"] is None for row in list(table.rows.values())[:2])
+
+
+def test_other_issuers_admin_value_refused(
+    app_env: pytest.MonkeyPatch, network: Network, table: KeyTable
+) -> None:
+    """Another issuer's token with the admin value isn't an admin."""
+    other = network.add(Issuer("https://other.example.org"))
+    set_issuers(app_env, ADMIN_ISSUER, {"issuer": other.url, "audience": AUDIENCE})
+    with TestClient(app_module.create_app()) as client:
+        token = other.token(sub="root", groups=[ADMINS])
+        response = client.delete(KEYS, params={"owner": BOB}, headers=bearer(token))
+        assert response.status_code == HTTPStatus.FORBIDDEN
+
+
+def test_admin_key_or_delegated_refused(
+    admin_client: TestClient, issuer: Issuer, table: KeyTable
+) -> None:
+    """An admin's API key or delegated token can't manage others' keys."""
+    bobs_keys(admin_client, issuer, table)
+    key = mint(admin_client, issuer.token(sub="root", groups=[ADMINS])).json()["key"]
+    for headers in (bearer(key), admin(issuer, act={"sub": "engine"})):
+        for method in ("GET", "DELETE"):
+            response = admin_client.request(
+                method, KEYS, params={"owner": BOB}, headers=headers
+            )
+            assert response.status_code == HTTPStatus.FORBIDDEN
+
+
+@pytest.mark.parametrize("owner", ["", "bob", "|bob", f"{ISSUER}|", "x|" + "a" * 1100])
+def test_invalid_owner(admin_client: TestClient, issuer: Issuer, owner: str) -> None:
+    """An owner that isn't `namespace|subject` is a 400."""
+    for method in ("GET", "DELETE"):
+        response = admin_client.request(
+            method, KEYS, params={"owner": owner}, headers=admin(issuer)
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST, response.text
+
+
+def test_revoke_owner_needs_owner(admin_client: TestClient, issuer: Issuer) -> None:
+    """`DELETE /api-keys` without `owner` is refused, never "all keys"."""
+    response = admin_client.delete(KEYS, headers=admin(issuer))
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+
+def test_revoke_owner_database_down(
+    admin_client: TestClient, issuer: Issuer, table: KeyTable
+) -> None:
+    """A database outage is a retryable 503."""
+    table.down = True
+    for method in ("GET", "DELETE"):
+        response = admin_client.request(
+            method, KEYS, params={"owner": BOB}, headers=admin(issuer)
+        )
+        assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+
+
+class Pdp:
+    """A recording decision service answering `answer`."""
+
+    def __init__(self) -> None:
+        """Allow until told otherwise."""
+        self.answer: Any = {"decision": True}
+        self.bodies: list[dict[str, Any]] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        """Record the question and answer it."""
+        self.bodies.append(json.loads(request.content))
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return httpx.Response(200, json=self.answer)
+
+
+@pytest.fixture
+def pdp(app_env: pytest.MonkeyPatch, network: Network) -> Pdp:
+    """A decision service on the fake network, configured; the admin rule set."""
+    stub = Pdp()
+    network.hosts["pdp.example.org"] = stub
+    app_env.setenv("POIESIS_AUTHZ_DECISION_SERVICE_URL", PDP)
+    set_issuers(app_env, ADMIN_ISSUER)
+    return stub
+
+
+@pytest.mark.parametrize(
+    ("method", "action"), [("DELETE", "RevokeApiKeys"), ("GET", "ListApiKeys")]
+)
+def test_decision_service_decides(
+    pdp: Pdp, issuer: Issuer, table: KeyTable, method: str, action: str
+) -> None:
+    """With a decision service, it is asked on the owner's keys and decides."""
+    with TestClient(app_module.create_app()) as client:
+        bobs_keys(client, issuer, table)
+        assert pdp.bodies == []  # managing one's own keys isn't asked
+        alice = bearer(issuer.token())
+        response = client.request(method, KEYS, params={"owner": BOB}, headers=alice)
+        assert response.status_code == HTTPStatus.OK
+        (body,) = pdp.bodies
+        assert body["action"] == {"name": action, "properties": {}}
+        assert body["resource"] == {"type": "poiesis_api_keys", "id": BOB}
+        assert body["subject"]["id"] == ALICE
+        assert body["context"]["tes"]["profile"] == "tes-authzen/2"
+
+
+@pytest.mark.parametrize(
+    ("answer", "status"),
+    [
+        ({"decision": False}, HTTPStatus.FORBIDDEN),
+        (
+            {"decision": True, "context": {"tes": {"obligations": ["notify"]}}},
+            HTTPStatus.FORBIDDEN,
+        ),
+        (httpx.ConnectError("down"), HTTPStatus.SERVICE_UNAVAILABLE),
+    ],
+    ids=["deny", "obligation", "down"],
+)
+def test_decision_service_refuses(
+    pdp: Pdp, issuer: Issuer, table: KeyTable, answer: Any, status: HTTPStatus
+) -> None:
+    """A deny or an obligation is 403, a failure 503; the admin rule doesn't help."""
+    with TestClient(app_module.create_app()) as client:
+        bobs_keys(client, issuer, table)
+        pdp.answer = answer
+        for method in ("GET", "DELETE"):
+            response = client.request(
+                method, KEYS, params={"owner": BOB}, headers=admin(issuer)
+            )
+            assert response.status_code == status
+    assert all(row["revoked_at"] is None for row in list(table.rows.values())[:2])
+
+
+# -- audit ---------------------------------------------------------------------------
+
+
+def audited(capsys: pytest.CaptureFixture[str]) -> list[dict[str, Any]]:
+    """The audit lines written so far (each must be JSON)."""
+    return [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+
+
+def test_audit_mint_and_revoke(
+    client: TestClient, issuer: Issuer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Mints and revocations are audited by key id; no key, token or claims."""
+    token = issuer.token(jti="t-1", groups=["secret-lab"])
+    created = mint(client, token, scopes=["tasks:read"]).json()
+    client.get(KEYS, headers=bearer(token))  # one's own list: no line
+    client.delete(f"{KEYS}/{created['id']}", headers=bearer(token))
+    other = str(uuid.uuid4())
+    client.delete(f"{KEYS}/{other}", headers=bearer(token))
+    out = capsys.readouterr().out
+    for secret in (
+        created["key"],
+        token,
+        hash_key(created["key"]).hex(),
+        "secret-lab",
+    ):
+        assert secret not in out
+    lines = [json.loads(line) for line in out.splitlines()]
+    assert [(line["event"], line["outcome"]) for line in lines] == [
+        ("apikey.mint", "allow"),
+        ("apikey.revoke", "allow"),
+        ("apikey.revoke", "deny"),
+    ]
+    mint_line = lines[0]
+    assert mint_line["key_id"] == created["id"]
+    assert mint_line["scopes"] == ["tasks:read"]
+    assert mint_line["expires_at"] == created["expiresAt"].replace("Z", "+00:00")
+    assert (mint_line["owner"], mint_line["client"]) == (ALICE, LOGIN)
+    assert mint_line["credential_id"] == "t-1"
+    assert [line["key_id"] for line in lines[1:]] == [created["id"], other]
+    assert {line["decided_by"] for line in lines} == {"builtin"}
+
+
+def test_audit_refused_mints(
+    client: TestClient, issuer: Issuer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Refused mints are denies: another client, a key, a delegated token."""
+    key = minted(client, issuer)
+    capsys.readouterr()
+    mint(client, issuer.token(azp="poiesis-ci"))
+    mint(client, key["key"])
+    mint(client, issuer.token(act={"sub": "engine"}))
+    client.delete(f"{KEYS}/{key['id']}", headers=bearer(key["key"]))
+    lines = audited(capsys)
+    assert [(line["event"], line["outcome"]) for line in lines] == [
+        ("apikey.mint", "deny"),
+        ("apikey.mint", "deny"),
+        ("apikey.mint", "deny"),
+        ("apikey.revoke", "deny"),
+    ]
+    assert lines[0]["client"] == "poiesis-ci"
+    assert (lines[1]["via"], lines[1]["credential_id"]) == ("apikey", key["id"])
+    assert lines[2]["actor"] == {"iss": ISSUER, "sub": "engine"}
+    assert lines[3]["key_id"] == key["id"]
+    assert key["key"] not in json.dumps(lines)
+
+
+def test_audit_owner_calls(
+    admin_client: TestClient,
+    issuer: Issuer,
+    table: KeyTable,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Owner-wide calls name the target owner and count; refusals are denies."""
+    bobs_keys(admin_client, issuer, table)
+    capsys.readouterr()
+    admin_client.get(KEYS, params={"owner": BOB}, headers=admin(issuer))
+    admin_client.delete(KEYS, params={"owner": BOB}, headers=admin(issuer))
+    alice = bearer(issuer.token())
+    admin_client.delete(KEYS, params={"owner": BOB}, headers=alice)
+    admin_client.get(KEYS, params={"owner": BOB}, headers=alice)
+    lines = audited(capsys)
+    assert [
+        (line["event"], line["outcome"], line["admin"], line.get("count"))
+        for line in lines
+    ] == [
+        ("apikey.list_owner", "allow", True, 4),
+        ("apikey.revoke_owner", "allow", True, 2),
+        ("apikey.revoke_owner", "deny", False, None),
+        ("apikey.list_owner", "deny", False, None),
+    ]
+    assert {line["target_owner"] for line in lines} == {BOB}
+    assert {line["decided_by"] for line in lines} == {"builtin"}
+    assert [line["owner"] for line in lines] == [ROOT, ROOT, ALICE, ALICE]
+    assert ADMINS not in json.dumps(lines)
+
+
+def test_audit_owner_call_refused_early(
+    admin_client: TestClient, issuer: Issuer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A key or delegated token naming an owner is a deny of that call."""
+    key = mint(admin_client, issuer.token(sub="root", groups=[ADMINS])).json()["key"]
+    capsys.readouterr()
+    admin_client.delete(KEYS, params={"owner": BOB}, headers=bearer(key))
+    admin_client.get(
+        KEYS, params={"owner": BOB}, headers=admin(issuer, act={"sub": "x"})
+    )
+    lines = audited(capsys)
+    assert [(line["event"], line["outcome"]) for line in lines] == [
+        ("apikey.revoke_owner", "deny"),
+        ("apikey.list_owner", "deny"),
+    ]
+    assert {line["target_owner"] for line in lines} == {BOB}
+    assert key not in json.dumps(lines)
+
+
+def test_audit_owner_calls_decision_service(
+    pdp: Pdp, issuer: Issuer, table: KeyTable, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With a decision service, it decided; a failure is an `error`."""
+    with TestClient(app_module.create_app()) as client:
+        bobs_keys(client, issuer, table)
+        capsys.readouterr()
+        alice = bearer(issuer.token())
+        client.delete(KEYS, params={"owner": BOB}, headers=alice)
+        pdp.answer = {"decision": False}
+        client.get(KEYS, params={"owner": BOB}, headers=alice)
+        pdp.answer = httpx.ConnectError("down")
+        client.delete(KEYS, params={"owner": BOB}, headers=alice)
+    lines = audited(capsys)
+    assert [
+        (line["event"], line["outcome"], line["decided_by"], line["admin"])
+        for line in lines
+    ] == [
+        ("apikey.revoke_owner", "allow", "decision_service", False),
+        ("apikey.list_owner", "deny", "decision_service", False),
+        ("apikey.revoke_owner", "error", "decision_service", False),
+    ]
+    assert lines[0]["count"] == 2  # noqa: PLR2004

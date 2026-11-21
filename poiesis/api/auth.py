@@ -109,6 +109,20 @@ class Principal:
         return None
 
 
+#: Longest owner id taken as an argument (the owner of key management
+#: calls); real ones are an issuer URL or namespace and a subject.
+MAX_OWNER_LENGTH = 1024
+
+
+def is_owner_id(value: str) -> bool:
+    """Whether ``value`` looks like an owner id: ``namespace|subject``.
+
+    Both parts non-empty; the namespace has no ``|``, the subject may.
+    """
+    namespace, bar, subject = value.partition("|")
+    return bool(namespace and bar and subject) and len(value) <= MAX_OWNER_LENGTH
+
+
 #: Served to every request when auth is disabled.
 ANONYMOUS = Principal(issuer="", subject=ANONYMOUS_OWNER, via="anonymous")
 

@@ -29,6 +29,16 @@ owners' tasks (``all``, a ``scope``, a foreign ``GetTask``) or share a
 new task with ``groups``. With it off, foreign and missing tasks are
 ``404`` without asking.
 
+Admin is policy: with a decision service, an admin is whoever it allows
+(``all`` and foreign tasks with sharing on; ``RevokeApiKeys`` and
+``ListApiKeys`` on another owner's keys, a Poiesis extension of the
+profile). Only without one does an issuer's built-in ``admin`` claim
+rule apply, bound to that issuer like ``requiredClaim`` and never to a
+delegated token: its admins may revoke and list any owner's API keys
+and, only with ``adminRead`` on, list, get and cancel every task.
+
+Every outcome is written to the audit log (`poiesis.api.audit`).
+
 Any failure of the decision service, or a malformed answer, denies with
 ``503``; an obligation (Poiesis knows none) turns an allow into a deny.
 There is no decision cache: a key would have to cover everything the
@@ -39,12 +49,13 @@ dependencies below at runtime (see `poiesis.api.auth`).
 """
 
 import asyncio
+import contextlib
 import ipaddress
 import logging
 import re
 import time
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Annotated, Any
@@ -52,7 +63,9 @@ from typing import Annotated, Any
 import httpx
 from fastapi import Depends, Request
 
+from poiesis.api import audit
 from poiesis.api.apikey_auth import TASKS_READ, TASKS_WRITE
+from poiesis.api.audit import ALLOW, BUILTIN, DECISION_SERVICE, DENY, ERROR
 from poiesis.api.auth import Principal, get_principal
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.api.exceptions import (
@@ -60,7 +73,7 @@ from poiesis.api.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from poiesis.api.settings import AuthzSettings, IssuerSettings
+from poiesis.api.settings import AuthzSettings, ClaimRuleSettings, IssuerSettings
 from poiesis.api.tes.models import TesInput, TesOutput, TesTask
 from poiesis.db.tasks import TaskScope
 
@@ -72,6 +85,23 @@ PROFILE = "tes-authzen/2"
 _SCOPE_DIMENSIONS = frozenset({"owners", "groups", "tags"})
 #: A leading RFC 3986 scheme and ``://`` (ASCII only, unlike ``\w``).
 _SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
+#: The resource type of an owner's API keys, for the decision service:
+#: a Poiesis extension of the profile (keys aren't TES).
+API_KEYS_RESOURCE = "poiesis_api_keys"
+#: Audit events of the owner-wide key actions.
+_KEY_EVENTS = {
+    "RevokeApiKeys": "apikey.revoke_owner",
+    "ListApiKeys": "apikey.list_owner",
+}
+
+
+@dataclass(frozen=True)
+class Grant:
+    """How an owner-wide key action was allowed, for the audit line."""
+
+    decided_by: str
+    # The built-in admin rule allowed it.
+    admin: bool
 
 
 @dataclass(frozen=True)
@@ -192,7 +222,14 @@ class Authz:
             for entry in issuers
             if entry.required_claim is not None
         }
+        self._admins = {
+            entry.issuer: entry.admin for entry in issuers if entry.admin is not None
+        }
+        self._admin_read = settings.admin_read
         self._url = settings.decision_service_url
+        _warn_if_admin_unused(
+            settings, list(self._admins), decision_service=bool(self._url)
+        )
         self._timeout = settings.decision_service_timeout
         self._allowlist = settings.decision_service_claims
         self._sharing = settings.sharing
@@ -233,16 +270,33 @@ class Authz:
         if self._client is None and actor is not None and not actor.listed:
             raise ForbiddenError("delegated tokens (act claim) need a decision service")
         rule = self._rules.get(principal.issuer)
-        if rule is None:
-            return
-        value = principal.claim(rule.name)
-        values = [value] if isinstance(value, str) else value
-        if not (
-            isinstance(values, list)
-            and all(isinstance(v, str) for v in values)
-            and any(v in rule.values or v.startswith(rule.prefixes) for v in values)
-        ):
+        if rule is not None and not _matches(rule, principal):
             raise ForbiddenError("forbidden")
+
+    def is_admin(self, principal: Principal) -> bool:
+        """Whether the built-in admin rule of the principal's issuer names it.
+
+        Never with a decision service (admin is policy there) and never
+        for a delegated token: the actor would act with the subject's
+        admin powers.
+        """
+        if self._client is not None or principal.actor is not None:
+            return False
+        rule = self._admins.get(principal.issuer)
+        return rule is not None and _matches(rule, principal)
+
+    def _admin_reads(self, principal: Principal, meta: dict[str, Any] | None) -> bool:
+        """Whether the built-in admin rule (alone) gives access to a task.
+
+        Only with ``adminRead`` on, and only to an existing task of
+        someone else (one's own tasks are the owner rule's).
+        """
+        return (
+            self._admin_read
+            and meta is not None
+            and not _owns(principal, meta)
+            and self.is_admin(principal)
+        )
 
     async def check_create(
         self, principal: Principal, task: TesTask
@@ -253,16 +307,21 @@ class Authz:
         none; never the creator's groups claim, which may name whole
         communities.
         """
+        event = "task.create"
         if self._client is None:
+            _audit(event, principal, ALLOW, BUILTIN, task_id=task.id)
             return ()
         resource = {
             "type": "tes_task_set",
             "id": "own",
             "properties": {"task": project(task)},
         }
-        decision = await self._ask(principal, "CreateTask", resource)
+        with _errors_audited(event, principal):
+            decision = await self._ask(principal, "CreateTask", resource)
         if not decision.allow:
+            _audit(event, principal, DENY, DECISION_SERVICE)
             raise ForbiddenError("forbidden")
+        _audit(event, principal, ALLOW, DECISION_SERVICE, task_id=task.id)
         return decision.groups if self._sharing else ()
 
     async def may_read(
@@ -281,11 +340,19 @@ class Authz:
         while it is down); with sharing off, it is asked about the
         caller's own tasks only, and both are 404 without a call.
         """
+        event = "task.get"
         own = _owns(principal, meta)
         if self._client is None or not (self._sharing or own):
-            return own
+            admin = self._client is None and self._admin_reads(principal, meta)
+            allowed = own or admin
+            outcome = ALLOW if allowed else DENY
+            _audit(event, principal, outcome, BUILTIN, admin=admin, task_id=task_id)
+            return allowed
         resource = _task_resource(task_id, meta)
-        decision = await self._ask(principal, "GetTask", resource, {"view": view})
+        with _errors_audited(event, principal, task_id=task_id):
+            decision = await self._ask(principal, "GetTask", resource, {"view": view})
+        outcome = ALLOW if decision.allow else DENY
+        _audit(event, principal, outcome, DECISION_SERVICE, task_id=task_id)
         return decision.allow
 
     async def check_cancel(
@@ -300,16 +367,24 @@ class Authz:
         two otherwise). With sharing off, foreign and missing tasks are
         ``404`` without a call, as in :meth:`may_read`.
         """
+        event = "task.cancel"
         own = _owns(principal, meta)
+        decided_by, admin = BUILTIN, False
         if self._client is None or not (self._sharing or own):
-            allowed, readable = own, False
+            admin = self._client is None and self._admin_reads(principal, meta)
+            allowed, readable = own or admin, False
         else:
+            decided_by = DECISION_SERVICE
             resource = _task_resource(task_id, meta)
-            allowed = (await self._ask(principal, "CancelTask", resource)).allow
-            readable = (not allowed or meta is None) and (
-                await self._ask(principal, "GetTask", resource)
-            ).allow
-        if meta is not None and allowed:
+            with _errors_audited(event, principal, task_id=task_id):
+                allowed = (await self._ask(principal, "CancelTask", resource)).allow
+                readable = (not allowed or meta is None) and (
+                    await self._ask(principal, "GetTask", resource)
+                ).allow
+        granted = meta is not None and allowed
+        outcome = ALLOW if granted else DENY
+        _audit(event, principal, outcome, decided_by, admin=admin, task_id=task_id)
+        if granted:
             return
         if meta is not None and readable:
             raise ForbiddenError("forbidden")
@@ -326,23 +401,32 @@ class Authz:
         sharing on, ``all`` and ``own`` are asked in parallel; ``all``
         allowed lists every task, else ``own`` allowed lists the caller's
         and its scope's. A scope naming more than ``max_owners`` owners
-        denies.
+        denies. Without a decision service, a built-in admin lists every
+        task with ``adminRead`` on, and their own otherwise.
         """
+        event = "task.list"
         if self._client is None:
+            if self._admin_read and self.is_admin(principal):
+                _audit(event, principal, ALLOW, BUILTIN, admin=True, list_scope="all")
+                return None, None
+            _audit(event, principal, ALLOW, BUILTIN, list_scope="own")
             return principal.owner, None
-        if not self._sharing:
-            if not (await self._ask_list(principal, "own", view)).allow:
-                raise ForbiddenError("forbidden")
-            return principal.owner, None
-        every, own = await asyncio.gather(
-            self._ask_list(principal, "all", view),
-            self._ask_list(principal, "own", view),
-        )
-        if every.allow:
+        with _errors_audited(event, principal):
+            if self._sharing:
+                every, own = await asyncio.gather(
+                    self._ask_list(principal, "all", view),
+                    self._ask_list(principal, "own", view),
+                )
+            else:
+                every, own = None, await self._ask_list(principal, "own", view)
+        if every is not None and every.allow:
+            _audit(event, principal, ALLOW, DECISION_SERVICE, list_scope="all")
             return None, None
         if not own.allow:
+            _audit(event, principal, DENY, DECISION_SERVICE)
             raise ForbiddenError("forbidden")
-        scope = own.scope
+        # The scope only counts with sharing on.
+        scope = own.scope if self._sharing else None
         if scope is not None and len(scope.owners or ()) > self._max_owners:
             logger.error(
                 "Decision service scope for ListTasks names %d owners, more than "
@@ -350,8 +434,38 @@ class Authz:
                 len(scope.owners or ()),
                 self._max_owners,
             )
+            # Poiesis's own limit refused what the service allowed.
+            _audit(event, principal, DENY, BUILTIN)
             raise ForbiddenError("forbidden")
+        list_scope = "own" if scope is None else "own+scope"
+        _audit(event, principal, ALLOW, DECISION_SERVICE, list_scope=list_scope)
         return principal.owner, scope
+
+    async def check_key_admin(
+        self, principal: Principal, action: str, owner: str
+    ) -> Grant:
+        """Raise ``403`` unless the caller may act on all keys of ``owner``.
+
+        ``action`` is ``RevokeApiKeys`` or ``ListApiKeys``. Without a
+        decision service, built-in admins may (whatever ``adminRead``
+        says: keys hold no task data); with one, it is asked on the
+        resource ``poiesis_api_keys`` with the owner as id. A refusal or
+        failure is audited here; the caller audits the allowed action,
+        with its result.
+        """
+        event = _KEY_EVENTS[action]
+        if self._client is None:
+            if self.is_admin(principal):
+                return Grant(BUILTIN, admin=True)
+            _audit(event, principal, DENY, BUILTIN, target_owner=owner)
+            raise ForbiddenError("only admins may list or revoke keys by owner")
+        resource = {"type": API_KEYS_RESOURCE, "id": owner}
+        with _errors_audited(event, principal, target_owner=owner):
+            decision = await self._ask(principal, action, resource)
+        if not decision.allow:
+            _audit(event, principal, DENY, DECISION_SERVICE, target_owner=owner)
+            raise ForbiddenError("forbidden")
+        return Grant(DECISION_SERVICE, admin=False)
 
     async def _ask_list(
         self, principal: Principal, task_set: str, view: str
@@ -443,12 +557,14 @@ class Authz:
             cause = f"invalid response: {exc}"
         if decision is None:
             logger.error(
-                "Decision service failed (%s) for %s on %s %s, request %s",
+                "Decision service failed (%s) for %s on %s %s, request %s, "
+                "API request %s",
                 cause,
                 action,
                 resource["type"],
                 resource["id"],
                 request_id,
+                audit.request_id(),
             )
             raise ServiceUnavailableError(
                 "authorization service unavailable", retry_after_seconds=1
@@ -465,12 +581,13 @@ class Authz:
             )
             decision = replace(decision, allow=False)
         logger.info(
-            "Decision %s for %s on %s %s, request %s, reason %r",
+            "Decision %s for %s on %s %s, request %s, API request %s, reason %r",
             decision.allow,
             action,
             resource["type"],
             resource["id"],
             request_id,
+            audit.request_id(),
             decision.reason,
         )
         return decision
@@ -482,11 +599,16 @@ def get_authz(request: Request) -> Authz:
 
 
 async def authorized_principal(
+    request: Request,
     principal: Annotated[Principal, Depends(get_principal)],
     authz: Annotated[Authz, Depends(get_authz)],
 ) -> Principal:
     """FastAPI dependency: the principal, admitted by the claim rule."""
-    authz.gate(principal)
+    try:
+        authz.gate(principal)
+    except ForbiddenError:
+        audit.denied(request, principal)
+        raise
     return principal
 
 
@@ -506,19 +628,30 @@ def require_scope(principal: Principal, scope: str) -> None:
 
 
 async def task_reader(
+    request: Request,
     principal: Annotated[Principal, Depends(authorized_principal)],
 ) -> Principal:
     """FastAPI dependency: an admitted principal that may read tasks."""
-    require_scope(principal, TASKS_READ)
+    _require_scope_audited(request, principal, TASKS_READ)
     return principal
 
 
 async def task_writer(
+    request: Request,
     principal: Annotated[Principal, Depends(authorized_principal)],
 ) -> Principal:
     """FastAPI dependency: an admitted principal that may create or cancel."""
-    require_scope(principal, TASKS_WRITE)
+    _require_scope_audited(request, principal, TASKS_WRITE)
     return principal
+
+
+def _require_scope_audited(request: Request, principal: Principal, scope: str) -> None:
+    """:func:`require_scope`, with a refusal in the audit log."""
+    try:
+        require_scope(principal, scope)
+    except ForbiddenError:
+        audit.denied(request, principal)
+        raise
 
 
 def strip_url(url: str) -> str | None:
@@ -613,6 +746,67 @@ def _file(item: TesInput | TesOutput) -> dict[str, Any]:
 def _without_none(values: dict[str, Any]) -> dict[str, Any]:
     """Drop the keys whose value is ``None``."""
     return {key: value for key, value in values.items() if value is not None}
+
+
+def _matches(rule: ClaimRuleSettings, principal: Principal) -> bool:
+    """Whether the principal's claim holds a value or prefix of ``rule``.
+
+    The claim must be a string or a list of strings; any other type
+    doesn't match.
+    """
+    value = principal.claim(rule.name)
+    values = [value] if isinstance(value, str) else value
+    return (
+        isinstance(values, list)
+        and all(isinstance(v, str) for v in values)
+        and any(v in rule.values or v.startswith(rule.prefixes) for v in values)
+    )
+
+
+def _audit(
+    event: str,
+    principal: Principal,
+    outcome: str,
+    decided_by: str,
+    *,
+    admin: bool = False,
+    **fields: Any,
+) -> None:
+    """Write the audit line of an authorization outcome."""
+    audit.emit(event, outcome, principal, decided_by=decided_by, admin=admin, **fields)
+
+
+@contextlib.contextmanager
+def _errors_audited(event: str, principal: Principal, **fields: Any) -> Iterator[None]:
+    """Audit a failing decision service (``503``) as an ``error``, then re-raise."""
+    try:
+        yield
+    except ServiceUnavailableError:
+        _audit(event, principal, ERROR, DECISION_SERVICE, **fields)
+        raise
+
+
+def _warn_if_admin_unused(
+    settings: AuthzSettings, admins: list[str], *, decision_service: bool
+) -> None:
+    """Warn about admin settings that have no effect.
+
+    With a decision service, admin is its policy, so issuers' ``admin``
+    rules and ``adminRead`` are ignored; ``adminRead`` without any
+    issuer's ``admin`` rule names nobody.
+    """
+    if decision_service and (admins or settings.admin_read):
+        logger.warning(
+            "A decision service is configured, so the built-in admin settings "
+            "(the admin rule of %s; adminRead %s) are ignored: admin is the "
+            "decision service's policy",
+            ", ".join(admins) or "no issuer",
+            "on" if settings.admin_read else "off",
+        )
+    elif settings.admin_read and not admins:
+        logger.warning(
+            "authz.adminRead is on, but no issuer has an admin rule: nobody is an admin"
+        )
 
 
 def _owns(principal: Principal, meta: dict[str, Any] | None) -> bool:

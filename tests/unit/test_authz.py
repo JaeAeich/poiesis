@@ -23,7 +23,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from poiesis.api import app as app_module
-from poiesis.api.auth import Principal
+from poiesis.api import audit
+from poiesis.api.auth import Actor, Principal
 from poiesis.api.authz import Authz, parse_decision, strip_url
 from poiesis.api.deps import get_db_pool, get_k8s, get_runtime_config
 from poiesis.api.exceptions import APIError, handle_api_exception
@@ -243,6 +244,7 @@ class Env:
         asyncio.run(oidc.start())
         app = FastAPI()
         app.add_exception_handler(APIError, handle_api_exception)
+        app.add_middleware(audit.RequestIdMiddleware)
         app.include_router(tasks_routes.router, prefix="/ga4gh/tes/v1")
         app.state.authenticators = [oidc]
         app.state.authz = Authz(AuthzSettings(**settings), [entry])
@@ -1486,3 +1488,404 @@ def test_max_owners_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POIESIS_AUTHZ_MAX_OWNERS", "many")
     with pytest.raises(ValueError, match="POIESIS_AUTHZ_MAX_OWNERS"):
         AuthzSettings()
+
+
+# -- built-in admin ------------------------------------------------------------------
+
+ADMINS = "poiesis-admins"
+#: The fake issuer's built-in admin rule.
+ADMIN_RULE = {"admin": {"name": "groups", "values": [ADMINS]}}
+
+
+def tasks_of(client: TestClient) -> list[str]:
+    """The ids of the tasks the client lists."""
+    return [t["id"] for t in client.get(TASKS).json()["tasks"]]
+
+
+def test_admin_read_off_is_owner_only(env: Env) -> None:
+    """By default an admin sees, gets and cancels their own tasks only."""
+    env.claims["groups"] = [ADMINS]
+    client = env.start(ADMIN_RULE)
+    env.store.add(ALICE, ALICE_TASK)
+    env.store.add(BOB, BOB_TASK)
+    assert tasks_of(client) == [ALICE_TASK]
+    assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
+    assert client.post(f"{TASKS}/{BOB_TASK}:cancel").status_code == 404  # noqa: PLR2004
+    assert env.store.tasks[BOB_TASK][1].state == TesState.RUNNING
+
+
+def test_admin_read_on(env: Env) -> None:
+    """With adminRead, an admin lists every task and gets and cancels any."""
+    env.claims["groups"] = ["users", ADMINS]
+    client = env.start(ADMIN_RULE, admin_read=True)
+    env.store.add(ALICE, ALICE_TASK)
+    env.store.add(BOB, BOB_TASK)
+    assert sorted(tasks_of(client)) == sorted([ALICE_TASK, BOB_TASK])
+    assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 200  # noqa: PLR2004
+    assert client.post(f"{TASKS}/{BOB_TASK}:cancel").status_code == 200  # noqa: PLR2004
+    assert env.store.tasks[BOB_TASK][1].state == TesState.CANCELING
+    assert client.get(f"{TASKS}/{MISSING}").status_code == 404  # noqa: PLR2004
+    assert client.post(f"{TASKS}/{MISSING}:cancel").status_code == 404  # noqa: PLR2004
+    assert env.pdp.requests == []
+
+
+@pytest.mark.parametrize(
+    "groups", [[], ["poiesis-admins-x"], ["/poiesis-admins"]], ids=str
+)
+def test_admin_read_on_non_admin(env: Env, groups: list[str]) -> None:
+    """With adminRead, everyone else still sees their own tasks only."""
+    env.claims["groups"] = groups
+    client = env.start(ADMIN_RULE, admin_read=True)
+    env.store.add(ALICE, ALICE_TASK)
+    env.store.add(BOB, BOB_TASK)
+    assert tasks_of(client) == [ALICE_TASK]
+    assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
+
+
+def admins(*entries: dict[str, Any], **settings: Any) -> Authz:
+    """An `Authz` for issuer entries given as (camelCase) settings."""
+    issuers = [
+        IssuerSettings.model_validate({"audience": AUDIENCE} | entry)
+        for entry in entries
+    ]
+    return Authz(AuthzSettings(**settings), issuers)
+
+
+def principal(iss: str = ISSUER, via: str = "oidc", **claims: Any) -> Principal:
+    """A principal of `iss` with `claims`."""
+    return Principal(issuer=iss, subject="alice", via=via, claims=claims)
+
+
+def test_admin_rule_per_issuer() -> None:
+    """An admin rule binds to its issuer: another issuer's value doesn't count.
+
+    Also not by namespace: a second issuer sharing the namespace has its
+    own rule (here none).
+    """
+    authz = admins(
+        {"issuer": ISSUER} | ADMIN_RULE,
+        {"issuer": OTHER_ISSUER, "admin": {"name": "groups", "prefixes": ["ops:"]}},
+        {"issuer": "https://renamed.example.org", "namespace": ISSUER},
+    )
+    assert authz.is_admin(principal(groups=[ADMINS]))
+    assert authz.is_admin(principal(groups=ADMINS))
+    assert not authz.is_admin(principal(groups=["ops:root"]))
+    assert not authz.is_admin(principal(OTHER_ISSUER, groups=[ADMINS]))
+    assert authz.is_admin(principal(OTHER_ISSUER, groups=["ops:root"]))
+    renamed = principal("https://renamed.example.org", groups=[ADMINS])
+    assert not authz.is_admin(renamed)
+
+
+def test_admin_rule_api_key() -> None:
+    """An API key is judged on its claims snapshot, under its issuer."""
+    authz = admins({"issuer": ISSUER} | ADMIN_RULE)
+    assert authz.is_admin(principal(via="apikey", groups=[ADMINS]))
+    assert not authz.is_admin(principal(via="apikey", groups=["users"]))
+
+
+def test_admin_rule_never_delegated() -> None:
+    """A delegated token is never an admin, even with a listed actor."""
+    authz = admins({"issuer": ISSUER, "actors": ["gateway"]} | ADMIN_RULE)
+    delegated = Principal(
+        issuer=ISSUER,
+        subject="alice",
+        via="oidc",
+        actor=Actor(issuer=ISSUER, subject="gateway", listed=True),
+        claims={"groups": [ADMINS]},
+    )
+    assert not authz.is_admin(delegated)
+
+
+def test_delegated_admin_token_owner_only(env: Env) -> None:
+    """A delegated admin token gets no admin powers, adminRead or not."""
+    env.claims |= {"groups": [ADMINS], "act": {"sub": "gateway"}}
+    client = env.start(ADMIN_RULE | {"actors": ["gateway"]}, admin_read=True)
+    env.store.add(ALICE, ALICE_TASK)
+    env.store.add(BOB, BOB_TASK)
+    assert tasks_of(client) == [ALICE_TASK]
+    assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
+    assert client.post(f"{TASKS}/{BOB_TASK}:cancel").status_code == 404  # noqa: PLR2004
+
+
+@pytest.mark.parametrize("sharing", [False, True])
+def test_admin_ignored_with_decision_service(
+    env: Env, caplog: pytest.LogCaptureFixture, *, sharing: bool
+) -> None:
+    """With a decision service, admin is its policy; the admin rule is ignored."""
+    env.claims["groups"] = [ADMINS]
+    env.pdp.decide = per_action(ListTasks_own=True, GetTask=True, CancelTask=True)
+    client = env.pdp_on(ADMIN_RULE, admin_read=True, sharing=sharing)
+    env.store.add(ALICE, ALICE_TASK)
+    env.store.add(BOB, BOB_TASK)
+    assert tasks_of(client) == [ALICE_TASK]
+    if not sharing:
+        assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
+    authz: Authz = client.app.state.authz  # type: ignore[attr-defined]
+    assert not authz.is_admin(principal(groups=[ADMINS]))
+    warnings = [r.getMessage() for r in authz_logs(caplog) if r.levelname == "WARNING"]
+    assert any("built-in admin settings" in w and ISSUER in w for w in warnings)
+
+
+def test_admin_read_only_warns_with_decision_service(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`adminRead` alone with a decision service is also reported as ignored."""
+    Authz(AuthzSettings(decision_service_url=PDP, admin_read=True))
+    assert "built-in admin settings" in caplog.text
+    assert "adminRead on" in caplog.text
+
+
+def test_admin_read_without_admins_warns(caplog: pytest.LogCaptureFixture) -> None:
+    """`adminRead` without any issuer's admin rule names nobody; it warns."""
+    Authz(AuthzSettings(admin_read=True), [])
+    assert "no issuer has an admin rule" in caplog.text
+    caplog.clear()
+    admins({"issuer": ISSUER} | ADMIN_RULE, admin_read=True)
+    assert caplog.text == ""
+
+
+@pytest.mark.parametrize(
+    ("value", "admin_read"),
+    [("", False), ("true", True), ("1", True), ("off", False)],
+)
+def test_admin_read_from_env(
+    monkeypatch: pytest.MonkeyPatch, value: str, *, admin_read: bool
+) -> None:
+    """`POIESIS_AUTHZ_ADMIN_READ` is a boolean, off by default."""
+    monkeypatch.setenv("POIESIS_AUTHZ_ADMIN_READ", value)
+    assert AuthzSettings().admin_read is admin_read
+
+
+@pytest.mark.parametrize("value", ["of", "enabled", "2"])
+def test_admin_read_typo_refused(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """An unrecognised boolean refuses to start rather than guess."""
+    monkeypatch.setenv("POIESIS_AUTHZ_ADMIN_READ", value)
+    with pytest.raises(ValueError, match="POIESIS_AUTHZ_ADMIN_READ"):
+        AuthzSettings()
+
+
+def test_admin_read_needs_auth() -> None:
+    """`adminRead` with auth disabled refuses to start; nobody could be admin."""
+    with pytest.raises(ValueError, match="auth is disabled"):
+        AuthzSettings(admin_read=True).validate_for(auth_enabled=False)
+    AuthzSettings(admin_read=True).validate_for(auth_enabled=True)
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [{"name": "g"}, {"name": "", "values": ["a"]}, {"name": "g", "values": [""]}],
+    ids=["no-values", "empty-name", "empty-value"],
+)
+def test_incomplete_admin_rule_refused(rule: dict[str, Any]) -> None:
+    """An admin rule is checked like `requiredClaim`."""
+    entry = {"issuer": ISSUER, "audience": AUDIENCE, "admin": rule}
+    with pytest.raises(ValueError, match="admin"):
+        IssuerSettings.model_validate(entry)
+
+
+# -- audit log -------------------------------------------------------------------------
+
+
+def audited(capsys: pytest.CaptureFixture[str]) -> list[dict[str, Any]]:
+    """The audit lines written so far (each must be JSON)."""
+    return [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+
+
+def summary(line: dict[str, Any]) -> tuple[Any, ...]:
+    """The event, outcome, decider and admin flag of a task audit line."""
+    return line["event"], line["outcome"], line["decided_by"], line["admin"]
+
+
+def test_audit_builtin(env: Env, capsys: pytest.CaptureFixture[str]) -> None:
+    """Every task operation is one line: who, what, which task, the outcome.
+
+    No token, and no claim value (the entitlement) appears.
+    """
+    client = env.start()
+    env.store.add(BOB, BOB_TASK)
+    own = client.post(TASKS, json=TASK).json()["id"]
+    client.get(f"{TASKS}/{own}")
+    client.get(f"{TASKS}/{BOB_TASK}")
+    client.get(TASKS)
+    client.post(f"{TASKS}/{MISSING}:cancel")
+    out = capsys.readouterr().out
+    token = client.headers["authorization"].removeprefix("Bearer ")
+    assert token not in out
+    assert MEMBER not in out
+    lines = [json.loads(line) for line in out.splitlines()]
+    assert [summary(line) for line in lines] == [
+        ("task.create", "allow", "builtin", False),
+        ("task.get", "allow", "builtin", False),
+        ("task.get", "deny", "builtin", False),
+        ("task.list", "allow", "builtin", False),
+        ("task.cancel", "deny", "builtin", False),
+    ]
+    assert [line.get("task_id") for line in lines] == [
+        own,
+        own,
+        BOB_TASK,
+        None,
+        MISSING,
+    ]
+    assert lines[3]["list_scope"] == "own"
+    for line in lines:
+        assert line["owner"] == ALICE
+        assert line["issuer"] == ISSUER
+        assert line["via"] == "oidc"
+        assert line["client"] == "tes-client"
+        assert not {"actor", "credential_id"} & line.keys()
+    assert len({line["request_id"] for line in lines}) == len(lines)
+
+
+def test_audit_admin(env: Env, capsys: pytest.CaptureFixture[str]) -> None:
+    """What the admin rule alone allowed is flagged `admin`."""
+    env.claims |= {"groups": [ADMINS], "jti": "token-1"}
+    client = env.start(ADMIN_RULE, admin_read=True)
+    env.store.add(ALICE, ALICE_TASK)
+    env.store.add(BOB, BOB_TASK)
+    client.get(TASKS)
+    client.get(f"{TASKS}/{ALICE_TASK}")
+    client.get(f"{TASKS}/{BOB_TASK}")
+    client.post(f"{TASKS}/{BOB_TASK}:cancel")
+    lines = audited(capsys)
+    assert [summary(line) for line in lines] == [
+        ("task.list", "allow", "builtin", True),
+        ("task.get", "allow", "builtin", False),
+        ("task.get", "allow", "builtin", True),
+        ("task.cancel", "allow", "builtin", True),
+    ]
+    assert lines[0]["list_scope"] == "all"
+    assert lines[3]["task_id"] == BOB_TASK
+    assert {line["credential_id"] for line in lines} == {"token-1"}
+    assert ADMINS not in json.dumps(lines)
+
+
+def test_audit_decision_service(env: Env, capsys: pytest.CaptureFixture[str]) -> None:
+    """Decisions of the service are `decision_service`; a create deny has no id."""
+    env.store.add(BOB, BOB_TASK)
+    env.pdp.decide = per_action(
+        {"scope": {"owners": [BOB]}}, ListTasks_own=True, GetTask=True
+    )
+    client = env.pdp_on(sharing=True)
+    client.post(TASKS, json=TASK)
+    client.get(f"{TASKS}/{BOB_TASK}")
+    client.get(TASKS)
+    client.post(f"{TASKS}/{BOB_TASK}:cancel")
+    lines = audited(capsys)
+    assert [summary(line) for line in lines] == [
+        ("task.create", "deny", "decision_service", False),
+        ("task.get", "allow", "decision_service", False),
+        ("task.list", "allow", "decision_service", False),
+        ("task.cancel", "deny", "decision_service", False),
+    ]
+    assert "task_id" not in lines[0]
+    assert lines[2]["list_scope"] == "own+scope"
+    assert "list_scope" not in lines[3]
+
+
+@pytest.mark.parametrize(
+    ("sharing", "decide", "scope"),
+    [
+        (True, per_action(ListTasks_all=True), "all"),
+        (False, per_action(ListTasks=True), "own"),
+    ],
+    ids=["all", "own"],
+)
+def test_audit_list_scope(
+    env: Env,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    sharing: bool,
+    decide: Decide,
+    scope: str,
+) -> None:
+    """A list says which set was listed."""
+    env.pdp.decide = decide
+    env.pdp_on(sharing=sharing).get(TASKS)
+    (line,) = audited(capsys)
+    assert line["list_scope"] == scope
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "event"),
+    [
+        ("POST", TASKS, "task.create"),
+        ("GET", f"{TASKS}/{BOB_TASK}", "task.get"),
+        ("GET", TASKS, "task.list"),
+        ("POST", f"{TASKS}/{BOB_TASK}:cancel", "task.cancel"),
+    ],
+)
+def test_audit_decision_service_down(
+    env: Env, capsys: pytest.CaptureFixture[str], method: str, path: str, event: str
+) -> None:
+    """A failing decision service (503) is one `error` line per request."""
+    env.store.add(BOB, BOB_TASK)
+    env.pdp.decide = lambda _: httpx.ConnectError("down")
+    response = env.pdp_on(sharing=True).request(method, path, json=TASK)
+    assert response.status_code == 503  # noqa: PLR2004
+    (line,) = audited(capsys)
+    assert (line["event"], line["outcome"], line["decided_by"]) == (
+        event,
+        "error",
+        "decision_service",
+    )
+
+
+def test_audit_rule_deny(env: Env, capsys: pytest.CaptureFixture[str]) -> None:
+    """A claim rule refusal is a built-in deny of the operation asked for."""
+    client = env.start(rule(values=["urn:other"]))
+    client.post(TASKS, json=TASK)
+    client.get(f"{TASKS}/{BOB_TASK}")
+    client.get(f"{TASKS}/not-a-uuid")
+    lines = audited(capsys)
+    assert [summary(line) for line in lines] == [
+        ("task.create", "deny", "builtin", False),
+        ("task.get", "deny", "builtin", False),
+        ("task.get", "deny", "builtin", False),
+    ]
+    assert [line.get("task_id") for line in lines] == [None, BOB_TASK, None]
+
+
+def test_audit_max_owners_deny(env: Env, capsys: pytest.CaptureFixture[str]) -> None:
+    """Poiesis's own scope limit refusing the service's allow is built-in."""
+    env.pdp.decide = per_action({"scope": {"owners": ["a", "b"]}}, ListTasks_own=True)
+    env.pdp_on(sharing=True, max_owners=1).get(TASKS)
+    (line,) = audited(capsys)
+    assert summary(line) == ("task.list", "deny", "builtin", False)
+
+
+def test_audit_actor(env: Env, capsys: pytest.CaptureFixture[str]) -> None:
+    """A delegated token's line names the actor."""
+    env.claims["act"] = {"sub": "gateway"}
+    env.start({"actors": ["gateway"]}).get(TASKS)
+    (line,) = audited(capsys)
+    assert line["actor"] == {"iss": ISSUER, "sub": "gateway"}
+    assert line["owner"] == ALICE
+
+
+def test_audit_request_id(
+    env: Env, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """The client's X-Request-ID is echoed, audited and logged with decisions.
+
+    The decision service still gets an id of Poiesis's own per call.
+    """
+    client = env.pdp_on()
+    response = client.get(TASKS, headers={"X-Request-ID": "trace-42"})
+    assert response.headers["x-request-id"] == "trace-42"
+    (line,) = audited(capsys)
+    assert line["request_id"] == "trace-42"
+    assert env.pdp.requests[0].headers["x-request-id"] != "trace-42"
+    assert "API request trace-42" in caplog.text
+    generated = client.get(TASKS).headers["x-request-id"]
+    assert audited(capsys)[0]["request_id"] == generated
+
+
+def test_audit_disabled(env: Env, capsys: pytest.CaptureFixture[str]) -> None:
+    """With the audit log off, nothing is written; the request id stays."""
+    audit.configure(enabled=False)
+    client = env.start()
+    response = client.post(TASKS, json=TASK)
+    client.get(TASKS)
+    assert capsys.readouterr().out == ""
+    assert response.headers["x-request-id"]
