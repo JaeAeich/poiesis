@@ -1,0 +1,81 @@
+/* Docs pages restyled to the prototype look. Only touches VitePress chrome and .vp-doc content. */
+
+/* nav */
+.VPNavBar .title { font-weight: 600; letter-spacing: -.01em; }
+.VPNavBar .logo { width: 26px; height: 26px; }
+.VPNavBarMenuLink { font-size: 15px; font-weight: 500; }
+.VPNavBarSearch .DocSearch-Button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); }
+
+/* sidebar: mono group labels, a blue pill for the current page */
+.VPSidebarItem.level-0 > .item > .text,
+.VPSidebarItem.level-0 > .item .text.text { font: 500 12px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.VPSidebarItem.level-0 { padding-bottom: 18px; }
+.VPSidebarItem.level-1 .item { border-radius: var(--r); padding-left: 10px; margin-left: -10px; }
+.VPSidebarItem.level-1 .item:hover { background: var(--surface); }
+.VPSidebarItem.level-1.is-active > .item { background: var(--blue-wash); }
+.VPSidebarItem.level-1.is-active > .item .text { color: var(--blue-ink); font-weight: 500; }
+.VPSidebarItem .indicator { display: none; }
+.VPSidebarItem.level-1 .text { font-size: 14.5px; color: var(--body); }
+
+/* outline: coral marker */
+.VPDocAsideOutline .outline-marker { background-color: var(--coral); }
+.VPDocAsideOutline .outline-title { font: 500 12px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.VPDocAsideOutline .outline-link.active { color: var(--fg); }
+
+/* the hero's lattice, faintly, behind page titles; the outline column stays clean */
+.VPDoc { position: relative; isolation: isolate; }
+.VPDoc .content-container { position: relative; }
+.VPDoc .content-container::before { left: -110px !important; content: ""; position: absolute; left: 0; right: 0; top: 0; height: 300px; z-index: -1; pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='45.03' height='78' viewBox='0 0 45.03 78'%3E%3Cpath d='M22.52 0 45.03 13v26L22.52 52 0 39V13zM22.52 52v26M0 13 0 0M45.03 13V0' fill='none' stroke='%23c3ced9' stroke-width='1'/%3E%3C/svg%3E") 0 0/45.03px 78px repeat;
+  -webkit-mask-image: linear-gradient(transparent 0%, #000 30%, #000 45%, transparent 100%), linear-gradient(to right, transparent, #000 150px, #000 calc(100% - 220px), transparent); -webkit-mask-composite: source-in; mask-image: linear-gradient(transparent 0%, #000 30%, #000 45%, transparent 100%), linear-gradient(to right, transparent, #000 150px, #000 calc(100% - 220px), transparent); mask-composite: intersect; opacity: .7; }
+html.dark .VPDoc .content-container::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='45.03' height='78' viewBox='0 0 45.03 78'%3E%3Cpath d='M22.52 0 45.03 13v26L22.52 52 0 39V13zM22.52 52v26M0 13 0 0M45.03 13V0' fill='none' stroke='%2330475f' stroke-width='1'/%3E%3C/svg%3E"); }
+
+/* content */
+.vp-doc { color: var(--body); }
+.vp-doc h1 { font-size: 40px; line-height: 1.1; letter-spacing: -.032em; font-weight: 600; color: var(--fg); }
+.vp-doc h1 + p { font-size: 18px; line-height: 1.55; margin: 14px 0 28px; color: var(--body); }
+.vp-doc h2 { border-top: 0; padding-top: 0; margin: 48px 0 12px; font-size: 24px; letter-spacing: -.025em; font-weight: 600; color: var(--fg); }
+.vp-doc h3 { font-size: 18px; letter-spacing: -.015em; font-weight: 600; color: var(--fg); }
+.vp-doc a { color: var(--blue-ink); text-decoration: none; text-underline-offset: 3px; }
+.vp-doc a:hover { text-decoration: underline; }
+.vp-doc ul > li::marker { color: var(--coral); }
+.vp-doc :not(pre) > code { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: .05em .35em; color: var(--fg); font-size: .875em; }
+.vp-doc a > code { color: var(--blue-ink); }
+
+/* code blocks */
+.vp-doc div[class*='language-'] { border: 1px solid var(--line); border-radius: 10px; }
+.vp-doc div[class*='language-'] > span.lang { font-family: var(--mono); }
+
+/* tables: no zebra, mono uppercase headers */
+.vp-doc table { display: table; width: 100%; border-collapse: collapse; font-size: 14.5px; margin: 20px 0; }
+.vp-doc tr { background: none !important; border-top: 0; }
+.vp-doc th { background: none; border: 0; border-bottom: 1px solid var(--line-strong); text-align: left; font: 500 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 10px 12px 10px 0; }
+.vp-doc td { border: 0; border-bottom: 1px solid var(--line); padding: 11px 12px 11px 0; vertical-align: top; }
+.vp-doc td code { font-size: 12.5px; }
+@media (max-width: 760px) { .vp-doc table { display: block; overflow-x: auto; } }
+
+/* ::: tip / info / warning look like the prototype callouts */
+.vp-doc .custom-block { border-radius: 8px; padding: 14px 16px; font-size: 15px; }
+.vp-doc .custom-block.info, .vp-doc .custom-block.tip, .vp-doc .custom-block.note, .vp-doc .custom-block.important { border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line)); background: var(--blue-wash); color: var(--fg); }
+.vp-doc .custom-block.warning, .vp-doc .custom-block.danger, .vp-doc .custom-block.caution { border: 1px solid color-mix(in srgb, var(--coral) 35%, var(--line)); background: var(--coral-wash); color: var(--fg); }
+.vp-doc .custom-block .custom-block-title { font-weight: 600; }
+
+/* prev / next */
+.VPDocFooter .pager-link { border-radius: 8px; border-color: var(--line); }
+.VPDocFooter .pager-link:hover { border-color: var(--line-strong); }
+.VPDocFooter .pager-link .title { color: var(--fg); font-weight: 500; }
+
+/* figures sit full width inside the text column */
+.vp-doc .poi.fig-host { margin: 24px 0; }
+
+/* deploy page: same faint lattice behind its title */
+.poi-deploy { position: relative; isolation: isolate; }
+.poi-deploy::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 300px; z-index: -1; pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='45.03' height='78' viewBox='0 0 45.03 78'%3E%3Cpath d='M22.52 0 45.03 13v26L22.52 52 0 39V13zM22.52 52v26M0 13 0 0M45.03 13V0' fill='none' stroke='%23c3ced9' stroke-width='1'/%3E%3C/svg%3E") 0 0/45.03px 78px repeat;
+  -webkit-mask-image: linear-gradient(transparent 0%, #000 30%, #000 45%, transparent 100%); mask-image: linear-gradient(transparent 0%, #000 30%, #000 45%, transparent 100%); opacity: .7; }
+html.dark .poi-deploy::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='45.03' height='78' viewBox='0 0 45.03 78'%3E%3Cpath d='M22.52 0 45.03 13v26L22.52 52 0 39V13zM22.52 52v26M0 13 0 0M45.03 13V0' fill='none' stroke='%2330475f' stroke-width='1'/%3E%3C/svg%3E"); }
+/* our pages bring their own spacing and line-heights over VitePress's resets */
+.poi h1, .poi h2, .poi h3 { line-height: 1.15; }
+.poi { color: var(--body); font-family: var(--sans); }
+/* flows are drawn on a 420-wide canvas; keep their text at reading size inside the doc column */
+.vp-doc .poi.fig-host .flow { margin: 20px 0; }
