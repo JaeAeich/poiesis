@@ -55,6 +55,7 @@ from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.pod_status import (
     extract_pending_failure_reason,
     extract_terminal_reason,
+    is_lifecycle_stop,
     pod_terminated_terminal,
 )
 from poiesis.db import state as state_db
@@ -354,8 +355,9 @@ def _terminal_system_logs(
 
     Walks every container status and surfaces termination reasons that
     operators care about: OOMKill, non-zero exit, specific waiting
-    reasons. Returns an empty list for COMPLETE (happy path needs no
-    system_logs noise).
+    reasons. trec and `ack` stopped as the Pod ends are left out
+    (`is_lifecycle_stop`). Returns an empty list for COMPLETE (happy path
+    needs no system_logs noise).
     """
     if proposed is TesState.COMPLETE:
         return []
@@ -372,7 +374,7 @@ def _terminal_system_logs(
         for entry in status.get(key) or []:
             name = entry.get("name") or "?"
             terminated = (entry.get("state") or {}).get("terminated")
-            if not terminated:
+            if not terminated or is_lifecycle_stop(status, name, terminated):
                 continue
             reason = terminated.get("reason")
             exit_code = terminated.get("exit_code") or terminated.get("exitCode")

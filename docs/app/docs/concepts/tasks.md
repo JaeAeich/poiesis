@@ -135,7 +135,8 @@ files and then `exec`s the command:
 The `BASIC` view leaves `stdout`, `stderr` and `system_logs` out;
 `MINIMAL` has no logs.
 `system_logs` holds lines from Poiesis itself, such as a non-zero exit of
-`tif` or `tof`.
+`tif` or `tof`. TRec stopping when the Pod ends isn't one: Kubernetes
+stops the sidecar last, and TRec exits 0 on `SIGTERM`.
 
 ## Who records what
 

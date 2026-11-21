@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -340,8 +341,9 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
     Reads the Pod-level `status.reason` first (NodeLost, Evicted,
     DeadlineExceeded all surface here), falls back to scanning container
     terminated states for a more specific reason. Skips containers that
-    completed (exit 0: trec, a filer, an earlier executor, `ack`) so they
-    don't shadow the underlying error of a failed Pod.
+    completed (exit 0: trec, a filer, an earlier executor, `ack`), and trec
+    or `ack` stopped as the Pod ends (`is_lifecycle_stop`), so they don't
+    shadow the underlying error of a failed Pod.
     """
     status = pod.get("status") or {}
     raw_reason = status.get("reason")
@@ -355,16 +357,54 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
         return PodTerminationReason.COMPLETED.value
 
     for cs in _iter_container_statuses(status):
-        if cs.get("name") == ACK_NAME:
-            continue
         terminated = (cs.get("state") or {}).get("terminated") or {}
         exit_code = terminated.get("exitCode", terminated.get("exit_code"))
         cs_reason = terminated.get("reason")
         if exit_code == 0 or cs_reason == PodTerminationReason.COMPLETED.value:
             continue
+        if is_lifecycle_stop(status, cs.get("name") or "", terminated):
+            continue
         if cs_reason:
             return str(cs_reason)
     return PodTerminationReason.ERROR.value
+
+
+def is_lifecycle_stop(
+    pod_status: Mapping[str, Any], name: str, terminated: Mapping[str, Any]
+) -> bool:
+    """True if `name`, trec or `ack`, ended because the Pod did, not on its own.
+
+    The kubelet stops trec, a native sidecar, once the other containers have
+    ended (and SIGKILLs it, exit 137, if it outlives the grace period);
+    `ack` only starts after the work. Either one's exit is a failure only
+    if it ended before the work containers (tif, the executors, tof) did:
+    trec dying mid-task. Without the timestamps to tell, it counts as one.
+    """
+    if name not in (TREC_NAME, ACK_NAME):
+        return False
+    ended = _timestamp(terminated.get("finishedAt") or terminated.get("finished_at"))
+    work_ended = [
+        _timestamp(t.get("finishedAt") or t.get("finished_at"))
+        for cs in _iter_container_statuses(pod_status)
+        if classify_container(cs.get("name") or "")[0]
+        in (ContainerKind.TIF, ContainerKind.EXECUTOR, ContainerKind.TOF)
+        and (t := (cs.get("state") or {}).get("terminated"))
+    ]
+    if ended is None or not work_ended or None in work_ended:
+        return False
+    return ended >= max(w for w in work_ended if w is not None)
+
+
+def _timestamp(value: object) -> datetime | None:
+    """A kubelet timestamp: a datetime (``to_dict()``) or ISO-8601 string."""
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
 
 
 def extract_pending_failure_reason(pod: Mapping[str, Any]) -> str:

@@ -12,12 +12,16 @@ Trec does NOT write terminal state. The cluster-wide controller (tctl)
 owns terminal transitions exclusively — see `poiesis/core/tctl.py`. Trec's
 job ends when either the Pod reaches a terminal phase (it returns 0 and
 lets the sidecar wind down naturally) or it receives SIGTERM from kubelet
-during pod teardown.
+during pod teardown. The kubelet stops the sidecar once the other
+containers have ended, so on SIGTERM trec reads the Pod once more, records
+what the watch hadn't delivered yet, and exits 0 at once: the Pod, and so
+the task, ends when trec does.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import signal
 import uuid
@@ -44,6 +48,11 @@ from poiesis.core.pod_status import (
 from poiesis.db import state as state_db
 
 logger = logging.getLogger(__name__)
+
+#: Budget for the last read of the Pod on SIGTERM, well inside the Pod's
+#: termination grace period.
+_LAST_STATE_TIMEOUT_SECONDS = 10
+_LAST_STATE_REQUEST_TIMEOUT = (5, 5)
 
 
 async def run(
@@ -101,8 +110,15 @@ async def _run_until_terminal(
             )
             if wait_for_signal in done:
                 wait_for_event.cancel()
-                logger.info("trec: SIGTERM received; exiting")
+                with contextlib.suppress(asyncio.CancelledError):
+                    await wait_for_event
+                logger.info("trec: SIGTERM received; recording the last state")
+                await _record_last_state(
+                    conn, task_id, core_v1, pod_name, namespace, snapshot, read_output
+                )
+                logger.info("trec: exiting")
                 return 0
+            wait_for_signal.cancel()
             event = wait_for_event.result()
             if event is None:
                 logger.warning("trec: watch stream ended unexpectedly")
@@ -116,6 +132,38 @@ async def _run_until_terminal(
                 return 0
     finally:
         await events.aclose()
+
+
+async def _record_last_state(
+    conn: asyncpg.Connection,
+    task_id: str,
+    core_v1: client.CoreV1Api,
+    pod_name: str,
+    namespace: str,
+    snapshot: TaskStateSnapshot,
+    read_output: ReadOutput,
+) -> None:
+    """Apply the Pod's current status once more, within a time budget.
+
+    The watch may lag behind the executors' last transitions, and only
+    trec can read output files on the task volume, so this is the last
+    chance to record them; tctl backfills whatever is still missing.
+    Never raises.
+    """
+    # The stubs don't list the client's `_request_timeout`.
+    api: Any = core_v1
+    try:
+        async with asyncio.timeout(_LAST_STATE_TIMEOUT_SECONDS):
+            pod = await asyncio.to_thread(
+                api.read_namespaced_pod,
+                name=pod_name,
+                namespace=namespace,
+                _request_timeout=_LAST_STATE_REQUEST_TIMEOUT,
+            )
+            status = pod.to_dict().get("status") or {}
+            await _apply_pod_snapshot(conn, task_id, status, snapshot, read_output)
+    except Exception as exc:  # noqa: BLE001 - exiting promptly matters more
+        logger.warning("trec: could not record the Pod's last state: %s", exc)
 
 
 async def _next(events: AsyncGenerator[PodEvent]) -> PodEvent | None:
