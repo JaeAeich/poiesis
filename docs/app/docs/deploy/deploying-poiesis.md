@@ -275,6 +275,41 @@ templates the same shape. Values cover:
 - TCtl HA replica count
 - OIDC authentication ([dedicated page](./authentication.md))
 - API keys and the Swagger UI login ([dedicated page](./api-keys.md))
+- Service info (below)
 
 `Chart.yaml` pins `kubeVersion: ">=1.29.0"` so installs fail fast on
 incompatible clusters.
+
+## Service info
+
+`GET /service-info` tells registries and clients which deployment they
+talk to. Give each deployment its own `id` and, ideally, an
+`environment`:
+
+```yaml
+serviceInfo:
+  id: org.example.tes.prod
+  name: Example TES
+  description: TES for the Example genomics platform
+  organization:
+    name: Example
+    url: https://example.org
+  contactUrl: mailto:tes@example.org
+  documentationUrl: https://docs.example.org/tes
+  environment: prod
+  createdAt: 2026-01-15T09:00:00Z
+```
+
+Without the chart, set the same as `POIESIS_SERVICE_INFO_ID`,
+`_NAME`, `_DESCRIPTION`, `_ORGANIZATION_NAME`, `_ORGANIZATION_URL`,
+`_CONTACT_URL`, `_DOCUMENTATION_URL`, `_ENVIRONMENT` and
+`_CREATED_AT`.
+
+- Unset values keep the built-in ones; `environment` is then left out
+  and `createdAt` is the time of the request.
+- URLs must be http(s); `contactUrl` may also be `mailto:`.
+  `createdAt` is ISO 8601 with a UTC offset. Invalid values stop the
+  API from starting.
+- `id` is also sent to a decision service as
+  `context.tes.service_id` ([Authorization](./authorization.md)).
+- `version` is the Poiesis version; the TES version is `type.version`.

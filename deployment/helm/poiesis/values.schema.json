@@ -125,6 +125,32 @@
       }
     },
 
+    "serviceInfo": {
+      "description": "GA4GH service-info fields of this deployment; empty keeps the built-in value. The API checks the values at startup.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id":          { "type": "string" },
+        "name":        { "type": "string" },
+        "description": { "type": "string" },
+        "organization": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "url":  { "type": "string", "pattern": "^(https?://\\S+)?$" }
+          }
+        },
+        "contactUrl":       { "type": "string", "pattern": "^((https?://|mailto:)\\S+)?$" },
+        "documentationUrl": { "type": "string", "pattern": "^(https?://\\S+)?$" },
+        "environment":      { "type": "string" },
+        "createdAt": {
+          "description": "ISO 8601 date and time with a UTC offset, e.g. 2026-01-15T09:00:00Z.",
+          "type": "string"
+        }
+      }
+    },
+
     "s3": {
       "type": "object",
       "additionalProperties": false,

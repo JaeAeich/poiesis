@@ -141,4 +141,38 @@ data:
   {{- $audit := .Values.audit | default dict }}
   POIESIS_AUDIT_ENABLED: {{ (hasKey $audit "enabled" | ternary $audit.enabled true) | quote }}
 
+  # ---- Service info ------------------------------------------------------------
+  # Unset values are left out: the API keeps its built-in ones.
+  {{- with .Values.serviceInfo }}
+  {{- with .id }}
+  POIESIS_SERVICE_INFO_ID: {{ . | quote }}
+  {{- end }}
+  {{- with .name }}
+  POIESIS_SERVICE_INFO_NAME: {{ . | quote }}
+  {{- end }}
+  {{- with .description }}
+  POIESIS_SERVICE_INFO_DESCRIPTION: {{ . | quote }}
+  {{- end }}
+  {{- with .organization }}
+  {{- with .name }}
+  POIESIS_SERVICE_INFO_ORGANIZATION_NAME: {{ . | quote }}
+  {{- end }}
+  {{- with .url }}
+  POIESIS_SERVICE_INFO_ORGANIZATION_URL: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+  {{- with .contactUrl }}
+  POIESIS_SERVICE_INFO_CONTACT_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .documentationUrl }}
+  POIESIS_SERVICE_INFO_DOCUMENTATION_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .environment }}
+  POIESIS_SERVICE_INFO_ENVIRONMENT: {{ . | quote }}
+  {{- end }}
+  {{- with .createdAt }}
+  POIESIS_SERVICE_INFO_CREATED_AT: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+
   LOG_LEVEL: {{ .Values.logLevel | quote }}

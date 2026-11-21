@@ -98,6 +98,25 @@ Reserved names rejected at API startup:
 Total serialised JSON capped at ~32 KiB by Kubernetes' env-var size
 limit. For typical extras this is plenty.
 
+### Service info (`serviceInfo`)
+
+What `GET /service-info` says about this deployment. Empty keeps the
+built-in value; invalid values stop the API from starting.
+
+| Path | Env | Description |
+|---|---|---|
+| `id`                | `POIESIS_SERVICE_INFO_ID`                | Unique per deployment, e.g. `org.example.tes.prod`. Also the decision service's `context.tes.service_id`. Built-in: `org.ga4gh.poiesis`. |
+| `name`              | `POIESIS_SERVICE_INFO_NAME`              | Human-readable name. |
+| `description`       | `POIESIS_SERVICE_INFO_DESCRIPTION`       | Human-readable description. |
+| `organization.name` | `POIESIS_SERVICE_INFO_ORGANIZATION_NAME` | Who runs the deployment. |
+| `organization.url`  | `POIESIS_SERVICE_INFO_ORGANIZATION_URL`  | http(s) URL. |
+| `contactUrl`        | `POIESIS_SERVICE_INFO_CONTACT_URL`       | http(s) or `mailto:` URL. |
+| `documentationUrl`  | `POIESIS_SERVICE_INFO_DOCUMENTATION_URL` | http(s) URL. |
+| `environment`       | `POIESIS_SERVICE_INFO_ENVIRONMENT`       | E.g. `prod`, `test`. Left out when empty. |
+| `createdAt`         | `POIESIS_SERVICE_INFO_CREATED_AT`        | ISO 8601 with a UTC offset. Empty: the time of the request. |
+
+`version` is the Poiesis version; the TES version is `type.version`.
+
 ### Security
 
 | Path | Type | Default | Description |

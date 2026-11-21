@@ -55,7 +55,11 @@ api_constants = get_poiesis_api_constants()
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Build process-wide resources at startup, tear them down at shutdown."""
     settings: Settings = app.state.settings
-    app.state.authz = Authz(settings.authz, settings.auth.issuers)
+    app.state.authz = Authz(
+        settings.authz,
+        settings.auth.issuers,
+        service_id=settings.service_info.id,
+    )
     app.state.runtime_config = settings.runtime_config()
 
     logger.info("Connecting to Postgres at %s", _redact_dsn(settings.database_url))

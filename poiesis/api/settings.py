@@ -6,18 +6,20 @@ TaskPod RuntimeConfig and the database DSN come from one validated source.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import math
 import os
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
 from kubernetes.client import V1EnvVar
 from pydantic import (
+    AnyUrl,
     BaseModel,
     ConfigDict,
     Field,
@@ -27,6 +29,7 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_camel
 
+from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 
 logger = logging.getLogger(__name__)
@@ -797,6 +800,115 @@ class AuditSettings(BaseModel):
     )
 
 
+_SERVICE_INFO_ENV = "POIESIS_SERVICE_INFO_"
+
+
+def _service_info_env(name: str) -> str | None:
+    """Read ``POIESIS_SERVICE_INFO_<name>``; empty or unset is ``None``."""
+    return os.environ.get(_SERVICE_INFO_ENV + name, "").strip() or None
+
+
+def _check_service_url(
+    value: str | None, name: str, *, mailto: bool = False
+) -> str | None:
+    """Take an absolute http(s) URL (or a ``mailto:`` one, if allowed).
+
+    It must also be a valid `AnyUrl`, as the service info's model has it.
+    """
+    if value is None:
+        return None
+    is_mailto = mailto and value.startswith("mailto:") and value != "mailto:"
+    if not re.search(r"\s", value) and (_is_http_url(value) or is_mailto):
+        with contextlib.suppress(ValueError):
+            AnyUrl(value)
+            return value
+    kinds = "an http(s) or mailto: URL" if mailto else "an http(s) URL"
+    raise ValueError(f"{_SERVICE_INFO_ENV}{name} must be {kinds}, got {value!r}")
+
+
+class ServiceInfoSettings(BaseModel):
+    """The deployment's own fields of ``GET /service-info``.
+
+    ``None`` keeps the built-in value (see `poiesis.api.routes.service_info`):
+    ``environment`` is then left out and ``createdAt`` is the time of the
+    request, as before. ``id`` has its default here: it is also the
+    service id sent to the decision service.
+    """
+
+    id: str = Field(
+        default_factory=lambda: (
+            _service_info_env("ID") or get_poiesis_api_constants().SERVICE_ID
+        ),
+        min_length=1,
+    )
+    name: str | None = Field(
+        default_factory=lambda: _service_info_env("NAME"), min_length=1
+    )
+    description: str | None = Field(
+        default_factory=lambda: _service_info_env("DESCRIPTION"), min_length=1
+    )
+    organization_name: str | None = Field(
+        default_factory=lambda: _service_info_env("ORGANIZATION_NAME"), min_length=1
+    )
+    organization_url: str | None = Field(
+        default_factory=lambda: _service_info_env("ORGANIZATION_URL"),
+        validate_default=True,
+    )
+    contact_url: str | None = Field(
+        default_factory=lambda: _service_info_env("CONTACT_URL"),
+        validate_default=True,
+    )
+    documentation_url: str | None = Field(
+        default_factory=lambda: _service_info_env("DOCUMENTATION_URL"),
+        validate_default=True,
+    )
+    # Free text; the spec suggests prod, test, dev or staging.
+    environment: str | None = Field(
+        default_factory=lambda: _service_info_env("ENVIRONMENT"), min_length=1
+    )
+    created_at: datetime | None = Field(
+        default_factory=lambda: _service_info_env("CREATED_AT"),
+        validate_default=True,
+    )
+
+    @field_validator("organization_url")
+    @classmethod
+    def _check_organization_url(cls, value: str | None) -> str | None:
+        """Take an http(s) URL."""
+        return _check_service_url(value, "ORGANIZATION_URL")
+
+    @field_validator("documentation_url")
+    @classmethod
+    def _check_documentation_url(cls, value: str | None) -> str | None:
+        """Take an http(s) URL."""
+        return _check_service_url(value, "DOCUMENTATION_URL")
+
+    @field_validator("contact_url")
+    @classmethod
+    def _check_contact_url(cls, value: str | None) -> str | None:
+        """Take an http(s) URL, or an email address as a ``mailto:`` URL."""
+        return _check_service_url(value, "CONTACT_URL", mailto=True)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def _check_created_at(cls, value: object) -> datetime | None:
+        """Take an ISO 8601 date and time with a UTC offset (RFC 3339)."""
+        if value is None:
+            return None
+        parsed: datetime | None = None
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str):
+            with contextlib.suppress(ValueError):
+                parsed = datetime.fromisoformat(value)
+        if parsed is None or parsed.tzinfo is None:
+            raise ValueError(
+                f"{_SERVICE_INFO_ENV}CREATED_AT must be an ISO 8601 date and "
+                f"time with a UTC offset, e.g. 2026-01-15T09:00:00Z, got {value!r}"
+            )
+        return parsed
+
+
 class Settings(BaseModel):
     """API runtime settings."""
 
@@ -909,6 +1021,7 @@ class Settings(BaseModel):
     auth: AuthSettings = Field(default_factory=AuthSettings)
     authz: AuthzSettings = Field(default_factory=AuthzSettings)
     audit: AuditSettings = Field(default_factory=AuditSettings)
+    service_info: ServiceInfoSettings = Field(default_factory=ServiceInfoSettings)
 
     def runtime_config(self) -> RuntimeConfig:
         """Materialise the TaskPod RuntimeConfig used by the spec builder."""

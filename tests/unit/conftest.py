@@ -13,9 +13,9 @@ from poiesis.api import audit
 
 @pytest.fixture(autouse=True)
 def _no_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Start every test without auth settings from the outer environment."""
+    """Start every test without auth (or service-info) settings from outside."""
     for name in list(os.environ):
-        if name.startswith("POIESIS_AUTH_"):
+        if name.startswith(("POIESIS_AUTH_", "POIESIS_SERVICE_INFO_")):
             monkeypatch.delenv(name)
 
 
