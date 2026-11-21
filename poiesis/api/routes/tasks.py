@@ -75,7 +75,7 @@ async def create_task(
             ),
         }
     )
-    await authz.check_create(principal, task)
+    groups = await authz.check_create(principal, task)
 
     # Build the K8s manifests first so spec-builder errors (e.g.
     # ignore_error=True) surface as 400s before we write anything.
@@ -86,7 +86,7 @@ async def create_task(
 
     # Acquired only after the decision, so it never waits holding one.
     async with pool.acquire() as conn:
-        task_id = await tasks_db.create_task(conn, task, principal.owner)
+        task_id = await tasks_db.create_task(conn, task, principal.owner, groups)
         logger.info("Persisted task %s", task_id)
 
         # Submit the Job first; the Pod will wait Pending until the PVC exists.
@@ -326,8 +326,7 @@ async def list_tasks(
     view: Annotated[TaskView, Query()] = TaskView.MINIMAL,
 ) -> TesListTasksResponse:
     """Return a paginated list of tasks, newest first."""
-    all_tasks = await authz.lists_all(principal, view.value)
-    filters.owner = None if all_tasks else principal.owner
+    filters.owner, filters.scope = await authz.visible_tasks(principal, view.value)
     try:
         async with pool.acquire() as conn:
             tasks, next_token = await tasks_db.list_tasks(conn, filters, view=view)

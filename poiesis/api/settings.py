@@ -455,6 +455,26 @@ def _parse_bool_env(name: str, *, default: bool) -> bool:
     return raw.lower() not in {"0", "false", "no", "off"}
 
 
+_TRUE = frozenset({"1", "true", "yes", "on"})
+_FALSE = frozenset({"0", "false", "no", "off"})
+
+
+def _parse_strict_bool_env(name: str, *, default: bool) -> bool:
+    """Parse an on/off env value; empty/unset is default, anything else raises.
+
+    For settings where a typo must not flip the meaning (a misspelled
+    "off" read as on would share tasks).
+    """
+    raw = os.environ.get(name, "")
+    if raw == "":
+        return default
+    if raw.lower() in _TRUE:
+        return True
+    if raw.lower() in _FALSE:
+        return False
+    raise ValueError(f"{name} must be true or false, got {raw!r}")
+
+
 #: A key lifetime: a positive number of days or hours, at most six digits
 #: (so the value always fits a ``timedelta``).
 _TTL = re.compile(r"^([1-9][0-9]{0,5})([dh])$")
@@ -640,7 +660,10 @@ class AuthzSettings(BaseModel):
     """Authorization settings: the decision service, off by default.
 
     Claim rules are set per issuer (``IssuerSettings.required_claim``).
-    See ``poiesis.api.authz`` and the "Authorization" docs page.
+    ``sharing`` lets the decision service show tasks to others than
+    their owner (off: owner-only, whatever it answers); ``max_owners``
+    caps the owners one list scope may name. See ``poiesis.api.authz``
+    and the "Authorization" docs page.
     """
 
     decision_service_url: str = Field(
@@ -665,6 +688,17 @@ class AuthzSettings(BaseModel):
             "POIESIS_AUTHZ_DECISION_SERVICE_CREDENTIAL_FILE", ""
         ),
     )
+    sharing: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            "POIESIS_AUTHZ_SHARING", default=False
+        ),
+    )
+    max_owners: int = Field(
+        default_factory=lambda: _parse_int_env("POIESIS_AUTHZ_MAX_OWNERS", 1000) or 0,
+        ge=1,
+        # Defaults aren't validated otherwise, and this one comes from env.
+        validate_default=True,
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -686,12 +720,14 @@ class AuthzSettings(BaseModel):
 
         Called at app startup: authorization without authentication (no
         real subject could reach a decision), decision service settings
-        without a URL, and a URL that isn't http(s).
+        without a URL (sharing included: only a decision service shares),
+        and a URL that isn't http(s).
         """
         service = (
             self.decision_service_url,
             self.decision_service_claims,
             self.decision_service_credential_file,
+            self.sharing,
         )
         if not auth_enabled and any(service):
             raise ValueError("POIESIS_AUTHZ_* is set but auth is disabled")

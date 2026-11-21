@@ -1,0 +1,527 @@
+[
+  {
+    "name": "plain-allow",
+    "description": "A plain AuthZEN decision",
+    "response": {
+      "decision": true
+    },
+    "expect": {
+      "allow": true
+    }
+  },
+  {
+    "name": "plain-deny",
+    "description": "A plain AuthZEN deny",
+    "response": {
+      "decision": false
+    },
+    "expect": {
+      "allow": false
+    }
+  },
+  {
+    "name": "scope-all-dimensions",
+    "description": "A scope with every dimension: any value of each, every dimension",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {
+            "owners": [
+              "owner-1",
+              "owner-2"
+            ],
+            "groups": [
+              "lab-alpha"
+            ],
+            "tags": {
+              "project": [
+                "x",
+                "y"
+              ],
+              "lab": [
+                "alpha"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "expect": {
+      "allow": true,
+      "scope": {
+        "owners": [
+          "owner-1",
+          "owner-2"
+        ],
+        "groups": [
+          "lab-alpha"
+        ],
+        "tags": [
+          [
+            "project",
+            "x"
+          ],
+          [
+            "project",
+            "y"
+          ],
+          [
+            "lab",
+            "alpha"
+          ]
+        ]
+      }
+    }
+  },
+  {
+    "name": "scope-groups",
+    "description": "A scope of groups only",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {
+            "groups": [
+              "lab-alpha",
+              "lab-beta"
+            ]
+          }
+        }
+      }
+    },
+    "expect": {
+      "allow": true,
+      "scope": {
+        "groups": [
+          "lab-alpha",
+          "lab-beta"
+        ]
+      }
+    }
+  },
+  {
+    "name": "scope-duplicates",
+    "description": "Duplicate values count once",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {
+            "owners": [
+              "owner-1",
+              "owner-1"
+            ]
+          }
+        }
+      }
+    },
+    "expect": {
+      "allow": true,
+      "scope": {
+        "owners": [
+          "owner-1"
+        ]
+      }
+    }
+  },
+  {
+    "name": "scope-empty",
+    "description": "An empty scope adds no tasks: own tasks only",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {}
+        }
+      }
+    },
+    "expect": {
+      "allow": true
+    }
+  },
+  {
+    "name": "scope-empty-dimension",
+    "description": "An empty dimension matches nothing, so the scope adds no tasks",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {
+            "owners": [],
+            "groups": [
+              "lab-alpha"
+            ]
+          }
+        }
+      }
+    },
+    "expect": {
+      "allow": true
+    }
+  },
+  {
+    "name": "scope-empty-tags",
+    "description": "Tags without values match nothing, so the scope adds no tasks",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {
+            "tags": {
+              "project": []
+            }
+          }
+        }
+      }
+    },
+    "expect": {
+      "allow": true
+    }
+  },
+  {
+    "name": "create-groups",
+    "description": "Groups to share a new task with (stored only with sharing on)",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "groups": [
+            "lab-alpha"
+          ]
+        }
+      }
+    },
+    "expect": {
+      "allow": true,
+      "groups": [
+        "lab-alpha"
+      ]
+    }
+  },
+  {
+    "name": "obligation-denies",
+    "description": "An obligation Poiesis doesn't know turns the allow into a deny",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "obligations": [
+            "log-access"
+          ]
+        }
+      }
+    },
+    "expect": {
+      "allow": false
+    }
+  },
+  {
+    "name": "empty-obligations",
+    "description": "An empty list of obligations is none",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "obligations": []
+        }
+      }
+    },
+    "expect": {
+      "allow": true
+    }
+  },
+  {
+    "name": "advice-ignored",
+    "description": "Advice is accepted and ignored",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "advice": [
+            "consider-quota"
+          ]
+        }
+      }
+    },
+    "expect": {
+      "allow": true
+    }
+  },
+  {
+    "name": "reason",
+    "description": "A reason is logged, never returned to the client",
+    "response": {
+      "decision": false,
+      "context": {
+        "tes": {
+          "reason": "not a member of the project"
+        }
+      }
+    },
+    "expect": {
+      "allow": false
+    }
+  },
+  {
+    "name": "unknown-keys-ignored",
+    "description": "Unknown keys of context and context.tes are ignored",
+    "response": {
+      "decision": true,
+      "context": {
+        "id": "1",
+        "tes": {
+          "profile": "tes-authzen/2",
+          "x": 1
+        }
+      }
+    },
+    "expect": {
+      "allow": true
+    }
+  },
+  {
+    "name": "decision-string",
+    "description": "decision is not a boolean",
+    "response": {
+      "decision": "true"
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "decision-missing",
+    "description": "decision is missing",
+    "response": {
+      "allow": true
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "not-object",
+    "description": "The body is not an object",
+    "response": [
+      "decision",
+      true
+    ],
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "context-not-object",
+    "description": "context is not an object",
+    "response": {
+      "decision": true,
+      "context": []
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "context-null",
+    "description": "null is not absent",
+    "response": {
+      "decision": true,
+      "context": null
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "tes-not-object",
+    "description": "context.tes is not an object",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": "x"
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "scope-not-object",
+    "description": "scope is not an object",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": [
+            "owner-1"
+          ]
+        }
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "scope-unknown-dimension",
+    "description": "An unknown dimension would widen the scope if ignored",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {
+            "groups": [
+              "lab-alpha"
+            ],
+            "state": [
+              "RUNNING"
+            ]
+          }
+        }
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "scope-owners-string",
+    "description": "owners is not a list",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {
+            "owners": "owner-1"
+          }
+        }
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "scope-owners-number",
+    "description": "owners holds a number",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {
+            "owners": [
+              1
+            ]
+          }
+        }
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "scope-tags-list",
+    "description": "tags is not an object",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {
+            "tags": [
+              [
+                "a",
+                "b"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "scope-tags-string",
+    "description": "A tag's values are not a list",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "scope": {
+            "tags": {
+              "project": "x"
+            }
+          }
+        }
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "groups-string",
+    "description": "groups is not a list",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "groups": "lab-alpha"
+        }
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "obligations-null",
+    "description": "obligations holds null",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "obligations": [
+            null
+          ]
+        }
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "advice-string",
+    "description": "advice is not a list",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "advice": "x"
+        }
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  },
+  {
+    "name": "reason-number",
+    "description": "reason is not a string",
+    "response": {
+      "decision": true,
+      "context": {
+        "tes": {
+          "reason": 1
+        }
+      }
+    },
+    "expect": {
+      "malformed": true
+    }
+  }
+]

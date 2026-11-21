@@ -249,7 +249,7 @@ def tasks(monkeypatch: pytest.MonkeyPatch) -> dict[str, tuple[str, TesTask]]:
     """Fake task storage and cluster for the TES routes; owner by task id."""
     stored: dict[str, tuple[str, TesTask]] = {}
 
-    async def create_task(_: Any, task: TesTask, owner: str) -> str:
+    async def create_task(_: Any, task: TesTask, owner: str, *__: Any) -> str:
         assert task.id is not None
         stored[task.id] = (owner, task)
         return task.id
@@ -257,7 +257,8 @@ def tasks(monkeypatch: pytest.MonkeyPatch) -> dict[str, tuple[str, TesTask]]:
     async def get_task_meta(_: Any, task_id: str) -> dict[str, Any] | None:
         if task_id not in stored:
             return None
-        return {"owner": stored[task_id][0], "state": "RUNNING", "tags": {}}
+        owner = stored[task_id][0]
+        return {"owner": owner, "state": "RUNNING", "tags": {}, "groups": []}
 
     async def get_task(_: Any, task_id: str, **__: Any) -> TesTask | None:
         return stored[task_id][1] if task_id in stored else None

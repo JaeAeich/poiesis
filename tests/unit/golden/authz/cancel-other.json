@@ -1,6 +1,6 @@
 {
   "case": "10",
-  "description": "Poiesis CancelTask on another user's task",
+  "description": "Poiesis CancelTask on another user's task (asked only with sharing on)",
   "expect": {
     "reference_policy": {
       "decision": false
@@ -14,13 +14,14 @@
     },
     "context": {
       "tes": {
-        "profile": "tes-authzen/1",
+        "profile": "tes-authzen/2",
         "service_id": "org.ga4gh.poiesis"
       }
     },
     "resource": {
       "id": "00000000-0000-4000-8000-00000000000b",
       "properties": {
+        "groups": [],
         "owner": "bob",
         "state": "RUNNING",
         "tags": {}
