@@ -87,6 +87,10 @@ class World:
         self.unschedulable_timeout: float | None = None
         #: Runs when the Pods are listed, i.e. in the middle of a pass.
         self.on_pod_list = lambda: None
+        #: Objects per list page; None returns each list in one page.
+        self.page_size: int | None = None
+        #: Raised once by the list of `kind` ("jobs", "pods") at `token`.
+        self.list_errors: dict[tuple[str, str | None], Exception] = {}
 
         monkeypatch.setattr(tctl.time, "monotonic", lambda: self.clock)
         monkeypatch.setattr(
@@ -140,18 +144,42 @@ class World:
         yield None
 
     def list_namespaced_job(self, **kwargs: Any) -> SimpleNamespace:
-        assert kwargs == {"namespace": NS, "label_selector": "poiesis.io/task"}
         self.calls.append("jobs")
-        return SimpleNamespace(items=list(self.jobs))
+        return self.page("jobs", self.jobs, kwargs)
 
     def list_namespaced_pod(self, **kwargs: Any) -> SimpleNamespace:
-        assert kwargs == {"namespace": NS, "label_selector": "poiesis.io/task"}
         self.calls.append("pods")
-        self.on_pod_list()
-        return SimpleNamespace(items=list(self.pods))
+        if kwargs.get("_continue") is None:
+            self.on_pod_list()
+        return self.page("pods", self.pods, kwargs)
+
+    def page(
+        self, kind: str, objects: list[dict[str, Any]], kwargs: dict[str, Any]
+    ) -> Any:
+        """One page of `objects`, `page_size` long, as the list API returns it."""
+        assert kwargs.pop("_request_timeout") == tctl._REQUEST_TIMEOUT_SECONDS
+        token = kwargs.pop("_continue")
+        assert kwargs == {
+            "namespace": NS,
+            "label_selector": "poiesis.io/task",
+            "limit": tctl._LIST_PAGE_SIZE,
+        }
+        error = self.list_errors.pop((kind, token), None)
+        if error is not None:
+            raise error
+        start = int(token or 0)
+        size = self.page_size or len(objects) or 1
+        end = start + size
+        return SimpleNamespace(
+            items=list(objects[start:end]),
+            metadata=SimpleNamespace(
+                _continue=str(end) if end < len(objects) else None
+            ),
+        )
 
     def delete_namespaced_job(self, **kwargs: Any) -> None:
         assert kwargs["namespace"] == NS
+        assert kwargs["_request_timeout"] == tctl._REQUEST_TIMEOUT_SECONDS
         assert kwargs["propagation_policy"] == "Background"
         self.deleted.append(kwargs["name"])
         if self.delete_error is not None:
@@ -254,6 +282,65 @@ class TestOrphans:
         assert world.writes == {}
 
 
+class TestLists:
+    """Job and Pod lists are paginated; a pass acts on whole lists only (#163)."""
+
+    def test_pages_are_joined(self, world: World) -> None:
+        world.page_size = 1
+        world.states = {T1: TesState.RUNNING, T2: TesState.RUNNING}
+        world.pods = [pod(T1), pod(T2, "Failed")]
+        world.first_seen = {T1: world.clock - 31, T2: world.clock - 31}
+        world.tick()
+        assert world.writes == {T2: (TesState.EXECUTOR_ERROR, "Error")}
+        assert world.calls == ["db", "jobs", "pods", "pods"]
+
+    def test_expired_continue_token_restarts_the_list(self, world: World) -> None:
+        world.page_size = 1
+        world.states = {T1: TesState.RUNNING, T2: TesState.RUNNING}
+        world.pods = [pod(T1), pod(T2)]
+        world.first_seen = {T1: world.clock - 31, T2: world.clock - 31}
+        world.list_errors[("pods", "1")] = ApiException(status=410, reason="Gone")
+        world.tick()
+        assert world.writes == {}  # both Pods were read: no orphan
+        assert world.calls == ["db", "jobs", "pods", "pods", "pods", "pods"]
+
+    @pytest.mark.parametrize(
+        "error",
+        [ApiException(status=500, reason="boom"), TimeoutError("read timed out")],
+    )
+    def test_a_list_that_fails_midway_stops_the_pass(
+        self, world: World, error: Exception
+    ) -> None:
+        """T2's Pod is on the unread page: it must not be called an orphan."""
+        world.page_size = 1
+        world.states = {T1: TesState.RUNNING, T2: TesState.RUNNING}
+        world.pods = [pod(T1, "Failed"), pod(T2)]
+        world.first_seen = {T1: world.clock - 31, T2: world.clock - 31}
+        world.list_errors[("pods", "1")] = error
+        with pytest.raises(type(error)):
+            world.tick()
+        assert world.writes == {}
+        assert world.deleted == []
+
+    def test_continue_token_that_keeps_expiring_stops_the_pass(
+        self, world: World
+    ) -> None:
+        world.page_size = 1
+        world.states = {T1: TesState.RUNNING}
+        world.jobs = [job(T1), job(T2)]
+        gone = ApiException(status=410, reason="Gone")
+
+        def list_job(**kwargs: Any) -> SimpleNamespace:
+            if kwargs.get("_continue") is not None:
+                raise gone
+            return World.list_namespaced_job(world, **kwargs)
+
+        world.list_namespaced_job = list_job  # ty: ignore
+        with pytest.raises(ApiException):
+            world.tick()
+        assert world.writes == {}
+
+
 class TestPodlessJobs:
     """Job-level failures end the task with their own reason (#158)."""
 
@@ -263,9 +350,7 @@ class TestPodlessJobs:
         world.jobs = [job(T1, age=3600, conditions=deadline())]
         world.tick()
         assert world.writes == {T1: (TesState.SYSTEM_ERROR, "DeadlineExceeded")}
-        assert world.system_logs[T1] == [
-            "task exceeded its time limit of 3600 seconds"
-        ]
+        assert world.system_logs[T1] == ["task exceeded its time limit of 3600 seconds"]
         assert world.deleted == []
 
     def test_failed_job_reports_its_reason(self, world: World) -> None:
@@ -577,9 +662,7 @@ class TestTimeLimit:
         world.pods = [self.killed("Failed")]
         world.tick()
         assert world.writes == {T1: (TesState.SYSTEM_ERROR, "DeadlineExceeded")}
-        assert world.system_logs[T1] == [
-            "task exceeded its time limit of 3600 seconds"
-        ]
+        assert world.system_logs[T1] == ["task exceeded its time limit of 3600 seconds"]
         assert world.backfilled == [T1]
         assert world.deleted == []
 

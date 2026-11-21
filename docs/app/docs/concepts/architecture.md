@@ -107,6 +107,16 @@ and Pods labelled `poiesis.io/task`. It has seven jobs:
 
 TCtl is on every path: TRec never finalises a task, clean runs included.
 
+### When something fails
+
+- **Kubernetes API**: every call TCtl makes has a timeout (10 seconds
+  to connect, 30 to read; 5 and 10 for the Lease). Jobs and Pods are
+  listed 500 at a time. If a list fails or times out on any page, the
+  pass does nothing and the next one starts over: a task whose Pod is
+  on a page TCtl didn't read is never taken for one without a Pod. A
+  list whose continue token has expired (`410 Gone`) starts again from
+  the first page, up to 3 times.
+
 ## Postgres
 
 | Table | Holds |

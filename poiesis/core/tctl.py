@@ -51,6 +51,9 @@ unschedulable timeout, orphan) is followed by a delete of the task's
 Job, so a Pod that becomes runnable later can't run a task already reported
 as failed. That delete is the only write tctl makes to Kubernetes.
 
+Every Kubernetes call has a request timeout, and the Job and Pod lists are
+read page by page. A pass that can't read a whole list acts on nothing.
+
 Leader election uses `coordination.k8s.io/v1` Leases (see `core/leases.py`).
 The Lease lives in the namespace tctl runs in (the release namespace), which
 is not the TaskPod namespace when the two are split.
@@ -74,7 +77,7 @@ from kubernetes.client import BatchV1Api, CoordinationV1Api, CoreV1Api
 from kubernetes.client.exceptions import ApiException
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from poiesis.api.tes.models import TesState
 
@@ -114,6 +117,16 @@ _PENDING_TIMEOUT_SECONDS = 300
 #: orphaned: how long tctl must have seen it that way, by its own monotonic
 #: clock. Covers the window between the API's row insert and its Job create.
 _ORPHAN_GRACE_SECONDS = 30
+#: (connect, read) timeouts of every Kubernetes call tctl makes, so a stuck
+#: API server can't hold a pass forever.
+_REQUEST_TIMEOUT_SECONDS = (10, 30)
+#: The Lease calls get shorter ones: a renewal must end well within
+#: `_LEASE_DURATION_SECONDS`.
+_LEASE_REQUEST_TIMEOUT_SECONDS = (5, 10)
+#: Objects per page of a Job or Pod list.
+_LIST_PAGE_SIZE = 500
+#: How many times a list restarts after its continue token expired (410).
+_LIST_RESTARTS = 3
 
 
 async def run(
@@ -180,6 +193,7 @@ async def _hold_lease(
             namespace=lease_namespace,
             identity=identity,
             lease_duration_seconds=_LEASE_DURATION_SECONDS,
+            request_timeout=_LEASE_REQUEST_TIMEOUT_SECONDS,
         )
     except ApiException as exc:
         logger.error(
@@ -188,6 +202,14 @@ async def _hold_lease(
             _LEASE_NAME,
             exc.status,
             exc.reason,
+        )
+        return False
+    except Exception as exc:  # noqa: BLE001 - a timeout or a dropped connection
+        logger.error(
+            "tctl: lease %s/%s unavailable (%s); will retry",
+            lease_namespace,
+            _LEASE_NAME,
+            exc,
         )
         return False
 
@@ -332,19 +354,15 @@ async def _gather(
     for task_id in non_terminal:
         first_seen.setdefault(task_id, observed)
 
-    job_list = await asyncio.to_thread(
-        batch_v1.list_namespaced_job,
-        namespace=namespace,
-        label_selector=_TASK_LABEL,
+    job_items = await asyncio.to_thread(
+        _list_all, batch_v1.list_namespaced_job, namespace
     )
-    pod_list = await asyncio.to_thread(
-        core_v1.list_namespaced_pod,
-        namespace=namespace,
-        label_selector=_TASK_LABEL,
+    pod_items = await asyncio.to_thread(
+        _list_all, core_v1.list_namespaced_pod, namespace
     )
 
     pods: dict[str, list[Mapping[str, Any]]] = {}
-    for pod in pod_list.items:
+    for pod in pod_items:
         pod_dict = pod.to_dict() if hasattr(pod, "to_dict") else dict(pod)
         task_id = _task_id_from_pod(pod_dict)
         if task_id is not None:
@@ -354,10 +372,45 @@ async def _gather(
         non_terminal=list(non_terminal),
         canceling=list(canceling),
         seen_for={task_id: observed - first_seen[task_id] for task_id in non_terminal},
-        jobs=_jobs_by_task(job_list.items),
+        jobs=_jobs_by_task(job_items),
         pods=pods,
         now=datetime.now(UTC),
     )
+
+
+def _list_all(list_page: Callable[..., Any], namespace: str) -> list[Any]:
+    """Every task object of one list call, page by page.
+
+    A continue token the API server no longer has (410 Gone, after its
+    etcd compaction) restarts the list from the first page, up to
+    `_LIST_RESTARTS` times. Any other error, or a timeout, is raised: the
+    pass then acts on nothing rather than on part of a list, where a task
+    on an unread page would look as if it had no Job or Pod.
+    """
+    for restart in range(_LIST_RESTARTS + 1):
+        items: list[Any] = []
+        token: str | None = None
+        try:
+            while True:
+                page = list_page(
+                    namespace=namespace,
+                    label_selector=_TASK_LABEL,
+                    limit=_LIST_PAGE_SIZE,
+                    _continue=token,
+                    _request_timeout=_REQUEST_TIMEOUT_SECONDS,
+                )
+                items.extend(page.items)
+                token = getattr(getattr(page, "metadata", None), "_continue", None)
+                if not token:
+                    return items
+        except ApiException as exc:
+            if exc.status != HTTPStatus.GONE or token is None:
+                raise
+            if restart == _LIST_RESTARTS:
+                raise
+            logger.info("tctl: list continue token expired; listing again")
+    msg = "unreachable"
+    raise AssertionError(msg)
 
 
 def _jobs_by_task(jobs: list[Any]) -> dict[str, Mapping[str, Any]]:
@@ -464,12 +517,15 @@ async def _delete_job(batch_v1: BatchV1Api, namespace: str, task_id: str) -> Non
     task's delete is tried again on the next pass; after a terminal write
     it is not: the Job's `activeDeadlineSeconds`, if set, is the backstop.
     """
+    # The stubs don't list the client's `_request_timeout`.
+    api: Any = batch_v1
     try:
         await asyncio.to_thread(
-            batch_v1.delete_namespaced_job,
+            api.delete_namespaced_job,
             name=job_name_for(task_id),
             namespace=namespace,
             propagation_policy="Background",
+            _request_timeout=_REQUEST_TIMEOUT_SECONDS,
         )
     except ApiException as exc:
         if exc.status != HTTPStatus.NOT_FOUND:

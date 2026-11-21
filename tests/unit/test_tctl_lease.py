@@ -16,7 +16,7 @@ from click.testing import CliRunner
 from kubernetes.client.exceptions import ApiException
 
 from poiesis.cli.commands.poiesis import tctl as tctl_cli
-from poiesis.core import tctl
+from poiesis.core import leases, tctl
 
 RELEASE_NS = "poiesis"
 TASK_NS = "poiesis-tasks"
@@ -34,7 +34,7 @@ class Harness:
         self.lease_namespaces: list[str] = []
         self.reconciled: list[str] = []
         self.timeouts: list[float | None] = []
-        self.failures: list[ApiException] = []
+        self.failures: list[Exception] = []
         self.cancelled = asyncio.Event()
 
         async def lease(_coord: Any, **kwargs: Any) -> bool:
@@ -104,6 +104,43 @@ def test_lease_api_error_is_retried(
     assert len(harness.lease_namespaces) > 2  # noqa: PLR2004
     assert harness.reconciled == [TASK_NS]
     assert f"lease {RELEASE_NS}/poiesis-tctl-leader unavailable" in caplog.text
+
+
+def test_lease_timeout_is_retried(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A timed-out Lease call is not an ApiException; tctl still doesn't exit."""
+    harness = Harness(monkeypatch)
+    harness.failures = [TimeoutError("read timed out")]
+    assert harness.run(lease_namespace=RELEASE_NS) == 0
+    assert harness.reconciled == [TASK_NS]
+    assert "unavailable (read timed out)" in caplog.text
+
+
+def test_lease_calls_have_a_request_timeout() -> None:
+    """Every Lease read, create and replace is bounded (#163)."""
+    calls: list[tuple[str, Any]] = []
+
+    class Coord:
+        def read_namespaced_lease(self, *_: Any, **kwargs: Any) -> Any:
+            calls.append(("read", kwargs.get("_request_timeout")))
+            raise ApiException(status=404, reason="Not Found")
+
+        def create_namespaced_lease(self, *_: Any, **kwargs: Any) -> None:
+            calls.append(("create", kwargs.get("_request_timeout")))
+
+    acquired = asyncio.run(
+        leases.try_acquire_or_renew(
+            Coord(),  # ty: ignore
+            name="lease",
+            namespace=RELEASE_NS,
+            identity="tctl-0",
+            lease_duration_seconds=30,
+            request_timeout=(5, 10),
+        )
+    )
+    assert acquired
+    assert calls == [("read", (5, 10)), ("create", (5, 10))]
 
 
 def test_leader_stands_down_when_the_renewal_fails(
