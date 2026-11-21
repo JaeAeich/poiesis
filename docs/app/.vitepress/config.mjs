@@ -72,6 +72,10 @@ export default defineConfig({
                         text: "API keys",
                         link: "/docs/deploy/api-keys",
                     },
+                    {
+                        text: "Audit log",
+                        link: "/docs/deploy/audit-log",
+                    },
                 ],
             },
         ],

@@ -18,11 +18,13 @@ namespace, and are mounted only when auth and API keys are on:
 | Method | Path | Operation |
 | --- | --- | --- |
 | `POST` | `/api-keys` | `CreateApiKey` |
-| `GET` | `/api-keys` | `ListApiKeys` |
+| `GET` | `/api-keys` | `ListApiKeys` (yours; `?owner=` an owner's, for admins) |
 | `DELETE` | `/api-keys/{id}` | `RevokeApiKey` |
+| `DELETE` | `/api-keys?owner=…` | `RevokeApiKeys` (all of an owner's, for admins) |
 
-See [API keys](../deploy/api-keys.md). A running server documents both
-at `/docs` (Swagger UI) and `/openapi.json`.
+See [API keys](../deploy/api-keys.md) and
+[Offboarding](../deploy/api-keys.md#offboarding). A running server
+documents both at `/docs` (Swagger UI) and `/openapi.json`.
 
 ::: info Source of truth
 The OpenAPI document is copied verbatim from the GA4GH repository at

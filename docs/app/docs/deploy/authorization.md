@@ -19,17 +19,21 @@ optional except the first:
    admitted may create tasks and sees and cancels only their own, and
    delegated tokens (with an `act` claim) are refused unless their actor
    is listed in the issuer's
-   [`actors`](./authentication.md#trusted-actors).
+   [`actors`](./authentication.md#trusted-actors). An issuer's built-in
+   [admins](#admin) may also manage other owners' API keys and, only if
+   the operator opts in, see and cancel every task.
 
 Tasks are **visible to their owner only** by default, with or without a
 decision service. Only with [sharing](#sharing) turned on
 (`authz.sharing`) may a decision service show a task to anyone else.
 
 When both the rule and the decision service are set, **both must
-allow**. Everything else (entitlements, roles, admin rights, image or
-resource limits, GA4GH Passport visas) belongs in the decision service,
-not in Poiesis. Both need `auth.enabled: true`; Poiesis refuses to
-start otherwise.
+allow**. Everything else (entitlements, roles, admin rights beyond the
+built-in admin, image or resource limits, GA4GH Passport visas) belongs
+in the decision service, not in Poiesis. Both need
+`auth.enabled: true`; Poiesis refuses to start otherwise.
+
+Every decision is written to the [audit log](./audit-log.md).
 
 ![Authorization: before and after](/authz.gif)
 
@@ -38,9 +42,10 @@ start otherwise.
 The decision service's Helm values map 1:1 to
 `POIESIS_AUTHZ_DECISION_SERVICE_*` environment variables (lists are
 JSON arrays, since values such as group URNs may contain commas), and
-`sharing` and `maxOwners` to `POIESIS_AUTHZ_SHARING` and
-`POIESIS_AUTHZ_MAX_OWNERS`. Claim rules are set per issuer, in
-`auth.issuers[]` (`POIESIS_AUTH_ISSUERS`).
+`sharing`, `maxOwners` and `adminRead` to `POIESIS_AUTHZ_SHARING`,
+`POIESIS_AUTHZ_MAX_OWNERS` and `POIESIS_AUTHZ_ADMIN_READ`. Claim rules
+(`requiredClaim`, `admin`) are set per issuer, in `auth.issuers[]`
+(`POIESIS_AUTH_ISSUERS`).
 
 ```yaml
 auth:
@@ -50,6 +55,9 @@ auth:
       requiredClaim:     # optional, per issuer; see "Claim rule" below
         name: eduperson_entitlement
         values: ["…"]    # and/or prefixes: ["…"]
+      admin:             # optional, per issuer; see "Admin" below
+        name: eduperson_entitlement
+        values: ["…"]
 authz:
   decisionService:
     url: ""           # POIESIS_AUTHZ_DECISION_SERVICE_URL; empty = owner rule
@@ -58,6 +66,7 @@ authz:
     credentialFile: "" # POIESIS_AUTHZ_DECISION_SERVICE_CREDENTIAL_FILE
   sharing: false      # POIESIS_AUTHZ_SHARING; see "Sharing" below
   maxOwners: 1000     # POIESIS_AUTHZ_MAX_OWNERS
+  adminRead: false    # POIESIS_AUTHZ_ADMIN_READ; see "Admin" below
 ```
 
 ## Claim rule
@@ -113,6 +122,62 @@ whichever issuer the token came from, and is refused: the chart fails
 to render while it is set, and the API refuses to start while any
 `POIESIS_AUTHZ_REQUIRED_CLAIM_*` variable is set, naming
 `auth.issuers[].requiredClaim` as the replacement.
+
+## Admin
+
+Admin is **policy**. With a decision service, an admin is whoever it
+allows: it answers `all` and foreign `GetTask` and `CancelTask` with
+[sharing](#sharing) on, and [`RevokeApiKeys` and
+`ListApiKeys`](#api-keys-of-an-owner) on another owner's keys. Only
+without a decision service do issuers' built-in admin rules apply:
+
+```yaml
+auth:
+  issuers:
+    - issuer: https://keycloak.example.org/realms/poiesis
+      audience: poiesis
+      admin:
+        name: groups
+        values: [/poiesis-admins]  # and/or prefixes: ["…"]
+authz:
+  adminRead: false  # POIESIS_AUTHZ_ADMIN_READ (true/false)
+```
+
+An issuer's `admin` is a claim rule like [`requiredClaim`](#claim-rule):
+the same keys, the same matching, the same startup checks, and bound to
+its issuer, so a token of another issuer with the same value is not an
+admin. An API key is an admin if the claims snapshot it was minted with
+matches its issuer's rule. A delegated token (with an `act` claim) is
+never an admin, whatever its claims and even with a listed actor: the
+actor would act with the subject's admin powers. The admin rule doesn't
+admit anyone either: with a `requiredClaim`, admins need to pass it
+too.
+
+What a built-in admin may do:
+
+| Operation | `adminRead: false` (default) | `adminRead: true` |
+| --- | --- | --- |
+| `ListTasks` | Own tasks | Every task |
+| `GetTask`, `CancelTask` | Own tasks; others' are `404` | Any task |
+| List and revoke an owner's API keys (`?owner=`) | Allowed | Allowed |
+
+**Task powers are off by default** because tasks are owner-only (see
+[Sharing](#sharing)): their inputs, outputs, logs and environment often
+carry data access granted to one person, and showing them to an admin
+passes that access on. Turn `adminRead` on only where operators may see
+users' task data, e.g. a single-group deployment. Without it, handle
+runaway tasks through the infrastructure (the task's Job and Pod).
+Revoking and listing other owners' keys needs no `adminRead`: it shows
+key metadata only (names, scopes, dates), never task data or keys.
+
+With a decision service configured, the issuers' `admin` rules and
+`adminRead` are **ignored**, and Poiesis logs a warning at startup if
+any is set. `adminRead` without any issuer's `admin` rule warns too: it
+names nobody. Like `sharing`, an unrecognised `POIESIS_AUTHZ_ADMIN_READ`
+value refuses to start, and so does `adminRead` with auth disabled.
+
+The [audit log](./audit-log.md) flags with `"admin": true` every
+operation that only the built-in admin rule allowed.
 
 ## Decision service
 
@@ -196,6 +261,7 @@ Poiesis, TESK, Funnel and other TES implementations alike.
   | `GetTask`    | `tes_task` with `owner`, `state`, `tags`, `groups` | `404`   |
   | `CancelTask` | `tes_task` with `owner`, `state`, `tags`, `groups` | `403` if `GetTask` is allowed, else `404` |
   | `ListTasks`  | `tes_task_set` `own` (and `all` with sharing on) | `403` if all asked sets are denied |
+  | `RevokeApiKeys`, `ListApiKeys` | `poiesis_api_keys` with the owner as id (see [below](#api-keys-of-an-owner)) | `403` |
 
   `GetTask` and `ListTasks` carry `action.properties.view`.
 - `groups` are the groups the task is shared with: set only by a
@@ -222,7 +288,8 @@ Poiesis, TESK, Funnel and other TES implementations alike.
   is left out.
 - Tags and other task fields are what the client submitted, not facts.
 - Each request carries a new `X-Request-ID`, which Poiesis logs with
-  the decision.
+  the decision, next to the id of the API request that asked (its
+  `request_id` in the [audit log](./audit-log.md)).
 
 Poiesis refuses to start if `claims`, `credentialFile` or `sharing` is
 set without `url`, or if `url` isn't `http(s)`.
@@ -300,6 +367,30 @@ field of the wrong type; `null` is not the same as absent. The
 in the test suite list valid and malformed answers with their meaning,
 next to the golden requests.
 
+### API keys of an owner
+
+Listing or revoking all [API keys of an owner](./api-keys.md#offboarding)
+(`GET` or `DELETE /poiesis/v1/api-keys?owner=<owner>`) asks the action
+`ListApiKeys` or `RevokeApiKeys` on a resource of the type
+`poiesis_api_keys` whose id is the owner. This is a **Poiesis extension**
+of `tes-authzen/2`: API keys are Poiesis's own, not TES. A policy
+written for TES only should deny resource types it doesn't know, so
+these calls stay refused until it names who may make them.
+
+```json
+{
+  "subject": {"type": "user", "id": "<caller's owner id>", "properties": {"…": "…"}},
+  "action": {"name": "RevokeApiKeys", "properties": {}},
+  "resource": {"type": "poiesis_api_keys", "id": "<the owner whose keys>"},
+  "context": {"tes": {"profile": "tes-authzen/2", "service_id": "org.ga4gh.poiesis"}}
+}
+```
+
+The subject is built as for TES calls; only OIDC tokens get here (API
+keys and delegated tokens can't manage keys). An allow lists or
+revokes; a deny or an obligation is `403`, a failure `503`. Managing
+one's own keys (without `owner`) isn't asked.
+
 ### Sharing
 
 ![tes-authzen/2 and sharing: before and after, case by case](/tes-authzen-2.gif)
@@ -328,11 +419,12 @@ whether it can also show a task to someone else.
 | `GetTask`    | Own task: asked. Foreign or missing task: `404`, not asked | Asked for every task, foreign and missing ones included |
 | `CancelTask` | Own task: asked. Foreign or missing task: `404`, not asked | Asked for every task, foreign and missing ones included |
 
-Without a decision service, the built-in owner rule applies either way.
-With sharing off, a foreign and a missing task get the same `404`,
-both without a call to the decision service. With sharing on, admin
-read access is just policy: the decision service allows `all` (or a
-foreign `GetTask`) for whoever it considers an admin.
+Without a decision service, the built-in owner rule applies either way
+(and the built-in [admin](#admin) rule with `adminRead`). With sharing
+off, a foreign and a missing task get the same `404`, both without a
+call to the decision service. With sharing on, admin read access is
+just policy: the decision service allows `all` (or a foreign
+`GetTask`) for whoever it considers an admin.
 
 ### No decision cache
 
@@ -396,6 +488,8 @@ restart the API pods.
 | Decision service denies get                      | `404`                        |
 | Decision service denies cancel                   | `403` if readable, else `404` |
 | Foreign task, sharing off                        | `404`, decision service not asked |
+| Foreign task, built-in admin, `adminRead` off    | `404`                        |
+| Keys of an owner (`?owner=`), not an admin or denied | `403`                    |
 | Task doesn't exist                               | `404`                        |
 | Decision service fails, times out or answers malformed | `503`, `Retry-After: 1` |
 

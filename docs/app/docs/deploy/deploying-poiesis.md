@@ -93,6 +93,11 @@ username) and two clients:
 | `bob` | `lab-beta` |
 | `admin` | `poiesis-admins` |
 
+Members of `poiesis-admins` are the issuer's built-in
+[admins](./authorization.md#admin): `admin` may list and revoke
+anyone's API keys ([Offboarding](./api-keys.md#offboarding)), but sees
+only its own tasks, since `adminRead` is off.
+
 | Client | Use |
 | --- | --- |
 | `poiesis-cli` | Public. Authorization code + PKCE, device flow, and (dev only) password grant. |
