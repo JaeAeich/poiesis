@@ -56,6 +56,21 @@ A task is refused with `400 Bad Request` if a path:
 - is at or below an operator mount (`taskpods.extraVolumeMounts`), such as
   a read-only reference volume.
 
+## Task logs
+
+`GET /tasks/{id}?view=FULL` returns one entry per finished executor in
+`logs[].logs[]`, with its start and end time, exit code and output:
+
+- `stdout` holds the last 64 KiB of the executor's container log. The
+  log mixes the executor's stdout and stderr, so both end up here.
+- `stderr` stays empty. Poiesis doesn't redirect output to the
+  executor's `stdout` and `stderr` paths.
+- If the log can't be read (e.g. the ServiceAccount lacks
+  `pods/log: get`), `stdout` stays empty and TRec or TCtl logs a
+  warning. The task itself is unaffected.
+
+The `BASIC` view leaves `stdout` and `stderr` out; `MINIMAL` has no logs.
+
 ## HTTP(S) outputs
 
 An `outputs[].url` can be an `http://` or `https://` URL that grants

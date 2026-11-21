@@ -529,8 +529,9 @@ roleRef:
   name: poiesis-api
   apiGroup: rbac.authorization.k8s.io
 ---
-# TCtl: read-only over taskpods + leases for leader election. It never
-# deletes pods or jobs — the API owns the delete path.
+# TCtl: read-only over taskpods (and their logs, to backfill executor
+# output) + leases for leader election. It never deletes pods or jobs — the
+# API owns the delete path.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -540,6 +541,9 @@ rules:
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
   - apiGroups: ["coordination.k8s.io"]
     resources: [leases]
     verbs: [get, list, watch, create, update, patch]
@@ -558,7 +562,8 @@ roleRef:
   name: poiesis-tctl
   apiGroup: rbac.authorization.k8s.io
 ---
-# TaskPod: trec watches its own Pod via the K8s API.
+# TaskPod: trec watches its own Pod and reads its executors' logs via the
+# K8s API. The token is mounted into trec only, not into executors.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -568,6 +573,9 @@ rules:
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
