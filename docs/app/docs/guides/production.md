@@ -163,3 +163,8 @@ Without the chart, set the same as `POIESIS_SERVICE_INFO_ID`, `_NAME`,
   [Upgrading to issuer hardening](../concepts/authentication.md#upgrading-to-issuer-hardening).
 - From `tes-authzen/1`: see
   [Migrating from tes-authzen/1](../concepts/authorization.md#migrating-from-tes-authzen-1).
+- Migration `000004` adds indexes on `tasks` for listing: owner with
+  creation time, creation time with id, and a GIN index on `tags`. It
+  builds them with plain `CREATE INDEX`, so writes to `tasks` (new
+  tasks, state changes) wait until it finishes. On a large table, run
+  the upgrade when few tasks are submitted.
