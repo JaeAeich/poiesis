@@ -5,12 +5,13 @@ _.python.venv = {create = true, path = ".venv"}
 mr = "mise run"
 
 [tasks."chart:lint"]
-description = "helm lint + draft 2020-12 schema validation"
+description = "Schema checks, then helm lint --strict and helm template per CI values file"
 run = [
+  "mise x -- check-jsonschema --check-metaschema deployment/helm/poiesis/values.schema.json",
   "mise x -- check-jsonschema --schemafile deployment/helm/poiesis/values.schema.json deployment/helm/poiesis/ci/full-values.yaml",
-  "mise x -- helm lint deployment/helm/poiesis -f deployment/helm/poiesis/ci/full-values.yaml --strict",
-  "mise x -- helm lint deployment/helm/poiesis -f deployment/helm/poiesis/ci/lint-values.yaml --strict",
-  "mise x -- helm lint deployment/helm/poiesis -f deployment/helm/poiesis/ci/lint-values.yaml -f deployment/helm/poiesis/ci/split-namespace-values.yaml --strict",
+  # helm also checks the merged values against values.schema.json here.
+  # split-namespace-values.yaml is an overlay on lint-values.yaml.
+  'for set in full-values.yaml lint-values.yaml "lint-values.yaml split-namespace-values.yaml"; do echo "== $set"; args=""; for f in $set; do args="$args -f deployment/helm/poiesis/ci/$f"; done; mise x -- helm lint deployment/helm/poiesis $args --strict && mise x -- helm template t deployment/helm/poiesis $args > /dev/null || exit 1; done',
 ]
 
 [tasks."chart:render"]

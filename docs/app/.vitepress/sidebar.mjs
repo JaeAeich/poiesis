@@ -26,6 +26,7 @@ export default [
             { text: "Workflow engines", link: "/docs/guides/workflow-engines" },
             { text: "Keycloak", link: "/docs/guides/keycloak" },
             { text: "Production checklist", link: "/docs/guides/production" },
+            { text: "Testing", link: "/docs/guides/testing" },
         ],
     },
     {

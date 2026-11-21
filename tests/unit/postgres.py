@@ -2,7 +2,9 @@
 
 The tests run when ``POIESIS_TEST_DATABASE_URL`` names a database (CI
 starts a Postgres service for them) and are skipped otherwise: set
-``pytestmark = needs_postgres`` in the test module. Each test applies
+``pytestmark = needs_postgres`` in the test module. With
+``POIESIS_TEST_REQUIRE_DATABASE=1`` (as in CI) a missing URL is an error
+instead of a skip. Each test applies
 the migrations in a schema of its own and drops it afterwards, so tests
 don't see each other's rows.
 """
@@ -18,6 +20,10 @@ import asyncpg
 import pytest
 
 DSN = os.environ.get("POIESIS_TEST_DATABASE_URL", "")
+if not DSN and os.environ.get("POIESIS_TEST_REQUIRE_DATABASE") == "1":
+    raise RuntimeError(
+        "POIESIS_TEST_REQUIRE_DATABASE=1 but POIESIS_TEST_DATABASE_URL is not set"
+    )
 needs_postgres = pytest.mark.skipif(not DSN, reason="POIESIS_TEST_DATABASE_URL not set")
 MIGRATIONS = sorted((Path(__file__).parents[2] / "migrations").glob("*.up.sql"))
 

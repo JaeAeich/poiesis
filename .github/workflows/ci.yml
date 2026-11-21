@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [dev]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -66,7 +66,8 @@ jobs:
     name: pytest
     runs-on: ubuntu-latest
     services:
-      # For the SQL tests (tests/unit/test_api_keys_db.py); skipped without it.
+      # For the SQL tests (tests/unit/*_db.py); POIESIS_TEST_REQUIRE_DATABASE
+      # turns their skip into an error, so they can't silently stop running.
       postgres:
         image: postgres:16-alpine
         env:
@@ -80,6 +81,7 @@ jobs:
           --health-retries 15
     env:
       POIESIS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      POIESIS_TEST_REQUIRE_DATABASE: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4
@@ -88,6 +90,73 @@ jobs:
           cache: true
       - run: uv sync --all-extras --all-groups
       - run: uv run pytest
+
+  chart:
+    name: chart lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+      # Schema checks, helm lint --strict and helm template per ci/*.yaml.
+      - run: mise run chart:lint
+
+  e2e:
+    name: e2e (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      POIESIS_E2E_URL: http://localhost:8000
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+      - run: uv sync --all-extras --all-groups
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deployment/images/Dockerfile
+          tags: poiesis:e2e
+          load: true
+          cache-from: type=gha,scope=e2e-poiesis
+          cache-to: type=gha,mode=max,scope=e2e-poiesis
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deployment/images/migrations.Dockerfile
+          tags: poiesis-migrations:e2e
+          load: true
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: poiesis-e2e
+      # Postgres, SeaweedFS, the chart with auth off (tests/e2e/values.yaml).
+      - run: tests/e2e/setup.sh
+        env:
+          SKIP_BUILD: "1"
+          SKIP_CLUSTER: "1"
+      - name: port-forward the API
+        run: |
+          kubectl --context kind-poiesis-e2e -n poiesis port-forward svc/poiesis-api 8000:8000 \
+            > port-forward.log 2>&1 &
+          timeout 60 sh -c 'until curl -sf "$POIESIS_E2E_URL/ga4gh/tes/v1/service-info"; do sleep 1; done'
+      # The slow case (missing image, 5-minute pending timeout) is left out.
+      - run: uv run pytest tests/e2e -v -rxs
+      - name: TES compliance suite
+        run: tests/e2e/compliance.sh "$POIESIS_E2E_URL"
+      - name: cluster state
+        if: failure()
+        run: |
+          k="kubectl --context kind-poiesis-e2e -n poiesis"
+          $k get all,jobs,pvc -o wide
+          $k get events --sort-by=.lastTimestamp | tail -50
+          $k logs deploy/poiesis-api --tail=200
+          $k logs deploy/poiesis-tctl --tail=200
+          cat port-forward.log
 
   typos:
     name: typos

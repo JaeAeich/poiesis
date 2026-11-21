@@ -71,7 +71,10 @@ known_first_party = ["poiesis"]
 DEP002 = ["uvicorn"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# The end-to-end tests need a cluster: run them with `pytest tests/e2e`.
+addopts = "-m 'not slow'"
+markers = ["slow: takes minutes; left out unless selected with -m slow"]
+testpaths = ["tests/unit"]
 
 [tool.ruff]
 indent-width = 4
