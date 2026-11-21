@@ -128,5 +128,8 @@ data:
   POIESIS_AUTHZ_DECISION_SERVICE_CLAIMS: {{ .claims | toJson | quote }}
   POIESIS_AUTHZ_DECISION_SERVICE_CREDENTIAL_FILE: {{ .credentialFile | quote }}
   {{- end }}
+  POIESIS_AUTHZ_SHARING: {{ .Values.authz.sharing | default false | quote }}
+  {{- /* int: large YAML numbers would otherwise render as 1e+06. */}}
+  POIESIS_AUTHZ_MAX_OWNERS: {{ .Values.authz.maxOwners | default 1000 | int | quote }}
 
   LOG_LEVEL: {{ .Values.logLevel | quote }}
