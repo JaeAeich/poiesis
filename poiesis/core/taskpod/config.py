@@ -1,0 +1,144 @@
+"""Cluster-side configuration of a TaskPod: `RuntimeConfig` and its enums."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from kubernetes.client import V1EnvVar, V1ResourceRequirements
+
+
+#: Floor for the per-task scratch PVC when neither the TES request nor the
+#: operator-configured default supplies a size. Kept conservative because a
+#: misconfigured chart should still produce *something* mountable instead of
+#: failing manifest construction.
+_FALLBACK_PVC_SIZE_GI = 1
+
+
+class PodSecurityEnforce(StrEnum):
+    """How strictly to lock down poiesis-owned TaskPod containers.
+
+    Executor containers run user-supplied images and are always exempt;
+    operators that need them constrained must run TaskPods in a namespace
+    with the PodSecurity admission controller configured at the cluster
+    level.
+    """
+
+    RESTRICTED = "restricted"
+    BASELINE = "baseline"
+    OFF = "off"
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    """Cluster-side configuration needed to materialise a TaskPod.
+
+    Held separately from the TES task itself so the TES request stays
+    portable across deployments.
+
+    Attributes:
+        taskpod_namespace: Kubernetes namespace to submit TaskPods into.
+            May differ from the control-plane namespace.
+        poiesis_image: Image for every poiesis-owned container
+            (trec, tif, tof, ack).
+        pvc_storage_class: Storage class for the Task PVC. None defers
+            to the cluster default. The sentinel ``""`` (empty string)
+            explicitly disables dynamic provisioning and requires a
+            pre-bound PV — matches the kubectl convention.
+        pvc_access_modes: PVC access modes applied to every task. Cluster
+            property, not a TES knob: every task in a single deployment
+            runs on one node so RWO is sufficient, but NFS / CephFS
+            clusters need RWX since their CSI driver doesn't support RWO.
+        pvc_default_size_gi: Size used when a TES request omits
+            ``resources.disk_gb``.
+        pvc_max_size_gi: Hard upper bound enforced at submit time. A TES
+            request with ``disk_gb`` over this is rejected with a 400 by
+            ``validation.reject_unsupported_features``. None disables the
+            cap.
+        pvc_labels: Labels merged onto every per-task PVC. Use for cost
+            allocation, backup operator selectors, data classification.
+        pvc_annotations: Annotations merged onto every per-task PVC. Use
+            for backup operator opt-in (Velero/Kasten), compliance tags.
+        image_pull_policy: imagePullPolicy for every container.
+        taskpod_service_account: SA bound to the TaskPod; needs RBAC for
+            `get`/`list`/`watch` on its own Pod and `get` on `pods/log`.
+            Its token is mounted into trec only.
+        job_ttl_seconds: ttlSecondsAfterFinished on the Job. None omits
+            the field entirely → Job (and PVC via owner ref) is retained
+            until manually deleted. Use for audit-retention deployments.
+        active_deadline_seconds: activeDeadlineSeconds on the Job: the
+            task's time limit, counted from the Job's start (so it also
+            ends a Pod that is never scheduled). None omits the field →
+            no limit. Sourced from ``taskpods.activeDeadlineSeconds``.
+        grace_period_seconds: terminationGracePeriodSeconds on the Pod.
+        pod_security_enforce: `restricted` | `baseline` | `off`. Applies to
+            poiesis-owned containers only; executor containers run user
+            images and are deliberately exempt.
+        image_pull_secrets: Secret names attached to every TaskPod for
+            pulling images from private registries.
+        postgres_ca_configmap: ConfigMap name (key `ca.crt`) mounted at
+            `/etc/ssl/poiesis` on poiesis-owned containers so asyncpg can
+            validate the Postgres server cert via `sslrootcert=` in
+            DATABASE_URL. None disables the mount.
+        filer_resources: Resource requests/limits for TIF/TOF containers.
+        recorder_resources: Resource requests/limits for the TRec sidecar.
+        ack_resources: Resource requests/limits for the terminal `ack`
+            container.
+        extra_env: Chart-internal env vars injected into every poiesis-owned
+            container (database DSN, S3 creds, etc.). Populated by the API
+            from Settings; not directly operator-controllable.
+        taskpod_extra_env: Operator-supplied env vars injected into every
+            poiesis-owned container (trec/tif/tof/ack). Sourced from
+            ``taskpods.extraEnv`` in the chart. Executors are *not*
+            covered by this — operators shouldn't silently mutate the
+            environment of user-supplied images.
+        taskpod_extra_volumes: Operator-supplied volumes appended to every
+            TaskPod's ``spec.volumes``. Sourced from
+            ``taskpods.extraVolumes``. Each entry is a dict shaped like
+            a Kubernetes V1Volume.
+        taskpod_extra_volume_mounts: Operator-supplied volume mounts
+            appended to every container (poiesis-owned AND executors,
+            because the reference-data use case requires executors to see
+            the mount). Each entry is a dict shaped like V1VolumeMount.
+        output_glob_fallback: When True, an output glob that matches no
+            file makes TOF upload everything under the output's
+            ``path_prefix`` instead of nothing. Sourced from
+            ``taskpods.outputGlobFallback``; off by default.
+        file_url_roots: Directories `file://` URLs may point into, passed
+            to TIF/TOF. Sourced from ``taskpods.fileUrlRoots``; empty turns
+            the scheme off.
+    """
+
+    taskpod_namespace: str
+    poiesis_image: str
+    pvc_storage_class: str | None = None
+    pvc_access_modes: tuple[str, ...] = ("ReadWriteOnce",)
+    pvc_default_size_gi: int = _FALLBACK_PVC_SIZE_GI
+    pvc_max_size_gi: int | None = None
+    pvc_labels: Mapping[str, str] = field(default_factory=dict)
+    pvc_annotations: Mapping[str, str] = field(default_factory=dict)
+    image_pull_policy: str = "IfNotPresent"
+    taskpod_service_account: str | None = None
+    job_ttl_seconds: int | None = 3600
+    active_deadline_seconds: int | None = 3600
+    grace_period_seconds: int = 30
+    pod_security_enforce: PodSecurityEnforce = PodSecurityEnforce.RESTRICTED
+    image_pull_secrets: tuple[str, ...] = ()
+    # Name of a ConfigMap holding the Postgres CA bundle (key `ca.crt`).
+    # When set, the ConfigMap is mounted read-only at /etc/ssl/poiesis on
+    # every poiesis-owned container so asyncpg can validate the server cert
+    # via `sslrootcert=` in DATABASE_URL.
+    postgres_ca_configmap: str | None = None
+    filer_resources: V1ResourceRequirements | None = None
+    recorder_resources: V1ResourceRequirements | None = None
+    ack_resources: V1ResourceRequirements | None = None
+    extra_env: list[V1EnvVar] = field(default_factory=list)
+    taskpod_extra_env: list[V1EnvVar] = field(default_factory=list)
+    taskpod_extra_volumes: list[dict[str, Any]] = field(default_factory=list)
+    taskpod_extra_volume_mounts: list[dict[str, Any]] = field(default_factory=list)
+    output_glob_fallback: bool = False
+    file_url_roots: tuple[str, ...] = ()
