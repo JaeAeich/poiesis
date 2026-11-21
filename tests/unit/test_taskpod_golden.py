@@ -452,6 +452,27 @@ REJECTED_AT_SUBMIT: dict[str, tuple[TesTask, RuntimeConfig]] = {
     "output-s3-unconfigured": (_task(outputs=[_out("/data/x")]), NO_S3),
 }
 
+#: Object stores whose provider is off (#162); kept apart so the files above
+#: stay as they were.
+REJECTED_STORAGE: dict[str, tuple[TesTask, RuntimeConfig]] = {
+    "input-gs-unconfigured": (
+        _task(inputs=[_inp("/data/x", url="gs://bucket/in")]),
+        BASE,
+    ),
+    "output-gs-unconfigured": (
+        _task(outputs=[_out("/data/x", url="gs://bucket/out")]),
+        BASE,
+    ),
+    "input-az-unconfigured": (
+        _task(inputs=[_inp("/data/x", url="az://container/in")]),
+        BASE,
+    ),
+    "output-az-unconfigured": (
+        _task(outputs=[_out("/data/x", url="az://container/out")]),
+        BASE,
+    ),
+}
+
 
 @pytest.fixture(autouse=True)
 def _file_roots(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -511,6 +532,16 @@ def test_rejections_at_submit_match_golden() -> None:
             build_taskpod_job(task, config)
         messages[case] = str(caught.value)
     _check("rejected-at-submit.json", _dump(messages))
+
+
+def test_rejections_of_disabled_object_stores_match_golden() -> None:
+    """`gs://` and `az://` are refused until their provider is enabled."""
+    messages: dict[str, str] = {}
+    for case, (task, config) in REJECTED_STORAGE.items():
+        with pytest.raises(ValueError) as caught:  # noqa: PT011 - message is checked
+            build_taskpod_job(task, config)
+        messages[case] = str(caught.value)
+    _check("rejected-storage.json", _dump(messages))
 
 
 def test_s3_with_no_credentials_still_takes_other_schemes() -> None:

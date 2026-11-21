@@ -16,7 +16,9 @@ from poiesis.core.services.filer.file_urls import file_url_allowed, file_url_roo
 from poiesis.core.services.filer.strategy.content_filer import ContentFilerStrategy
 from poiesis.core.services.filer.strategy.http_filer import HttpFilerStrategy
 from poiesis.core.services.filer.strategy.local_filer import LocalFilerStrategy
-from poiesis.core.services.filer.strategy.s3_filer import S3FilerStrategy
+from poiesis.core.services.filer.strategy.object_store_filer import (
+    ObjectStoreFilerStrategy,
+)
 
 if TYPE_CHECKING:
     from poiesis.api.tes.models import TesInput, TesOutput
@@ -36,13 +38,25 @@ class _SchemeEntry:
 
 
 #: The empty-scheme entry is reserved for inline `TesInput.content`.
-#: Every other entry maps to a real URI scheme.
+#: Every other entry maps to a real URI scheme. A scheme that resolves to
+#: another URL first (DRS) would be one more entry, whose strategy hands
+#: the resolved URL to the entry for its scheme.
 _SCHEMES: dict[str, _SchemeEntry] = {
     "": _SchemeEntry(name="content", input=ContentFilerStrategy, output=None),
     "file": _SchemeEntry(
         name="file", input=LocalFilerStrategy, output=LocalFilerStrategy
     ),
-    "s3": _SchemeEntry(name="s3", input=S3FilerStrategy, output=S3FilerStrategy),
+    # One strategy for every object store. Submit accepts a scheme only
+    # when the operator enabled its provider (`RuntimeConfig.storage_enabled`).
+    "s3": _SchemeEntry(
+        name="s3", input=ObjectStoreFilerStrategy, output=ObjectStoreFilerStrategy
+    ),
+    "gs": _SchemeEntry(
+        name="gs", input=ObjectStoreFilerStrategy, output=ObjectStoreFilerStrategy
+    ),
+    "az": _SchemeEntry(
+        name="az", input=ObjectStoreFilerStrategy, output=ObjectStoreFilerStrategy
+    ),
     "http": _SchemeEntry(
         name="http", input=HttpFilerStrategy, output=HttpFilerStrategy
     ),

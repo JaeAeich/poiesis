@@ -27,7 +27,11 @@ from poiesis.core.logging_config import LOG_FORMAT_ENV
 from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
 from poiesis.core.taskpod.config import PodSecurityEnforce
 from poiesis.core.taskpod.paths import is_within, normalised
-from poiesis.core.taskpod.volumes import api_token_mount, poiesis_mounts
+from poiesis.core.taskpod.volumes import (
+    api_token_mount,
+    identity_token_mounts,
+    poiesis_mounts,
+)
 
 if TYPE_CHECKING:
     from kubernetes.client import V1VolumeMount
@@ -128,7 +132,7 @@ def build_tif(
         image_pull_policy=config.image_pull_policy,
         command=command,
         env=filer_env(config),
-        volume_mounts=poiesis_mounts(config),
+        volume_mounts=[*poiesis_mounts(config), *identity_token_mounts(config)],
         resources=config.filer_resources,
         security_context=poiesis_security_context(config),
     )
@@ -143,7 +147,7 @@ def build_tof(task: TesTask, config: RuntimeConfig) -> V1Container:
         image_pull_policy=config.image_pull_policy,
         command=["poiesis", "tof", "run", "--task-id", task_id],
         env=filer_env(config),
-        volume_mounts=poiesis_mounts(config),
+        volume_mounts=[*poiesis_mounts(config), *identity_token_mounts(config)],
         resources=config.filer_resources,
         security_context=poiesis_security_context(config),
     )
@@ -156,8 +160,10 @@ def filer_env(config: RuntimeConfig) -> list[V1EnvVar]:
     ``poiesis.core.constants.FILER_PVC_PATH`` directly. The chart-internal
     DB DSN + S3 creds, plus operator extras, come through ``poiesis_env``.
     The output-glob fallback flag and the `file://` roots are set only when on.
+    Object-store options and workload-identity settings (`config.filer_env`)
+    go to TIF/TOF only.
     """
-    env = poiesis_env(config)
+    env = [*poiesis_env(config), *config.filer_env]
     if config.output_glob_fallback:
         env.append(V1EnvVar(name=OUTPUT_GLOB_FALLBACK_ENV, value="true"))
     if config.file_url_roots:

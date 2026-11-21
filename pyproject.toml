@@ -7,9 +7,7 @@ code_quality = ["deptry", "ruff", "ty", "typos"]
 test = ["pytest"]
 types = [
   "asyncpg-stubs",
-  "boto3-stubs",
   "kubernetes-stubs",
-  "types-botocore",
   "types-pyyaml",
   "types-requests",
 ]
@@ -24,14 +22,13 @@ classifiers = [
 ]
 dependencies = [
   "asyncpg",
-  "boto3",
-  "botocore",
   "click",
   "fastapi",
   "gunicorn",
   "httpx",
   "joserfc",
   "kubernetes",
+  "obstore",
   "pydantic",
   "requests",
   "tomli",

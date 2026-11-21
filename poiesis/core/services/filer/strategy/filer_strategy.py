@@ -181,15 +181,19 @@ class OutputFilerStrategy(BaseFilerStrategy, ABC):
         super().__init__(payload)
         self.uploaded: list[TesOutputFileLog] = []
 
-    def _record_upload(self, container_path: str, url: str) -> None:
+    def _record_upload(
+        self, container_path: str, url: str, *, redact: bool = True
+    ) -> None:
         """Note that the file at `container_path` was uploaded to `url`.
 
         The entry has the file's path in the executor, its size, and `url`
         without its query: the query of a presigned URL is its signature.
+        `redact` is False for URLs that have no query, such as object-store
+        URLs, whose keys may contain ``?``.
         """
         self.uploaded.append(
             TesOutputFileLog(
-                url=redact_url(url) or url,
+                url=(redact_url(url) or url) if redact else url,
                 path=self._get_path_as_in_exec_pod(container_path),
                 size_bytes=str(os.path.getsize(container_path)),
             )

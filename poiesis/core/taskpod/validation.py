@@ -46,7 +46,7 @@ def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
             )
         if inp.type == TesFileType.DIRECTORY:
             reject_unstageable_directory(f"inputs[{idx}]", url)
-        reject_unconfigured_s3(f"inputs[{idx}].url", url, config)
+        reject_unconfigured_storage(f"inputs[{idx}].url", url, config)
 
     for idx, out in enumerate(task.outputs or []):
         if not _filer.can_output(out.url):
@@ -54,7 +54,7 @@ def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
                 f"outputs[{idx}].url scheme is not supported as a TES output: "
                 f"{out.url!r}"
             )
-        reject_unconfigured_s3(f"outputs[{idx}].url", out.url, config)
+        reject_unconfigured_storage(f"outputs[{idx}].url", out.url, config)
 
     # paths the executor can't be given (raises before anything is created)
     path_mounts = executor_path_mounts(task)
@@ -94,12 +94,26 @@ def reject_unstageable_directory(where: str, url: str | None) -> None:
         )
 
 
-def reject_unconfigured_s3(where: str, url: str | None, config: RuntimeConfig) -> None:
-    """Reject an ``s3://`` URL when TIF and TOF get no S3 credentials."""
-    if not config.s3_configured and _filer.scheme(url) == "s3":
+#: For submit errors, by URL scheme: the article for the scheme, the
+#: provider's name, and what to ask the administrator to configure.
+_PROVIDERS = {
+    "s3": ("an", "S3", "S3 storage"),
+    "gs": ("a", "Google Cloud Storage", "Google Cloud Storage"),
+    "az": ("an", "Azure Blob Storage", "Azure Blob Storage"),
+}
+
+
+def reject_unconfigured_storage(
+    where: str, url: str | None, config: RuntimeConfig
+) -> None:
+    """Reject an object-store URL whose provider the operator didn't enable."""
+    scheme = _filer.scheme(url)
+    if scheme in _PROVIDERS and not config.storage_enabled(scheme):
+        article, provider, storage = _PROVIDERS[scheme]
         raise ValueError(
-            f"{where} is an s3:// URL, but this deployment has no S3 credentials; "
-            "ask your administrator to configure S3 storage"
+            f"{where} is {article} {scheme}:// URL, but this deployment has no "
+            f"{provider} credentials; ask your administrator to configure "
+            f"{storage}"
         )
 
 
