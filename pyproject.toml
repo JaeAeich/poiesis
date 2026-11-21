@@ -5,12 +5,7 @@ requires = ["hatchling"]
 [dependency-groups]
 code_quality = ["deptry", "ruff", "ty", "typos"]
 test = ["pytest"]
-types = [
-  "asyncpg-stubs",
-  "kubernetes-stubs",
-  "types-pyyaml",
-  "types-requests",
-]
+types = ["asyncpg-stubs", "kubernetes-stubs", "types-pyyaml", "types-requests"]
 
 [project]
 authors = [{email = "jh4official@gmail.com", name = "Javed Habib"}]
