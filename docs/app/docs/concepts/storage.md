@@ -159,6 +159,22 @@ taskpods:
   if the real path leaves those directories.
 - `GET /service-info` lists `file://` only when it is on.
 
+## HTTP(S) inputs
+
+`tif` downloads an `http://` or `https://` input with a `GET` request. It
+stages the input only from a `2xx` response. The body goes to a temporary
+file next to the input's path and is renamed into place once it is
+complete, so a failed download leaves no file at the input's path.
+
+| Response | What `tif` does |
+| --- | --- |
+| `2xx` | Stages the body as the input. |
+| `301`, `302`, `303`, `307`, `308` | Follows up to 10 redirects, unless the request has reached an `https://` URL and the new one isn't. |
+| `429`, `500`, `502`, `503`, `504`, connection error, timeout, body cut short | Retries twice, after 1 s and 2 s, each time from the input URL. |
+| Anything else | Fails the task; nothing is staged. An expired presigned URL answers `403`. |
+
+Directories can't be downloaded over HTTP(S).
+
 ## HTTP(S) outputs
 
 An `outputs[].url` can be an `http://` or `https://` URL that grants
@@ -184,7 +200,7 @@ Responses:
 | Response | What `tof` does |
 | --- | --- |
 | `2xx` | Done. |
-| `307`, `308` | Sends the file again to the new URL, unless the output URL is `https://` and the new one isn't. The first request carries the file too, so up to the whole file reaches a redirecting server. |
+| `307`, `308` | Sends the file again to the new URL, unless the request has reached an `https://` URL and the new one isn't. The first request carries the file too, so up to the whole file reaches a redirecting server. |
 | `301`, `302`, `303` | Fails: following would turn the `PUT` into a `GET`. |
 | `429`, `500`, `502`, `503`, `504`, connection error, timeout | Retries twice, after 1 s and 2 s, each time from the output URL. |
 | Anything else | Fails; the `tof` log shows the start of the response body. |

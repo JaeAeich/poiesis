@@ -1,5 +1,9 @@
 """HTTP filer strategy — downloads inputs with GET, uploads outputs with PUT.
 
+An input is staged only from a 2xx response. It is written to a temporary
+file next to its path and renamed into place once the whole body has
+arrived, so a failed download leaves nothing at the input's path.
+
 Outputs can go to presigned upload URLs (S3, Google Cloud Storage and
 others), so the filer needs no storage credentials. A presigned URL is
 signed for one object, but the URL of each file of a `DIRECTORY` or glob
@@ -7,11 +11,15 @@ output is derived from the output URL; those outputs need a server that
 signs each upload as it arrives and redirects it with a 307 or 308.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import time
+import uuid
 from http import HTTPStatus
-from urllib.parse import quote, urljoin, urlsplit, urlunsplit
+from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qsl, quote, urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -22,6 +30,9 @@ from poiesis.core.services.filer.strategy.filer_strategy import (
     redact_url,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 logger = logging.getLogger(__name__)
 
 #: Redirects an upload follows, resending the file. requests turns a PUT
@@ -29,9 +40,16 @@ logger = logging.getLogger(__name__)
 #: a 301 without the file, so a success would pass for a successful upload;
 #: those redirects fail the upload instead.
 _UPLOAD_REDIRECTS = (HTTPStatus.TEMPORARY_REDIRECT, HTTPStatus.PERMANENT_REDIRECT)
+#: Redirects a download follows.
+_DOWNLOAD_REDIRECTS = (
+    HTTPStatus.MOVED_PERMANENTLY,
+    HTTPStatus.FOUND,
+    HTTPStatus.SEE_OTHER,
+    *_UPLOAD_REDIRECTS,
+)
 _MAX_REDIRECTS = 10
 
-#: Responses after which a later attempt at an upload may succeed.
+#: Responses after which a later attempt at a request may succeed.
 _TRANSIENT_STATUSES = frozenset(
     {
         HTTPStatus.TOO_MANY_REQUESTS,
@@ -42,6 +60,10 @@ _TRANSIENT_STATUSES = frozenset(
     }
 )
 _ATTEMPTS = 3
+
+#: Query values shorter than this are left in a quoted error body: cutting
+#: every ``1`` or ``json`` from it would garble it without hiding a secret.
+_MIN_SECRET_LENGTH = 8
 
 
 class HttpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
@@ -59,12 +81,7 @@ class HttpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         if self.input.url is None:
             raise ValueError("URL is required")
 
-        response = requests.get(self.input.url, stream=True, timeout=30)
-
-        with open(container_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+        _get(self.input.url, container_path)
 
     async def download_input_directory(self, container_path: str) -> None:
         """HTTP directory listing is not standardised; refuse."""
@@ -110,6 +127,42 @@ def _put_directory(directory: str, url: str) -> None:
             _put(path, _join(url, os.path.relpath(path, directory)))
 
 
+def _get(url: str, path: str) -> None:
+    """GET `url` into the file at `path`, retrying transient failures.
+
+    The body goes to a temporary file in the directory of `path`, renamed to
+    `path` once it is complete: `path` never holds a partial download or the
+    body of an error response.
+    """
+    directory, name = os.path.split(path)
+    partial = os.path.join(directory, f".{name}.{uuid.uuid4().hex}.part")
+    try:
+        _retry(lambda: _get_once(url, partial), f"Download of {redact_url(url)}")
+        os.replace(partial, path)
+    finally:
+        if os.path.lexists(partial):
+            os.remove(partial)
+    logger.info("Downloaded %s to %s", redact_url(url), path)
+
+
+def _get_once(url: str, path: str) -> None:
+    """GET `url` into the file at `path`, following redirects."""
+    target = url
+    for _ in range(_MAX_REDIRECTS + 1):
+        with _request("GET", target) as response:
+            location = response.headers.get("Location")
+            if response.status_code in _DOWNLOAD_REDIRECTS and location:
+                target = _redirect("GET", target, location, response)
+                continue
+            _raise_for_status("GET", target, response)
+            with open(path, "wb") as f:
+                f.writelines(response.iter_content(chunk_size=8192))
+        return
+    raise requests.TooManyRedirects(
+        f"GET {redact_url(url)} stopped after {_MAX_REDIRECTS} redirects"
+    )
+
+
 def _put(path: str, url: str) -> None:
     """PUT the file at `path` to `url`, retrying transient failures.
 
@@ -117,28 +170,44 @@ def _put(path: str, url: str) -> None:
     signs the retry afresh. Repeating a PUT of the same file to the same
     URL is safe even if an earlier attempt got through.
     """
+    _retry(lambda: _put_once(path, url), f"Upload of {path}")
+
+
+def _retry(attempt_once: Callable[[], None], what: str) -> None:
+    """Call `attempt_once` until it succeeds, up to `_ATTEMPTS` times.
+
+    Only a transient failure (`_is_transient`) is followed by another
+    attempt, after a delay that doubles each time. `what` names the
+    transfer in the log.
+    """
     for attempt in range(1, _ATTEMPTS + 1):
         try:
-            _put_once(path, url)
+            attempt_once()
             return
         except requests.RequestException as e:
             if attempt == _ATTEMPTS or not _is_transient(e):
                 raise
             delay = 2 ** (attempt - 1)
-            logger.warning("Upload of %s failed, retrying in %d s: %s", path, delay, e)
+            logger.warning("%s failed, retrying in %d s: %s", what, delay, e)
             time.sleep(delay)
 
 
 def _is_transient(error: requests.RequestException) -> bool:
-    """True if a later attempt at the upload that raised `error` may succeed."""
+    """True if a later attempt at the request that raised `error` may succeed."""
     if isinstance(error, requests.HTTPError):
         return (
             error.response is not None
             and error.response.status_code in _TRANSIENT_STATUSES
         )
     # A certificate the client rejects won't pass on a later attempt either.
+    # ChunkedEncodingError is a response body that ended early.
     return isinstance(
-        error, (requests.ConnectionError, requests.Timeout)
+        error,
+        (
+            requests.ConnectionError,
+            requests.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+        ),
     ) and not isinstance(error, requests.exceptions.SSLError)
 
 
@@ -149,37 +218,75 @@ def _put_once(path: str, url: str) -> None:
         with _send(path, target) as response:
             location = response.headers.get("Location")
             if response.status_code in _UPLOAD_REDIRECTS and location:
-                redirect = urljoin(target, location)
-                # An upload to an HTTPS URL is never resent in cleartext.
-                if (
-                    urlsplit(url).scheme == "https"
-                    and urlsplit(redirect).scheme != "https"
-                ):
-                    raise requests.HTTPError(
-                        f"PUT {redact_url(target)} was redirected to "
-                        f"{redact_url(redirect)}, which isn't HTTPS",
-                        response=response,
-                    )
-                target = redirect
+                target = _redirect("PUT", target, location, response)
                 continue
-            if not HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES:
-                # Object stores explain a rejection, such as an expired or
-                # mismatched signature, at the start of the response body.
-                body = (
-                    response.raw.read(1024, decode_content=True)
-                    .decode(errors="replace")
-                    .strip()
-                )
-                raise requests.HTTPError(
-                    f"PUT {redact_url(target)} returned {response.status_code}"
-                    f"{': ' + body if body else ''}",
-                    response=response,
-                )
+            _raise_for_status("PUT", target, response)
         logger.info("Uploaded %s to %s", path, redact_url(url))
         return
     raise requests.TooManyRedirects(
         f"PUT {redact_url(url)} stopped after {_MAX_REDIRECTS} redirects"
     )
+
+
+def _redirect(
+    method: str, target: str, location: str, response: requests.Response
+) -> str:
+    """The URL that `location`, sent in answer to `target`, redirects to.
+
+    A transfer that has reached an HTTPS URL never goes on in cleartext:
+    such a redirect raises.
+    """
+    redirect = urljoin(target, location)
+    if urlsplit(target).scheme == "https" and urlsplit(redirect).scheme != "https":
+        raise requests.HTTPError(
+            f"{method} {redact_url(target)} was redirected to "
+            f"{redact_url(redirect)}, which isn't HTTPS",
+            response=response,
+        )
+    return redirect
+
+
+def _raise_for_status(method: str, target: str, response: requests.Response) -> None:
+    """Raise unless `response`, the answer to `target`, is a 2xx.
+
+    Object stores explain a rejection, such as an expired or mismatched
+    signature, at the start of the response body, so up to 1 KiB of it is
+    quoted. Values of the query of `target` are cut from it: S3 echoes the
+    signature it was sent.
+    """
+    if HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES:
+        return
+    body = response.raw.read(1024, decode_content=True).decode(errors="replace")
+    query = urlsplit(target).query
+    # As sent and decoded: the body may quote either form.
+    raw = [pair.partition("=")[2] for pair in query.split("&")]
+    for value in [*raw, *(value for _, value in parse_qsl(query))]:
+        if len(value) >= _MIN_SECRET_LENGTH:
+            body = body.replace(value, "<redacted>")
+    body = body.strip()
+    raise requests.HTTPError(
+        f"{method} {redact_url(target)} returned {response.status_code}"
+        f"{': ' + body if body else ''}",
+        response=response,
+    )
+
+
+def _request(method: str, url: str, **kwargs: Any) -> requests.Response:
+    """Send one request to `url`, without following redirects.
+
+    The response is streamed: its body isn't read here.
+    """
+    try:
+        return requests.request(
+            method, url, allow_redirects=False, timeout=30, stream=True, **kwargs
+        )
+    except requests.RequestException as e:
+        # requests quotes the URL, query included, in the message of
+        # errors such as a failed connection.
+        query = urlsplit(url).query
+        if not query:
+            raise
+        raise type(e)(str(e).replace(query, "<redacted>")) from None
 
 
 def _send(path: str, url: str) -> requests.Response:
@@ -194,17 +301,7 @@ def _send(path: str, url: str) -> requests.Response:
         # upload URLs such as S3's reject; b"" is sent with a Content-Length
         # of 0.
         data = f if os.fstat(f.fileno()).st_size > 0 else b""
-        try:
-            return requests.put(
-                url, data=data, allow_redirects=False, timeout=30, stream=True
-            )
-        except requests.RequestException as e:
-            # requests quotes the URL, query included, in the message of
-            # errors such as a failed connection.
-            query = urlsplit(url).query
-            if not query:
-                raise
-            raise type(e)(str(e).replace(query, "<redacted>")) from None
+        return _request("PUT", url, data=data)
 
 
 def _join(url: str, relative_path: str) -> str:
