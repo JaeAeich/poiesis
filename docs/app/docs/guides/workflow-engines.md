@@ -236,6 +236,16 @@ two tags, and `parent_workflow_id` is simply absent, as if never sent
 too). Any other value that is not a string (a number, an object) still
 gets `422`.
 
+## Toil
+
+Not tested. Toil's batch systems (Slurm, Kubernetes, AWS Batch and
+others) don't include TES, so Toil can't send tasks to Poiesis today.
+
+## TES compliance suite
+
+Poiesis passes the [GA4GH TES compliance
+suite](https://github.com/ga4gh/openapi-test-runner).
+
 ## Other clients
 
 Anything that can set a header works: send

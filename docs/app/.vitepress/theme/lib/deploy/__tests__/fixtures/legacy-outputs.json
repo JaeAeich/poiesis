@@ -1,0 +1,3955 @@
+{
+  "scenarios": {
+    "defaults": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      },
+      "explain": {
+        "basics": {
+          "title": "Public URL",
+          "pts": [
+            "Becomes the ingress host and <code>auth.resource</code>.",
+            "A client that only knows this URL gets a 401 that points to the metadata.",
+            "The metadata names your issuers, so the client can log in."
+          ],
+          "nodes": {
+            "cl": {
+              "x": 10,
+              "y": 100,
+              "w": 100,
+              "label": "Client",
+              "sub": "Nextflow"
+            },
+            "ing": {
+              "x": 160,
+              "y": 30,
+              "w": 110,
+              "label": "Ingress",
+              "sub": "poiesis.example."
+            },
+            "api": {
+              "x": 300,
+              "y": 100,
+              "w": 110,
+              "label": "Poiesis API"
+            },
+            "iss": {
+              "x": 160,
+              "y": 180,
+              "w": 110,
+              "label": "Issuer",
+              "sub": "Keycloak"
+            }
+          },
+          "edges": [
+            ["cl", "ing"],
+            ["ing", "api"],
+            ["cl", "iss"],
+            ["cl", "api"]
+          ],
+          "hops": [
+            {
+              "f": "cl",
+              "t": "ing",
+              "label": "GET /tasks",
+              "cap": "A client calls the public URL."
+            },
+            {
+              "f": "ing",
+              "t": "api",
+              "label": "GET /tasks",
+              "cap": "The ingress forwards it to the API."
+            },
+            {
+              "f": "api",
+              "t": "cl",
+              "label": "401",
+              "tone": "bad",
+              "cap": "No token: 401, pointing to the resource metadata."
+            },
+            {
+              "f": "cl",
+              "t": "iss",
+              "label": "log in",
+              "cap": "The metadata names the issuer. The client logs in there."
+            },
+            {
+              "f": "cl",
+              "t": "api",
+              "label": "Bearer …",
+              "tone": "ok",
+              "cap": "It retries with the token and gets 200."
+            }
+          ]
+        },
+        "db": {
+          "title": "Database",
+          "pts": [
+            "The API and tctl read <code>DATABASE_URL</code> from your Secret.",
+            "A migration hook updates the schema before each install or upgrade.",
+            "In production, use <code>sslmode=verify-full</code> with a CA ConfigMap."
+          ],
+          "nodes": {
+            "sec": {
+              "x": 10,
+              "y": 100,
+              "w": 110,
+              "label": "Secret",
+              "sub": "poiesis-db"
+            },
+            "api": {
+              "x": 160,
+              "y": 30,
+              "w": 110,
+              "label": "API"
+            },
+            "tc": {
+              "x": 160,
+              "y": 170,
+              "w": 110,
+              "label": "tctl",
+              "sub": "task state"
+            },
+            "pg": {
+              "x": 300,
+              "y": 100,
+              "w": 110,
+              "label": "Postgres"
+            }
+          },
+          "edges": [
+            ["sec", "api"],
+            ["sec", "tc"],
+            ["api", "pg"],
+            ["tc", "pg"]
+          ],
+          "hops": [
+            {
+              "f": "sec",
+              "t": "api",
+              "label": "DATABASE_URL",
+              "cap": "The API reads the URL from your Secret."
+            },
+            {
+              "f": "sec",
+              "t": "tc",
+              "label": "DATABASE_URL",
+              "cap": "So does tctl, which records how tasks end."
+            },
+            {
+              "f": "api",
+              "t": "pg",
+              "label": "tasks",
+              "cap": "The API stores tasks and API keys."
+            },
+            {
+              "f": "tc",
+              "t": "pg",
+              "label": "COMPLETE",
+              "tone": "ok",
+              "cap": "tctl writes each task's final state."
+            }
+          ]
+        },
+        "storage": {
+          "title": "Storage",
+          "pts": [
+            "Only task inputs and outputs touch object storage.",
+            "Credentials come from your Secret, or from workload identity.",
+            "While a task runs, its files live on its own volume."
+          ],
+          "nodes": {
+            "in": {
+              "x": 10,
+              "y": 30,
+              "w": 100,
+              "label": "s3://in"
+            },
+            "tif": {
+              "x": 155,
+              "y": 30,
+              "w": 110,
+              "label": "tif",
+              "sub": "stage in"
+            },
+            "vol": {
+              "x": 155,
+              "y": 115,
+              "w": 110,
+              "label": "volume"
+            },
+            "tof": {
+              "x": 155,
+              "y": 200,
+              "w": 110,
+              "label": "tof",
+              "sub": "stage out"
+            },
+            "out": {
+              "x": 310,
+              "y": 200,
+              "w": 100,
+              "label": "s3://out"
+            },
+            "cr": {
+              "x": 310,
+              "y": 30,
+              "w": 100,
+              "label": "credentials",
+              "sub": "Secret"
+            }
+          },
+          "edges": [
+            ["cr", "tif"],
+            ["in", "tif"],
+            ["tif", "vol"],
+            ["vol", "tof"],
+            ["tof", "out"]
+          ],
+          "h": 260,
+          "hops": [
+            {
+              "f": "cr",
+              "t": "tif",
+              "label": "AWS_*",
+              "cap": "tif gets the S3 credentials."
+            },
+            {
+              "f": "in",
+              "t": "tif",
+              "label": "reads.fq",
+              "cap": "It downloads each input…"
+            },
+            {
+              "f": "tif",
+              "t": "vol",
+              "label": "reads.fq",
+              "cap": "…onto the task's volume."
+            },
+            {
+              "f": "vol",
+              "t": "tof",
+              "label": "sorted.bam",
+              "cap": "After the executors, tof picks up the outputs…"
+            },
+            {
+              "f": "tof",
+              "t": "out",
+              "label": "sorted.bam",
+              "tone": "ok",
+              "cap": "…and uploads them."
+            }
+          ]
+        },
+        "vol": {
+          "title": "Task volumes",
+          "pts": [
+            "Sized by the task's <code>disk_gb</code>, up to the largest allowed.",
+            "Shared by the task's containers.",
+            "Deleted with the Job after <code>retainAfterSeconds</code>."
+          ],
+          "fig": true
+        },
+        "authn": {
+          "title": "Authentication",
+          "pts": [
+            "The token's <code>iss</code> must match one trusted issuer exactly. Order doesn't matter.",
+            "Signature, audience, token type and client are checked.",
+            "The owner is <code>issuer|subject</code>, stamped on every task."
+          ],
+          "nodes": {
+            "rq": {
+              "x": 10,
+              "y": 16,
+              "w": 100,
+              "label": "Request",
+              "sub": "Bearer …"
+            },
+            "ow": {
+              "x": 318,
+              "y": 16,
+              "w": 94,
+              "label": "Owner",
+              "sub": "issuer|sub"
+            },
+            "e0": {
+              "x": 150,
+              "y": 16,
+              "w": 132,
+              "label": "OIDC issuer",
+              "sub": "not set"
+            }
+          },
+          "edges": [
+            ["rq", "e0"],
+            ["e0", "ow"]
+          ],
+          "h": 120,
+          "hops": [
+            {
+              "f": "rq",
+              "t": "e0",
+              "label": "iss ✓",
+              "cap": "The token's <code>iss</code> matches a trusted issuer exactly."
+            },
+            {
+              "f": "e0",
+              "t": "ow",
+              "label": "alice",
+              "tone": "ok",
+              "cap": "Checks pass: the caller is <code>issuer|alice</code>."
+            }
+          ]
+        },
+        "authz": {
+          "title": "Authorization",
+          "pts": [
+            "Everyone sees and cancels only their own tasks.",
+            "An admin group can revoke anyone's API keys.",
+            "Add a decision service later to share tasks."
+          ],
+          "nodes": {
+            "rq": {
+              "x": 10,
+              "y": 90,
+              "w": 100,
+              "label": "alice",
+              "sub": "GET task"
+            },
+            "api": {
+              "x": 160,
+              "y": 90,
+              "w": 100,
+              "label": "API",
+              "sub": "owner rule"
+            },
+            "db": {
+              "x": 310,
+              "y": 90,
+              "w": 100,
+              "label": "Tasks"
+            }
+          },
+          "edges": [
+            ["rq", "api"],
+            ["api", "db"]
+          ],
+          "h": 220,
+          "hops": [
+            {
+              "f": "rq",
+              "t": "api",
+              "label": "GET",
+              "cap": "alice asks for a task."
+            },
+            {
+              "f": "api",
+              "t": "db",
+              "label": "owner?",
+              "cap": "Poiesis checks who owns the task."
+            },
+            {
+              "f": "api",
+              "t": "rq",
+              "label": "200",
+              "tone": "ok",
+              "cap": "It's hers: 200. Anyone else gets 404."
+            }
+          ]
+        },
+        "adv": {
+          "title": "Advanced",
+          "pts": ["None of these are needed to start."]
+        },
+        "review": {
+          "title": "Installing",
+          "pts": [
+            "Create the Secrets first; the chart only refers to them.",
+            "A migration hook runs before the API starts.",
+            "tctl polls TaskPods and records how each task ends."
+          ],
+          "nodes": {
+            "you": {
+              "x": 10,
+              "y": 90,
+              "w": 90,
+              "label": "You"
+            },
+            "kc": {
+              "x": 150,
+              "y": 20,
+              "w": 120,
+              "label": "kubectl",
+              "sub": "Secrets"
+            },
+            "hm": {
+              "x": 150,
+              "y": 160,
+              "w": 120,
+              "label": "helm",
+              "sub": "values.yaml"
+            },
+            "cl": {
+              "x": 310,
+              "y": 90,
+              "w": 100,
+              "label": "Cluster",
+              "sub": "api · tctl"
+            }
+          },
+          "edges": [
+            ["you", "kc"],
+            ["you", "hm"],
+            ["kc", "cl"],
+            ["hm", "cl"]
+          ],
+          "hops": [
+            {
+              "f": "you",
+              "t": "kc",
+              "label": "create",
+              "cap": "Create the database and S3 Secrets."
+            },
+            {
+              "f": "kc",
+              "t": "cl",
+              "label": "Secrets",
+              "cap": "They land in the namespace."
+            },
+            {
+              "f": "you",
+              "t": "hm",
+              "label": "install",
+              "cap": "Run helm install with your values.yaml."
+            },
+            {
+              "f": "hm",
+              "t": "cl",
+              "label": "migrate",
+              "cap": "Migrations run, then the API and tctl start."
+            },
+            {
+              "f": "cl",
+              "t": "you",
+              "label": "ready",
+              "tone": "ok",
+              "cap": "Point an engine at the public URL."
+            }
+          ]
+        }
+      }
+    },
+    "allExamples": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    hosts:\n      - host: poiesis.example.org  # example, replace\n        paths: [{path: /, pathType: Prefix}]\n    annotations:\n      cert-manager.io/cluster-issuer: letsencrypt  # example, replace\n    tls:\n      - secretName: poiesis-tls\n        hosts: [poiesis.example.org]\n\ndatabase:\n  existingSecret: poiesis-db  # example, replace\n\ns3:\n  region: eu-central-1  # example, replace\n  existingSecret: poiesis-s3  # example, replace\n\nauth:\n  resource: https://poiesis.example.org  # example, replace\n  issuers:\n    - issuer: https://keycloak.example.org/realms/poiesis  # example, replace\n      audience: poiesis\n      tokenTypes: [JWT]  # Keycloak access tokens; other issuers default to at+jwt\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [
+        -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 4, 0, 4, 4, 4, 4, 4
+      ],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [],
+      "examples": [
+        ["Public URL", 0, "w-url", "https://poiesis.example.org"],
+        ["ClusterIssuer", 0, "w-cmIssuer", "letsencrypt"],
+        ["Database Secret", 1, "w-dbSecret", "poiesis-db"],
+        ["S3 region", 2, "w-s3Region", "eu-central-1"],
+        ["S3 Secret", 2, "w-s3Secret", "poiesis-s3"],
+        ["Issuer URL", 4, null, "https://keycloak.example.org/realms/poiesis"]
+      ],
+      "summaries": [
+        "https://poiesis.example.org",
+        "Secret poiesis-db",
+        "S3 · eu-central-1",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": 0,
+          "steps": [
+            ["Bearer eyJhbGci…"],
+            ["iss matches keycloak.example.org/realms/poiesis"],
+            ["signature checked against the issuer's keys"],
+            ["aud poiesis · typ JWT · client poiesis-cli"],
+            ["<b>200</b>  owner keycloak.example.org/realms/poiesis|alice", "ok"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer resource_metadata=…", "bad"],
+            ["the client follows it to your issuer"]
+          ]
+        }
+      },
+      "valuesHtml": [
+        "<span class=\"c\"># Poiesis values.yaml (non-default values only)</span>",
+        "",
+        "<span class=\"k\">api</span>:",
+        "  <span class=\"k\">ingress</span>:",
+        "    <span class=\"k\">enabled</span>: <span class=\"s\">true</span>",
+        "    <span class=\"k\">hosts</span>:",
+        "      - <span class=\"k\">host</span>: <span class=\"s exv\">poiesis.example.org</span><span class=\"ex\">  # example, replace</span>",
+        "        <span class=\"k\">paths</span>: <span class=\"s\">[{path: /, pathType: Prefix}]</span>",
+        "    <span class=\"k\">annotations</span>:",
+        "      cert-manager.io/cluster-issuer: <span class=\"s exv\">letsencrypt</span><span class=\"ex\">  # example, replace</span>",
+        "    <span class=\"k\">tls</span>:",
+        "      - <span class=\"k\">secretName</span>: <span class=\"s\">poiesis-tls</span>",
+        "        <span class=\"k\">hosts</span>: <span class=\"s\">[poiesis.example.org]</span>",
+        "",
+        "<span class=\"k\">database</span>:",
+        "  <span class=\"k\">existingSecret</span>: <span class=\"s exv\">poiesis-db</span><span class=\"ex\">  # example, replace</span>",
+        "",
+        "<span class=\"k\">s3</span>:",
+        "  <span class=\"k\">region</span>: <span class=\"s exv\">eu-central-1</span><span class=\"ex\">  # example, replace</span>",
+        "  <span class=\"k\">existingSecret</span>: <span class=\"s exv\">poiesis-s3</span><span class=\"ex\">  # example, replace</span>",
+        "",
+        "<span class=\"k\">auth</span>:",
+        "  <span class=\"k\">resource</span>: <span class=\"s exv\">https://poiesis.example.org</span><span class=\"ex\">  # example, replace</span>",
+        "  <span class=\"k\">issuers</span>:",
+        "    - <span class=\"k\">issuer</span>: <span class=\"s exv\">https://keycloak.example.org/realms/poiesis</span><span class=\"ex\">  # example, replace</span>",
+        "      <span class=\"k\">audience</span>: <span class=\"s\">poiesis</span>",
+        "      <span class=\"k\">tokenTypes</span>: <span class=\"s\">[JWT]</span><span class=\"c\">  # Keycloak access tokens; other issuers default to at+jwt</span>",
+        "      <span class=\"k\">clients</span>: <span class=\"s\">[poiesis-cli]</span>"
+      ],
+      "installHtml": [
+        "<span class=\"c\"># 1. Secrets. The chart references them; it never creates them.</span>",
+        "<span class=\"k\">kubectl</span> create namespace poiesis",
+        "",
+        "<span class=\"k\">kubectl</span> -n poiesis create secret generic poiesis-db \\",
+        "  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'",
+        "",
+        "<span class=\"k\">kubectl</span> -n poiesis create secret generic poiesis-s3 \\",
+        "  --from-literal=AWS_ACCESS_KEY_ID=… \\",
+        "  --from-literal=AWS_SECRET_ACCESS_KEY=…",
+        "",
+        "<span class=\"c\"># 2. Install (from a checkout until the chart is published, #53)</span>",
+        "<span class=\"k\">helm</span> install poiesis ./deployment/helm/poiesis \\",
+        "  -n poiesis -f values.yaml"
+      ]
+    },
+    "allExamplesIrsaDecisionService": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    hosts:\n      - host: poiesis.example.org  # example, replace\n        paths: [{path: /, pathType: Prefix}]\n    tls:\n      - secretName: poiesis-tls\n        hosts: [poiesis.example.org]\n\ndatabase:\n  existingSecret: poiesis-db  # example, replace\n\ns3:\n  region: eu-central-1  # example, replace\n\nserviceAccount:\n  api:\n    annotations:\n      eks.amazonaws.com/role-arn: \"arn:aws:iam::123456789012:role/poiesis\"  # example, replace\n  taskpod:\n    annotations:\n      eks.amazonaws.com/role-arn: \"arn:aws:iam::123456789012:role/poiesis\"  # example, replace\n\nauth:\n  resource: https://poiesis.example.org  # example, replace\n  issuers:\n    - issuer: https://keycloak.example.org/realms/poiesis  # example, replace\n      audience: poiesis\n      tokenTypes: [JWT]  # Keycloak access tokens; other issuers default to at+jwt\n      clients: [poiesis-cli]\n\nauthz:\n  decisionService:\n    url: http://opa.policy.svc:8181/access/v1/evaluation  # example, replace\n",
+      "valuesSteps": [
+        -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 0, 4, 4,
+        4, 4, 4, 5, 5, 5, 5
+      ],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, -1, -1, -1],
+      "missing": [["TLS Secret", 0, "w-tlsSecret"]],
+      "examples": [
+        ["Public URL", 0, "w-url", "https://poiesis.example.org"],
+        ["Database Secret", 1, "w-dbSecret", "poiesis-db"],
+        ["S3 region", 2, "w-s3Region", "eu-central-1"],
+        ["IAM role", 2, "w-s3Role", "arn:aws:iam::123456789012:role/poiesis"],
+        ["Issuer URL", 4, null, "https://keycloak.example.org/realms/poiesis"],
+        ["Decision service URL", 5, "w-pdp", "http://opa.policy.svc:8181/access/v1/evaluation"]
+      ],
+      "summaries": [
+        "https://poiesis.example.org",
+        "Secret poiesis-db",
+        "S3 · eu-central-1",
+        "10–100 Gi",
+        "1 issuer",
+        "decision service",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": 0,
+          "steps": [
+            ["Bearer eyJhbGci…"],
+            ["iss matches keycloak.example.org/realms/poiesis"],
+            ["signature checked against the issuer's keys"],
+            ["aud poiesis · typ JWT · client poiesis-cli"],
+            ["<b>200</b>  owner keycloak.example.org/realms/poiesis|alice", "ok"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer resource_metadata=…", "bad"],
+            ["the client follows it to your issuer"]
+          ]
+        }
+      },
+      "valuesHtml": [
+        "<span class=\"c\"># Poiesis values.yaml (non-default values only)</span>",
+        "",
+        "<span class=\"k\">api</span>:",
+        "  <span class=\"k\">ingress</span>:",
+        "    <span class=\"k\">enabled</span>: <span class=\"s\">true</span>",
+        "    <span class=\"k\">hosts</span>:",
+        "      - <span class=\"k\">host</span>: <span class=\"s exv\">poiesis.example.org</span><span class=\"ex\">  # example, replace</span>",
+        "        <span class=\"k\">paths</span>: <span class=\"s\">[{path: /, pathType: Prefix}]</span>",
+        "    <span class=\"k\">tls</span>:",
+        "      - <span class=\"k\">secretName</span>: <span class=\"s\">poiesis-tls</span>",
+        "        <span class=\"k\">hosts</span>: <span class=\"s\">[poiesis.example.org]</span>",
+        "",
+        "<span class=\"k\">database</span>:",
+        "  <span class=\"k\">existingSecret</span>: <span class=\"s exv\">poiesis-db</span><span class=\"ex\">  # example, replace</span>",
+        "",
+        "<span class=\"k\">s3</span>:",
+        "  <span class=\"k\">region</span>: <span class=\"s exv\">eu-central-1</span><span class=\"ex\">  # example, replace</span>",
+        "",
+        "<span class=\"k\">serviceAccount</span>:",
+        "  <span class=\"k\">api</span>:",
+        "    <span class=\"k\">annotations</span>:",
+        "      eks.amazonaws.com/role-arn: <span class=\"s exv\">&quot;arn:aws:iam::123456789012:role/poiesis&quot;</span><span class=\"ex\">  # example, replace</span>",
+        "  <span class=\"k\">taskpod</span>:",
+        "    <span class=\"k\">annotations</span>:",
+        "      eks.amazonaws.com/role-arn: <span class=\"s exv\">&quot;arn:aws:iam::123456789012:role/poiesis&quot;</span><span class=\"ex\">  # example, replace</span>",
+        "",
+        "<span class=\"k\">auth</span>:",
+        "  <span class=\"k\">resource</span>: <span class=\"s exv\">https://poiesis.example.org</span><span class=\"ex\">  # example, replace</span>",
+        "  <span class=\"k\">issuers</span>:",
+        "    - <span class=\"k\">issuer</span>: <span class=\"s exv\">https://keycloak.example.org/realms/poiesis</span><span class=\"ex\">  # example, replace</span>",
+        "      <span class=\"k\">audience</span>: <span class=\"s\">poiesis</span>",
+        "      <span class=\"k\">tokenTypes</span>: <span class=\"s\">[JWT]</span><span class=\"c\">  # Keycloak access tokens; other issuers default to at+jwt</span>",
+        "      <span class=\"k\">clients</span>: <span class=\"s\">[poiesis-cli]</span>",
+        "",
+        "<span class=\"k\">authz</span>:",
+        "  <span class=\"k\">decisionService</span>:",
+        "    <span class=\"k\">url</span>: <span class=\"s exv\">http://opa.policy.svc:8181/access/v1/evaluation</span><span class=\"ex\">  # example, replace</span>"
+      ],
+      "installHtml": [
+        "<span class=\"c\"># 1. Secrets. The chart references them; it never creates them.</span>",
+        "<span class=\"k\">kubectl</span> create namespace poiesis",
+        "",
+        "<span class=\"k\">kubectl</span> -n poiesis create secret generic poiesis-db \\",
+        "  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'",
+        "",
+        "<span class=\"c\"># 2. Install (from a checkout until the chart is published, #53)</span>",
+        "<span class=\"k\">helm</span> install poiesis ./deployment/helm/poiesis \\",
+        "  -n poiesis -f values.yaml"
+      ],
+      "explain": {
+        "basics": {
+          "title": "Public URL",
+          "pts": [
+            "Becomes the ingress host and <code>auth.resource</code>.",
+            "A client that only knows this URL gets a 401 that points to the metadata.",
+            "The metadata names your issuers, so the client can log in."
+          ],
+          "nodes": {
+            "cl": {
+              "x": 10,
+              "y": 100,
+              "w": 100,
+              "label": "Client",
+              "sub": "Nextflow"
+            },
+            "ing": {
+              "x": 160,
+              "y": 30,
+              "w": 110,
+              "label": "Ingress",
+              "sub": "poiesis.example."
+            },
+            "api": {
+              "x": 300,
+              "y": 100,
+              "w": 110,
+              "label": "Poiesis API"
+            },
+            "iss": {
+              "x": 160,
+              "y": 180,
+              "w": 110,
+              "label": "Issuer",
+              "sub": "Keycloak"
+            }
+          },
+          "edges": [
+            ["cl", "ing"],
+            ["ing", "api"],
+            ["cl", "iss"],
+            ["cl", "api"]
+          ],
+          "hops": [
+            {
+              "f": "cl",
+              "t": "ing",
+              "label": "GET /tasks",
+              "cap": "A client calls the public URL."
+            },
+            {
+              "f": "ing",
+              "t": "api",
+              "label": "GET /tasks",
+              "cap": "The ingress forwards it to the API."
+            },
+            {
+              "f": "api",
+              "t": "cl",
+              "label": "401",
+              "tone": "bad",
+              "cap": "No token: 401, pointing to the resource metadata."
+            },
+            {
+              "f": "cl",
+              "t": "iss",
+              "label": "log in",
+              "cap": "The metadata names the issuer. The client logs in there."
+            },
+            {
+              "f": "cl",
+              "t": "api",
+              "label": "Bearer …",
+              "tone": "ok",
+              "cap": "It retries with the token and gets 200."
+            }
+          ]
+        },
+        "db": {
+          "title": "Database",
+          "pts": [
+            "The API and tctl read <code>DATABASE_URL</code> from your Secret.",
+            "A migration hook updates the schema before each install or upgrade.",
+            "In production, use <code>sslmode=verify-full</code> with a CA ConfigMap."
+          ],
+          "nodes": {
+            "sec": {
+              "x": 10,
+              "y": 100,
+              "w": 110,
+              "label": "Secret",
+              "sub": "poiesis-db"
+            },
+            "api": {
+              "x": 160,
+              "y": 30,
+              "w": 110,
+              "label": "API"
+            },
+            "tc": {
+              "x": 160,
+              "y": 170,
+              "w": 110,
+              "label": "tctl",
+              "sub": "task state"
+            },
+            "pg": {
+              "x": 300,
+              "y": 100,
+              "w": 110,
+              "label": "Postgres"
+            }
+          },
+          "edges": [
+            ["sec", "api"],
+            ["sec", "tc"],
+            ["api", "pg"],
+            ["tc", "pg"]
+          ],
+          "hops": [
+            {
+              "f": "sec",
+              "t": "api",
+              "label": "DATABASE_URL",
+              "cap": "The API reads the URL from your Secret."
+            },
+            {
+              "f": "sec",
+              "t": "tc",
+              "label": "DATABASE_URL",
+              "cap": "So does tctl, which records how tasks end."
+            },
+            {
+              "f": "api",
+              "t": "pg",
+              "label": "tasks",
+              "cap": "The API stores tasks and API keys."
+            },
+            {
+              "f": "tc",
+              "t": "pg",
+              "label": "COMPLETE",
+              "tone": "ok",
+              "cap": "tctl writes each task's final state."
+            }
+          ]
+        },
+        "storage": {
+          "title": "Storage",
+          "pts": [
+            "Only task inputs and outputs touch object storage.",
+            "Credentials come from your Secret, or from workload identity.",
+            "While a task runs, its files live on its own volume."
+          ],
+          "nodes": {
+            "in": {
+              "x": 10,
+              "y": 30,
+              "w": 100,
+              "label": "s3://in"
+            },
+            "tif": {
+              "x": 155,
+              "y": 30,
+              "w": 110,
+              "label": "tif",
+              "sub": "stage in"
+            },
+            "vol": {
+              "x": 155,
+              "y": 115,
+              "w": 110,
+              "label": "volume"
+            },
+            "tof": {
+              "x": 155,
+              "y": 200,
+              "w": 110,
+              "label": "tof",
+              "sub": "stage out"
+            },
+            "out": {
+              "x": 310,
+              "y": 200,
+              "w": 100,
+              "label": "s3://out"
+            },
+            "cr": {
+              "x": 310,
+              "y": 30,
+              "w": 100,
+              "label": "credentials",
+              "sub": "IRSA"
+            }
+          },
+          "edges": [
+            ["cr", "tif"],
+            ["in", "tif"],
+            ["tif", "vol"],
+            ["vol", "tof"],
+            ["tof", "out"]
+          ],
+          "h": 260,
+          "hops": [
+            {
+              "f": "cr",
+              "t": "tif",
+              "label": "AWS_*",
+              "cap": "tif gets the S3 credentials."
+            },
+            {
+              "f": "in",
+              "t": "tif",
+              "label": "reads.fq",
+              "cap": "It downloads each input…"
+            },
+            {
+              "f": "tif",
+              "t": "vol",
+              "label": "reads.fq",
+              "cap": "…onto the task's volume."
+            },
+            {
+              "f": "vol",
+              "t": "tof",
+              "label": "sorted.bam",
+              "cap": "After the executors, tof picks up the outputs…"
+            },
+            {
+              "f": "tof",
+              "t": "out",
+              "label": "sorted.bam",
+              "tone": "ok",
+              "cap": "…and uploads them."
+            }
+          ]
+        },
+        "vol": {
+          "title": "Task volumes",
+          "pts": [
+            "Sized by the task's <code>disk_gb</code>, up to the largest allowed.",
+            "Shared by the task's containers.",
+            "Deleted with the Job after <code>retainAfterSeconds</code>."
+          ],
+          "fig": true
+        },
+        "authn": {
+          "title": "Authentication",
+          "pts": [
+            "The token's <code>iss</code> must match one trusted issuer exactly. Order doesn't matter.",
+            "Signature, audience, token type and client are checked.",
+            "The owner is <code>issuer|subject</code>, stamped on every task."
+          ],
+          "nodes": {
+            "rq": {
+              "x": 10,
+              "y": 16,
+              "w": 100,
+              "label": "Request",
+              "sub": "Bearer …"
+            },
+            "ow": {
+              "x": 318,
+              "y": 16,
+              "w": 94,
+              "label": "Owner",
+              "sub": "issuer|sub"
+            },
+            "e0": {
+              "x": 150,
+              "y": 16,
+              "w": 132,
+              "label": "OIDC issuer",
+              "sub": "keycloak.example.o"
+            }
+          },
+          "edges": [
+            ["rq", "e0"],
+            ["e0", "ow"]
+          ],
+          "h": 120,
+          "hops": [
+            {
+              "f": "rq",
+              "t": "e0",
+              "label": "iss ✓",
+              "cap": "The token's <code>iss</code> matches a trusted issuer exactly."
+            },
+            {
+              "f": "e0",
+              "t": "ow",
+              "label": "alice",
+              "tone": "ok",
+              "cap": "Checks pass: the caller is <code>issuer|alice</code>."
+            }
+          ]
+        },
+        "authz": {
+          "title": "Authorization",
+          "pts": [
+            "Each decision is one AuthZEN call.",
+            "The service can share tasks with groups or everyone.",
+            "If it errors or times out, the answer is no (503)."
+          ],
+          "nodes": {
+            "rq": {
+              "x": 10,
+              "y": 90,
+              "w": 100,
+              "label": "alice",
+              "sub": "GET task"
+            },
+            "api": {
+              "x": 160,
+              "y": 90,
+              "w": 100,
+              "label": "API"
+            },
+            "pdp": {
+              "x": 310,
+              "y": 30,
+              "w": 100,
+              "label": "Policy",
+              "sub": "AuthZEN"
+            },
+            "db": {
+              "x": 310,
+              "y": 150,
+              "w": 100,
+              "label": "Tasks"
+            }
+          },
+          "edges": [
+            ["rq", "api"],
+            ["api", "pdp"],
+            ["api", "db"]
+          ],
+          "hops": [
+            {
+              "f": "rq",
+              "t": "api",
+              "label": "GET",
+              "cap": "alice asks for a task."
+            },
+            {
+              "f": "api",
+              "t": "pdp",
+              "label": "evaluate",
+              "cap": "Poiesis asks the policy whether alice may read it."
+            },
+            {
+              "f": "pdp",
+              "t": "api",
+              "label": "true",
+              "tone": "ok",
+              "cap": "Yes: her group shares it."
+            },
+            {
+              "f": "api",
+              "t": "db",
+              "label": "read",
+              "cap": "Only then is the task read."
+            },
+            {
+              "f": "api",
+              "t": "rq",
+              "label": "200",
+              "tone": "ok",
+              "cap": "alice gets the task."
+            }
+          ]
+        },
+        "adv": {
+          "title": "Advanced",
+          "pts": ["None of these are needed to start."]
+        },
+        "review": {
+          "title": "Installing",
+          "pts": [
+            "Create the Secrets first; the chart only refers to them.",
+            "A migration hook runs before the API starts.",
+            "tctl polls TaskPods and records how each task ends."
+          ],
+          "nodes": {
+            "you": {
+              "x": 10,
+              "y": 90,
+              "w": 90,
+              "label": "You"
+            },
+            "kc": {
+              "x": 150,
+              "y": 20,
+              "w": 120,
+              "label": "kubectl",
+              "sub": "Secrets"
+            },
+            "hm": {
+              "x": 150,
+              "y": 160,
+              "w": 120,
+              "label": "helm",
+              "sub": "values.yaml"
+            },
+            "cl": {
+              "x": 310,
+              "y": 90,
+              "w": 100,
+              "label": "Cluster",
+              "sub": "api · tctl"
+            }
+          },
+          "edges": [
+            ["you", "kc"],
+            ["you", "hm"],
+            ["kc", "cl"],
+            ["hm", "cl"]
+          ],
+          "hops": [
+            {
+              "f": "you",
+              "t": "kc",
+              "label": "create",
+              "cap": "Create the database and S3 Secrets."
+            },
+            {
+              "f": "kc",
+              "t": "cl",
+              "label": "Secrets",
+              "cap": "They land in the namespace."
+            },
+            {
+              "f": "you",
+              "t": "hm",
+              "label": "install",
+              "cap": "Run helm install with your values.yaml."
+            },
+            {
+              "f": "hm",
+              "t": "cl",
+              "label": "migrate",
+              "cap": "Migrations run, then the API and tctl start."
+            },
+            {
+              "f": "cl",
+              "t": "you",
+              "label": "ready",
+              "tone": "ok",
+              "cap": "Point an engine at the public URL."
+            }
+          ]
+        }
+      }
+    },
+    "basicsExampleOnly": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    hosts:\n      - host: poiesis.example.org  # example, replace\n        paths: [{path: /, pathType: Prefix}]\n    annotations:\n      cert-manager.io/cluster-issuer: letsencrypt  # example, replace\n    tls:\n      - secretName: poiesis-tls\n        hosts: [poiesis.example.org]\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  resource: https://poiesis.example.org  # example, replace\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [
+        -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 4, 0, 4, 4, 4, 4
+      ],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [
+        ["Public URL", 0, "w-url", "https://poiesis.example.org"],
+        ["ClusterIssuer", 0, "w-cmIssuer", "letsencrypt"]
+      ],
+      "summaries": [
+        "https://poiesis.example.org",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer resource_metadata=…", "bad"],
+            ["the client follows it to your issuer"]
+          ]
+        }
+      }
+    },
+    "tlsSecret": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    className: nginx\n    hosts:\n      - host: poiesis.lab.example.org\n        paths: [{path: /, pathType: Prefix}]\n    tls:\n      - secretName: lab-tls\n        hosts: [poiesis.lab.example.org]\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  resource: https://poiesis.lab.example.org/api/v1\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [
+        -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 4, 0, 4, 4, 4, 4
+      ],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace lab\n\nkubectl -n lab create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n lab create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n lab -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "https://poiesis.lab.example.org/api/v1",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer resource_metadata=…", "bad"],
+            ["the client follows it to your issuer"]
+          ]
+        }
+      }
+    },
+    "tlsSecretEmpty": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    hosts:\n      - host: p.example.org\n        paths: [{path: /, pathType: Prefix}]\n    tls:\n      - secretName: poiesis-tls\n        hosts: [p.example.org]\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  resource: http://p.example.org\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 4, 0, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["TLS Secret", 0, "w-tlsSecret"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "http://p.example.org",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer resource_metadata=…", "bad"],
+            ["the client follows it to your issuer"]
+          ]
+        }
+      }
+    },
+    "tlsNone": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    className: \"traefik internal\"\n    hosts:\n      - host: p.example.org\n        paths: [{path: /, pathType: Prefix}]\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  resource: https://p.example.org\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 4, 0, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "https://p.example.org",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer resource_metadata=…", "bad"],
+            ["the client follows it to your issuer"]
+          ]
+        }
+      }
+    },
+    "certManagerSet": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    hosts:\n      - host: p.example.org\n        paths: [{path: /, pathType: Prefix}]\n    annotations:\n      cert-manager.io/cluster-issuer: letsencrypt-prod\n    tls:\n      - secretName: poiesis-tls\n        hosts: [p.example.org]\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  resource: https://p.example.org\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [
+        -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 4, 0, 4, 4, 4, 4
+      ],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "https://p.example.org",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer resource_metadata=…", "bad"],
+            ["the client follows it to your issuer"]
+          ]
+        }
+      }
+    },
+    "irsaRole": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: pg\n  caConfigmap: pg-ca\n\ns3:\n  endpoint: https://minio.local:9000\n  region: us-east-1\n\nserviceAccount:\n  api:\n    annotations:\n      eks.amazonaws.com/role-arn: \"arn:aws:iam::999:role/x\"\n  taskpod:\n    annotations:\n      eks.amazonaws.com/role-arn: \"arn:aws:iam::999:role/x\"\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic pg \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=verify-full&sslrootcert=/etc/ssl/poiesis/ca.crt'\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Secret pg",
+        "S3 · us-east-1",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      },
+      "valuesHtml": [
+        "<span class=\"c\"># Poiesis values.yaml (non-default values only)</span>",
+        "",
+        "<span class=\"k\">database</span>:",
+        "  <span class=\"k\">existingSecret</span>: <span class=\"s\">pg</span>",
+        "  <span class=\"k\">caConfigmap</span>: <span class=\"s\">pg-ca</span>",
+        "",
+        "<span class=\"k\">s3</span>:",
+        "  <span class=\"k\">endpoint</span>: <span class=\"s\">https://minio.local:9000</span>",
+        "  <span class=\"k\">region</span>: <span class=\"s\">us-east-1</span>",
+        "",
+        "<span class=\"k\">serviceAccount</span>:",
+        "  <span class=\"k\">api</span>:",
+        "    <span class=\"k\">annotations</span>:",
+        "      eks.amazonaws.com/role-arn: <span class=\"s\">&quot;arn:aws:iam::999:role/x&quot;</span>",
+        "  <span class=\"k\">taskpod</span>:",
+        "    <span class=\"k\">annotations</span>:",
+        "      eks.amazonaws.com/role-arn: <span class=\"s\">&quot;arn:aws:iam::999:role/x&quot;</span>",
+        "",
+        "<span class=\"k\">auth</span>:",
+        "  <span class=\"k\">issuers</span>:",
+        "    - <span class=\"k\">issuer</span>: <span class=\"s\">&quot;&quot;</span><span class=\"c\">  # required</span>",
+        "      <span class=\"k\">audience</span>: <span class=\"s\">poiesis</span>",
+        "      <span class=\"k\">clients</span>: <span class=\"s\">[poiesis-cli]</span>"
+      ],
+      "installHtml": [
+        "<span class=\"c\"># 1. Secrets. The chart references them; it never creates them.</span>",
+        "<span class=\"k\">kubectl</span> create namespace poiesis",
+        "",
+        "<span class=\"k\">kubectl</span> -n poiesis create secret generic pg \\",
+        "  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=verify-full&amp;sslrootcert=/etc/ssl/poiesis/ca.crt'",
+        "",
+        "<span class=\"c\"># 2. Install (from a checkout until the chart is published, #53)</span>",
+        "<span class=\"k\">helm</span> install poiesis ./deployment/helm/poiesis \\",
+        "  -n poiesis -f values.yaml"
+      ]
+    },
+    "irsaRoleMissing": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n\nserviceAccount:\n  api:\n    annotations:\n      eks.amazonaws.com/role-arn: \"\"  # required\n  taskpod:\n    annotations:\n      eks.amazonaws.com/role-arn: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["IAM role", 2, "w-s3Role"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "quotingEdgeCases": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"1password\"\n  caConfigmap: \"quo\\\"te\"\n\ns3:\n  region: \"yes\"\n  existingSecret: \"has space\"\n\ntaskpods:\n  persistence:\n    storageClass: \"null\"\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic 1password \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=verify-full&sslrootcert=/etc/ssl/poiesis/ca.crt'\n\nkubectl -n poiesis create secret generic has space \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Secret 1password",
+        "S3 · yes",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      },
+      "valuesHtml": [
+        "<span class=\"c\"># Poiesis values.yaml (non-default values only)</span>",
+        "",
+        "<span class=\"k\">database</span>:",
+        "  <span class=\"k\">existingSecret</span>: <span class=\"s\">&quot;1password&quot;</span>",
+        "  <span class=\"k\">caConfigmap</span>: <span class=\"s\">&quot;quo\\&quot;te&quot;</span>",
+        "",
+        "<span class=\"k\">s3</span>:",
+        "  <span class=\"k\">region</span>: <span class=\"s\">&quot;yes&quot;</span>",
+        "  <span class=\"k\">existingSecret</span>: <span class=\"s\">&quot;has space&quot;</span>",
+        "",
+        "<span class=\"k\">taskpods</span>:",
+        "  <span class=\"k\">persistence</span>:",
+        "    <span class=\"k\">storageClass</span>: <span class=\"s\">&quot;null&quot;</span>",
+        "",
+        "<span class=\"k\">auth</span>:",
+        "  <span class=\"k\">issuers</span>:",
+        "    - <span class=\"k\">issuer</span>: <span class=\"s\">&quot;&quot;</span><span class=\"c\">  # required</span>",
+        "      <span class=\"k\">audience</span>: <span class=\"s\">poiesis</span>",
+        "      <span class=\"k\">clients</span>: <span class=\"s\">[poiesis-cli]</span>"
+      ],
+      "installHtml": [
+        "<span class=\"c\"># 1. Secrets. The chart references them; it never creates them.</span>",
+        "<span class=\"k\">kubectl</span> create namespace poiesis",
+        "",
+        "<span class=\"k\">kubectl</span> -n poiesis create secret generic 1password \\",
+        "  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=verify-full&amp;sslrootcert=/etc/ssl/poiesis/ca.crt'",
+        "",
+        "<span class=\"k\">kubectl</span> -n poiesis create secret generic has space \\",
+        "  --from-literal=AWS_ACCESS_KEY_ID=… \\",
+        "  --from-literal=AWS_SECRET_ACCESS_KEY=…",
+        "",
+        "<span class=\"c\"># 2. Install (from a checkout until the chart is published, #53)</span>",
+        "<span class=\"k\">helm</span> install poiesis ./deployment/helm/poiesis \\",
+        "  -n poiesis -f values.yaml"
+      ]
+    },
+    "volumes": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\ntaskpods:\n  persistence:\n    defaultSizeGi: 20\n    maxSizeGi: 1.5\n    storageClass: fast-ssd\n    retainAfterSeconds: 60\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "20–1.50 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "volumesEmptyInputs": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\ntaskpods:\n  persistence:\n    defaultSizeGi: 0\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "issuersWithGateway": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: https://kc.example.org/realms/poiesis\n      audience: poiesis\n      tokenTypes: [JWT]  # Keycloak access tokens; other issuers default to at+jwt\n      clients: [cli,web]\n      requiredClaim: {name: groups, values: [/users]}\n      admin: {name: groups, values: [/admins]}\n    - issuer: https://gw.example.org\n      audience: poiesis\n      jwksUri: http://gw/jwks\n    - issuer: \"\"  # required\n      audience: poiesis\n      jwksUri: \"\"  # required\n    - issuer: https://login.example.com\n      audience: poiesis\n      requiredClaim: {name: groups, values: [/users]}\n      admin: {name: groups, values: [/admins]}\n",
+      "valuesSteps": [
+        -1, -1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5
+      ],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "4 issuers",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": 0,
+          "steps": [
+            ["Bearer eyJhbGci…"],
+            ["iss matches kc.example.org/realms/poiesis"],
+            ["signature checked against the issuer's keys"],
+            ["aud poiesis · typ JWT · client cli"],
+            ["groups contains /users"],
+            ["<b>200</b>  owner kc.example.org/realms/poiesis|alice", "ok"]
+          ]
+        },
+        "gw": {
+          "hit": 1,
+          "steps": [
+            ["Bearer eyJ… signed by the gateway"],
+            ["iss matches gw.example.org"],
+            ["keys from the static jwksUri"],
+            ["<b>200</b>  owner gateway|svc-nextflow", "ok"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "gatewayFirstWithApiKeys": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: https://gw.example.org\n      audience: poiesis\n      jwksUri: \"\"  # required\n    - issuer: https://idp.example.org\n      audience: poiesis\n      keyMinting: {clients: [poiesis-cli], maxAuthAge: 600}\n    - issuer: https://idp2.example.org\n      audience: poiesis\n      clients: [poiesis-cli]\n  apiKeys:\n    enabled: true\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "3 issuers + API keys",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": 1,
+          "steps": [
+            ["Bearer eyJhbGci…"],
+            ["iss matches idp.example.org"],
+            ["signature checked against the issuer's keys"],
+            ["aud poiesis · typ JWT · client any"],
+            ["<b>200</b>  owner idp.example.org|alice", "ok"]
+          ]
+        },
+        "gw": {
+          "hit": 0,
+          "steps": [
+            ["Bearer eyJ… signed by the gateway"],
+            ["iss matches gw.example.org"],
+            ["keys from the static jwksUri"],
+            ["<b>200</b>  owner gateway|svc-nextflow", "ok"]
+          ]
+        },
+        "key": {
+          "hit": "key",
+          "steps": [
+            ["Bearer poi_7Kq…"],
+            ["poi_ prefix: an API key, looked up by hash"],
+            ["not revoked, not expired"],
+            ["<b>200</b>  same owner as the user who minted it", "ok"]
+          ]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      },
+      "explain": {
+        "basics": {
+          "title": "Public URL",
+          "pts": [
+            "Becomes the ingress host and <code>auth.resource</code>.",
+            "A client that only knows this URL gets a 401 that points to the metadata.",
+            "The metadata names your issuers, so the client can log in."
+          ],
+          "nodes": {
+            "cl": {
+              "x": 10,
+              "y": 100,
+              "w": 100,
+              "label": "Client",
+              "sub": "Nextflow"
+            },
+            "ing": {
+              "x": 160,
+              "y": 30,
+              "w": 110,
+              "label": "Ingress",
+              "sub": "poiesis.example."
+            },
+            "api": {
+              "x": 300,
+              "y": 100,
+              "w": 110,
+              "label": "Poiesis API"
+            },
+            "iss": {
+              "x": 160,
+              "y": 180,
+              "w": 110,
+              "label": "Issuer",
+              "sub": "Keycloak"
+            }
+          },
+          "edges": [
+            ["cl", "ing"],
+            ["ing", "api"],
+            ["cl", "iss"],
+            ["cl", "api"]
+          ],
+          "hops": [
+            {
+              "f": "cl",
+              "t": "ing",
+              "label": "GET /tasks",
+              "cap": "A client calls the public URL."
+            },
+            {
+              "f": "ing",
+              "t": "api",
+              "label": "GET /tasks",
+              "cap": "The ingress forwards it to the API."
+            },
+            {
+              "f": "api",
+              "t": "cl",
+              "label": "401",
+              "tone": "bad",
+              "cap": "No token: 401, pointing to the resource metadata."
+            },
+            {
+              "f": "cl",
+              "t": "iss",
+              "label": "log in",
+              "cap": "The metadata names the issuer. The client logs in there."
+            },
+            {
+              "f": "cl",
+              "t": "api",
+              "label": "Bearer …",
+              "tone": "ok",
+              "cap": "It retries with the token and gets 200."
+            }
+          ]
+        },
+        "db": {
+          "title": "Database",
+          "pts": [
+            "The API and tctl read <code>DATABASE_URL</code> from your Secret.",
+            "A migration hook updates the schema before each install or upgrade.",
+            "In production, use <code>sslmode=verify-full</code> with a CA ConfigMap."
+          ],
+          "nodes": {
+            "sec": {
+              "x": 10,
+              "y": 100,
+              "w": 110,
+              "label": "Secret",
+              "sub": "poiesis-db"
+            },
+            "api": {
+              "x": 160,
+              "y": 30,
+              "w": 110,
+              "label": "API"
+            },
+            "tc": {
+              "x": 160,
+              "y": 170,
+              "w": 110,
+              "label": "tctl",
+              "sub": "task state"
+            },
+            "pg": {
+              "x": 300,
+              "y": 100,
+              "w": 110,
+              "label": "Postgres"
+            }
+          },
+          "edges": [
+            ["sec", "api"],
+            ["sec", "tc"],
+            ["api", "pg"],
+            ["tc", "pg"]
+          ],
+          "hops": [
+            {
+              "f": "sec",
+              "t": "api",
+              "label": "DATABASE_URL",
+              "cap": "The API reads the URL from your Secret."
+            },
+            {
+              "f": "sec",
+              "t": "tc",
+              "label": "DATABASE_URL",
+              "cap": "So does tctl, which records how tasks end."
+            },
+            {
+              "f": "api",
+              "t": "pg",
+              "label": "tasks",
+              "cap": "The API stores tasks and API keys."
+            },
+            {
+              "f": "tc",
+              "t": "pg",
+              "label": "COMPLETE",
+              "tone": "ok",
+              "cap": "tctl writes each task's final state."
+            }
+          ]
+        },
+        "storage": {
+          "title": "Storage",
+          "pts": [
+            "Only task inputs and outputs touch object storage.",
+            "Credentials come from your Secret, or from workload identity.",
+            "While a task runs, its files live on its own volume."
+          ],
+          "nodes": {
+            "in": {
+              "x": 10,
+              "y": 30,
+              "w": 100,
+              "label": "s3://in"
+            },
+            "tif": {
+              "x": 155,
+              "y": 30,
+              "w": 110,
+              "label": "tif",
+              "sub": "stage in"
+            },
+            "vol": {
+              "x": 155,
+              "y": 115,
+              "w": 110,
+              "label": "volume"
+            },
+            "tof": {
+              "x": 155,
+              "y": 200,
+              "w": 110,
+              "label": "tof",
+              "sub": "stage out"
+            },
+            "out": {
+              "x": 310,
+              "y": 200,
+              "w": 100,
+              "label": "s3://out"
+            },
+            "cr": {
+              "x": 310,
+              "y": 30,
+              "w": 100,
+              "label": "credentials",
+              "sub": "Secret"
+            }
+          },
+          "edges": [
+            ["cr", "tif"],
+            ["in", "tif"],
+            ["tif", "vol"],
+            ["vol", "tof"],
+            ["tof", "out"]
+          ],
+          "h": 260,
+          "hops": [
+            {
+              "f": "cr",
+              "t": "tif",
+              "label": "AWS_*",
+              "cap": "tif gets the S3 credentials."
+            },
+            {
+              "f": "in",
+              "t": "tif",
+              "label": "reads.fq",
+              "cap": "It downloads each input…"
+            },
+            {
+              "f": "tif",
+              "t": "vol",
+              "label": "reads.fq",
+              "cap": "…onto the task's volume."
+            },
+            {
+              "f": "vol",
+              "t": "tof",
+              "label": "sorted.bam",
+              "cap": "After the executors, tof picks up the outputs…"
+            },
+            {
+              "f": "tof",
+              "t": "out",
+              "label": "sorted.bam",
+              "tone": "ok",
+              "cap": "…and uploads them."
+            }
+          ]
+        },
+        "vol": {
+          "title": "Task volumes",
+          "pts": [
+            "Sized by the task's <code>disk_gb</code>, up to the largest allowed.",
+            "Shared by the task's containers.",
+            "Deleted with the Job after <code>retainAfterSeconds</code>."
+          ],
+          "fig": true
+        },
+        "authn": {
+          "title": "Authentication",
+          "pts": [
+            "The token's <code>iss</code> must match one trusted issuer exactly. Order doesn't matter.",
+            "Signature, audience, token type and client are checked.",
+            "The owner is <code>issuer|subject</code>, stamped on every task."
+          ],
+          "nodes": {
+            "rq": {
+              "x": 10,
+              "y": 103,
+              "w": 100,
+              "label": "Request",
+              "sub": "Bearer …"
+            },
+            "ow": {
+              "x": 318,
+              "y": 103,
+              "w": 94,
+              "label": "Owner",
+              "sub": "issuer|sub"
+            },
+            "e0": {
+              "x": 150,
+              "y": 16,
+              "w": 132,
+              "label": "Gateway JWT",
+              "sub": "gw.example.org"
+            },
+            "e1": {
+              "x": 150,
+              "y": 74,
+              "w": 132,
+              "label": "OIDC issuer",
+              "sub": "idp.example.org"
+            },
+            "e2": {
+              "x": 150,
+              "y": 132,
+              "w": 132,
+              "label": "OIDC issuer",
+              "sub": "idp2.example.org"
+            },
+            "k": {
+              "x": 150,
+              "y": 190,
+              "w": 132,
+              "label": "API keys",
+              "sub": "poi_…"
+            }
+          },
+          "edges": [
+            ["rq", "e0"],
+            ["rq", "e1"],
+            ["rq", "e2"],
+            ["e0", "ow"],
+            ["e1", "ow"],
+            ["e2", "ow"],
+            ["rq", "k"],
+            ["k", "ow"]
+          ],
+          "h": 250,
+          "hops": [
+            {
+              "f": "rq",
+              "t": "e0",
+              "label": "iss ✓",
+              "cap": "The token's <code>iss</code> matches a trusted issuer exactly."
+            },
+            {
+              "f": "e0",
+              "t": "ow",
+              "label": "alice",
+              "tone": "ok",
+              "cap": "Checks pass: the caller is <code>issuer|alice</code>."
+            },
+            {
+              "f": "rq",
+              "t": "k",
+              "label": "poi_…",
+              "cap": "An API key is looked up by its hash."
+            },
+            {
+              "f": "k",
+              "t": "ow",
+              "label": "alice",
+              "tone": "ok",
+              "cap": "It has the owner of whoever minted it."
+            }
+          ]
+        },
+        "authz": {
+          "title": "Authorization",
+          "pts": [
+            "Everyone sees and cancels only their own tasks.",
+            "An admin group can revoke anyone's API keys.",
+            "Add a decision service later to share tasks."
+          ],
+          "nodes": {
+            "rq": {
+              "x": 10,
+              "y": 90,
+              "w": 100,
+              "label": "alice",
+              "sub": "GET task"
+            },
+            "api": {
+              "x": 160,
+              "y": 90,
+              "w": 100,
+              "label": "API",
+              "sub": "owner rule"
+            },
+            "db": {
+              "x": 310,
+              "y": 90,
+              "w": 100,
+              "label": "Tasks"
+            }
+          },
+          "edges": [
+            ["rq", "api"],
+            ["api", "db"]
+          ],
+          "h": 220,
+          "hops": [
+            {
+              "f": "rq",
+              "t": "api",
+              "label": "GET",
+              "cap": "alice asks for a task."
+            },
+            {
+              "f": "api",
+              "t": "db",
+              "label": "owner?",
+              "cap": "Poiesis checks who owns the task."
+            },
+            {
+              "f": "api",
+              "t": "rq",
+              "label": "200",
+              "tone": "ok",
+              "cap": "It's hers: 200. Anyone else gets 404."
+            }
+          ]
+        },
+        "adv": {
+          "title": "Advanced",
+          "pts": ["None of these are needed to start."]
+        },
+        "review": {
+          "title": "Installing",
+          "pts": [
+            "Create the Secrets first; the chart only refers to them.",
+            "A migration hook runs before the API starts.",
+            "tctl polls TaskPods and records how each task ends."
+          ],
+          "nodes": {
+            "you": {
+              "x": 10,
+              "y": 90,
+              "w": 90,
+              "label": "You"
+            },
+            "kc": {
+              "x": 150,
+              "y": 20,
+              "w": 120,
+              "label": "kubectl",
+              "sub": "Secrets"
+            },
+            "hm": {
+              "x": 150,
+              "y": 160,
+              "w": 120,
+              "label": "helm",
+              "sub": "values.yaml"
+            },
+            "cl": {
+              "x": 310,
+              "y": 90,
+              "w": 100,
+              "label": "Cluster",
+              "sub": "api · tctl"
+            }
+          },
+          "edges": [
+            ["you", "kc"],
+            ["you", "hm"],
+            ["kc", "cl"],
+            ["hm", "cl"]
+          ],
+          "hops": [
+            {
+              "f": "you",
+              "t": "kc",
+              "label": "create",
+              "cap": "Create the database and S3 Secrets."
+            },
+            {
+              "f": "kc",
+              "t": "cl",
+              "label": "Secrets",
+              "cap": "They land in the namespace."
+            },
+            {
+              "f": "you",
+              "t": "hm",
+              "label": "install",
+              "cap": "Run helm install with your values.yaml."
+            },
+            {
+              "f": "hm",
+              "t": "cl",
+              "label": "migrate",
+              "cap": "Migrations run, then the API and tctl start."
+            },
+            {
+              "f": "cl",
+              "t": "you",
+              "label": "ready",
+              "tone": "ok",
+              "cap": "Point an engine at the public URL."
+            }
+          ]
+        }
+      }
+    },
+    "apiKeysWithOverrides": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: https://idp.example.org\n      audience: poiesis\n      clients: [poiesis-cli]\n      keyMinting: {clients: [poiesis-cli], maxAuthAge: 600}\n  apiKeys:\n    enabled: true\n    defaultTtl: \"1d\"\n    maxPerOwner: 5\n  swaggerUi:\n    issuer: https://idp.example.org\n    clientId: poiesis-swagger\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer + API keys",
+        "owner only",
+        "3 changed",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": 0,
+          "steps": [
+            ["Bearer eyJhbGci…"],
+            ["iss matches idp.example.org"],
+            ["signature checked against the issuer's keys"],
+            ["aud poiesis · typ JWT · client poiesis-cli"],
+            ["<b>200</b>  owner idp.example.org|alice", "ok"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": "key",
+          "steps": [
+            ["Bearer poi_7Kq…"],
+            ["poi_ prefix: an API key, looked up by hash"],
+            ["not revoked, not expired"],
+            ["<b>200</b>  same owner as the user who minted it", "ok"]
+          ]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "apiKeysHiddenOverrides": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "decisionService": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n\nauthz:\n  decisionService:\n    url: http://opa.policy.svc:8181/access/v1/evaluation\n  sharing: true\n  maxOwners: 50\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "decision service",
+        "1 changed",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      },
+      "explain": {
+        "basics": {
+          "title": "Public URL",
+          "pts": [
+            "Becomes the ingress host and <code>auth.resource</code>.",
+            "A client that only knows this URL gets a 401 that points to the metadata.",
+            "The metadata names your issuers, so the client can log in."
+          ],
+          "nodes": {
+            "cl": {
+              "x": 10,
+              "y": 100,
+              "w": 100,
+              "label": "Client",
+              "sub": "Nextflow"
+            },
+            "ing": {
+              "x": 160,
+              "y": 30,
+              "w": 110,
+              "label": "Ingress",
+              "sub": "poiesis.example."
+            },
+            "api": {
+              "x": 300,
+              "y": 100,
+              "w": 110,
+              "label": "Poiesis API"
+            },
+            "iss": {
+              "x": 160,
+              "y": 180,
+              "w": 110,
+              "label": "Issuer",
+              "sub": "Keycloak"
+            }
+          },
+          "edges": [
+            ["cl", "ing"],
+            ["ing", "api"],
+            ["cl", "iss"],
+            ["cl", "api"]
+          ],
+          "hops": [
+            {
+              "f": "cl",
+              "t": "ing",
+              "label": "GET /tasks",
+              "cap": "A client calls the public URL."
+            },
+            {
+              "f": "ing",
+              "t": "api",
+              "label": "GET /tasks",
+              "cap": "The ingress forwards it to the API."
+            },
+            {
+              "f": "api",
+              "t": "cl",
+              "label": "401",
+              "tone": "bad",
+              "cap": "No token: 401, pointing to the resource metadata."
+            },
+            {
+              "f": "cl",
+              "t": "iss",
+              "label": "log in",
+              "cap": "The metadata names the issuer. The client logs in there."
+            },
+            {
+              "f": "cl",
+              "t": "api",
+              "label": "Bearer …",
+              "tone": "ok",
+              "cap": "It retries with the token and gets 200."
+            }
+          ]
+        },
+        "db": {
+          "title": "Database",
+          "pts": [
+            "The API and tctl read <code>DATABASE_URL</code> from your Secret.",
+            "A migration hook updates the schema before each install or upgrade.",
+            "In production, use <code>sslmode=verify-full</code> with a CA ConfigMap."
+          ],
+          "nodes": {
+            "sec": {
+              "x": 10,
+              "y": 100,
+              "w": 110,
+              "label": "Secret",
+              "sub": "poiesis-db"
+            },
+            "api": {
+              "x": 160,
+              "y": 30,
+              "w": 110,
+              "label": "API"
+            },
+            "tc": {
+              "x": 160,
+              "y": 170,
+              "w": 110,
+              "label": "tctl",
+              "sub": "task state"
+            },
+            "pg": {
+              "x": 300,
+              "y": 100,
+              "w": 110,
+              "label": "Postgres"
+            }
+          },
+          "edges": [
+            ["sec", "api"],
+            ["sec", "tc"],
+            ["api", "pg"],
+            ["tc", "pg"]
+          ],
+          "hops": [
+            {
+              "f": "sec",
+              "t": "api",
+              "label": "DATABASE_URL",
+              "cap": "The API reads the URL from your Secret."
+            },
+            {
+              "f": "sec",
+              "t": "tc",
+              "label": "DATABASE_URL",
+              "cap": "So does tctl, which records how tasks end."
+            },
+            {
+              "f": "api",
+              "t": "pg",
+              "label": "tasks",
+              "cap": "The API stores tasks and API keys."
+            },
+            {
+              "f": "tc",
+              "t": "pg",
+              "label": "COMPLETE",
+              "tone": "ok",
+              "cap": "tctl writes each task's final state."
+            }
+          ]
+        },
+        "storage": {
+          "title": "Storage",
+          "pts": [
+            "Only task inputs and outputs touch object storage.",
+            "Credentials come from your Secret, or from workload identity.",
+            "While a task runs, its files live on its own volume."
+          ],
+          "nodes": {
+            "in": {
+              "x": 10,
+              "y": 30,
+              "w": 100,
+              "label": "s3://in"
+            },
+            "tif": {
+              "x": 155,
+              "y": 30,
+              "w": 110,
+              "label": "tif",
+              "sub": "stage in"
+            },
+            "vol": {
+              "x": 155,
+              "y": 115,
+              "w": 110,
+              "label": "volume"
+            },
+            "tof": {
+              "x": 155,
+              "y": 200,
+              "w": 110,
+              "label": "tof",
+              "sub": "stage out"
+            },
+            "out": {
+              "x": 310,
+              "y": 200,
+              "w": 100,
+              "label": "s3://out"
+            },
+            "cr": {
+              "x": 310,
+              "y": 30,
+              "w": 100,
+              "label": "credentials",
+              "sub": "Secret"
+            }
+          },
+          "edges": [
+            ["cr", "tif"],
+            ["in", "tif"],
+            ["tif", "vol"],
+            ["vol", "tof"],
+            ["tof", "out"]
+          ],
+          "h": 260,
+          "hops": [
+            {
+              "f": "cr",
+              "t": "tif",
+              "label": "AWS_*",
+              "cap": "tif gets the S3 credentials."
+            },
+            {
+              "f": "in",
+              "t": "tif",
+              "label": "reads.fq",
+              "cap": "It downloads each input…"
+            },
+            {
+              "f": "tif",
+              "t": "vol",
+              "label": "reads.fq",
+              "cap": "…onto the task's volume."
+            },
+            {
+              "f": "vol",
+              "t": "tof",
+              "label": "sorted.bam",
+              "cap": "After the executors, tof picks up the outputs…"
+            },
+            {
+              "f": "tof",
+              "t": "out",
+              "label": "sorted.bam",
+              "tone": "ok",
+              "cap": "…and uploads them."
+            }
+          ]
+        },
+        "vol": {
+          "title": "Task volumes",
+          "pts": [
+            "Sized by the task's <code>disk_gb</code>, up to the largest allowed.",
+            "Shared by the task's containers.",
+            "Deleted with the Job after <code>retainAfterSeconds</code>."
+          ],
+          "fig": true
+        },
+        "authn": {
+          "title": "Authentication",
+          "pts": [
+            "The token's <code>iss</code> must match one trusted issuer exactly. Order doesn't matter.",
+            "Signature, audience, token type and client are checked.",
+            "The owner is <code>issuer|subject</code>, stamped on every task."
+          ],
+          "nodes": {
+            "rq": {
+              "x": 10,
+              "y": 16,
+              "w": 100,
+              "label": "Request",
+              "sub": "Bearer …"
+            },
+            "ow": {
+              "x": 318,
+              "y": 16,
+              "w": 94,
+              "label": "Owner",
+              "sub": "issuer|sub"
+            },
+            "e0": {
+              "x": 150,
+              "y": 16,
+              "w": 132,
+              "label": "OIDC issuer",
+              "sub": "not set"
+            }
+          },
+          "edges": [
+            ["rq", "e0"],
+            ["e0", "ow"]
+          ],
+          "h": 120,
+          "hops": [
+            {
+              "f": "rq",
+              "t": "e0",
+              "label": "iss ✓",
+              "cap": "The token's <code>iss</code> matches a trusted issuer exactly."
+            },
+            {
+              "f": "e0",
+              "t": "ow",
+              "label": "alice",
+              "tone": "ok",
+              "cap": "Checks pass: the caller is <code>issuer|alice</code>."
+            }
+          ]
+        },
+        "authz": {
+          "title": "Authorization",
+          "pts": [
+            "Each decision is one AuthZEN call.",
+            "The service can share tasks with groups or everyone.",
+            "If it errors or times out, the answer is no (503)."
+          ],
+          "nodes": {
+            "rq": {
+              "x": 10,
+              "y": 90,
+              "w": 100,
+              "label": "alice",
+              "sub": "GET task"
+            },
+            "api": {
+              "x": 160,
+              "y": 90,
+              "w": 100,
+              "label": "API"
+            },
+            "pdp": {
+              "x": 310,
+              "y": 30,
+              "w": 100,
+              "label": "Policy",
+              "sub": "AuthZEN"
+            },
+            "db": {
+              "x": 310,
+              "y": 150,
+              "w": 100,
+              "label": "Tasks"
+            }
+          },
+          "edges": [
+            ["rq", "api"],
+            ["api", "pdp"],
+            ["api", "db"]
+          ],
+          "hops": [
+            {
+              "f": "rq",
+              "t": "api",
+              "label": "GET",
+              "cap": "alice asks for a task."
+            },
+            {
+              "f": "api",
+              "t": "pdp",
+              "label": "evaluate",
+              "cap": "Poiesis asks the policy whether alice may read it."
+            },
+            {
+              "f": "pdp",
+              "t": "api",
+              "label": "true",
+              "tone": "ok",
+              "cap": "Yes: her group shares it."
+            },
+            {
+              "f": "api",
+              "t": "db",
+              "label": "read",
+              "cap": "Only then is the task read."
+            },
+            {
+              "f": "api",
+              "t": "rq",
+              "label": "200",
+              "tone": "ok",
+              "cap": "alice gets the task."
+            }
+          ]
+        },
+        "adv": {
+          "title": "Advanced",
+          "pts": ["None of these are needed to start."]
+        },
+        "review": {
+          "title": "Installing",
+          "pts": [
+            "Create the Secrets first; the chart only refers to them.",
+            "A migration hook runs before the API starts.",
+            "tctl polls TaskPods and records how each task ends."
+          ],
+          "nodes": {
+            "you": {
+              "x": 10,
+              "y": 90,
+              "w": 90,
+              "label": "You"
+            },
+            "kc": {
+              "x": 150,
+              "y": 20,
+              "w": 120,
+              "label": "kubectl",
+              "sub": "Secrets"
+            },
+            "hm": {
+              "x": 150,
+              "y": 160,
+              "w": 120,
+              "label": "helm",
+              "sub": "values.yaml"
+            },
+            "cl": {
+              "x": 310,
+              "y": 90,
+              "w": 100,
+              "label": "Cluster",
+              "sub": "api · tctl"
+            }
+          },
+          "edges": [
+            ["you", "kc"],
+            ["you", "hm"],
+            ["kc", "cl"],
+            ["hm", "cl"]
+          ],
+          "hops": [
+            {
+              "f": "you",
+              "t": "kc",
+              "label": "create",
+              "cap": "Create the database and S3 Secrets."
+            },
+            {
+              "f": "kc",
+              "t": "cl",
+              "label": "Secrets",
+              "cap": "They land in the namespace."
+            },
+            {
+              "f": "you",
+              "t": "hm",
+              "label": "install",
+              "cap": "Run helm install with your values.yaml."
+            },
+            {
+              "f": "hm",
+              "t": "cl",
+              "label": "migrate",
+              "cap": "Migrations run, then the API and tctl start."
+            },
+            {
+              "f": "cl",
+              "t": "you",
+              "label": "ready",
+              "tone": "ok",
+              "cap": "Point an engine at the public URL."
+            }
+          ]
+        }
+      }
+    },
+    "decisionServiceMissing": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n\nauthz:\n  decisionService:\n    url: \"\"  # required\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 5, 5, 5, 5],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4],
+        ["Decision service URL", 5, "w-pdp"]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "decision service",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "ownerAdminRead": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n      admin: {name: groups, values: [/admins]}\n\nauthz:\n  adminRead: true\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 5, 5, 5, 6],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "1 changed",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "advancedOverrides": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\nlogLevel: DEBUG\n\napi:\n  replicas: 3\n  pdb:\n    enabled: true\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\ntaskpods:\n  namespace: tasks\n  outputGlobFallback: true\n  persistence:\n    accessModes: [ReadWriteMany]\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n\naudit:\n  enabled: false\n\nnetworkPolicy:\n  enabled: true\n\nserviceInfo:\n  id: org.example.poiesis\n  name: \"Poiesis Lab\"\n  environment: prod\n",
+      "valuesSteps": [
+        -1, -1, 6, 6, 6, 6, 6, 6, 0, 1, 1, 1, 2, 2, 2, 2, 3, 6, 6, 3, 6, 3, 4, 4, 4, 4, 4, 6, 6, 6,
+        6, 6, 6, 6, 6, 6, 6, 6
+      ],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\nkubectl create namespace tasks\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, 6, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "11 changed",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "advancedOnlyRwx": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\ntaskpods:\n  persistence:\n    accessModes: [ReadWriteMany]\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 6, 3, 4, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "1 changed",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "advancedTaskNamespaceSame": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  existingSecret: \"\"  # required\n\ntaskpods:\n  namespace: work\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 6, 6, 3, 4, 4, 4, 4, 4],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace work\n\nkubectl -n work create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n work create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n work -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [
+        ["Public URL", 0, "w-url"],
+        ["Database Secret", 1, "w-dbSecret"],
+        ["S3 region", 2, "w-s3Region"],
+        ["S3 Secret", 2, "w-s3Secret"],
+        ["ClusterIssuer", 0, "w-cmIssuer"],
+        ["An issuer URL", 4]
+      ],
+      "examples": [],
+      "summaries": [
+        "public URL",
+        "Postgres",
+        "S3",
+        "10–100 Gi",
+        "1 issuer",
+        "owner only",
+        "1 changed",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: keycloak)"],
+            ["no OIDC issuer set yet", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer", "bad"],
+            ["set a public URL so clients can find the issuer"]
+          ]
+        }
+      }
+    },
+    "editedExamples": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    hosts:\n      - host: real.example.org\n        paths: [{path: /, pathType: Prefix}]\n    annotations:\n      cert-manager.io/cluster-issuer: letsencrypt  # example, replace\n    tls:\n      - secretName: poiesis-tls\n        hosts: [real.example.org]\n\ndatabase:\n  existingSecret: poiesis-db  # example, replace\n\ns3:\n  region: eu-central-1  # example, replace\n  existingSecret: poiesis-s3  # example, replace\n\nauth:\n  resource: https://real.example.org\n  issuers:\n    - issuer: https://keycloak.example.org/realms/poiesis  # example, replace\n      audience: poiesis\n      tokenTypes: [JWT]  # Keycloak access tokens; other issuers default to at+jwt\n      clients: [poiesis-cli]\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [
+        -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 4, 0, 4, 4, 4, 4, 4, 4, 4,
+        4
+      ],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\nkubectl -n poiesis create secret generic poiesis-s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [],
+      "examples": [
+        ["ClusterIssuer", 0, "w-cmIssuer", "letsencrypt"],
+        ["Database Secret", 1, "w-dbSecret", "poiesis-db"],
+        ["S3 region", 2, "w-s3Region", "eu-central-1"],
+        ["S3 Secret", 2, "w-s3Secret", "poiesis-s3"],
+        ["Issuer URL", 4, null, "https://keycloak.example.org/realms/poiesis"]
+      ],
+      "summaries": [
+        "https://real.example.org",
+        "Secret poiesis-db",
+        "S3 · eu-central-1",
+        "10–100 Gi",
+        "2 issuers",
+        "owner only",
+        "chart defaults",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": 0,
+          "steps": [
+            ["Bearer eyJhbGci…"],
+            ["iss matches keycloak.example.org/realms/poiesis"],
+            ["signature checked against the issuer's keys"],
+            ["aud poiesis · typ JWT · client poiesis-cli"],
+            ["<b>200</b>  owner keycloak.example.org/realms/poiesis|alice", "ok"]
+          ]
+        },
+        "gw": {
+          "hit": null,
+          "steps": [
+            ["Bearer eyJ… (iss: gateway)"],
+            ["no entry for this issuer", "bad"],
+            ["401 invalid_token", "bad"]
+          ]
+        },
+        "key": {
+          "hit": null,
+          "steps": [["Bearer poi_7Kq…"], ["API keys are off", "bad"], ["401 invalid_token", "bad"]]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer resource_metadata=…", "bad"],
+            ["the client follows it to your issuer"]
+          ]
+        }
+      }
+    },
+    "everything": {
+      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    className: nginx\n    hosts:\n      - host: poiesis.example.org\n        paths: [{path: /, pathType: Prefix}]\n    annotations:\n      cert-manager.io/cluster-issuer: le\n    tls:\n      - secretName: poiesis-tls\n        hosts: [poiesis.example.org]\n\ndatabase:\n  existingSecret: db\n  caConfigmap: ca\n\ns3:\n  region: eu-west-1\n  existingSecret: s3\n\ntaskpods:\n  namespace: jobs\n\nauth:\n  resource: https://poiesis.example.org\n  issuers:\n    - issuer: https://kc/realms/x\n      audience: poiesis\n      tokenTypes: [JWT]  # Keycloak access tokens; other issuers default to at+jwt\n      clients: [poiesis-cli]\n      requiredClaim: {name: groups, values: [/u]}\n      admin: {name: groups, values: [/a]}\n      keyMinting: {clients: [poiesis-cli], maxAuthAge: 600}\n    - issuer: https://gw\n      audience: poiesis\n      jwksUri: http://gw/j\n  apiKeys:\n    enabled: true\n",
+      "valuesSteps": [
+        -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 6, 6, 3, 4, 0, 4, 4,
+        4, 4, 4, 5, 5, 4, 4, 4, 4, 4, 4
+      ],
+      "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\nkubectl create namespace jobs\n\nkubectl -n poiesis create secret generic db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=verify-full&sslrootcert=/etc/ssl/poiesis/ca.crt'\n\nkubectl -n poiesis create secret generic s3 \\\n  --from-literal=AWS_ACCESS_KEY_ID=… \\\n  --from-literal=AWS_SECRET_ACCESS_KEY=…\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
+      "installSteps": [-1, -1, 6, -1, 1, 1, 1, 2, 2, 2, 2, -1, -1, -1],
+      "missing": [],
+      "examples": [],
+      "summaries": [
+        "https://poiesis.example.org",
+        "Secret db",
+        "S3 · eu-west-1",
+        "10–100 Gi",
+        "2 issuers + API keys",
+        "owner only",
+        "1 changed",
+        ""
+      ],
+      "trials": {
+        "kc": {
+          "hit": 0,
+          "steps": [
+            ["Bearer eyJhbGci…"],
+            ["iss matches kc/realms/x"],
+            ["signature checked against the issuer's keys"],
+            ["aud poiesis · typ JWT · client poiesis-cli"],
+            ["groups contains /u"],
+            ["<b>200</b>  owner kc/realms/x|alice", "ok"]
+          ]
+        },
+        "gw": {
+          "hit": 1,
+          "steps": [
+            ["Bearer eyJ… signed by the gateway"],
+            ["iss matches gw"],
+            ["keys from the static jwksUri"],
+            ["<b>200</b>  owner gateway|svc-nextflow", "ok"]
+          ]
+        },
+        "key": {
+          "hit": "key",
+          "steps": [
+            ["Bearer poi_7Kq…"],
+            ["poi_ prefix: an API key, looked up by hash"],
+            ["not revoked, not expired"],
+            ["<b>200</b>  same owner as the user who minted it", "ok"]
+          ]
+        },
+        "none": {
+          "hit": null,
+          "steps": [
+            ["no Authorization header"],
+            ["401", "bad"],
+            ["WWW-Authenticate: Bearer resource_metadata=…", "bad"],
+            ["the client follows it to your issuer"]
+          ]
+        }
+      },
+      "valuesHtml": [
+        "<span class=\"c\"># Poiesis values.yaml (non-default values only)</span>",
+        "",
+        "<span class=\"k\">api</span>:",
+        "  <span class=\"k\">ingress</span>:",
+        "    <span class=\"k\">enabled</span>: <span class=\"s\">true</span>",
+        "    <span class=\"k\">className</span>: <span class=\"s\">nginx</span>",
+        "    <span class=\"k\">hosts</span>:",
+        "      - <span class=\"k\">host</span>: <span class=\"s\">poiesis.example.org</span>",
+        "        <span class=\"k\">paths</span>: <span class=\"s\">[{path: /, pathType: Prefix}]</span>",
+        "    <span class=\"k\">annotations</span>:",
+        "      cert-manager.io/cluster-issuer: <span class=\"s\">le</span>",
+        "    <span class=\"k\">tls</span>:",
+        "      - <span class=\"k\">secretName</span>: <span class=\"s\">poiesis-tls</span>",
+        "        <span class=\"k\">hosts</span>: <span class=\"s\">[poiesis.example.org]</span>",
+        "",
+        "<span class=\"k\">database</span>:",
+        "  <span class=\"k\">existingSecret</span>: <span class=\"s\">db</span>",
+        "  <span class=\"k\">caConfigmap</span>: <span class=\"s\">ca</span>",
+        "",
+        "<span class=\"k\">s3</span>:",
+        "  <span class=\"k\">region</span>: <span class=\"s\">eu-west-1</span>",
+        "  <span class=\"k\">existingSecret</span>: <span class=\"s\">s3</span>",
+        "",
+        "<span class=\"k\">taskpods</span>:",
+        "  <span class=\"k\">namespace</span>: <span class=\"s\">jobs</span>",
+        "",
+        "<span class=\"k\">auth</span>:",
+        "  <span class=\"k\">resource</span>: <span class=\"s\">https://poiesis.example.org</span>",
+        "  <span class=\"k\">issuers</span>:",
+        "    - <span class=\"k\">issuer</span>: <span class=\"s\">https://kc/realms/x</span>",
+        "      <span class=\"k\">audience</span>: <span class=\"s\">poiesis</span>",
+        "      <span class=\"k\">tokenTypes</span>: <span class=\"s\">[JWT]</span><span class=\"c\">  # Keycloak access tokens; other issuers default to at+jwt</span>",
+        "      <span class=\"k\">clients</span>: <span class=\"s\">[poiesis-cli]</span>",
+        "      <span class=\"k\">requiredClaim</span>: <span class=\"s\">{name: groups, values: [/u]}</span>",
+        "      <span class=\"k\">admin</span>: <span class=\"s\">{name: groups, values: [/a]}</span>",
+        "      <span class=\"k\">keyMinting</span>: <span class=\"s\">{clients: [poiesis-cli], maxAuthAge: 600}</span>",
+        "    - <span class=\"k\">issuer</span>: <span class=\"s\">https://gw</span>",
+        "      <span class=\"k\">audience</span>: <span class=\"s\">poiesis</span>",
+        "      <span class=\"k\">jwksUri</span>: <span class=\"s\">http://gw/j</span>",
+        "  <span class=\"k\">apiKeys</span>:",
+        "    <span class=\"k\">enabled</span>: <span class=\"s\">true</span>"
+      ],
+      "installHtml": [
+        "<span class=\"c\"># 1. Secrets. The chart references them; it never creates them.</span>",
+        "<span class=\"k\">kubectl</span> create namespace poiesis",
+        "<span class=\"k\">kubectl</span> create namespace jobs",
+        "",
+        "<span class=\"k\">kubectl</span> -n poiesis create secret generic db \\",
+        "  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=verify-full&amp;sslrootcert=/etc/ssl/poiesis/ca.crt'",
+        "",
+        "<span class=\"k\">kubectl</span> -n poiesis create secret generic s3 \\",
+        "  --from-literal=AWS_ACCESS_KEY_ID=… \\",
+        "  --from-literal=AWS_SECRET_ACCESS_KEY=…",
+        "",
+        "<span class=\"c\"># 2. Install (from a checkout until the chart is published, #53)</span>",
+        "<span class=\"k\">helm</span> install poiesis ./deployment/helm/poiesis \\",
+        "  -n poiesis -f values.yaml"
+      ],
+      "explain": {
+        "basics": {
+          "title": "Public URL",
+          "pts": [
+            "Becomes the ingress host and <code>auth.resource</code>.",
+            "A client that only knows this URL gets a 401 that points to the metadata.",
+            "The metadata names your issuers, so the client can log in."
+          ],
+          "nodes": {
+            "cl": {
+              "x": 10,
+              "y": 100,
+              "w": 100,
+              "label": "Client",
+              "sub": "Nextflow"
+            },
+            "ing": {
+              "x": 160,
+              "y": 30,
+              "w": 110,
+              "label": "Ingress",
+              "sub": "poiesis.example."
+            },
+            "api": {
+              "x": 300,
+              "y": 100,
+              "w": 110,
+              "label": "Poiesis API"
+            },
+            "iss": {
+              "x": 160,
+              "y": 180,
+              "w": 110,
+              "label": "Issuer",
+              "sub": "Keycloak"
+            }
+          },
+          "edges": [
+            ["cl", "ing"],
+            ["ing", "api"],
+            ["cl", "iss"],
+            ["cl", "api"]
+          ],
+          "hops": [
+            {
+              "f": "cl",
+              "t": "ing",
+              "label": "GET /tasks",
+              "cap": "A client calls the public URL."
+            },
+            {
+              "f": "ing",
+              "t": "api",
+              "label": "GET /tasks",
+              "cap": "The ingress forwards it to the API."
+            },
+            {
+              "f": "api",
+              "t": "cl",
+              "label": "401",
+              "tone": "bad",
+              "cap": "No token: 401, pointing to the resource metadata."
+            },
+            {
+              "f": "cl",
+              "t": "iss",
+              "label": "log in",
+              "cap": "The metadata names the issuer. The client logs in there."
+            },
+            {
+              "f": "cl",
+              "t": "api",
+              "label": "Bearer …",
+              "tone": "ok",
+              "cap": "It retries with the token and gets 200."
+            }
+          ]
+        },
+        "db": {
+          "title": "Database",
+          "pts": [
+            "The API and tctl read <code>DATABASE_URL</code> from your Secret.",
+            "A migration hook updates the schema before each install or upgrade.",
+            "In production, use <code>sslmode=verify-full</code> with a CA ConfigMap."
+          ],
+          "nodes": {
+            "sec": {
+              "x": 10,
+              "y": 100,
+              "w": 110,
+              "label": "Secret",
+              "sub": "db"
+            },
+            "api": {
+              "x": 160,
+              "y": 30,
+              "w": 110,
+              "label": "API"
+            },
+            "tc": {
+              "x": 160,
+              "y": 170,
+              "w": 110,
+              "label": "tctl",
+              "sub": "task state"
+            },
+            "pg": {
+              "x": 300,
+              "y": 100,
+              "w": 110,
+              "label": "Postgres"
+            }
+          },
+          "edges": [
+            ["sec", "api"],
+            ["sec", "tc"],
+            ["api", "pg"],
+            ["tc", "pg"]
+          ],
+          "hops": [
+            {
+              "f": "sec",
+              "t": "api",
+              "label": "DATABASE_URL",
+              "cap": "The API reads the URL from your Secret."
+            },
+            {
+              "f": "sec",
+              "t": "tc",
+              "label": "DATABASE_URL",
+              "cap": "So does tctl, which records how tasks end."
+            },
+            {
+              "f": "api",
+              "t": "pg",
+              "label": "tasks",
+              "cap": "The API stores tasks and API keys."
+            },
+            {
+              "f": "tc",
+              "t": "pg",
+              "label": "COMPLETE",
+              "tone": "ok",
+              "cap": "tctl writes each task's final state."
+            }
+          ]
+        },
+        "storage": {
+          "title": "Storage",
+          "pts": [
+            "Only task inputs and outputs touch object storage.",
+            "Credentials come from your Secret, or from workload identity.",
+            "While a task runs, its files live on its own volume."
+          ],
+          "nodes": {
+            "in": {
+              "x": 10,
+              "y": 30,
+              "w": 100,
+              "label": "s3://in"
+            },
+            "tif": {
+              "x": 155,
+              "y": 30,
+              "w": 110,
+              "label": "tif",
+              "sub": "stage in"
+            },
+            "vol": {
+              "x": 155,
+              "y": 115,
+              "w": 110,
+              "label": "volume"
+            },
+            "tof": {
+              "x": 155,
+              "y": 200,
+              "w": 110,
+              "label": "tof",
+              "sub": "stage out"
+            },
+            "out": {
+              "x": 310,
+              "y": 200,
+              "w": 100,
+              "label": "s3://out"
+            },
+            "cr": {
+              "x": 310,
+              "y": 30,
+              "w": 100,
+              "label": "credentials",
+              "sub": "s3"
+            }
+          },
+          "edges": [
+            ["cr", "tif"],
+            ["in", "tif"],
+            ["tif", "vol"],
+            ["vol", "tof"],
+            ["tof", "out"]
+          ],
+          "h": 260,
+          "hops": [
+            {
+              "f": "cr",
+              "t": "tif",
+              "label": "AWS_*",
+              "cap": "tif gets the S3 credentials."
+            },
+            {
+              "f": "in",
+              "t": "tif",
+              "label": "reads.fq",
+              "cap": "It downloads each input…"
+            },
+            {
+              "f": "tif",
+              "t": "vol",
+              "label": "reads.fq",
+              "cap": "…onto the task's volume."
+            },
+            {
+              "f": "vol",
+              "t": "tof",
+              "label": "sorted.bam",
+              "cap": "After the executors, tof picks up the outputs…"
+            },
+            {
+              "f": "tof",
+              "t": "out",
+              "label": "sorted.bam",
+              "tone": "ok",
+              "cap": "…and uploads them."
+            }
+          ]
+        },
+        "vol": {
+          "title": "Task volumes",
+          "pts": [
+            "Sized by the task's <code>disk_gb</code>, up to the largest allowed.",
+            "Shared by the task's containers.",
+            "Deleted with the Job after <code>retainAfterSeconds</code>."
+          ],
+          "fig": true
+        },
+        "authn": {
+          "title": "Authentication",
+          "pts": [
+            "The token's <code>iss</code> must match one trusted issuer exactly. Order doesn't matter.",
+            "Signature, audience, token type and client are checked.",
+            "The owner is <code>issuer|subject</code>, stamped on every task."
+          ],
+          "nodes": {
+            "rq": {
+              "x": 10,
+              "y": 74,
+              "w": 100,
+              "label": "Request",
+              "sub": "Bearer …"
+            },
+            "ow": {
+              "x": 318,
+              "y": 74,
+              "w": 94,
+              "label": "Owner",
+              "sub": "issuer|sub"
+            },
+            "e0": {
+              "x": 150,
+              "y": 16,
+              "w": 132,
+              "label": "OIDC issuer",
+              "sub": "kc/realms/x"
+            },
+            "e1": {
+              "x": 150,
+              "y": 74,
+              "w": 132,
+              "label": "Gateway JWT",
+              "sub": "gw"
+            },
+            "k": {
+              "x": 150,
+              "y": 132,
+              "w": 132,
+              "label": "API keys",
+              "sub": "poi_…"
+            }
+          },
+          "edges": [
+            ["rq", "e0"],
+            ["rq", "e1"],
+            ["e0", "ow"],
+            ["e1", "ow"],
+            ["rq", "k"],
+            ["k", "ow"]
+          ],
+          "h": 192,
+          "hops": [
+            {
+              "f": "rq",
+              "t": "e0",
+              "label": "iss ✓",
+              "cap": "The token's <code>iss</code> matches a trusted issuer exactly."
+            },
+            {
+              "f": "e0",
+              "t": "ow",
+              "label": "alice",
+              "tone": "ok",
+              "cap": "Checks pass: the caller is <code>issuer|alice</code>."
+            },
+            {
+              "f": "rq",
+              "t": "k",
+              "label": "poi_…",
+              "cap": "An API key is looked up by its hash."
+            },
+            {
+              "f": "k",
+              "t": "ow",
+              "label": "alice",
+              "tone": "ok",
+              "cap": "It has the owner of whoever minted it."
+            }
+          ]
+        },
+        "authz": {
+          "title": "Authorization",
+          "pts": [
+            "Everyone sees and cancels only their own tasks.",
+            "An admin group can revoke anyone's API keys.",
+            "Add a decision service later to share tasks."
+          ],
+          "nodes": {
+            "rq": {
+              "x": 10,
+              "y": 90,
+              "w": 100,
+              "label": "alice",
+              "sub": "GET task"
+            },
+            "api": {
+              "x": 160,
+              "y": 90,
+              "w": 100,
+              "label": "API",
+              "sub": "owner rule"
+            },
+            "db": {
+              "x": 310,
+              "y": 90,
+              "w": 100,
+              "label": "Tasks"
+            }
+          },
+          "edges": [
+            ["rq", "api"],
+            ["api", "db"]
+          ],
+          "h": 220,
+          "hops": [
+            {
+              "f": "rq",
+              "t": "api",
+              "label": "GET",
+              "cap": "alice asks for a task."
+            },
+            {
+              "f": "api",
+              "t": "db",
+              "label": "owner?",
+              "cap": "Poiesis checks who owns the task."
+            },
+            {
+              "f": "api",
+              "t": "rq",
+              "label": "200",
+              "tone": "ok",
+              "cap": "It's hers: 200. Anyone else gets 404."
+            }
+          ]
+        },
+        "adv": {
+          "title": "Advanced",
+          "pts": ["None of these are needed to start."]
+        },
+        "review": {
+          "title": "Installing",
+          "pts": [
+            "Create the Secrets first; the chart only refers to them.",
+            "A migration hook runs before the API starts.",
+            "tctl polls TaskPods and records how each task ends."
+          ],
+          "nodes": {
+            "you": {
+              "x": 10,
+              "y": 90,
+              "w": 90,
+              "label": "You"
+            },
+            "kc": {
+              "x": 150,
+              "y": 20,
+              "w": 120,
+              "label": "kubectl",
+              "sub": "Secrets"
+            },
+            "hm": {
+              "x": 150,
+              "y": 160,
+              "w": 120,
+              "label": "helm",
+              "sub": "values.yaml"
+            },
+            "cl": {
+              "x": 310,
+              "y": 90,
+              "w": 100,
+              "label": "Cluster",
+              "sub": "api · tctl"
+            }
+          },
+          "edges": [
+            ["you", "kc"],
+            ["you", "hm"],
+            ["kc", "cl"],
+            ["hm", "cl"]
+          ],
+          "hops": [
+            {
+              "f": "you",
+              "t": "kc",
+              "label": "create",
+              "cap": "Create the database and S3 Secrets."
+            },
+            {
+              "f": "kc",
+              "t": "cl",
+              "label": "Secrets",
+              "cap": "They land in the namespace."
+            },
+            {
+              "f": "you",
+              "t": "hm",
+              "label": "install",
+              "cap": "Run helm install with your values.yaml."
+            },
+            {
+              "f": "hm",
+              "t": "cl",
+              "label": "migrate",
+              "cap": "Migrations run, then the API and tctl start."
+            },
+            {
+              "f": "cl",
+              "t": "you",
+              "label": "ready",
+              "tone": "ok",
+              "cap": "Point an engine at the public URL."
+            }
+          ]
+        }
+      }
+    }
+  },
+  "manualHighlight": {
+    "foo: bar  # example x": "<span class=\"k\">foo</span>: <span class=\"s exv\">bar</span><span class=\"ex\">  # example x</span>",
+    "# c": "<span class=\"c\"># c</span>",
+    "  - k: v  # note": "  - <span class=\"k\">k</span>: <span class=\"s\">v</span><span class=\"c\">  # note</span>",
+    "a:b: c": "<span class=\"k\">a</span>:b: <span class=\"s\">c</span>",
+    "key: ": "<span class=\"k\">key</span>: ",
+    "  -   x.y: 'q' # n": "  -   <span class=\"k\">x.y</span>: <span class=\"s\">'q' # n</span>",
+    "cert-manager.io/x: \"v\"": "cert-manager.io/x: <span class=\"s\">&quot;v&quot;</span>",
+    "<b>&amp;: </b>": "&lt;b&gt;&amp;amp;: <span class=\"s\">&lt;/b&gt;</span>",
+    "plain": "plain",
+    "": ""
+  }
+}
