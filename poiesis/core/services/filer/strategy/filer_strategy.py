@@ -193,24 +193,26 @@ class OutputFilerStrategy(BaseFilerStrategy, ABC):
                 await self.upload_glob(globbed)
                 return
 
-            if not output_glob_fallback():
+            if output_glob_fallback():
+                logger.warning(
+                    "Output glob '%s' matched no files; falling back to "
+                    "uploading parent directory '%s' (%s is on).",
+                    self.payload.path,
+                    self.payload.path_prefix,
+                    OUTPUT_GLOB_FALLBACK_ENV,
+                )
+                parent = self._get_container_path(self.payload.path_prefix)
+                await self.upload_output_directory(parent)
+                return
+            if is_glob_like:
                 logger.warning(
                     "Output glob '%s' matched no files; nothing uploaded to %s.",
                     self.payload.path,
                     redact_url(self.payload.url),
                 )
                 return
-
-            logger.warning(
-                "Output glob '%s' matched no files; falling back to "
-                "uploading parent directory '%s' (%s is on).",
-                self.payload.path,
-                self.payload.path_prefix,
-                OUTPUT_GLOB_FALLBACK_ENV,
-            )
-            parent = self._get_container_path(self.payload.path_prefix)
-            await self.upload_output_directory(parent)
-            return
+            # A plain path that doesn't exist: handled below like one
+            # without `path_prefix`, which fails the task.
 
         if (
             self.payload.type == TesFileType.FILE

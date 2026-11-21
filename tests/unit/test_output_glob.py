@@ -130,3 +130,10 @@ def test_setting_reaches_tof(enabled):
     )
     expected = {OUTPUT_GLOB_FALLBACK_ENV: "true"} if enabled else {}
     assert filer_env(config)["tof"] == expected
+
+
+def test_missing_plain_path_with_prefix_fails(pvc, dest):
+    """A plain path that doesn't exist fails, with or without `path_prefix`."""
+    with pytest.raises(FileNotFoundError):
+        run_tof(dest, "/outputs/missing.txt")
+    assert not dest.exists()
