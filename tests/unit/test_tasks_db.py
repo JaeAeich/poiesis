@@ -7,6 +7,8 @@ stored groups and pagination on a real database. Skipped without
 of its own (see `postgres.py`).
 """
 
+import json
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -200,5 +202,44 @@ def test_groups_stored() -> None:
         assert bob_alpha["owner"] == BOB
         assert bob_alpha["tags"] == {"project": "y"}
         assert plain["groups"] == []
+
+    run(test)
+
+
+def test_null_tags_absent() -> None:
+    """A null tag dropped on input is absent in the stored jsonb (issue #71)."""
+
+    async def test(pool: Any) -> None:
+        task = TesTask.model_validate(
+            {
+                "name": "cromwell",
+                "executors": [{"image": "alpine", "command": ["true"]}],
+                "tags": {"workflow_id": "w1", "parent_workflow_id": None},
+            }
+        )
+        empty = TesTask.model_validate(
+            {
+                "name": "all-null",
+                "executors": [{"image": "alpine", "command": ["true"]}],
+                "tags": {"parent_workflow_id": None},
+            }
+        )
+        async with pool.acquire() as conn:
+            task_id = await tasks_db.create_task(conn, task, ALICE)
+            empty_id = await tasks_db.create_task(conn, empty, ALICE)
+            row = await conn.fetchrow(
+                "SELECT tags ? 'parent_workflow_id' AS has_key,"
+                " tags @> $2::jsonb AS matches FROM tasks WHERE id = $1",
+                uuid.UUID(task_id),
+                json.dumps({"workflow_id": "w1"}),
+            )
+            meta = await tasks_db.get_task_meta(conn, empty_id)
+        by_key = ListFilters(tag_key=["parent_workflow_id"])
+        assert await names(pool, by_key) == set()
+        assert row is not None
+        assert not row["has_key"]
+        assert row["matches"]
+        assert meta is not None
+        assert meta["tags"] == {}
 
     run(test)

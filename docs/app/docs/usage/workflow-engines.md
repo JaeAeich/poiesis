@@ -140,6 +140,17 @@ print(client.get_task(task_id).state)
 `tes.HTTPClient(url, user="py-tes", password="poi_k7H2pQ…")` sends
 Basic instead. Set either `token` or `user` and `password`, not both.
 
+## Cromwell
+
+Cromwell's TES backend tags every task with `workflow_id`,
+`root_workflow_id` and `parent_workflow_id`, which is `null` for a
+top-level workflow. TES tag values are strings, so Poiesis drops tags
+whose value is `null` and accepts the task: the task keeps the other
+two tags, and `parent_workflow_id` is simply absent, as if never sent
+(in tag filters, sharing scopes and what the decision service sees
+too). Any other value that is not a string (a number, an object) still
+gets `422`.
+
 ## Other clients
 
 Anything that can set a header works: send
