@@ -96,7 +96,8 @@ def test_concurrent_mints_respect_cap() -> None:
         results = await asyncio.gather(*(mint(pool) for _ in range(20)))
         assert sum(r is not None for r in results) == 5  # noqa: PLR2004
         async with pool.acquire() as conn:
-            assert len(await api_keys_db.list_api_keys(conn, ALICE)) == 5  # noqa: PLR2004
+            listed = await api_keys_db.list_api_keys(conn, ALICE)
+        assert len(listed) == 5  # noqa: PLR2004
 
     run(test)
 

@@ -78,8 +78,9 @@ async def create_api_key(  # noqa: PLR0913 (one column per argument)
         active = await conn.fetchval(
             """
             SELECT count(*) FROM api_keys
-            WHERE owner = $1 AND revoked_at IS NULL
-              AND expires_at > clock_timestamp()
+            WHERE owner = $1
+                AND revoked_at IS NULL
+                AND expires_at > clock_timestamp()
             """,
             owner,
         )
