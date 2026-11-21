@@ -12,8 +12,8 @@ or expired URL, denied access, a full volume. The task ends in
 ``SYSTEM_ERROR``.
 
 A declared output the executors didn't produce, or one that is a symlink
-leading off the volume, is the user's (`UserError`). The line starts with a marker and the task ends in
-``EXECUTOR_ERROR``.
+leading off the volume, is the user's (`UserError`). The line starts with a
+marker and the task ends in ``EXECUTOR_ERROR``.
 
 The line is at most `MAX_BYTES` long and carries no query string and no
 credentials of a URL, since a presigned URL's query is its signature.
