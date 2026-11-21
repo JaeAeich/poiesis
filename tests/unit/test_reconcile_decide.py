@@ -510,14 +510,17 @@ CASES = [
         unschedulable=600,
     ),
     Case(
-        "live Job, no Pod for 700 s, timeout 600 s: SYSTEM_ERROR, delete",
+        "live Job, no Pod for 700 s, timeout 600 s: SYSTEM_ERROR with its events",
         [
-            write(
+            WriteTerminal(
                 TesState.SYSTEM_ERROR,
                 "Job created no Pod",
-                "unschedulable timeout: the Job created no Pod "
-                "(see the Job's events: quota, admission)",
-                source="job-no-pod",
+                (
+                    "unschedulable timeout: the Job created no Pod "
+                    "(see the Job's events: quota, admission)",
+                ),
+                "job-no-pod",
+                explain_from_job_events=True,
             ),
             DeleteJob(retry=False),
         ],

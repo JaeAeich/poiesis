@@ -571,6 +571,9 @@ async def _apply(
     for action in actions:
         if isinstance(action, WriteTerminal):
             pod = action.backfill_from_pod
+            system_logs = list(action.system_logs)
+            if action.explain_from_job_events:
+                system_logs += await _job_warning(core_v1, namespace, task_id)
             wrote = await _apply_terminal(
                 pool,
                 core_v1=core_v1 if pod is not None else None,
@@ -578,7 +581,7 @@ async def _apply(
                 pod=pod,
                 proposed=action.state,
                 reason=action.reason,
-                system_logs=list(action.system_logs),
+                system_logs=system_logs,
                 source=action.source,
             )
         elif action.retry or wrote:
@@ -650,6 +653,55 @@ async def _apply_terminal(
         reason,
     )
     return True
+
+
+async def _job_warning(core_v1: CoreV1Api, namespace: str, task_id: str) -> list[str]:
+    """The latest Warning event of a task's Job, as a system log line.
+
+    A Job that creates no Pod says why only in its events: `FailedCreate`
+    with the ResourceQuota or the admission webhook that refused the Pod.
+    Read once, when tctl ends such a task. A failed read is logged and
+    gives no line; the task still ends.
+    """
+    # The stubs don't list the client's `_request_timeout`.
+    api: Any = core_v1
+    try:
+        events = await asyncio.to_thread(
+            api.list_namespaced_event,
+            namespace=namespace,
+            field_selector=(
+                "involvedObject.kind=Job,"
+                f"involvedObject.name={job_name_for(task_id)},type=Warning"
+            ),
+            _request_timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:  # noqa: BLE001 - the cause is optional detail
+        logger.warning(
+            "tctl: could not read the events of the Job of task=%s: %s", task_id, exc
+        )
+        return []
+    latest = max(
+        (e.to_dict() if hasattr(e, "to_dict") else dict(e) for e in events.items),
+        key=_event_time,
+        default=None,
+    )
+    if latest is None:
+        return []
+    return [f"job event {latest.get('reason')}: {latest.get('message')}"]
+
+
+def _event_time(event: Mapping[str, Any]) -> datetime:
+    """When an event last happened; events without any time sort first."""
+    metadata = event.get("metadata") or {}
+    for value in (
+        event.get("last_timestamp") or event.get("lastTimestamp"),
+        event.get("event_time") or event.get("eventTime"),
+        metadata.get("creation_timestamp") or metadata.get("creationTimestamp"),
+    ):
+        stamp = _parse_kubelet_ts(value)
+        if stamp is not None:
+            return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
+    return datetime.min.replace(tzinfo=UTC)
 
 
 async def _delete_job(batch_v1: BatchV1Api, namespace: str, task_id: str) -> None:

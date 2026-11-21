@@ -89,6 +89,9 @@ class World:
         self.on_pod_list = lambda: None
         #: Asked by the pass before each task's actions; None: always leader.
         self.still_leader: Callable[[], bool] | None = None
+        #: The Warning events of the Jobs, and an error their list raises.
+        self.events: list[dict[str, Any]] = []
+        self.events_error: Exception | None = None
         #: Raised once by the terminal write of a task.
         self.write_errors: dict[str, Exception] = {}
         #: Objects per list page; None returns each list in one page.
@@ -188,6 +191,14 @@ class World:
                 _continue=str(end) if end < len(objects) else None
             ),
         )
+
+    def list_namespaced_event(self, **kwargs: Any) -> SimpleNamespace:
+        assert kwargs["namespace"] == NS
+        assert kwargs["_request_timeout"] == tctl._REQUEST_TIMEOUT_SECONDS
+        self.calls.append(f"events {kwargs['field_selector']}")
+        if self.events_error is not None:
+            raise self.events_error
+        return SimpleNamespace(items=list(self.events))
 
     def delete_namespaced_job(self, **kwargs: Any) -> None:
         assert kwargs["namespace"] == NS
@@ -417,6 +428,61 @@ def test_pod_stuck_terminating_on_a_lost_node_ends_the_task(world: World) -> Non
     world.tick()
     assert world.writes == {T1: (TesState.SYSTEM_ERROR, "Pod stuck terminating")}
     assert world.deleted == [f"task-{T1}"]
+
+
+class TestJobEvents:
+    """A Job that made no Pod: its latest Warning event names the cause (#163)."""
+
+    QUOTA = (
+        'pods "task-x-abcde" is forbidden: exceeded quota: tasks, '
+        "requested: cpu=4, used: cpu=8, limited: cpu=8"
+    )
+
+    def ended(self, world: World) -> None:
+        world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 600
+        world.jobs = [job(T1, age=700)]
+        world.tick()
+
+    def test_latest_warning_is_logged(self, world: World) -> None:
+        world.events = [
+            {"reason": "FailedCreate", "message": "old", "last_timestamp": NOW},
+            {
+                "reason": "FailedCreate",
+                "message": self.QUOTA,
+                "lastTimestamp": (NOW + timedelta(seconds=5)).isoformat(),
+            },
+        ]
+        self.ended(world)
+        assert world.system_logs[T1] == [
+            "unschedulable timeout: the Job created no Pod "
+            "(see the Job's events: quota, admission)",
+            f"job event FailedCreate: {self.QUOTA}",
+        ]
+        assert (
+            f"events involvedObject.kind=Job,involvedObject.name=task-{T1},"
+            "type=Warning"
+        ) in world.calls
+
+    def test_no_events_no_line(self, world: World) -> None:
+        self.ended(world)
+        assert len(world.system_logs[T1]) == 1
+
+    def test_failed_event_read_still_ends_the_task(
+        self, world: World, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        world.events_error = ApiException(status=403, reason="Forbidden")
+        self.ended(world)
+        assert world.writes == {T1: (TesState.SYSTEM_ERROR, "Job created no Pod")}
+        assert "could not read the events of the Job" in caplog.text
+
+    def test_events_are_not_read_on_other_passes(self, world: World) -> None:
+        world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 600
+        world.jobs = [job(T1, age=500)]
+        world.pods = [pod(T2, "Failed")]
+        world.tick()
+        assert not [c for c in world.calls if c.startswith("events")]
 
 
 class TestPodlessJobs:

@@ -102,6 +102,9 @@ class WriteTerminal:
         source: Which check proposed it, for tctl's log line.
         backfill_from_pod: The Pod whose executor logs are backfilled if
             the write lands; None when the write doesn't come from a Pod.
+        explain_from_job_events: Add the latest Warning event of the
+            task's Job (a quota or admission refusal) to the system logs;
+            read when the write is applied, not on every pass.
     """
 
     state: TesState
@@ -109,6 +112,7 @@ class WriteTerminal:
     system_logs: tuple[str, ...]
     source: str
     backfill_from_pod: Mapping[str, Any] | None = None
+    explain_from_job_events: bool = False
 
 
 @dataclass(frozen=True)
@@ -304,6 +308,7 @@ def _decide_podless_job(
                     "(see the Job's events: quota, admission)",
                 ),
                 "job-no-pod",
+                explain_from_job_events=True,
             ),
             DeleteJob(retry=False),
         ]

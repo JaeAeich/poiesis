@@ -112,7 +112,9 @@ has these jobs:
   Set `tctl.unschedulableTimeoutSeconds` to fail fast: a task waiting
   longer than that, counted from the Pod's creation (or the Job's, with
   no Pod yet), becomes `SYSTEM_ERROR` with the scheduler's message, or
-  `Job created no Pod`, in `system_logs`.
+  `Job created no Pod`, in `system_logs`. For a Job without a Pod, TCtl
+  then reads the Job's latest `Warning` event once and adds it, such as
+  "job event FailedCreate: pods ... is forbidden: exceeded quota: ...".
 
 - **Job cleanup**: TCtl deletes the Job of every `CANCELING` task that
   still has one, on each pass until it is gone. It also deletes the Job

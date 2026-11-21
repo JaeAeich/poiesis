@@ -202,7 +202,7 @@ below only. The migration hook and TaskPods are not selected.
 
 | Path | Type | Default | Description |
 |---|---|---|---|
-| `tctl.unschedulableTimeoutSeconds` | integer / null | `null` | How long a task may wait for its Pod to be created and scheduled (ResourceQuota full, no node with room), counted from the Pod's (or, with no Pod yet, the Job's) creation. Past it, tctl ends the task as `SYSTEM_ERROR` with the scheduler's message and deletes its Job. `null` → the task stays `QUEUED` until `taskpods.activeDeadlineSeconds` ends it. Integer ≥ 1. A Pod already bound to a node that doesn't start (image pull, volume mount) always fails after 5 minutes. |
+| `tctl.unschedulableTimeoutSeconds` | integer / null | `null` | How long a task may wait for its Pod to be created and scheduled (ResourceQuota full, no node with room), counted from the Pod's (or, with no Pod yet, the Job's) creation. Past it, tctl ends the task as `SYSTEM_ERROR` with the scheduler's message (or, with no Pod, the Job's latest Warning event, such as a quota refusal) and deletes its Job. `null` → the task stays `QUEUED` until `taskpods.activeDeadlineSeconds` ends it. Integer ≥ 1. A Pod already bound to a node that doesn't start (image pull, volume mount) always fails after 5 minutes. |
 
 ### Rollout (`api.preStopSleepSeconds`, `api.terminationGracePeriodSeconds`, `api.topologySpreadConstraints`)
 
