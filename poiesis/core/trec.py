@@ -3,7 +3,8 @@
 TRec runs inside the TaskPod and watches its own Pod via the Kubernetes
 API. Each watch event is translated by `pod_status.translate` into a
 list of `TaskEvent`s; the recorder applies them by writing executor and
-filer log rows to Postgres.
+filer log rows to Postgres. An executor's row carries the tail of its
+container log as `stdout` (see `poiesis.core.executor_logs`).
 
 Trec does NOT write terminal state. The cluster-wide controller (tctl)
 owns terminal transitions exclusively — see `poiesis/core/tctl.py`. Trec's
@@ -15,6 +16,7 @@ during pod teardown.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import signal
 import uuid
@@ -22,11 +24,15 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Mapping
+    from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+
+    #: Reads executor N's output; None when the log can't be read.
+    ReadOutput = Callable[[int], Awaitable[str | None]]
 
 import asyncpg
 from kubernetes import client
 
+from poiesis.core.executor_logs import read_executor_output
 from poiesis.core.k8s_watch import PodEvent, PodSelector, watch_pods
 from poiesis.core.pod_status import (
     EventKind,
@@ -64,6 +70,7 @@ async def _run_until_terminal(
     cancelled = _install_signal_handlers()
 
     core_v1 = client.CoreV1Api()
+    read_output = functools.partial(read_executor_output, core_v1, pod_name, namespace)
     selector = PodSelector(
         namespace=namespace, field_selector=f"metadata.name={pod_name}"
     )
@@ -85,7 +92,9 @@ async def _run_until_terminal(
                 logger.warning("trec: watch stream ended unexpectedly")
                 return 1
             pod_status = (event.pod.get("status") or {}) if event.pod else {}
-            terminal = await _apply_pod_snapshot(conn, task_id, pod_status, snapshot)
+            terminal = await _apply_pod_snapshot(
+                conn, task_id, pod_status, snapshot, read_output
+            )
             if terminal:
                 logger.info("trec: pod reached terminal phase; exiting")
                 return 0
@@ -106,6 +115,7 @@ async def _apply_pod_snapshot(
     task_id: str,
     pod_status: Mapping[str, Any],
     snapshot: TaskStateSnapshot,
+    read_output: ReadOutput,
 ) -> bool:
     """Translate one Pod.status snapshot and apply each new event.
 
@@ -115,7 +125,7 @@ async def _apply_pod_snapshot(
     """
     pod_terminated = False
     for event in translate(pod_status, snapshot):
-        await _apply_event(conn, task_id, event)
+        await _apply_event(conn, task_id, event, read_output)
         _advance_snapshot(snapshot, event)
         if event.kind is EventKind.POD_TERMINATED:
             pod_terminated = True
@@ -126,15 +136,19 @@ async def _apply_event(
     conn: asyncpg.Connection,
     task_id: str,
     event: TaskEvent,
+    read_output: ReadOutput,
 ) -> None:
     """Persist a single non-terminal observation.
 
-    Executor finishes land as `executor_logs` rows; filer non-zero exits
-    land as `system_logs` strings. Terminal state is tctl's exclusive
-    write — trec touches neither the tasks row nor `write_terminal_state`.
+    Executor finishes land as `executor_logs` rows, with the tail of the
+    executor's log as `stdout` (stored as None if it can't be read);
+    filer non-zero exits land as `system_logs` strings. Terminal state is
+    tctl's exclusive write — trec touches neither the tasks row nor
+    `write_terminal_state`.
     """
     if event.kind is EventKind.EXECUTOR_FINISHED:
         if event.executor_index is not None and event.exit_code is not None:
+            stdout = await read_output(event.executor_index)
             await state_db.append_executor_log(
                 conn,
                 task_id,
@@ -142,6 +156,7 @@ async def _apply_event(
                 exit_code=event.exit_code,
                 start_time=_parse_iso(event.started_at),
                 end_time=_parse_iso(event.finished_at),
+                stdout=stdout,
             )
         return
 

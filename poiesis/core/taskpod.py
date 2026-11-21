@@ -16,7 +16,9 @@ The TaskPod's shape:
         pause    — placeholder; satisfies K8s' "must have a regular container"
 
 All containers share one PVC mounted at the configured filer path; executors
-also see it at the task's TES paths (`_executor_path_mounts`). The PVC's
+also see it at the task's TES paths (`_executor_path_mounts`). Only trec,
+which watches the Pod, gets a ServiceAccount token (`_api_token_volume`);
+the Pod doesn't automount one, so executors can't call the API. The PVC's
 `ownerReferences` point at the Job so Kubernetes garbage-collects it when
 the Job is deleted.
 
@@ -34,12 +36,16 @@ from typing import TYPE_CHECKING, Any
 
 from kubernetes.client import (
     V1Capabilities,
+    V1ConfigMapProjection,
     V1ConfigMapVolumeSource,
     V1Container,
+    V1DownwardAPIProjection,
+    V1DownwardAPIVolumeFile,
     V1EnvVar,
     V1EnvVarSource,
     V1Job,
     V1JobSpec,
+    V1KeyToPath,
     V1LocalObjectReference,
     V1ObjectFieldSelector,
     V1ObjectMeta,
@@ -49,11 +55,14 @@ from kubernetes.client import (
     V1PersistentVolumeClaimVolumeSource,
     V1PodSpec,
     V1PodTemplateSpec,
+    V1ProjectedVolumeSource,
     V1ResourceRequirements,
     V1SeccompProfile,
     V1SecurityContext,
+    V1ServiceAccountTokenProjection,
     V1Volume,
     V1VolumeMount,
+    V1VolumeProjection,
 )
 
 from poiesis.api.tes.models import TesFileType
@@ -95,6 +104,11 @@ class PodSecurityEnforce(StrEnum):
 PVC_VOLUME_NAME = "task-data"
 PG_CA_VOLUME_NAME = "postgres-ca"
 PG_CA_MOUNT_PATH = "/etc/ssl/poiesis"
+API_TOKEN_VOLUME_NAME = "kube-api-token"  # noqa: S105 - a volume name
+#: Where in-cluster clients look for the token, CA and namespace.
+API_TOKEN_MOUNT_PATH = "/var/run/secrets/kubernetes.io/serviceaccount"  # noqa: S105
+#: The kubelet rotates the token before it expires; the client rereads it.
+_API_TOKEN_EXPIRATION_SECONDS = 3600
 
 
 @dataclass(frozen=True)
@@ -128,7 +142,8 @@ class RuntimeConfig:
             for backup operator opt-in (Velero/Kasten), compliance tags.
         image_pull_policy: imagePullPolicy for every container.
         taskpod_service_account: SA bound to the TaskPod; needs RBAC for
-            `get`/`watch`/`delete` on its own Pod.
+            `get`/`list`/`watch` on its own Pod and `get` on `pods/log`.
+            Its token is mounted into trec only.
         job_ttl_seconds: ttlSecondsAfterFinished on the Job. None omits
             the field entirely → Job (and PVC via owner ref) is retained
             until manually deleted. Use for audit-retention deployments.
@@ -388,6 +403,7 @@ def _build_job(
                 claim_name=pvc_name
             ),
         ),
+        _api_token_volume(),
     ]
     if config.postgres_ca_configmap:
         volumes.append(
@@ -406,6 +422,8 @@ def _build_job(
         containers=main_containers,
         restart_policy="Never",
         service_account_name=config.taskpod_service_account,
+        # executors run user images: no token for them (see `_build_trec`)
+        automount_service_account_token=False,
         termination_grace_period_seconds=config.grace_period_seconds,
         volumes=volumes,
         image_pull_secrets=(
@@ -456,6 +474,9 @@ def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
     Init container with `restartPolicy: Always` — the K8s 1.29+ native-sidecar
     form. The container stays alive for the lifetime of the Pod and observes
     init-phase container transitions.
+
+    The only container that gets the ServiceAccount token: it watches the
+    Pod and reads executor logs through the API.
     """
     container = V1Container(
         name=TREC_NAME,
@@ -463,12 +484,61 @@ def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
         image_pull_policy=config.image_pull_policy,
         command=["poiesis", "trec", "run", "--task-id", _require_id(task)],
         env=_downward_api_env() + _poiesis_env(config),
-        volume_mounts=_poiesis_mounts(config),
+        volume_mounts=[*_poiesis_mounts(config), _api_token_mount()],
         resources=config.recorder_resources,
         security_context=_poiesis_security_context(config),
     )
     object.__setattr__(container, "restart_policy", "Always")
     return container
+
+
+def _api_token_volume() -> V1Volume:
+    """The ServiceAccount token, CA and namespace, as the kubelet automounts them.
+
+    Same files as the automounted ``kube-api-access-*`` volume, so
+    in-cluster config works unchanged; mounted into trec only.
+    """
+    return V1Volume(
+        name=API_TOKEN_VOLUME_NAME,
+        projected=V1ProjectedVolumeSource(
+            default_mode=0o644,
+            sources=[
+                V1VolumeProjection(
+                    service_account_token=V1ServiceAccountTokenProjection(
+                        path="token",
+                        expiration_seconds=_API_TOKEN_EXPIRATION_SECONDS,
+                    ),
+                ),
+                V1VolumeProjection(
+                    config_map=V1ConfigMapProjection(
+                        name="kube-root-ca.crt",
+                        items=[V1KeyToPath(key="ca.crt", path="ca.crt")],
+                    ),
+                ),
+                V1VolumeProjection(
+                    downward_api=V1DownwardAPIProjection(
+                        items=[
+                            V1DownwardAPIVolumeFile(
+                                path="namespace",
+                                field_ref=V1ObjectFieldSelector(
+                                    api_version="v1",
+                                    field_path="metadata.namespace",
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            ],
+        ),
+    )
+
+
+def _api_token_mount() -> V1VolumeMount:
+    return V1VolumeMount(
+        name=API_TOKEN_VOLUME_NAME,
+        mount_path=API_TOKEN_MOUNT_PATH,
+        read_only=True,
+    )
 
 
 def _downward_api_env() -> list[V1EnvVar]:

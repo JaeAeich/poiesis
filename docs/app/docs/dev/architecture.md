@@ -15,6 +15,10 @@ Init containers run strictly sequentially. `trec` starts before them
 and stays alive across the entire Pod lifecycle. All containers share
 the Task PVC at `/transfer`.
 
+The Pod doesn't automount its ServiceAccount token. Only `trec` mounts
+one, at `/var/run/secrets/kubernetes.io/serviceaccount`, so executors,
+which run user images, can't call the Kubernetes API.
+
 ## API
 
 FastAPI under `/ga4gh/tes/v1`:
@@ -37,7 +41,8 @@ conditional-update writer guarantees the final state lands as
 In-pod recorder. Watches its own Pod, writes:
 
 - `RUNNING` on first executor start
-- `executor_logs` rows per executor (start/end/exit code)
+- `executor_logs` rows per executor (start/end/exit code, and the last
+  64 KiB of the container log as `stdout`)
 - `system_logs` lines on TIF/TOF non-zero exit
 - Terminal state (`COMPLETE` / `EXECUTOR_ERROR` / `SYSTEM_ERROR`)
 
@@ -50,6 +55,8 @@ Leader-elected backstop (3 replicas, `coordination.k8s.io` Leases).
 Pod informer scoped to `poiesis.io/task`. Three responsibilities:
 
 - **Phase reconciliation** — `Succeeded`/`Failed` → terminal state.
+  Executors TRec didn't record get their `executor_logs` rows here,
+  output included.
 - **Deleted-pod reconciliation** — cancelled tasks delete the Job;
   the Pod vanishes before reaching a terminal phase. TCtl handles the
   `DELETED` event and writes terminal state (CANCELING-precedence
@@ -67,7 +74,7 @@ TCtl is off the happy path. TRec handles clean runs.
 | `tasks` | Canonical task row |
 | `task_inputs`, `task_outputs`, `task_executors` | Typed children, relational TES schema |
 | `task_logs` | One row per attempt: `system_logs[]`, metadata, timestamps |
-| `executor_logs` | One row per executor exit: start/end/exit code |
+| `executor_logs` | One row per executor exit: start/end/exit code, output tail |
 
 State transitions go through `write_terminal_state` — a conditional
 UPDATE that requires the row to be non-terminal and gives `CANCELING`

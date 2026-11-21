@@ -199,19 +199,22 @@ async def append_executor_log(
     exit_code: int,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
+    stdout: str | None = None,
+    stderr: str | None = None,
 ) -> None:
     """Append one `executor_logs` row under the task's active log row.
 
     Idempotent: re-calling with the same `(task_id, ordinal)` is a no-op.
     Trec writes these rows as executors finish; tctl backfills any the
-    sidecar didn't get to before its own shutdown.
+    sidecar didn't get to before its own shutdown. `stdout` is the tail
+    of the executor's container log (see `poiesis.core.executor_logs`).
     """
     await conn.execute(
         """
         INSERT INTO executor_logs (
-            task_log_id, ordinal, start_time, end_time, exit_code
+            task_log_id, ordinal, start_time, end_time, exit_code, stdout, stderr
         )
-        SELECT id, $2, $3, $4, $5
+        SELECT id, $2, $3, $4, $5, $6, $7
         FROM task_logs
         WHERE task_id = $1
         ORDER BY ordinal DESC
@@ -223,7 +226,34 @@ async def append_executor_log(
         start_time,
         end_time,
         exit_code,
+        stdout,
+        stderr,
     )
+
+
+async def recorded_executor_ordinals(
+    conn: asyncpg.Connection,
+    task_id: str,
+) -> set[int]:
+    """Return the ordinals of the executor_logs rows of the active log row.
+
+    Tctl's backfill skips these, so it reads only the logs of executors
+    trec didn't record.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT e.ordinal
+        FROM executor_logs e
+        WHERE e.task_log_id = (
+            SELECT id FROM task_logs
+            WHERE task_id = $1
+            ORDER BY ordinal DESC
+            LIMIT 1
+        )
+        """,
+        uuid.UUID(task_id),
+    )
+    return {r["ordinal"] for r in rows}
 
 
 _UPDATE_APPEND_MESSAGE = """

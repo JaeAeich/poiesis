@@ -14,7 +14,8 @@ Cases the reconciler covers:
 
     * Pod reached `Succeeded` or `Failed` → write the matching terminal,
     backfill any executor_logs trec didn't get to before its own
-    sidecar SIGTERM, append a system_logs entry describing the failure.
+    sidecar SIGTERM (with the tail of each executor's log as stdout),
+    append a system_logs entry describing the failure.
     * Pod stuck in `Pending` past `_PENDING_TIMEOUT_SECONDS` → SYSTEM_ERROR
     with the kubelet's pending reason in system_logs.
     * Task non-terminal in DB but no matching live pod (and older than
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 from poiesis.api.tes.models import TesState
+from poiesis.core.executor_logs import read_executor_output
 from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.pod_status import (
     extract_pending_failure_reason,
@@ -158,12 +160,13 @@ async def _reconcile_once(
         if task_id is None:
             continue
         seen_task_ids.add(task_id)
-        await _reconcile_pod(pool, pod_dict, task_id, now)
+        await _reconcile_pod(core_v1, pool, pod_dict, task_id, now)
 
     await _reconcile_orphans(pool, seen_task_ids)
 
 
 async def _reconcile_pod(
+    core_v1: CoreV1Api,
     pool: asyncpg.Pool,
     pod: Mapping[str, Any],
     task_id: str,
@@ -178,6 +181,7 @@ async def _reconcile_pod(
         system_logs = _terminal_system_logs(pod, proposed)
         await _apply_terminal(
             pool,
+            core_v1=core_v1,
             task_id=task_id,
             pod=pod,
             proposed=proposed,
@@ -191,6 +195,7 @@ async def _reconcile_pod(
         pending_reason = extract_pending_failure_reason(pod)
         await _apply_terminal(
             pool,
+            core_v1=core_v1,
             task_id=task_id,
             pod=pod,
             proposed=TesState.SYSTEM_ERROR,
@@ -216,6 +221,7 @@ async def _reconcile_orphans(pool: asyncpg.Pool, seen_task_ids: set[str]) -> Non
     for task_id in orphans:
         await _apply_terminal(
             pool,
+            core_v1=None,
             task_id=task_id,
             pod=None,
             proposed=TesState.SYSTEM_ERROR,
@@ -228,6 +234,7 @@ async def _reconcile_orphans(pool: asyncpg.Pool, seen_task_ids: set[str]) -> Non
 async def _apply_terminal(
     pool: asyncpg.Pool,
     *,
+    core_v1: CoreV1Api | None,
     task_id: str,
     pod: Mapping[str, Any] | None,
     proposed: TesState,
@@ -251,8 +258,8 @@ async def _apply_terminal(
         if result is state_db.TerminalWriteResult.NO_OP:
             return
 
-        if pod is not None:
-            await _backfill_executor_logs(c, task_id, pod)
+        if pod is not None and core_v1 is not None:
+            await _backfill_executor_logs(c, core_v1, task_id, pod)
 
         # On the CANCELING precedence path, the proposed terminal was
         # rewritten to CANCELED. Make the system log honest about that.
@@ -274,6 +281,7 @@ async def _apply_terminal(
 
 async def _backfill_executor_logs(
     conn: asyncpg.Connection,
+    core_v1: CoreV1Api,
     task_id: str,
     pod: Mapping[str, Any],
 ) -> None:
@@ -281,8 +289,14 @@ async def _backfill_executor_logs(
 
     Idempotent: `append_executor_log` is INSERT ON CONFLICT DO NOTHING
     keyed on `(task_log_id, ordinal)`. Walks `initContainerStatuses` for
-    containers named `exec-N`; ignores trec/tif/tof.
+    containers named `exec-N`; ignores trec/tif/tof. Executors trec
+    already recorded are skipped, so their logs aren't read again; for
+    the others the tail of the container log is stored as `stdout`.
     """
+    metadata = pod.get("metadata") or {}
+    pod_name = metadata.get("name") or ""
+    namespace = metadata.get("namespace") or ""
+    recorded = await state_db.recorded_executor_ordinals(conn, task_id)
     statuses = (
         (pod.get("status") or {}).get("init_container_statuses")
         or (pod.get("status") or {}).get("initContainerStatuses")
@@ -304,8 +318,9 @@ async def _backfill_executor_logs(
         exit_code = terminated.get("exit_code")
         if exit_code is None:
             exit_code = terminated.get("exitCode")
-        if exit_code is None:
+        if exit_code is None or ordinal in recorded:
             continue
+        stdout = await read_executor_output(core_v1, pod_name, namespace, ordinal)
         await state_db.append_executor_log(
             conn,
             task_id,
@@ -317,6 +332,7 @@ async def _backfill_executor_logs(
             end_time=_parse_kubelet_ts(
                 terminated.get("finished_at") or terminated.get("finishedAt")
             ),
+            stdout=stdout,
         )
 
 
