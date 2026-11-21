@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from kubernetes.client.exceptions import ApiException
 from postgres import needs_postgres, run
 
 from poiesis.api.tes.models import TesExecutor, TesState, TesTask
@@ -65,6 +66,8 @@ class World:
         self.writes: dict[str, tuple[TesState, str | None]] = {}
         self.system_logs: dict[str, list[str]] = {}
         self.calls: list[str] = []
+        self.deleted: list[str] = []
+        self.delete_error: ApiException | None = None
         self.clock = 1000.0
         self.first_seen: dict[str, float] = {}
         #: Runs when the Pods are listed, i.e. in the middle of a pass.
@@ -74,8 +77,10 @@ class World:
         monkeypatch.setattr(
             tctl.state_db, "list_non_terminal_task_ids", self.non_terminal
         )
+        monkeypatch.setattr(tctl.state_db, "list_canceling_task_ids", self.canceling)
         monkeypatch.setattr(tctl.state_db, "write_terminal_state", self.write)
         monkeypatch.setattr(tctl.state_db, "append_system_log", self.append_log)
+        monkeypatch.setattr(tctl.state_db, "recorded_executor_ordinals", self.recorded)
 
     async def non_terminal(self, _conn: Any, **_: Any) -> list[str]:
         self.calls.append("db")
@@ -84,6 +89,9 @@ class World:
             for task_id, state in self.states.items()
             if state not in state_db.TERMINAL_STATES
         ]
+
+    async def canceling(self, _conn: Any) -> list[str]:
+        return [t for t, state in self.states.items() if state is TesState.CANCELING]
 
     async def write(
         self, _conn: Any, task_id: str, proposed: TesState, reason: str | None = None
@@ -99,6 +107,9 @@ class World:
             if canceling
             else state_db.TerminalWriteResult.APPLIED
         )
+
+    async def recorded(self, _conn: Any, _task_id: str) -> set[int]:
+        return set()
 
     async def append_log(self, _conn: Any, task_id: str, message: str) -> None:
         self.system_logs.setdefault(task_id, []).append(message)
@@ -117,6 +128,17 @@ class World:
         self.calls.append("pods")
         self.on_pod_list()
         return SimpleNamespace(items=list(self.pods))
+
+    def delete_namespaced_job(self, **kwargs: Any) -> None:
+        assert kwargs["namespace"] == NS
+        assert kwargs["propagation_policy"] == "Background"
+        self.deleted.append(kwargs["name"])
+        if self.delete_error is not None:
+            raise self.delete_error
+        self.jobs = [j for j in self.jobs if j["metadata"]["name"] != kwargs["name"]]
+        self.pods = [
+            p for p in self.pods if not p["metadata"]["name"].startswith(kwargs["name"])
+        ]
 
     def tick(self, after: float = 0) -> None:
         """Run one reconcile pass, `after` seconds after the last one."""
@@ -185,6 +207,7 @@ class TestOrphans:
         world.tick()
         world.tick(after=31)
         assert world.writes[T1][0] is TesState.CANCELED
+        assert world.deleted == [f"task-{T1}"]  # after the write, as for any orphan
 
     def test_a_completed_job_without_pod_does_not_keep_the_task(
         self, world: World
@@ -253,12 +276,154 @@ class TestPodlessJobs:
         assert world.writes == {}
 
 
+class TestJobDeletes:
+    """tctl deletes the Jobs of tasks that must not run any more (#155)."""
+
+    def test_canceling_task_loses_its_job(self, world: World) -> None:
+        """A cancel whose Job delete failed, or came before the Job existed."""
+        world.states[T1] = TesState.CANCELING
+        world.jobs = [job(T1)]
+        world.pods = [pod(T1)]
+        world.tick()
+        assert world.deleted == [f"task-{T1}"]
+        assert world.writes == {}
+        world.tick(after=31)
+        assert world.writes[T1][0] is TesState.CANCELED
+        assert world.system_logs[T1] == ["task cancelled by client"]
+
+    def test_failed_delete_is_tried_again(
+        self, world: World, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The pass goes on; the next one deletes the Job again."""
+        world.states = {T1: TesState.CANCELING, T2: TesState.CANCELING}
+        world.jobs = [job(T1), job(T2)]
+        world.delete_error = ApiException(status=500, reason="boom")
+        world.tick()
+        assert world.deleted == [f"task-{T1}", f"task-{T2}"]
+        assert "could not delete the Job of task=" in caplog.text
+        world.delete_error = None
+        world.tick(after=5)
+        assert world.deleted[2:] == [f"task-{T1}", f"task-{T2}"]
+        assert world.jobs == []
+
+    def test_job_already_being_deleted_is_left_alone(self, world: World) -> None:
+        world.states[T1] = TesState.CANCELING
+        deleting = job(T1)
+        deleting["metadata"]["deletion_timestamp"] = NOW
+        world.jobs = [deleting]
+        world.tick()
+        assert world.deleted == []
+
+    def test_running_task_keeps_its_job(self, world: World) -> None:
+        world.states[T1] = TesState.RUNNING
+        world.jobs = [job(T1)]
+        world.pods = [pod(T1)]
+        world.tick()
+        world.tick(after=600)
+        assert world.deleted == []
+
+    def test_pending_timeout_deletes_the_job(self, world: World) -> None:
+        """Else the Pod runs once its image can be pulled, for a failed task."""
+        world.states[T1] = TesState.QUEUED
+        world.jobs = [job(T1, age=400)]
+        world.pods = [
+            pod(
+                T1,
+                "Pending",
+                start_time=datetime.now(UTC) - timedelta(seconds=400),
+                init_container_statuses=[
+                    {"name": "exec-0", "state": {"waiting": {"reason": "ErrImagePull"}}}
+                ],
+            )
+        ]
+        world.tick()
+        assert world.writes == {T1: (TesState.SYSTEM_ERROR, "ErrImagePull")}
+        assert world.deleted == [f"task-{T1}"]
+
+    def test_job_without_pod_timeout_deletes_the_job(self, world: World) -> None:
+        world.states[T1] = TesState.QUEUED
+        world.jobs = [job(T1, age=400)]
+        world.tick()
+        assert world.writes[T1][0] is TesState.SYSTEM_ERROR
+        assert world.deleted == [f"task-{T1}"]
+
+    def test_orphan_deletes_the_job(self, world: World) -> None:
+        """A Job created after the lists must not start a failed task."""
+        world.states[T1] = TesState.QUEUED
+        world.tick()
+        world.tick(after=31)
+        assert world.writes[T1][0] is TesState.SYSTEM_ERROR
+        assert world.deleted == [f"task-{T1}"]
+
+    def test_missing_job_is_not_an_error(
+        self, world: World, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        world.states[T1] = TesState.QUEUED
+        world.delete_error = ApiException(status=404, reason="Not Found")
+        world.tick()
+        world.tick(after=31)
+        assert world.deleted == [f"task-{T1}"]
+        assert "could not delete" not in caplog.text
+
+    @pytest.mark.parametrize("phase", ["Succeeded", "Failed"])
+    def test_finished_pod_keeps_its_job(self, world: World, phase: str) -> None:
+        """The Job of a finished Pod is left to its TTL, with the PVC."""
+        world.states[T1] = TesState.RUNNING
+        world.jobs = [job(T1)]
+        world.pods = [pod(T1, phase)]
+        world.tick()
+        assert T1 in world.writes
+        assert world.deleted == []
+
+    def test_failed_job_is_kept(self, world: World) -> None:
+        world.states[T1] = TesState.RUNNING
+        world.jobs = [job(T1, conditions=[{"type": "Failed", "status": "True"}])]
+        world.tick()
+        assert world.writes == {T1: (TesState.SYSTEM_ERROR, "Job failed: Failed")}
+        assert world.deleted == []
+
+    def test_nothing_is_deleted_for_a_task_already_final(self, world: World) -> None:
+        """Nor for a Pod of another installation sharing the namespace."""
+        world.states[T1] = TesState.COMPLETE
+        world.jobs = [job(T1, age=400), job(T2, age=400)]
+        world.pods = [
+            pod(T2, "Pending", start_time=datetime.now(UTC) - timedelta(seconds=400))
+        ]
+        world.tick()
+        world.tick(after=31)
+        assert world.writes == {}
+        assert world.deleted == []
+
+
+@needs_postgres
+def test_canceling_tasks_are_listed() -> None:
+    """`list_canceling_task_ids` returns the CANCELING tasks only (#155)."""
+
+    async def test(pool: Any) -> None:
+        task = TesTask(
+            state=TesState.QUEUED,
+            executors=[TesExecutor(image="alpine", command=["true"])],
+        )
+        async with pool.acquire() as conn:
+            queued = await tasks_db.create_task(conn, task, "owner")
+            cancelled = await tasks_db.create_task(conn, task, "owner")
+            done = await tasks_db.create_task(conn, task, "owner")
+            for task_id in (cancelled, done):
+                assert await state_db.mark_canceling(conn, task_id)
+            await state_db.write_terminal_state(conn, done, TesState.SYSTEM_ERROR)
+            assert await state_db.list_canceling_task_ids(conn) == [cancelled]
+            assert queued not in await state_db.list_canceling_task_ids(conn)
+
+    run(test)
+
+
 @needs_postgres
 def test_old_creation_time_does_not_shorten_the_grace() -> None:
     """A row stamped by a slow API clock looks old; tctl still waits (#158)."""
     never = SimpleNamespace(
         list_namespaced_job=lambda **_: SimpleNamespace(items=[]),
         list_namespaced_pod=lambda **_: SimpleNamespace(items=[]),
+        delete_namespaced_job=lambda **_: None,
     )
 
     async def test(pool: Any) -> None:

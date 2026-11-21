@@ -248,9 +248,15 @@ async def cancel_task(
 
     async with pool.acquire() as conn:
         transitioned = await state_db.mark_canceling(conn, task_uuid)
-    if not transitioned:
-        # Already terminal (or already CANCELING) — TES spec says return success.
-        return TesCancelTaskResponse()
+        if not transitioned:
+            current = await tasks_db.get_task_meta(conn, task_uuid)
+            if current is None or current["state"] != TesState.CANCELING.value:
+                # Already terminal — TES spec says return success.
+                return TesCancelTaskResponse()
+
+    # Also when the task was CANCELING already: an earlier cancel may have
+    # failed to delete the Job, or the Job was created after it. The delete
+    # is idempotent, so repeating it is safe.
 
     try:
         await k8s.delete_job(runtime_config.taskpod_namespace, job_name_for(task_uuid))

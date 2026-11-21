@@ -18,6 +18,8 @@ Cases the reconciler covers:
     append a system_logs entry describing the failure.
     * Pod stuck in `Pending` past `_PENDING_TIMEOUT_SECONDS` → SYSTEM_ERROR
     with the kubelet's pending reason in system_logs.
+    * Task `CANCELING` with a Job → delete the Job. The API deletes it on
+    cancel; this covers a delete that failed and a Job created after it.
     * Job without a Pod: a failed Job (deadline exceeded) → SYSTEM_ERROR
     with the Job's reason; a Job that made no Pod within
     `_PENDING_TIMEOUT_SECONDS` (ResourceQuota, admission) → SYSTEM_ERROR.
@@ -33,6 +35,11 @@ The writer (`state.write_terminal_state`) is idempotent and
 CANCELING-aware, so re-running the loop against an already-finalised
 task is a no-op.
 
+A terminal write that doesn't come from a finished Pod or Job (pending
+timeout, Job without a Pod, orphan) is followed by a delete of the task's
+Job, so a Pod that becomes runnable later can't run a task already reported
+as failed. That delete is the only write tctl makes to Kubernetes.
+
 Leader election uses `coordination.k8s.io/v1` Leases (see `core/leases.py`).
 The Lease lives in the namespace tctl runs in (the release namespace), which
 is not the TaskPod namespace when the two are split.
@@ -47,6 +54,7 @@ import socket
 import time
 import uuid
 from datetime import UTC, datetime
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, cast
 
 import asyncpg
@@ -69,6 +77,7 @@ from poiesis.core.pod_status import (
     is_lifecycle_stop,
     pod_terminated_terminal,
 )
+from poiesis.core.taskpod import job_name_for
 from poiesis.db import state as state_db
 
 logger = logging.getLogger(__name__)
@@ -205,6 +214,9 @@ async def _reconcile_once(
         non_terminal = await state_db.list_non_terminal_task_ids(
             cast("asyncpg.Connection", conn), older_than_seconds=0
         )
+        canceling = await state_db.list_canceling_task_ids(
+            cast("asyncpg.Connection", conn)
+        )
     observed = time.monotonic()
     for task_id in first_seen.keys() - set(non_terminal):
         del first_seen[task_id]
@@ -222,6 +234,14 @@ async def _reconcile_once(
         label_selector=_TASK_LABEL,
     )
 
+    jobs = _jobs_by_task(job_list.items)
+
+    # A cancelled task's Job goes first: its Pods are stopped, and with the
+    # Job and Pod gone the orphan check below finalises the task as CANCELED.
+    for task_id in canceling:
+        if task_id in jobs and not _being_deleted(jobs[task_id]):
+            await _delete_job(batch_v1, namespace, task_id)
+
     now = datetime.now(UTC)
     seen_task_ids: set[str] = set()
     for pod in pod_list.items:
@@ -230,18 +250,20 @@ async def _reconcile_once(
         if task_id is None:
             continue
         seen_task_ids.add(task_id)
-        await _reconcile_pod(core_v1, pool, pod_dict, task_id, now)
+        await _reconcile_pod(core_v1, batch_v1, pool, pod_dict, task_id, now)
 
-    for job in job_list.items:
-        job_dict = job.to_dict() if hasattr(job, "to_dict") else dict(job)
-        task_id = _task_id_from_pod(job_dict)
-        if task_id is None or task_id in seen_task_ids:
+    for task_id, job_dict in jobs.items():
+        if task_id in seen_task_ids:
             continue
-        if await _reconcile_podless_job(pool, job_dict, task_id, now):
+        if await _reconcile_podless_job(
+            batch_v1, pool, namespace, job_dict, task_id, now
+        ):
             seen_task_ids.add(task_id)
 
     await _reconcile_orphans(
+        batch_v1,
         pool,
+        namespace,
         [
             task_id
             for task_id in non_terminal
@@ -251,8 +273,20 @@ async def _reconcile_once(
     )
 
 
+def _jobs_by_task(jobs: list[Any]) -> dict[str, Mapping[str, Any]]:
+    """Map each task id to its Job, from a Job list's items."""
+    by_task: dict[str, Mapping[str, Any]] = {}
+    for job in jobs:
+        job_dict = job.to_dict() if hasattr(job, "to_dict") else dict(job)
+        task_id = _task_id_from_pod(job_dict)
+        if task_id is not None:
+            by_task[task_id] = job_dict
+    return by_task
+
+
 async def _reconcile_pod(
     core_v1: CoreV1Api,
+    batch_v1: BatchV1Api,
     pool: asyncpg.Pool,
     pod: Mapping[str, Any],
     task_id: str,
@@ -279,7 +313,8 @@ async def _reconcile_pod(
 
     if phase == "pending" and _pending_too_long(pod, now):
         pending_reason = extract_pending_failure_reason(pod)
-        await _apply_terminal(
+        namespace = (pod.get("metadata") or {}).get("namespace")
+        wrote = await _apply_terminal(
             pool,
             core_v1=core_v1,
             task_id=task_id,
@@ -289,10 +324,14 @@ async def _reconcile_pod(
             system_logs=[f"pending timeout: {pending_reason}"],
             source="pending-timeout",
         )
+        if wrote and namespace:
+            await _delete_job(batch_v1, namespace, task_id)
 
 
 async def _reconcile_podless_job(
+    batch_v1: BatchV1Api,
     pool: asyncpg.Pool,
+    namespace: str,
     job: Mapping[str, Any],
     task_id: str,
     now: datetime,
@@ -306,8 +345,7 @@ async def _reconcile_podless_job(
     an admission webhook rejects the Pod) end the task with their own
     reason. Any other Job is alive, and so is its task.
     """
-    metadata = job.get("metadata") or {}
-    if metadata.get("deletion_timestamp") or metadata.get("deletionTimestamp"):
+    if _being_deleted(job):
         return False
 
     finished, failure = extract_job_failure(job)
@@ -331,7 +369,7 @@ async def _reconcile_podless_job(
         created is not None
         and (now - created).total_seconds() > _PENDING_TIMEOUT_SECONDS
     ):
-        await _apply_terminal(
+        wrote = await _apply_terminal(
             pool,
             core_v1=None,
             task_id=task_id,
@@ -344,10 +382,17 @@ async def _reconcile_podless_job(
             ],
             source="job-no-pod",
         )
+        if wrote:
+            await _delete_job(batch_v1, namespace, task_id)
     return True
 
 
-async def _reconcile_orphans(pool: asyncpg.Pool, orphans: list[str]) -> None:
+async def _reconcile_orphans(
+    batch_v1: BatchV1Api,
+    pool: asyncpg.Pool,
+    namespace: str,
+    orphans: list[str],
+) -> None:
     """Write SYSTEM_ERROR for non-terminal tasks whose pod has disappeared.
 
     `orphans` are the tasks with neither a live Job nor a Pod for the whole
@@ -356,7 +401,7 @@ async def _reconcile_orphans(pool: asyncpg.Pool, orphans: list[str]) -> None:
     (manual pod delete, node loss, etc.).
     """
     for task_id in orphans:
-        await _apply_terminal(
+        wrote = await _apply_terminal(
             pool,
             core_v1=None,
             task_id=task_id,
@@ -366,6 +411,8 @@ async def _reconcile_orphans(pool: asyncpg.Pool, orphans: list[str]) -> None:
             system_logs=["pod disappeared before reaching terminal phase"],
             source="orphan",
         )
+        if wrote:
+            await _delete_job(batch_v1, namespace, task_id)
 
 
 async def _apply_terminal(
@@ -378,7 +425,7 @@ async def _apply_terminal(
     reason: str | None,
     system_logs: list[str],
     source: str,
-) -> None:
+) -> bool:
     """Single point that writes terminal state and the surrounding logs.
 
     No-op when the task is already terminal in the DB. On a successful
@@ -386,6 +433,10 @@ async def _apply_terminal(
     a trec that got SIGTERMed mid-stream doesn't leave a task with a
     terminal state but missing per-executor rows) and append the
     system_logs strings describing the failure mode.
+
+    Returns True iff this call finalised the task. A caller whose write
+    doesn't come from a finished Pod or Job then deletes the task's Job
+    (`_delete_job`), so that nothing of the task keeps running.
     """
     async with pool.acquire() as conn:
         c = cast("asyncpg.Connection", conn)
@@ -393,7 +444,7 @@ async def _apply_terminal(
             c, task_id, proposed, reason=reason
         )
         if result is state_db.TerminalWriteResult.NO_OP:
-            return
+            return False
 
         if pod is not None and core_v1 is not None:
             await _backfill_executor_logs(c, core_v1, task_id, pod)
@@ -414,6 +465,40 @@ async def _apply_terminal(
         result.value,
         reason,
     )
+    return True
+
+
+async def _delete_job(batch_v1: BatchV1Api, namespace: str, task_id: str) -> None:
+    """Delete a task's Job; its Pods and PVC go with it.
+
+    Idempotent: a Job that is already gone is fine. Any other failure is
+    logged, not raised, so one Job can't stop the pass. A `CANCELING`
+    task's delete is tried again on the next pass; after a terminal write
+    it is not: the Job's `activeDeadlineSeconds`, if set, is the backstop.
+    """
+    try:
+        await asyncio.to_thread(
+            batch_v1.delete_namespaced_job,
+            name=job_name_for(task_id),
+            namespace=namespace,
+            propagation_policy="Background",
+        )
+    except ApiException as exc:
+        if exc.status != HTTPStatus.NOT_FOUND:
+            logger.warning(
+                "tctl: could not delete the Job of task=%s (%s %s)",
+                task_id,
+                exc.status,
+                exc.reason,
+            )
+        return
+    logger.info("tctl: deleted the Job of task=%s", task_id)
+
+
+def _being_deleted(obj: Mapping[str, Any]) -> bool:
+    """True iff the object carries a `deletionTimestamp`."""
+    metadata = obj.get("metadata") or {}
+    return bool(metadata.get("deletion_timestamp") or metadata.get("deletionTimestamp"))
 
 
 async def _backfill_executor_logs(

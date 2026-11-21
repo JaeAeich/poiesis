@@ -192,8 +192,13 @@ until it is cancelled.
 
 `POST /tasks/{id}:cancel` writes `CANCELING` and deletes the Job. The Pod
 disappears before reaching a terminal phase; TCtl finds the task
-without a Pod and writes the final state, which lands as `CANCELED` because `CANCELING`
+without a Job or Pod and writes the final state, which lands as `CANCELED` because `CANCELING`
 takes precedence.
+
+If the Job delete fails, the call returns `500` and the task stays
+`CANCELING`. Cancel again to retry the delete; TCtl also deletes the Job
+of a `CANCELING` task on its next pass, within about 5 seconds. Cancelling a
+task that is already terminal changes nothing and returns `200`.
 
 ## Tags
 

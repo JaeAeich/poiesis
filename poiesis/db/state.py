@@ -179,6 +179,18 @@ async def list_non_terminal_task_ids(
     return [r["id"] for r in rows]
 
 
+async def list_canceling_task_ids(conn: asyncpg.Connection) -> list[str]:
+    """List the ids of the tasks in `CANCELING`.
+
+    Used by tctl to delete the Jobs of cancelled tasks the API's own
+    delete didn't reach.
+    """
+    rows = await conn.fetch(
+        "SELECT id::text AS id FROM tasks WHERE state = 'CANCELING'",
+    )
+    return [r["id"] for r in rows]
+
+
 async def append_system_log(
     conn: asyncpg.Connection,
     task_id: str,

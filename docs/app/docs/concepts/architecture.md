@@ -22,7 +22,8 @@ FastAPI under `/ga4gh/tes/v1` (see [TES API](../reference/api.md)).
   by the Job.
 - `CancelTask` writes `CANCELING` and deletes the Job; the
   conditional-update writer guarantees the final state lands as
-  `CANCELED`.
+  `CANCELED`. Cancelling a task that is already `CANCELING` deletes the
+  Job again, so a cancel whose delete failed can be retried.
 
 ## TaskPod
 
@@ -55,7 +56,7 @@ release namespace, also when `taskpods.namespace` puts the tasks
 elsewhere; if a Lease call fails, TCtl logs it and tries again 10
 seconds later without reconciling. Every 5 seconds the
 leader reads the non-terminal tasks from Postgres, then lists the Jobs
-and Pods labelled `poiesis.io/task`. It has four jobs:
+and Pods labelled `poiesis.io/task`. It has five jobs:
 
 - **Phase reconciliation**: a `Succeeded` Pod becomes `COMPLETE`; a
   `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, deadline,
@@ -84,6 +85,15 @@ and Pods labelled `poiesis.io/task`. It has four jobs:
   `activeDeadlineSeconds` runs out (`taskpods.activeDeadlineSeconds`,
   one hour by default; never, if that is `null`). See
   [Time limit](./tasks.md#time-limit).
+
+- **Job cleanup**: TCtl deletes the Job of every `CANCELING` task that
+  still has one, on each pass until it is gone. It also deletes the Job
+  after it ends a task for a missing Pod, a Job without a Pod or a
+  pending timeout, so a Pod that becomes runnable later can't run a task
+  already reported as failed. If that delete fails, TCtl logs it and
+  doesn't retry; the Job's [time limit](./tasks.md#time-limit), if
+  set, still ends it. The Job of a finished Pod is left to its TTL.
+  Deleting Jobs is TCtl's only write to Kubernetes.
 
 TCtl is on every path: TRec never finalises a task, clean runs included.
 
