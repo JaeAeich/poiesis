@@ -69,7 +69,7 @@ The full contract is on the [TES API](../reference/api.md) page.
 Terminal states are `COMPLETE`, `EXECUTOR_ERROR`, `SYSTEM_ERROR` and
 `CANCELED`. `SYSTEM_ERROR` covers failures that aren't your executor's:
 an image that can't be pulled, a volume that can't be bound, a node that
-disappears. Poiesis doesn't use `INITIALIZING`, `PAUSED` or `PREEMPTED`:
+disappears, an input or output that can't be staged. Poiesis doesn't use `INITIALIZING`, `PAUSED` or `PREEMPTED`:
 a task stays `QUEUED` until its Pod starts, and is `RUNNING` from then on,
 input staging included.
 

@@ -1,7 +1,8 @@
-"""Tests for HTTP(S) outputs, uploaded by `HttpFilerStrategy` with PUT.
+"""Tests for HTTP(S) inputs and outputs, staged by `HttpFilerStrategy`.
 
-Uploads go to a recording server in a thread, so the requests, headers
-and bytes on the wire are those of a real upload.
+Outputs are uploaded with PUT, inputs downloaded with GET. Both go to a
+recording server in a thread, so the requests, headers and bytes on the
+wire are those of a real transfer.
 """
 
 import asyncio
@@ -23,6 +24,7 @@ import requests
 from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
 from poiesis.core.services.filer.filer_strategy_factory import (
     can_output,
+    create_input_strategy,
     create_output_strategy,
 )
 from poiesis.core.services.filer.strategy import filer_strategy, http_filer
@@ -31,6 +33,7 @@ from poiesis.core.services.filer.tof import Tof
 
 MIB = 1024 * 1024
 ERROR_BODY = b"<Error><Code>SignatureDoesNotMatch</Code></Error>"
+INPUT = b"input\n" * 4096
 
 
 @dataclass
@@ -43,7 +46,9 @@ class Request:
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
-    """Answers a PUT according to the first segment of its path.
+    """Answers a request according to the first segment of its path.
+
+    A PUT:
 
     - `/store/<key>` stores the body under `/<key>`.
     - `/redirect/<status>/<path>` redirects to `/<path>`.
@@ -54,6 +59,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     - `/loop/...` redirects to itself.
 
     A flaky failure answers with the status, or hangs up if it's `drop`.
+
+    A GET takes `/redirect`, `/status`, `/flaky` and `/loop` too; a flaky
+    one serves the input once it stops failing. Besides:
+
+    - `/truncated/...` announces more bytes than it sends, then hangs up.
+    - `/echo/...` answers 403 with the request's query in the body.
+    - any other path serves the input, `INPUT`.
     """
 
     protocol_version = "HTTP/1.1"
@@ -63,8 +75,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
         """Keep the test output quiet."""
 
     def do_GET(self):
-        """Serve an input file."""
-        self._reply(200, body=b"input")
+        """Record the request, then answer it according to its route."""
+        path, _, query = self.path.partition("?")
+        suffix = f"?{query}" if query else ""
+        route, _, rest = path.lstrip("/").partition("/")
+        self.server.requests.append(Request(route, self.path, dict(self.headers)))
+        if route == "redirect":
+            status, _, target = rest.partition("/")
+            self._reply(int(status), location=f"/{target}{suffix}")
+        elif route == "status":
+            status = int(rest.partition("/")[0])
+            self._reply(status, body=ERROR_BODY if status >= 400 else b"")
+        elif route == "flaky":
+            failures, status, _ = rest.split("/", 2)
+            failed = self.server.failures.get(path, 0)
+            if failed >= int(failures):
+                self._reply(200, body=INPUT)
+                return
+            self.server.failures[path] = failed + 1
+            if status == "drop":
+                self.close_connection = True
+            else:
+                self._reply(int(status), body=ERROR_BODY)
+        elif route == "truncated":
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header("Content-Length", str(2 * len(INPUT)))
+            self.end_headers()
+            self.wfile.write(INPUT)
+        elif route == "echo":
+            self._reply(403, body=f"<Error>{query}</Error>".encode())
+        elif route == "loop":
+            self._reply(302, location=self.path)
+        else:
+            self._reply(200, body=INPUT)
 
     def do_PUT(self):
         """Record the request, then answer it according to its route."""
@@ -190,24 +234,46 @@ def upload(
     asyncio.run(create_output_strategy(url, output).upload())
 
 
-def fake_put(
-    monkeypatch: pytest.MonkeyPatch, responses: list[tuple[int, str]]
+def download(url: str, path: str) -> None:
+    """Download the input at `url` to `path`, as TIF does."""
+    tes_input = TesInput(url=url, path=path)
+    asyncio.run(create_input_strategy(url, tes_input).download())
+
+
+def files(pvc: Path) -> list[str]:
+    """Every file on the task's volume, hidden ones too."""
+    return sorted(str(p.relative_to(pvc)) for p in pvc.rglob("*") if p.is_file())
+
+
+def fake_requests(
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    responses: list[tuple[int, str]],
+    body: bytes = b"",
 ) -> list[str]:
-    """Answer each PUT with the next `(status, Location)`; return the URLs."""
+    """Answer each request with the next `(status, Location)`; return the URLs."""
     urls: list[str] = []
 
-    def put(url: str, **_: object) -> requests.Response:
+    def request(sent: str, url: str, **_: object) -> requests.Response:
+        assert sent == method
         status, location = responses[len(urls)]
         urls.append(url)
         response = requests.Response()
         response.status_code = status
         if location:
             response.headers["Location"] = location
-        response.raw = io.BytesIO(b"")
+        response.raw = io.BytesIO(body)
         return response
 
-    monkeypatch.setattr(http_filer.requests, "put", put)
+    monkeypatch.setattr(http_filer.requests, "request", request)
     return urls
+
+
+def fake_put(
+    monkeypatch: pytest.MonkeyPatch, responses: list[tuple[int, str]]
+) -> list[str]:
+    """Answer each PUT with the next `(status, Location)`; return the URLs."""
+    return fake_requests(monkeypatch, "PUT", responses)
 
 
 def test_http_and_https_are_output_schemes():
@@ -270,6 +336,18 @@ def test_https_upload_is_not_redirected_off_https(monkeypatch, pvc):
     with pytest.raises(requests.HTTPError, match="isn't HTTPS"):
         upload("https://gateway.example/out", "/outputs/out")
     assert urls == ["https://gateway.example/out"]
+
+
+def test_upload_that_reached_https_stays_on_https(monkeypatch, pvc):
+    """A redirect back to HTTP is refused wherever the upload started."""
+    write(pvc, "/outputs/out", b"data")
+    urls = fake_put(
+        monkeypatch,
+        [(307, "https://storage.example/out"), (307, "http://storage.example/out")],
+    )
+    with pytest.raises(requests.HTTPError, match="isn't HTTPS"):
+        upload("http://gateway.example/out", "/outputs/out")
+    assert urls == ["http://gateway.example/out", "https://storage.example/out"]
 
 
 def test_http_upload_may_be_redirected_to_https(monkeypatch, pvc):
@@ -426,3 +504,148 @@ def test_filer_logs_leave_out_the_query(server, pvc, caplog, monkeypatch):
     assert "Uploaded" in caplog.text
     assert "TOF failed" in caplog.text
     assert "secret" not in caplog.text
+
+
+def test_input_is_downloaded(server, pvc):
+    """A 2xx response is staged at the input's path, and nothing else."""
+    download(server.url("/in?X-Amz-Signature=abc"), "/inputs/in")
+    assert (pvc / "inputs/in").read_bytes() == INPUT
+    assert files(pvc) == ["inputs/in"]
+
+
+@pytest.mark.parametrize("status", [304, 400, 403, 404, 410])
+def test_error_response_is_not_staged_as_the_input(server, pvc, sleeps, status):
+    """An expired presigned URL answers 403; its body isn't the input."""
+    with pytest.raises(requests.HTTPError, match=f"returned {status}"):
+        download(server.url(f"/status/{status}/in"), "/inputs/in")
+    assert files(pvc) == []
+    assert len(server.requests) == 1
+    assert sleeps == []
+
+
+def test_failed_download_leaves_an_earlier_file_alone(server, pvc):
+    """Only a complete download replaces what is at the input's path."""
+    write(pvc, "/inputs/in", b"earlier")
+    with pytest.raises(requests.HTTPError):
+        download(server.url("/status/403/in"), "/inputs/in")
+    assert (pvc / "inputs/in").read_bytes() == b"earlier"
+    assert files(pvc) == ["inputs/in"]
+    download(server.url("/in"), "/inputs/in")
+    assert (pvc / "inputs/in").read_bytes() == INPUT
+
+
+def test_download_error_reports_status_and_body_without_query(server, pvc):
+    """The body explains the rejection; the query is secret."""
+    with pytest.raises(requests.HTTPError) as error:
+        download(server.url("/status/403/in?X-Amz-Signature=secret"), "/inputs/in")
+    assert f"returned 403: {ERROR_BODY.decode()}" in str(error.value)
+    assert "secret" not in str(error.value)
+
+
+@pytest.mark.parametrize("method", ["GET", "PUT"])
+def test_signature_echoed_in_an_error_body_is_cut(server, pvc, method):
+    """S3 quotes the signature it was sent when it doesn't match."""
+    query = "X-Amz-Signature=0123456789abcdef&sig=a%2Bb%2Fc%3D%3D0123&part=1"
+    write(pvc, "/outputs/out", b"data")
+    with pytest.raises(requests.HTTPError) as error:
+        if method == "GET":
+            download(server.url(f"/echo/in?{query}"), "/inputs/in")
+        else:
+            upload(server.url(f"/status/403/out?{query}"), "/outputs/out")
+    message = str(error.value)
+    assert "returned 403: <Error>" in message
+    for secret in ("0123456789abcdef", "a%2Bb%2Fc%3D%3D0123", "a+b/c==0123"):
+        assert secret not in message
+
+
+@pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
+def test_transient_download_failure_is_retried(server, pvc, sleeps, status):
+    """Two failures in a row still end in a staged input."""
+    download(server.url(f"/flaky/2/{status}/in"), "/inputs/in")
+    assert (pvc / "inputs/in").read_bytes() == INPUT
+    assert len(server.requests) == 3
+    assert sleeps == [1, 2]
+
+
+def test_dropped_download_connection_is_retried(server, pvc, sleeps):
+    """A connection closed without an answer is retried."""
+    download(server.url("/flaky/1/drop/in"), "/inputs/in")
+    assert (pvc / "inputs/in").read_bytes() == INPUT
+    assert sleeps == [1]
+
+
+def test_download_retries_give_up_after_three_attempts(server, pvc, sleeps):
+    """The third failure fails the download and stages nothing."""
+    with pytest.raises(requests.HTTPError, match="returned 503"):
+        download(server.url("/flaky/3/503/in"), "/inputs/in")
+    assert len(server.requests) == 3
+    assert sleeps == [1, 2]
+    assert files(pvc) == []
+
+
+def test_partial_download_is_not_staged(server, pvc, sleeps):
+    """A body cut short is retried, and never left at the input's path."""
+    with pytest.raises(requests.exceptions.ChunkedEncodingError):
+        download(server.url("/truncated/in"), "/inputs/in")
+    assert len(server.requests) == 3
+    assert sleeps == [1, 2]
+    assert files(pvc) == []
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_download_follows_redirects(server, pvc, status):
+    """The input is what the URL redirects to."""
+    download(server.url(f"/redirect/{status}/in?token=abc"), "/inputs/in")
+    assert (pvc / "inputs/in").read_bytes() == INPUT
+    assert [r.path for r in server.requests] == [
+        f"/redirect/{status}/in?token=abc",
+        "/in?token=abc",
+    ]
+
+
+def test_https_download_is_not_redirected_off_https(monkeypatch, pvc):
+    """An input fetched over HTTPS isn't read from a cleartext answer."""
+    urls = fake_requests(
+        monkeypatch,
+        "GET",
+        [(302, "https://storage.example/in"), (302, "http://storage.example/in?s=1")],
+    )
+    with pytest.raises(requests.HTTPError, match="isn't HTTPS") as error:
+        download("https://gateway.example/in", "/inputs/in")
+    assert urls == ["https://gateway.example/in", "https://storage.example/in"]
+    assert "s=1" not in str(error.value)
+    assert files(pvc) == []
+
+
+def test_http_download_may_be_redirected_to_https(monkeypatch, pvc):
+    """Moving to HTTPS only makes the download safer."""
+    urls = fake_requests(
+        monkeypatch, "GET", [(302, "https://storage.example/in"), (200, "")], b"data"
+    )
+    download("http://gateway.example/in", "/inputs/in")
+    assert urls == ["http://gateway.example/in", "https://storage.example/in"]
+    assert (pvc / "inputs/in").read_bytes() == b"data"
+
+
+def test_download_redirect_loop_stops(server, pvc):
+    """A download follows at most 10 redirects."""
+    with pytest.raises(requests.TooManyRedirects):
+        download(server.url("/loop/in"), "/inputs/in")
+    assert len(server.requests) == 11
+    assert files(pvc) == []
+
+
+def test_failed_download_hides_the_query(pvc, caplog, monkeypatch, sleeps):
+    """Neither the error nor the filer's logs carry the signature."""
+    monkeypatch.setattr(logging.getLogger("poiesis.core"), "propagate", True)
+    caplog.set_level(logging.DEBUG)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    url = f"http://127.0.0.1:{port}/in?X-Amz-Signature=secret"
+    with pytest.raises(requests.ConnectionError) as error:
+        asyncio.run(Tif("task", [TesInput(url=url, path="/inputs/in")]).file())
+    assert "secret" not in str(error.value)
+    assert "secret" not in caplog.text
+    assert "retrying" in caplog.text
+    assert sleeps == [1, 2]

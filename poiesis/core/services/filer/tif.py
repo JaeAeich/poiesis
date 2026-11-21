@@ -54,8 +54,10 @@ class Tif(Filer):
             logger.debug("Filer strategy: %s", strategy.__class__.__name__)
             try:
                 await strategy.download()
-            except Exception:
+            except Exception as e:
                 logger.exception("Error downloading %s", redact_url(tes_input.url))
+                # Names the input in the cause the filer reports.
+                e.add_note(f"input {tes_input.path}")
                 raise
         make_task_dirs(self.dirs)
 
