@@ -1,5 +1,5 @@
 ---
-description: How tif stages inputs and tof uploads outputs - supported URL schemes, S3 configuration, glob outputs and presigned HTTP uploads.
+description: How tif stages inputs and tof uploads outputs - supported URL schemes, S3, Google Cloud Storage and Azure Blob configuration, workload identity, glob outputs and presigned HTTP uploads.
 ---
 
 # Storage and staging
@@ -17,11 +17,11 @@ after they finish.
     vol: { x: 155, y: 115, w: 110, label: 'volume' },
     tof: { x: 155, y: 200, w: 110, label: 'tof', sub: 'stage out' },
     out: { x: 310, y: 200, w: 100, label: 's3://out' },
-    cr: { x: 310, y: 30, w: 100, label: 'credentials', sub: 'Secret or IRSA' }
+    cr: { x: 310, y: 30, w: 100, label: 'credentials', sub: 'Secret or identity' }
   },
   edges: [['cr','tif'],['in','tif'],['tif','vol'],['vol','tof'],['tof','out']],
   hops: [
-    { f: 'cr', t: 'tif', label: 'AWS_*', cap: 'tif gets the S3 credentials from a Secret or workload identity.' },
+    { f: 'cr', t: 'tif', label: 'keys', cap: 'tif gets the storage credentials from a Secret or workload identity.' },
     { f: 'in', t: 'tif', label: 'reads.fq', cap: 'It downloads each input...' },
     { f: 'tif', t: 'vol', label: 'reads.fq', cap: '...onto the volume of the task.' },
     { f: 'vol', t: 'tof', label: 'sorted.bam', cap: 'After the executors, tof picks up the outputs...' },
@@ -31,29 +31,70 @@ after they finish.
 
 - Inputs: `s3://`, `http://`, `https://` and inline `content`.
 - Outputs: `s3://`, `http://` and `https://`.
+- `gs://` (Google Cloud Storage) and `az://` (Azure Blob Storage) for
+  both, only where the operator turns them on. Both are experimental
+  (see [Object stores](#object-stores)).
 - `file://` for both, only where the operator turns it on
   (see [Local paths](#local-paths)).
 - Inline content as an output, or an unknown scheme, is refused with
-  `400`. `GET /service-info` lists the supported schemes.
+  `400`. `GET /service-info` lists the schemes this deployment accepts.
 - Also refused with `400` at submit, since they would only fail in the
   Pod: an input with neither `url` nor `content`, a `DIRECTORY` input
-  over `http(s)://` or as inline `content`, and an `s3://` input or
-  output when the deployment gives `tif` and `tof` no S3 credentials.
+  over `http(s)://` or as inline `content`, and an `s3://`, `gs://` or
+  `az://` URL whose provider the operator hasn't turned on.
 
 ## Common patterns
 
 - **No IO**: executors only. Useful to smoke-test image pulls and
   scheduling.
-- **S3 in, S3 out**: `inputs[]` and `outputs[]` point at object storage.
+- **Object store in, object store out**: `inputs[]` and `outputs[]`
+  point at `s3://`, `gs://` or `az://` URLs.
 - **Inline content**: `inputs[].content` carries the file body; no
   external storage needed. An input with non-empty `content` ignores its
   `url`, as TES requires.
 - **Multi-executor**: executors run in order; data persists between them
   only under the task's [paths](./task-volumes.md#task-paths).
 
-## S3
+## Object stores
 
-Point Poiesis at any S3-compatible store (AWS S3, Ceph, SeaweedFS, MinIO):
+`tif` and `tof` reach S3, Google Cloud Storage and Azure Blob Storage
+through one code path, built on
+[obstore](https://developmentseed.org/obstore/). A URL names a bucket
+(for Azure, a container) and a key:
+
+| Scheme | URL | Status |
+| --- | --- | --- |
+| `s3://` | `s3://bucket/key` | Covered by the end-to-end tests (SeaweedFS on kind). |
+| `gs://` | `gs://bucket/key` | Experimental: unit tests only. |
+| `az://` | `az://container/blob` | Experimental: unit tests only. |
+
+A provider is off until the operator turns it on. While it is off, its
+scheme is refused at submit with `400` and isn't listed in
+`GET /service-info`.
+
+How `tif` and `tof` handle keys:
+
+- The key is used as written. `?`, `#`, `[`, `{` and `*` are part of
+  the key; a `FILE` input fetches exactly that object.
+- A `DIRECTORY` input downloads every object below the key, in whole path
+  segments: `s3://b/in` takes `in/a.txt`, not `in2/a.txt`. A `DIRECTORY`
+  input that matches no object fails the task.
+- Folder markers are skipped: keys ending in `/`, and a key that is also
+  the directory of other keys.
+- A key that would land outside the input's directory, such as
+  `in/../x`, fails the task. Nothing is written outside the input's path.
+- A `DIRECTORY` or glob output uploads each file below the URL's key
+  plus the file's relative path. If the output URL itself has wildcards
+  (`s3://b/out/*.vcf`), files go below the part before them (`out/`).
+- Up to 4 files of a `DIRECTORY` or glob move at once. Downloads stream
+  to disk. Large uploads go in parts, 4 at a time.
+- A `5xx` response, a dropped connection or a timeout is retried up to 10
+  times with exponential backoff, for at most 3 minutes per request.
+
+### S3
+
+Point Poiesis at AWS S3 or an S3-compatible store (Ceph, SeaweedFS,
+MinIO):
 
 ```yaml
 s3:
@@ -62,16 +103,28 @@ s3:
   existingSecret: poiesis-s3
 ```
 
-The Secret holds `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. The
-chart never creates it:
+S3 is on when any of `existingSecret`, `roleArn` or `enabled: true` is
+set. Other settings:
+
+| Value | Default | Meaning |
+| --- | --- | --- |
+| `s3.virtualHostedStyle` | `false` | `true` sends `https://<bucket>.<endpoint>/<key>`. `false` sends path-style `https://<endpoint>/<bucket>/<key>`, which SeaweedFS and MinIO need. |
+| `s3.serverSideEncryption` | `""` | `AES256` (SSE-S3), `aws:kms` (SSE-KMS) or `aws:kms:dsse`, for every upload. |
+| `s3.kmsKeyId` | `""` | KMS key for `aws:kms`; empty uses the bucket's default key. |
+| `s3.requesterPays` | `false` | Pay for requests to requester-pays buckets. |
+
+An `http://` endpoint is allowed; use `https://` outside a trusted
+network.
+
+**Static keys.** The Secret holds `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN` for temporary
+credentials. The chart never creates it:
 
 ```bash
 kubectl -n poiesis create secret generic poiesis-s3 \
   --from-literal=AWS_ACCESS_KEY_ID=… \
   --from-literal=AWS_SECRET_ACCESS_KEY=…
 ```
-
-For temporary credentials, add an `AWS_SESSION_TOKEN` key. It is optional.
 
 `trec`, `tif` and `tof` read these keys from the Secret by reference
 (`secretKeyRef`), so the values are not in the Job or Pod spec. Executors
@@ -92,33 +145,112 @@ taskpods:
 If the Secret is missing in the task namespace, no TaskPod can start, not
 only the ones that use `s3://`.
 
-`tif` and `tof` need an access key: from `existingSecret`, from
-`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in the API's environment,
-or from `taskpods.extraEnv`. Without one, a task with an `s3://` input or
-output is refused with `400`.
-
-On EKS, the service accounts can carry an IAM role through IRSA:
+**Workload identity on EKS (IRSA).** Set the role and leave
+`existingSecret` empty:
 
 ```yaml
-serviceAccount:
-  api:
-    annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/poiesis
-  taskpod:
-    annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/poiesis
+s3:
+  region: eu-central-1
+  roleArn: arn:aws:iam::123456789012:role/poiesis-filer
 ```
 
-An IRSA role alone isn't enough yet: `tif` and `tof` still require an
-access key, so without one `s3://` URLs are refused at submit.
+The API then adds a ServiceAccount token for the audience
+`sts.amazonaws.com` to each TaskPod and mounts it into `tif` and `tof`
+only, with `AWS_ROLE_ARN` and `AWS_WEB_IDENTITY_TOKEN_FILE` pointing at
+it. They trade it for the role's credentials at AWS STS.
+
+1. Create an IAM OIDC provider for the cluster, as for any IRSA setup.
+2. Give the role a trust policy for that provider with the subject
+   `system:serviceaccount:<taskpod namespace>:<taskpod ServiceAccount>`
+   (by default `<release>-poiesis-taskpod`) and the audience
+   `sts.amazonaws.com`.
+3. Grant the role `s3:GetObject`, `s3:PutObject` and `s3:ListBucket` on
+   the buckets tasks use, and `kms:Decrypt` / `kms:GenerateDataKey` if
+   they are encrypted with SSE-KMS.
+
+<Callout type="warn">
+
+Don't annotate the TaskPod ServiceAccount with
+`eks.amazonaws.com/role-arn`. The EKS webhook would then inject the token
+into every container of the TaskPod, executors included, and any user
+image could act as the role.
+
+</Callout>
+
+**Instance credentials.** With `s3.enabled: true` and neither keys nor a
+role, `tif` and `tof` use the default chain: the EC2 instance role through
+IMDS, or EKS Pod Identity if its agent injects credentials. Executors on
+the same node can usually reach IMDS too, so prefer `roleArn`.
+
+### Google Cloud Storage (experimental)
+
+```yaml
+gcs:
+  enabled: true
+  existingSecret: poiesis-gcs   # in the TaskPod namespace
+```
+
+The Secret holds a service account's JSON key under
+`GOOGLE_SERVICE_ACCOUNT_KEY`. It reaches `tif` and `tof` only, by
+reference:
+
+```bash
+kubectl -n <taskpod namespace> create secret generic poiesis-gcs \
+  --from-file=GOOGLE_SERVICE_ACCOUNT_KEY=key.json
+```
+
+GKE Workload Identity is not offered. It serves tokens from the node's
+metadata server to every container of the Pod, executors included, and
+obstore can't read a token file in its place. GCS also works through its
+S3-compatible API with HMAC keys as `s3:` settings.
+
+### Azure Blob Storage (experimental)
+
+```yaml
+azure:
+  enabled: true
+  accountName: poiesisdata
+  existingSecret: poiesis-azure   # or the workload identity below
+```
+
+`az://container/blob` names a blob in that account. The Secret, in the
+TaskPod namespace, holds `AZURE_STORAGE_ACCOUNT_KEY`.
+
+**Workload identity on AKS.** Set the managed identity's client ID and
+its tenant, and leave `existingSecret` empty:
+
+```yaml
+azure:
+  enabled: true
+  accountName: poiesisdata
+  clientId: 00000000-0000-0000-0000-000000000000
+  tenantId: 00000000-0000-0000-0000-000000000000
+```
+
+The API adds a ServiceAccount token for the audience
+`api://AzureADTokenExchange` to each TaskPod and mounts it into `tif` and
+`tof` only, with `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and
+`AZURE_FEDERATED_TOKEN_FILE`.
+
+1. Enable the cluster's OIDC issuer.
+2. Add a federated credential to the managed identity with that issuer,
+   the subject
+   `system:serviceaccount:<taskpod namespace>:<taskpod ServiceAccount>`
+   and the audience `api://AzureADTokenExchange`.
+3. Give the identity `Storage Blob Data Contributor` on the account or
+   its containers.
+
+Don't add the `azure.workload.identity/use` label or the
+`azure.workload.identity/client-id` annotation: the AKS webhook would
+inject the token into every container, executors included.
 
 <Callout type="info">
 
-Poiesis talks to storage with AWS credentials. Google Cloud Storage works
-through its S3-compatible API with HMAC keys in the Secret. Native GCS,
-Azure Blob and FTP are planned
-([#29](https://github.com/jaeaeich/poiesis/issues/29)), as are FUSE
-mounts ([#27](https://github.com/jaeaeich/poiesis/issues/27)).
+GCS and Azure share the S3 code path, which is tested on a cluster, but
+they have not been run against the real services. FTP is planned
+([#29](https://github.com/jaeaeich/poiesis/issues/29)), as are DRS URLs
+and FUSE mounts
+([#27](https://github.com/jaeaeich/poiesis/issues/27)).
 
 </Callout>
 

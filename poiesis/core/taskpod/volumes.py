@@ -24,7 +24,7 @@ from kubernetes.client import (
     V1VolumeProjection,
 )
 
-from poiesis.core.constants import FILER_PVC_PATH
+from poiesis.core.constants import FILER_PVC_PATH, IDENTITY_TOKEN_DIR
 from poiesis.core.taskpod.paths import (
     depth,
     dir_candidates,
@@ -98,8 +98,9 @@ def resolve_pvc_size_gi(task: TesTask, config: RuntimeConfig) -> int:
 def pod_volumes(pvc_name: str, config: RuntimeConfig) -> list[Any]:
     """``spec.volumes`` of the TaskPod.
 
-    The task PVC, the API token (`api_token_volume`), the Postgres CA when
-    configured, then the operator's ``taskpods.extraVolumes``.
+    The task PVC, the API token (`api_token_volume`), the workload-identity
+    tokens (`identity_token_volume`), the Postgres CA when configured, then
+    the operator's ``taskpods.extraVolumes``.
 
     ``Any`` because operator extras come in as raw dicts; the kubernetes
     client's serialiser walks both V1Volume instances and dicts and
@@ -113,6 +114,10 @@ def pod_volumes(pvc_name: str, config: RuntimeConfig) -> list[Any]:
             ),
         ),
         api_token_volume(),
+        *(
+            identity_token_volume(provider, audience)
+            for provider, audience in sorted(config.filer_identity_audiences.items())
+        ),
     ]
     if config.postgres_ca_configmap:
         volumes.append(
@@ -176,6 +181,53 @@ def api_token_mount() -> V1VolumeMount:
         mount_path=API_TOKEN_MOUNT_PATH,
         read_only=True,
     )
+
+
+def identity_token_volume(provider: str, audience: str) -> V1Volume:
+    """A ServiceAccount token for `audience`, which TIF/TOF trade for cloud keys.
+
+    The provider's STS (AWS) or identity platform (Azure) accepts it from
+    the cluster's OIDC issuer in exchange for the role the operator named.
+    Only TIF and TOF mount it (`identity_token_mounts`): executors run user
+    images and never get it, nor the Pod's automounted token.
+    """
+    return V1Volume(
+        name=identity_token_volume_name(provider),
+        projected=V1ProjectedVolumeSource(
+            default_mode=0o644,
+            sources=[
+                V1VolumeProjection(
+                    service_account_token=V1ServiceAccountTokenProjection(
+                        path="token",
+                        audience=audience,
+                        expiration_seconds=_API_TOKEN_EXPIRATION_SECONDS,
+                    ),
+                ),
+            ],
+        ),
+    )
+
+
+def identity_token_volume_name(provider: str) -> str:
+    """Volume name of `provider`'s identity token."""
+    return f"{provider}-identity-token"
+
+
+def identity_token_path(provider: str) -> str:
+    """Where TIF/TOF read `provider`'s identity token."""
+    return f"{IDENTITY_TOKEN_DIR}/{provider}/token"
+
+
+def identity_token_mounts(config: RuntimeConfig) -> list[V1VolumeMount]:
+    """Mounts of the identity tokens, for TIF and TOF only."""
+    return [
+        V1VolumeMount(
+            name=identity_token_volume_name(provider),
+            mount_path=f"{IDENTITY_TOKEN_DIR}/{provider}",
+            read_only=True,
+        )
+        for provider in sorted(config.filer_identity_audiences)
+    ]
 
 
 def pvc_mount() -> V1VolumeMount:

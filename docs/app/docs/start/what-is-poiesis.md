@@ -38,7 +38,8 @@ See [Tasks and TaskPods](../concepts/tasks.md) and
 
 Inputs: `s3://`, `http://`, `https://` and inline `content`.
 Outputs: `s3://`, `http://` and `https://`. `file://` works for both when
-the operator allows it. See
+the operator allows it, and so do `gs://` (Google Cloud Storage) and
+`az://` (Azure Blob Storage), which are experimental. See
 [Storage and staging](../concepts/storage.md).
 
 ## What's yours and what's ours

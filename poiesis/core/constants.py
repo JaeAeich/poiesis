@@ -23,3 +23,15 @@ EXECUTOR_STREAMS_ENV: str = "POIESIS_EXECUTOR_STREAMS"
 #: accept or refuse a task, TIF/TOF read it again before touching a path.
 #: Unset or empty turns the `file://` scheme off.
 FILE_URL_ROOTS_ENV: str = "POIESIS_FILE_URL_ROOTS"
+
+#: Env vars the API sets on TIF/TOF for S3 options the AWS SDKs have no
+#: standard variable for (``s3.*`` chart values). Unset keeps the default.
+S3_VIRTUAL_HOSTED_STYLE_ENV: str = "POIESIS_S3_VIRTUAL_HOSTED_STYLE"
+S3_SERVER_SIDE_ENCRYPTION_ENV: str = "POIESIS_S3_SERVER_SIDE_ENCRYPTION"
+S3_SSE_KMS_KEY_ID_ENV: str = "POIESIS_S3_SSE_KMS_KEY_ID"
+S3_REQUESTER_PAYS_ENV: str = "POIESIS_S3_REQUESTER_PAYS"
+
+#: Directory under which TIF/TOF, and no other container, find the
+#: ServiceAccount token they trade for cloud credentials: one subdirectory
+#: per provider, holding ``token``.
+IDENTITY_TOKEN_DIR: str = "/var/run/secrets/poiesis/identity"  # noqa: S105 - a path

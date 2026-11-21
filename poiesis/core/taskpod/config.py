@@ -111,9 +111,18 @@ class RuntimeConfig:
         file_url_roots: Directories `file://` URLs may point into, passed
             to TIF/TOF. Sourced from ``taskpods.fileUrlRoots``; empty turns
             the scheme off.
-        s3_configured: Whether TIF/TOF get S3 credentials. False makes
-            submit refuse `s3://` inputs and outputs, which would fail in
-            the Pod. Derived by the API from its S3 settings.
+        s3_configured: Whether the operator enabled S3 (``s3.enabled``,
+            a Secret with keys, or a role for workload identity). False
+            makes submit refuse `s3://` inputs and outputs, which would
+            fail in the Pod, and leaves `s3://` out of service-info.
+        gcs_configured: The same for Google Cloud Storage (`gs://`).
+        azure_configured: The same for Azure Blob Storage (`az://`).
+        filer_env: Env vars set on TIF and TOF only: object-store options
+            and workload-identity settings. Not on trec, ack or executors.
+        filer_identity_audiences: Provider → audience of a ServiceAccount
+            token projected into TIF and TOF only, at
+            ``IDENTITY_TOKEN_DIR/<provider>/token``, which the provider's
+            SDK trades for cloud credentials (`volumes.identity_token_volume`).
         log_format: Log format passed to trec/tif/tof (``json`` or
             ``text``). Sourced from ``logging.format``; None passes
             nothing, and they choose by whether stderr is a terminal.
@@ -150,3 +159,15 @@ class RuntimeConfig:
     file_url_roots: tuple[str, ...] = ()
     s3_configured: bool = True
     log_format: str | None = None
+    gcs_configured: bool = False
+    azure_configured: bool = False
+    filer_env: list[V1EnvVar] = field(default_factory=list)
+    filer_identity_audiences: Mapping[str, str] = field(default_factory=dict)
+
+    def storage_enabled(self, scheme: str) -> bool:
+        """False for an object-store scheme whose provider is not enabled."""
+        return {
+            "s3": self.s3_configured,
+            "gs": self.gcs_configured,
+            "az": self.azure_configured,
+        }.get(scheme, True)

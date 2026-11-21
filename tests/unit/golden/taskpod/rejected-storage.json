@@ -1,0 +1,6 @@
+{
+  "input-az-unconfigured": "inputs[0].url is an az:// URL, but this deployment has no Azure Blob Storage credentials; ask your administrator to configure Azure Blob Storage",
+  "input-gs-unconfigured": "inputs[0].url is a gs:// URL, but this deployment has no Google Cloud Storage credentials; ask your administrator to configure Google Cloud Storage",
+  "output-az-unconfigured": "outputs[0].url is an az:// URL, but this deployment has no Azure Blob Storage credentials; ask your administrator to configure Azure Blob Storage",
+  "output-gs-unconfigured": "outputs[0].url is a gs:// URL, but this deployment has no Google Cloud Storage credentials; ask your administrator to configure Google Cloud Storage"
+}

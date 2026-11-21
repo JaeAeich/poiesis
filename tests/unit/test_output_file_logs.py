@@ -16,7 +16,13 @@ import requests
 from poiesis.api.tes.models import TesFileType, TesOutput, TesOutputFileLog
 from poiesis.core.constants import FILE_URL_ROOTS_ENV
 from poiesis.core.services.filer.filer_strategy_factory import create_output_strategy
-from poiesis.core.services.filer.strategy import filer_strategy, http_filer, s3_filer
+from obstore.store import MemoryStore
+
+from poiesis.core.services.filer.strategy import (
+    filer_strategy,
+    http_filer,
+    object_store_filer,
+)
 from poiesis.core.services.filer.tof import Tof
 
 
@@ -118,21 +124,10 @@ def test_file_url_outputs_are_recorded(pvc, tmp_path, monkeypatch):
     ]
 
 
-class FakeS3:
-    """Records the keys uploaded to."""
-
-    def __init__(self) -> None:
-        self.keys: list[str] = []
-
-    def upload_file(self, _path: str, bucket: str, key: str) -> None:
-        self.keys.append(f"{bucket}/{key}")
-
-
 def test_s3_outputs_are_recorded(pvc, monkeypatch):
     """S3 entries name the object each file was uploaded to."""
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "id")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
-    monkeypatch.setattr(s3_filer.boto3, "client", lambda *_a, **_k: FakeS3())
+    store = MemoryStore()
+    monkeypatch.setattr(object_store_filer, "make_store", lambda _location: store)
     assert upload(TesOutput(url="s3://b/k/a.txt", path="/out/a.txt")) == [
         ("/out/a.txt", "3", "s3://b/k/a.txt")
     ]

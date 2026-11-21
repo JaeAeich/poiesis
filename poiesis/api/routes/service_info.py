@@ -33,7 +33,7 @@ from poiesis.core.services.filer.filer_strategy_factory import (
 )
 
 if TYPE_CHECKING:
-    from poiesis.api.settings import ServiceInfoSettings
+    from poiesis.api.settings import ServiceInfoSettings, Settings
 
 router = APIRouter(tags=["TaskService"])
 
@@ -85,13 +85,20 @@ async def service_info(request: Request) -> TesServiceInfo:
             version=_api_constants.TES_VERSION,
         ),
         version=_POIESIS_VERSION,
-        storage=_supported_storage_schemes(),
+        storage=_supported_storage_schemes(request.app.state.settings),
         tesResources_backend_parameters=[],
         **created,
     )
 
 
-def _supported_storage_schemes() -> list[str]:
-    """Return the URL-scheme prefixes the filer strategies can stage from/to."""
+def _supported_storage_schemes(settings: Settings) -> list[str]:
+    """Return the URL-scheme prefixes the filer strategies can stage from/to.
+
+    An object-store scheme is listed only when its provider is enabled.
+    """
     schemes = set(supported_input_schemes()) | set(supported_output_schemes())
-    return sorted(f"{name}://" for name in schemes if name != "content")
+    return sorted(
+        f"{name}://"
+        for name in schemes
+        if name != "content" and settings.storage_enabled(name)
+    )

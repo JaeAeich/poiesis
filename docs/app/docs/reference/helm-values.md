@@ -16,7 +16,7 @@ runs *for* a task, not the control plane.
 <Callout type="warn">
 
 The chart never creates Secrets for credentials. Create the database
-Secret (and the S3 Secret, unless you use IRSA) before installing; the
+Secret (and the S3 Secret, unless you use workload identity) before installing; the
 chart references them by name.
 
 </Callout>
@@ -49,7 +49,7 @@ chart references them by name.
 | `serviceAccount.api.name` | `""` | Name of the ServiceAccount. |
 | `serviceAccount.api.annotations` | `{}` | e.g. `eks.amazonaws.com/role-arn`. |
 | `serviceAccount.tctl.*` | same | The same for TCtl. |
-| `serviceAccount.taskpod.*` | same | The same for TaskPods (used by `trec`; executors don't get its token). |
+| `serviceAccount.taskpod.*` | same | The same for TaskPods (used by `trec`, and by `tif` and `tof` for workload identity; executors don't get its tokens). Use `s3.roleArn` or `azure.clientId` rather than cloud-identity annotations here. |
 
 ## Database
 
@@ -72,12 +72,39 @@ To size the pool against Postgres, see
 
 | Key | Default | What it does |
 | --- | --- | --- |
+| `s3.enabled` | `false` | Offer `s3://` without keys or a role (instance credentials). `existingSecret` or `roleArn` also turn S3 on. |
 | `s3.endpoint` | `""` | `AWS_ENDPOINT_URL`; empty for AWS. |
 | `s3.region` | `""` | `AWS_REGION`. |
-| `s3.existingSecret` | `""` | Secret with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN`; empty with IRSA or IMDS credentials. |
+| `s3.existingSecret` | `""` | Secret with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN`; empty with workload identity or instance credentials. |
+| `s3.roleArn` | `""` | IAM role `tif` and `tof` assume with a ServiceAccount token for `sts.amazonaws.com` (IRSA), mounted into them only. |
+| `s3.virtualHostedStyle` | `false` | Virtual-hosted-style requests; `false` is path-style, which SeaweedFS and MinIO need. |
+| `s3.serverSideEncryption` | `""` | `AES256`, `aws:kms` or `aws:kms:dsse` for uploads. |
+| `s3.kmsKeyId` | `""` | KMS key for `aws:kms` / `aws:kms:dsse`. |
+| `s3.requesterPays` | `false` | Pay for requests to requester-pays buckets. |
 
-Needed only when inputs or outputs use `s3://`. See
-[Storage and staging](../concepts/storage.md).
+Needed only when inputs or outputs use `s3://`. While S3 is off, an
+`s3://` URL is refused at submit. See
+[Storage and staging](../concepts/storage.md#s3).
+
+## gcs (experimental)
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `gcs.enabled` | `false` | Offer `gs://`. Needs `gcs.existingSecret`. |
+| `gcs.existingSecret` | `""` | Secret in the TaskPod namespace with `GOOGLE_SERVICE_ACCOUNT_KEY`, a service account's JSON key. |
+
+## azure (experimental)
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `azure.enabled` | `false` | Offer `az://container/blob`. Needs `azure.accountName`. |
+| `azure.accountName` | `""` | Storage account. |
+| `azure.existingSecret` | `""` | Secret in the TaskPod namespace with `AZURE_STORAGE_ACCOUNT_KEY`. |
+| `azure.clientId`, `azure.tenantId` | `""` | Workload identity: the managed identity `tif` and `tof` act as, with a ServiceAccount token for `api://AzureADTokenExchange`. Set both or neither. |
+
+`gs://` and `az://` have unit tests but have not been run against Google
+Cloud or Azure. See
+[Storage and staging](../concepts/storage.md#object-stores).
 
 ## auth
 

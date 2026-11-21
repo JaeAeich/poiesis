@@ -81,7 +81,13 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 ## Storage
 
 - Object storage reachable from the task namespace, with credentials
-  in a Secret or through IRSA. See [Storage and staging](../concepts/storage.md).
+  in a Secret or through workload identity (`s3.roleArn` on EKS,
+  `azure.clientId` on AKS). The token goes to `tif` and `tof` only; don't
+  annotate the TaskPod ServiceAccount for the EKS or AKS webhooks, which
+  would give it to executors too. See
+  [Storage and staging](../concepts/storage.md#object-stores).
+- `gs://` and `az://` are experimental: they have unit tests but have not
+  been run against Google Cloud or Azure.
 - `taskpods.persistence.maxSizeGi` set to the largest volume a task
   may ask for (the schema refuses an install without it).
 - A StorageClass with `ReadWriteOnce` volumes, and

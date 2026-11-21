@@ -36,10 +36,18 @@ from pydantic import (
 from pydantic.alias_generators import to_camel
 
 from poiesis.api.constants import get_poiesis_api_constants
-from poiesis.core.constants import FILE_URL_ROOTS_ENV, OUTPUT_GLOB_FALLBACK_ENV
+from poiesis.core.constants import (
+    FILE_URL_ROOTS_ENV,
+    OUTPUT_GLOB_FALLBACK_ENV,
+    S3_REQUESTER_PAYS_ENV,
+    S3_SERVER_SIDE_ENCRYPTION_ENV,
+    S3_SSE_KMS_KEY_ID_ENV,
+    S3_VIRTUAL_HOSTED_STYLE_ENV,
+)
 from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
 from poiesis.core.services.filer.file_urls import parse_file_url_roots
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
+from poiesis.core.taskpod.volumes import identity_token_path, identity_token_volume_name
 
 if TYPE_CHECKING:
     from decimal import Decimal
@@ -269,6 +277,16 @@ _RESERVED_ENV_NAMES: frozenset[str] = frozenset(
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
         "AWS_REGION",
+        # Set on TIF/TOF when the operator enables workload identity or
+        # another object store (`StorageSettings`).
+        "AWS_ROLE_ARN",
+        "AWS_WEB_IDENTITY_TOKEN_FILE",
+        "GOOGLE_SERVICE_ACCOUNT_KEY",
+        "AZURE_STORAGE_ACCOUNT_NAME",
+        "AZURE_STORAGE_ACCOUNT_KEY",
+        "AZURE_CLIENT_ID",
+        "AZURE_TENANT_ID",
+        "AZURE_FEDERATED_TOKEN_FILE",
         "POIESIS_POD_NAME",
         "POIESIS_POD_NAMESPACE",
     }
@@ -276,7 +294,15 @@ _RESERVED_ENV_NAMES: frozenset[str] = frozenset(
 _RESERVED_ENV_PREFIXES: tuple[str, ...] = ("POIESIS_",)
 
 #: Volume names the chart already uses; operator extras cannot reuse these.
-_RESERVED_VOLUME_NAMES: frozenset[str] = frozenset({"task-data", "postgres-ca", "tmp"})
+_RESERVED_VOLUME_NAMES: frozenset[str] = frozenset(
+    {
+        "task-data",
+        "postgres-ca",
+        "tmp",
+        identity_token_volume_name("aws"),
+        identity_token_volume_name("azure"),
+    }
+)
 
 
 def _check_reserved_env(entries: list[dict[str, Any]]) -> None:
@@ -1094,6 +1120,166 @@ class DatabaseSettings(BaseModel):
         return self
 
 
+#: Audiences of the ServiceAccount tokens TIF/TOF trade for cloud
+#: credentials: what AWS STS and Microsoft Entra ID expect by default.
+_AWS_TOKEN_AUDIENCE = "sts.amazonaws.com"  # noqa: S105 - an audience
+_AZURE_TOKEN_AUDIENCE = "api://AzureADTokenExchange"  # noqa: S105 - an audience
+
+#: S3 server-side encryption modes; SSE-C needs a key per request.
+_S3_SSE_MODES = frozenset({"AES256", "aws:kms", "aws:kms:dsse"})
+
+
+def _env_or_none(name: str) -> str | None:
+    return os.environ.get(name) or None
+
+
+def _on(flag: bool) -> str | None:  # noqa: FBT001 - a value, not an option
+    """``"true"`` for a set flag, else None (the variable is left out)."""
+    return "true" if flag else None
+
+
+class StorageSettings(BaseModel):
+    """Object stores TIF/TOF may use, and how they get credentials.
+
+    A provider is enabled by its switch (``POIESIS_<PROVIDER>_ENABLED``) or,
+    for S3, by any source of keys (see `Settings.runtime_config`). Its
+    scheme is then accepted at submit and listed in service-info.
+
+    Workload identity: with ``POIESIS_S3_ROLE_ARN``, or the Azure client and
+    tenant IDs, the TaskPod gets a ServiceAccount token for the provider's
+    audience, mounted into TIF and TOF only, and the variables the
+    provider's SDK reads to trade it for credentials.
+    """
+
+    s3_enabled: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            "POIESIS_S3_ENABLED", default=False
+        ),
+    )
+    s3_role_arn: str | None = Field(
+        default_factory=lambda: _env_or_none("POIESIS_S3_ROLE_ARN"),
+    )
+    s3_virtual_hosted_style: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            S3_VIRTUAL_HOSTED_STYLE_ENV, default=False
+        ),
+    )
+    s3_server_side_encryption: str | None = Field(
+        default_factory=lambda: _env_or_none(S3_SERVER_SIDE_ENCRYPTION_ENV),
+    )
+    s3_sse_kms_key_id: str | None = Field(
+        default_factory=lambda: _env_or_none(S3_SSE_KMS_KEY_ID_ENV),
+    )
+    s3_requester_pays: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            S3_REQUESTER_PAYS_ENV, default=False
+        ),
+    )
+    gcs_enabled: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            "POIESIS_GCS_ENABLED", default=False
+        ),
+    )
+    # Secret in the TaskPod namespace with GOOGLE_SERVICE_ACCOUNT_KEY.
+    taskpod_gcs_secret: str | None = Field(
+        default_factory=lambda: _env_or_none("POIESIS_TASKPOD_GCS_SECRET"),
+    )
+    azure_enabled: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            "POIESIS_AZURE_ENABLED", default=False
+        ),
+    )
+    azure_account_name: str | None = Field(
+        default_factory=lambda: _env_or_none("POIESIS_AZURE_ACCOUNT_NAME"),
+    )
+    azure_client_id: str | None = Field(
+        default_factory=lambda: _env_or_none("POIESIS_AZURE_CLIENT_ID"),
+    )
+    azure_tenant_id: str | None = Field(
+        default_factory=lambda: _env_or_none("POIESIS_AZURE_TENANT_ID"),
+    )
+    # Secret in the TaskPod namespace with AZURE_STORAGE_ACCOUNT_KEY.
+    taskpod_azure_secret: str | None = Field(
+        default_factory=lambda: _env_or_none("POIESIS_TASKPOD_AZURE_SECRET"),
+    )
+
+    @model_validator(mode="after")
+    def _check(self) -> StorageSettings:
+        """Refuse settings TIF/TOF could not use."""
+        sse = self.s3_server_side_encryption
+        if sse is not None and sse not in _S3_SSE_MODES:
+            raise ValueError(
+                f"{S3_SERVER_SIDE_ENCRYPTION_ENV} must be one of "
+                f"{sorted(_S3_SSE_MODES)}, got {sse!r}"
+            )
+        if self.s3_sse_kms_key_id and sse not in {"aws:kms", "aws:kms:dsse"}:
+            raise ValueError(
+                f"{S3_SSE_KMS_KEY_ID_ENV} needs {S3_SERVER_SIDE_ENCRYPTION_ENV}"
+                "=aws:kms or aws:kms:dsse"
+            )
+        if self.gcs_enabled and not self.taskpod_gcs_secret:
+            raise ValueError(
+                "POIESIS_GCS_ENABLED needs POIESIS_TASKPOD_GCS_SECRET: Google "
+                "Cloud Storage takes a service-account key only (see the "
+                "Storage docs page for why not workload identity)"
+            )
+        if self.azure_enabled and not self.azure_account_name:
+            raise ValueError("POIESIS_AZURE_ENABLED needs POIESIS_AZURE_ACCOUNT_NAME")
+        if bool(self.azure_client_id) != bool(self.azure_tenant_id):
+            raise ValueError(
+                "POIESIS_AZURE_CLIENT_ID and POIESIS_AZURE_TENANT_ID are set together"
+            )
+        return self
+
+    def filer_env(self) -> list[V1EnvVar]:
+        """Env vars for TIF/TOF only: options and identity, no secret values."""
+        env: list[V1EnvVar] = []
+
+        def literal(name: str, value: str | None) -> None:
+            if value:
+                env.append(V1EnvVar(name=name, value=value))
+
+        literal(S3_VIRTUAL_HOSTED_STYLE_ENV, _on(self.s3_virtual_hosted_style))
+        literal(S3_SERVER_SIDE_ENCRYPTION_ENV, self.s3_server_side_encryption)
+        literal(S3_SSE_KMS_KEY_ID_ENV, self.s3_sse_kms_key_id)
+        literal(S3_REQUESTER_PAYS_ENV, _on(self.s3_requester_pays))
+        if self.s3_role_arn:
+            literal("AWS_ROLE_ARN", self.s3_role_arn)
+            literal("AWS_WEB_IDENTITY_TOKEN_FILE", identity_token_path("aws"))
+        if self.gcs_enabled and self.taskpod_gcs_secret:
+            env.append(
+                _secret_env(
+                    "GOOGLE_SERVICE_ACCOUNT_KEY",
+                    self.taskpod_gcs_secret,
+                    "GOOGLE_SERVICE_ACCOUNT_KEY",
+                )
+            )
+        if self.azure_enabled:
+            literal("AZURE_STORAGE_ACCOUNT_NAME", self.azure_account_name)
+            if self.taskpod_azure_secret:
+                env.append(
+                    _secret_env(
+                        "AZURE_STORAGE_ACCOUNT_KEY",
+                        self.taskpod_azure_secret,
+                        "AZURE_STORAGE_ACCOUNT_KEY",
+                    )
+                )
+            if self.azure_client_id:
+                literal("AZURE_CLIENT_ID", self.azure_client_id)
+                literal("AZURE_TENANT_ID", self.azure_tenant_id)
+                literal("AZURE_FEDERATED_TOKEN_FILE", identity_token_path("azure"))
+        return env
+
+    def identity_audiences(self) -> dict[str, str]:
+        """Provider → audience of the token TIF/TOF trade for credentials."""
+        audiences: dict[str, str] = {}
+        if self.s3_role_arn:
+            audiences["aws"] = _AWS_TOKEN_AUDIENCE
+        if self.azure_enabled and self.azure_client_id:
+            audiences["azure"] = _AZURE_TOKEN_AUDIENCE
+        return audiences
+
+
 class Settings(BaseModel):
     """API runtime settings."""
 
@@ -1259,11 +1445,13 @@ class Settings(BaseModel):
     authz: AuthzSettings = Field(default_factory=AuthzSettings)
     audit: AuditSettings = Field(default_factory=AuditSettings)
     service_info: ServiceInfoSettings = Field(default_factory=ServiceInfoSettings)
+    storage: StorageSettings = Field(default_factory=StorageSettings)
 
     def runtime_config(self) -> RuntimeConfig:
         """Materialise the TaskPod RuntimeConfig used by the spec builder."""
         env = self._credential_env()
         taskpod_extra_env = _entries_to_envvars(self.taskpod_extra_env)
+        storage = self.storage
         # Not secret, so literal values.
         for name, value in (
             ("AWS_ENDPOINT_URL", self.aws_endpoint_url),
@@ -1296,12 +1484,36 @@ class Settings(BaseModel):
             recorder_resources=_resources(self.recorder_resources),
             filer_resources=_resources(self.filer_resources),
             ack_resources=_resources(self.ack_resources),
-            # TIF/TOF's S3 client needs an access key: from the S3 Secret,
-            # the API's own values, or the operator's extraEnv.
-            s3_configured=any(
-                e.name == "AWS_ACCESS_KEY_ID" for e in (*env, *taskpod_extra_env)
-            ),
+            s3_configured=self.storage_enabled("s3"),
+            gcs_configured=self.storage_enabled("gs"),
+            azure_configured=self.storage_enabled("az"),
+            filer_env=storage.filer_env(),
+            filer_identity_audiences=storage.identity_audiences(),
         )
+
+    def storage_enabled(self, scheme: str) -> bool:
+        """False for an object-store scheme whose provider is not enabled.
+
+        S3 is on when the operator says so (workload identity or instance
+        credentials need no key), or when an access key reaches TIF/TOF:
+        from the S3 Secret, the API's own values, or the operator's
+        extraEnv.
+        """
+        storage = self.storage
+        if scheme == "s3":
+            return (
+                storage.s3_enabled
+                or bool(storage.s3_role_arn)
+                or bool(self.taskpod_s3_secret or self.aws_access_key_id)
+                or any(
+                    e.get("name") == "AWS_ACCESS_KEY_ID" for e in self.taskpod_extra_env
+                )
+            )
+        if scheme == "gs":
+            return storage.gcs_enabled
+        if scheme == "az":
+            return storage.azure_enabled
+        return True
 
     def _credential_env(self) -> list[V1EnvVar]:
         """Database URL and S3 credentials for trec, tif and tof.

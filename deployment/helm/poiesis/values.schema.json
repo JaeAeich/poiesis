@@ -173,9 +173,36 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "endpoint":       { "type": "string" },
-        "region":         { "type": "string" },
+        "enabled":              { "type": "boolean" },
+        "endpoint":             { "type": "string" },
+        "region":               { "type": "string" },
+        "existingSecret":       { "type": "string" },
+        "roleArn":              { "type": "string" },
+        "virtualHostedStyle":   { "type": "boolean" },
+        "serverSideEncryption": { "enum": ["", "AES256", "aws:kms", "aws:kms:dsse"] },
+        "kmsKeyId":             { "type": "string" },
+        "requesterPays":        { "type": "boolean" }
+      }
+    },
+
+    "gcs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":        { "type": "boolean" },
         "existingSecret": { "type": "string" }
+      }
+    },
+
+    "azure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":        { "type": "boolean" },
+        "accountName":    { "type": "string" },
+        "existingSecret": { "type": "string" },
+        "clientId":       { "type": "string" },
+        "tenantId":       { "type": "string" }
       }
     },
 

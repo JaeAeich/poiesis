@@ -109,6 +109,9 @@ serviceAccount:
     create: true
     name: ""
     annotations: {}
+  # For object-store access set s3.roleArn or azure.clientId instead of
+  # cloud-identity annotations here: the EKS/AKS webhooks would give the
+  # token to every container of the TaskPod, executors included.
   taskpod:
     create: true
     name: ""
@@ -336,15 +339,63 @@ serviceInfo:
 
 # S3-compatible storage. Optional: required only when task inputs/outputs
 # reference s3:// URLs.
+# Object stores tif and tof stage inputs from and upload outputs to. A
+# provider's scheme (s3://, gs://, az://) is accepted at submit and listed
+# in service-info only when the provider is on. See the Storage docs page.
 s3:
+  # Offer s3:// without static keys: tif/tof assume `roleArn` below, or use
+  # the node's instance credentials (IMDS). Setting existingSecret or
+  # roleArn also turns S3 on.
+  enabled: false
   # Non-secret. AWS_ENDPOINT_URL — empty for real AWS S3.
   endpoint: ""
   # AWS_REGION.
   region: ""
   # Existing Secret with AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY, and
-  # AWS_SESSION_TOKEN for temporary credentials. Empty when using IRSA /
-  # IMDS credentials.
+  # AWS_SESSION_TOKEN for temporary credentials. Empty when using workload
+  # identity or instance credentials.
   existingSecret: ""
+  # IAM role tif/tof assume with a ServiceAccount token for
+  # sts.amazonaws.com (IRSA). The token is mounted into tif and tof only,
+  # never into executors. Don't also annotate the TaskPod ServiceAccount
+  # with eks.amazonaws.com/role-arn: the EKS webhook would give the token
+  # to every container, executors included.
+  roleArn: ""
+  # Virtual-hosted-style requests (https://<bucket>.<endpoint>/<key>).
+  # false: path-style (https://<endpoint>/<bucket>/<key>), which
+  # S3-compatible stores such as SeaweedFS and MinIO need.
+  virtualHostedStyle: false
+  # Server-side encryption of uploads: "", AES256 (SSE-S3), aws:kms
+  # (SSE-KMS) or aws:kms:dsse.
+  serverSideEncryption: ""
+  # KMS key for aws:kms / aws:kms:dsse; empty uses the bucket's default key.
+  kmsKeyId: ""
+  # Send x-amz-request-payer: requester, for requester-pays buckets.
+  requesterPays: false
+
+# Google Cloud Storage (gs://). Experimental: covered by unit tests only.
+gcs:
+  enabled: false
+  # Secret in the TaskPod namespace with key GOOGLE_SERVICE_ACCOUNT_KEY
+  # (the service account's JSON key). Required: GKE Workload Identity
+  # answers every container in the Pod, executors included, so it isn't
+  # offered.
+  existingSecret: ""
+
+# Azure Blob Storage (az://container/blob). Experimental: covered by unit
+# tests only.
+azure:
+  enabled: false
+  # Storage account the containers belong to. Required when enabled.
+  accountName: ""
+  # Secret in the TaskPod namespace with key AZURE_STORAGE_ACCOUNT_KEY.
+  # Empty when using workload identity.
+  existingSecret: ""
+  # Workload identity: the managed identity's client ID and its tenant.
+  # tif/tof get a ServiceAccount token for api://AzureADTokenExchange,
+  # mounted into tif and tof only. Set both or neither.
+  clientId: ""
+  tenantId: ""
 
 # -----------------------------------------------------------------------------
 # API (TES HTTP endpoint)

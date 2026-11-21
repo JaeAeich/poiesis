@@ -229,3 +229,84 @@ def test_database_pool_values_reach_the_settings(
     assert (database.pool_min_size, database.pool_max_size) == (1, 25)
     assert database.acquire_timeout_seconds == 3  # noqa: PLR2004
     assert database.command_timeout_seconds == 60  # noqa: PLR2004
+
+
+def storage_config(
+    monkeypatch: pytest.MonkeyPatch, *sets: str
+) -> tuple[dict[str, str], Any]:
+    """The rendered ConfigMap's data, and the RuntimeConfig the API builds from it."""
+    configmap = next(d for d in render(LINT, sets=sets) if d["kind"] == "ConfigMap")[
+        "data"
+    ]
+    prefixes = ("POIESIS_S3_", "POIESIS_GCS_", "POIESIS_AZURE_")
+    secrets = ("POIESIS_TASKPOD_S3_SECRET", "POIESIS_TASKPOD_GCS_SECRET")
+    for name, value in configmap.items():
+        if name.startswith(prefixes) or name in secrets:
+            monkeypatch.setenv(name, value)
+    return configmap, Settings(auth=AuthSettings(enabled=False)).runtime_config()
+
+
+@pytest.fixture
+def no_storage_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No object-store settings in the test's own environment."""
+    for name in (
+        "AWS_ACCESS_KEY_ID",
+        "POIESIS_TASKPOD_S3_SECRET",
+        "POIESIS_S3_ENABLED",
+        "POIESIS_S3_ROLE_ARN",
+        "POIESIS_GCS_ENABLED",
+        "POIESIS_AZURE_ENABLED",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.usefixtures("no_storage_env")
+def test_s3_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No Secret, no switch: no S3 settings, and S3 is off."""
+    configmap, config = storage_config(monkeypatch)
+    assert not [n for n in configmap if n.startswith("POIESIS_S3_")]
+    assert not config.s3_configured
+
+
+@pytest.mark.usefixtures("no_storage_env")
+def test_existing_s3_secret_keeps_s3_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Installs that set only `s3.existingSecret` work as before."""
+    configmap, config = storage_config(monkeypatch, "s3.existingSecret=poiesis-s3")
+    assert configmap["POIESIS_TASKPOD_S3_SECRET"] == "poiesis-s3"
+    assert config.s3_configured
+    assert not config.filer_identity_audiences
+
+
+@pytest.mark.usefixtures("no_storage_env")
+def test_s3_role_reaches_the_runtime_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`s3.roleArn` turns S3 on with a token for STS, and no Secret."""
+    role = "arn:aws:iam::123456789012:role/poiesis"
+    configmap, config = storage_config(monkeypatch, f"s3.roleArn={role}")
+    assert "POIESIS_TASKPOD_S3_SECRET" not in configmap
+    assert config.s3_configured
+    assert config.filer_identity_audiences == {"aws": "sts.amazonaws.com"}
+
+
+@pytest.mark.parametrize(
+    ("sets", "error"),
+    [
+        (("gcs.enabled=true",), "gcs.enabled needs gcs.existingSecret"),
+        (("azure.enabled=true",), "azure.enabled needs azure.accountName"),
+        (
+            ("azure.enabled=true", "azure.accountName=a", "azure.clientId=c"),
+            "set together",
+        ),
+        (("s3.kmsKeyId=k",), "s3.kmsKeyId needs s3.serverSideEncryption"),
+        (("s3.serverSideEncryption=aes",), "value must be one of"),
+    ],
+)
+def test_unusable_storage_values_fail_the_install(
+    sets: tuple[str, ...], error: str
+) -> None:
+    """Values tif/tof couldn't use fail `helm template`, with the reason."""
+    args = ["template", "t", str(CHART), "-f", LINT]
+    for item in sets:
+        args += ["--set", item]
+    result = helm(*args)
+    assert result.returncode != 0
+    assert error in result.stderr
