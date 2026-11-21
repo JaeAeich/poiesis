@@ -56,10 +56,11 @@ auth:
   to do that.
 - `maxAuthAge` also requires a recent login: the token's `auth_time`
   (when the user last authenticated) at most that many seconds ago,
-  like the password prompt before creating a GitHub token. The issuer
-  must put `auth_time` in access tokens; Keycloak does with a "User
-  Session Note" mapper for the note `AUTH_TIME` (the dev realm has
-  one). Tokens without it can't mint.
+  like the password prompt before creating a GitHub token. Tokens
+  without `auth_time` can't mint. Keycloak puts it in access tokens
+  for browser logins (authorization code, as in the Swagger UI, and
+  the device flow) through its default `basic` scope, but not for the
+  password grant; check what your IdP does before turning this on.
 
 Keys live in the `api_keys` table (migration `000003`). Only the
 SHA-256 of a key is stored; the key itself is shown once, when it is
