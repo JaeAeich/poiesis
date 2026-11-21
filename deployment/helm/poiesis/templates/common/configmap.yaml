@@ -116,12 +116,12 @@ data:
   {{- end }}
 
   # ---- Authorization -----------------------------------------------------------
-  # Always rendered, so the API's startup checks see incomplete settings.
-  {{- with .Values.authz.requiredClaim }}
-  POIESIS_AUTHZ_REQUIRED_CLAIM_NAME: {{ .name | quote }}
-  POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES: {{ .values | toJson | quote }}
-  POIESIS_AUTHZ_REQUIRED_CLAIM_PREFIXES: {{ .prefixes | toJson | quote }}
+  {{- /* The global rule matched claim values of every issuer's tokens alike;
+    refuse it, also empty, rather than silently drop it. */}}
+  {{- if hasKey .Values.authz "requiredClaim" }}
+  {{- fail "authz.requiredClaim was removed: move it to the issuer it is meant for, as auth.issuers[].requiredClaim (it applies to that issuer's tokens only), and delete authz.requiredClaim" }}
   {{- end }}
+  # Always rendered, so the API's startup checks see incomplete settings.
   {{- with .Values.authz.decisionService }}
   POIESIS_AUTHZ_DECISION_SERVICE_URL: {{ .url | quote }}
   POIESIS_AUTHZ_DECISION_SERVICE_TIMEOUT: {{ .timeout | quote }}

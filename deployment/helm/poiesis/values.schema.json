@@ -95,20 +95,7 @@
       "additionalProperties": false,
       "properties": {
         "requiredClaim": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "name":     { "type": "string" },
-            "values":   { "type": "array", "items": { "type": "string", "minLength": 1 } },
-            "prefixes": { "type": "array", "items": { "type": "string", "minLength": 1 } }
-          },
-          "if": { "required": ["name"], "properties": { "name": { "minLength": 1 } } },
-          "then": {
-            "anyOf": [
-              { "required": ["values"],   "properties": { "values":   { "minItems": 1 } } },
-              { "required": ["prefixes"], "properties": { "prefixes": { "minItems": 1 } } }
-            ]
-          }
+          "description": "Removed: set auth.issuers[].requiredClaim. Accepted here only so that the chart can fail with that message."
         },
         "decisionService": {
           "type": "object",
@@ -250,9 +237,46 @@
       "required": ["issuer", "audience"],
       "properties": {
         "issuer":         { "type": "string", "minLength": 1, "pattern": "^[^|]+$" },
-        "audience":       { "type": "string", "minLength": 1 },
+        "audience": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          ]
+        },
+        "tokenTypes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "clients": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "namespace":      { "type": "string", "minLength": 1, "pattern": "^[^|]+$" },
         "principalClaim": { "type": "string", "minLength": 1 },
         "requiredScopes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "requiredClaim": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name":     { "type": "string", "minLength": 1 },
+            "values":   { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "prefixes": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          },
+          "anyOf": [
+            { "required": ["values"],   "properties": { "values":   { "minItems": 1 } } },
+            { "required": ["prefixes"], "properties": { "prefixes": { "minItems": 1 } } }
+          ]
+        },
+        "actors": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         },

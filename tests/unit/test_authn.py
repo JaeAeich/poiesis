@@ -139,6 +139,63 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
         0,
         2.5,
     )
+    # The hardening defaults: access tokens only, any client, no actors.
+    assert first.audience == (AUDIENCE,)
+    assert (first.token_types, first.clients, first.actors) == (("at+jwt",), None, ())
+    assert (first.namespace, first.owner_namespace) == (None, ISSUER)
+    assert first.required_claim is None
+
+
+def test_hardening_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The per-issuer hardening keys are camelCase, like the rest."""
+    set_issuers(
+        monkeypatch,
+        entry(
+            audience=["poiesis-node-1", "poiesis"],
+            tokenTypes=["JWT", "application/at+jwt"],
+            clients=["portal", "poiesis-cli"],
+            namespace="ls-login",
+            actors=["gateway-client"],
+            requiredClaim={"name": "groups", "values": ["a,b"], "prefixes": ["c:"]},
+        ),
+    )
+    (issuer,) = AuthSettings().issuers
+    assert issuer.audience == ("poiesis-node-1", "poiesis")
+    assert issuer.token_types == ("JWT", "application/at+jwt")
+    assert issuer.clients == ("portal", "poiesis-cli")
+    assert (issuer.namespace, issuer.owner_namespace) == ("ls-login", "ls-login")
+    assert issuer.actors == ("gateway-client",)
+    assert issuer.required_claim is not None
+    assert issuer.required_claim.name == "groups"
+    assert issuer.required_claim.values == ("a,b",)
+    assert issuer.required_claim.prefixes == ("c:",)
+
+
+def test_shared_namespace_warns(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Issuers sharing a namespace start, with a warning naming them."""
+    renamed = "https://login.example.org"
+    set_issuers(
+        monkeypatch,
+        entry(renamed, namespace=ISSUER),
+        entry(),
+        entry(OTHER_ISSUER, namespace="other"),
+    )
+    assert len(AuthSettings().issuers) == 3  # noqa: PLR2004
+    (warning,) = [r for r in caplog.records if "namespace" in r.getMessage()]
+    assert warning.levelname == "WARNING"
+    assert f"{renamed}, {ISSUER}" in warning.getMessage()
+    assert repr(ISSUER) in warning.getMessage()
+
+
+def test_distinct_namespaces_dont_warn(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Without a shared namespace there is nothing to warn about."""
+    set_issuers(monkeypatch, entry(namespace="kc"), entry(OTHER_ISSUER))
+    AuthSettings()
+    assert "namespace" not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -164,6 +221,17 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
         (json.dumps([entry("https://a|b")]), r"\|"),
         (json.dumps([entry(requiredScopes=[""])]), "requiredScopes"),
+        (json.dumps([entry(audience=[])]), "audience"),
+        (json.dumps([entry(audience=["a", ""])]), "audience"),
+        (json.dumps([entry(audience=3)]), "audience"),
+        (json.dumps([entry(tokenTypes=[""])]), "tokenTypes"),
+        (json.dumps([entry(tokenTypes="at+jwt")]), "tokenTypes"),
+        (json.dumps([entry(clients=[])]), "clients"),
+        (json.dumps([entry(clients=[" "])]), "clients"),
+        (json.dumps([entry(namespace="")]), "namespace"),
+        (json.dumps([entry(namespace="a|b")]), "namespace"),
+        (json.dumps([entry(actors=[""])]), "actors"),
+        (json.dumps([entry(requiredClaim={"name": "g"})]), "requiredClaim"),
     ],
     ids=[
         "unset",
@@ -183,6 +251,17 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "userinfo-and-jwks-uri",
         "pipe",
         "empty-scope",
+        "no-audiences",
+        "empty-audience-in-list",
+        "audience-not-string",
+        "empty-token-type",
+        "token-types-not-list",
+        "no-clients",
+        "blank-client",
+        "empty-namespace",
+        "pipe-namespace",
+        "empty-actor",
+        "incomplete-claim-rule",
     ],
 )
 def test_invalid_issuers_refused(
@@ -384,6 +463,196 @@ def test_required_scopes_per_issuer(network: Network) -> None:
     assert isinstance(missing, ForbiddenError)
     assert isinstance(ok, Principal)
     assert isinstance(other, Principal)
+
+
+# -- token type ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("token_types", "typ", "accepted"),
+    [
+        (None, "at+jwt", True),
+        (None, "AT+JWT", True),
+        (None, "application/at+jwt", True),
+        (None, "Application/AT+JWT", True),
+        (None, "JWT", False),
+        (None, "at+jwt2", False),
+        (None, None, False),
+        (["JWT"], "JWT", True),
+        (["JWT"], "jwt", True),
+        (["JWT"], "application/jwt", True),
+        (["JWT"], "at+jwt", False),
+        (["JWT", "at+jwt"], "at+jwt", True),
+        (["application/at+jwt"], "at+jwt", True),
+        ([], "JWT", True),
+        ([], "id_token+jwt", True),
+        ([], None, True),
+    ],
+    ids=str,
+)
+def test_token_types(
+    issuer: Issuer, token_types: list[str] | None, typ: str | None, *, accepted: bool
+) -> None:
+    """The header `typ` must be in `tokenTypes` (default `at+jwt`), any case.
+
+    `application/` may be left out (RFC 7515), so `at+jwt` and
+    `application/at+jwt` are the same type. An empty list checks nothing.
+    """
+    settings = {} if token_types is None else {"tokenTypes": token_types}
+    (result,) = authenticate(authenticator(entry(**settings)), issuer.token(typ=typ))
+    assert isinstance(result, Principal if accepted else UnauthorizedError)
+    if not accepted:
+        assert str(result) == "invalid token"
+
+
+def test_token_type_refusal_logged(
+    issuer: Issuer, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A refused `typ` is logged with the issuer, the type and the setting."""
+    authenticate(authenticator(), issuer.token(typ="JWT"))
+    (record,) = [r for r in caplog.records if "tokenTypes" in r.getMessage()]
+    assert record.levelname == "WARNING"
+    message = record.getMessage()
+    assert ISSUER in message
+    assert "'JWT'" in message
+    assert "auth.issuers[].tokenTypes" in message
+
+
+def test_id_token_of_audience_client_refused(issuer: Issuer) -> None:
+    """Where `aud` is a client id, that client's ID tokens don't pass.
+
+    An ID token has the client as audience; an IdP that types its access
+    tokens (`at+jwt`) types its ID tokens otherwise (or not at all).
+    """
+    oidc = authenticator(entry(audience=["portal"]))
+    id_token, untyped, access = authenticate(
+        oidc,
+        issuer.token(typ="JWT", aud="portal", azp="portal"),
+        issuer.token(typ=None, aud="portal", azp="portal"),
+        issuer.token(aud="portal", azp="portal"),
+    )
+    assert isinstance(id_token, UnauthorizedError)
+    assert isinstance(untyped, UnauthorizedError)
+    assert isinstance(access, Principal)
+
+
+# -- clients -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("claims", "accepted"),
+    [
+        ({"azp": "portal"}, True),
+        ({"azp": "poiesis-cli", "client_id": "other"}, True),
+        ({"client_id": "portal"}, True),
+        ({"azp": None, "client_id": "portal"}, True),
+        ({"azp": "other"}, False),
+        ({"azp": "other", "client_id": "portal"}, False),
+        ({"client_id": "other"}, False),
+        ({}, False),
+        ({"azp": ["portal"]}, False),
+    ],
+    ids=[
+        "azp",
+        "azp-first",
+        "client-id",
+        "null-azp",
+        "other-azp",
+        "other-azp-listed-client-id",
+        "other-client-id",
+        "neither",
+        "not-a-string",
+    ],
+)
+def test_clients(issuer: Issuer, claims: dict[str, Any], *, accepted: bool) -> None:
+    """With `clients`, the token's `azp`, else `client_id`, must be listed."""
+    oidc = authenticator(entry(clients=["portal", "poiesis-cli"]))
+    (result,) = authenticate(oidc, issuer.token(**claims))
+    assert isinstance(result, Principal if accepted else UnauthorizedError)
+
+
+def test_any_client_without_clients(issuer: Issuer) -> None:
+    """Without `clients`, any client (or none) is accepted."""
+    results = authenticate(
+        authenticator(), issuer.token(azp="anything"), issuer.token()
+    )
+    assert all(isinstance(result, Principal) for result in results)
+
+
+def test_clients_per_issuer(network: Network) -> None:
+    """Each issuer's `clients` apply to its own tokens only."""
+    first, second = network.add(Issuer()), network.add(Issuer(OTHER_ISSUER))
+    oidc = authenticator(entry(clients=["portal"]), entry(OTHER_ISSUER))
+    refused, other = authenticate(oidc, first.token(azp="ci"), second.token(azp="ci"))
+    assert isinstance(refused, UnauthorizedError)
+    assert isinstance(other, Principal)
+
+
+# -- audience ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("aud", "accepted"),
+    [
+        ("poiesis-node-1", True),
+        ("poiesis", True),
+        (["portal", "poiesis"], True),
+        ("poiesis-node-2", False),
+        (["portal"], False),
+        ([], False),
+    ],
+    ids=str,
+)
+def test_audience_list(issuer: Issuer, aud: Any, *, accepted: bool) -> None:
+    """A token passes if its `aud` holds any of the configured audiences."""
+    oidc = authenticator(entry(audience=["poiesis-node-1", AUDIENCE]))
+    (result,) = authenticate(oidc, issuer.token(aud=aud))
+    assert isinstance(result, Principal if accepted else UnauthorizedError)
+
+
+@pytest.mark.parametrize(
+    ("aud", "accepted"),
+    [(AUDIENCE, True), ([AUDIENCE, "x"], True), ("x", False)],
+    ids=str,
+)
+def test_audience_string(issuer: Issuer, aud: Any, *, accepted: bool) -> None:
+    """A plain string `audience` is one accepted value, as before."""
+    (result,) = authenticate(
+        authenticator(entry(audience=AUDIENCE)), issuer.token(aud=aud)
+    )
+    assert isinstance(result, Principal if accepted else UnauthorizedError)
+
+
+# -- namespace -----------------------------------------------------------------------
+
+
+def test_owner_uses_namespace(network: Network) -> None:
+    """The owner is `<namespace>|<subject>`; the issuer stays the issuer."""
+    first, second = network.add(Issuer()), network.add(Issuer(OTHER_ISSUER))
+    oidc = authenticator(entry(namespace="ls-login"), entry(OTHER_ISSUER))
+    one, two = authenticate(oidc, first.token(), second.token())
+    assert (one.owner, one.namespace, one.issuer) == (
+        "ls-login|alice",
+        "ls-login",
+        ISSUER,
+    )
+    assert (two.owner, two.namespace) == (f"{OTHER_ISSUER}|alice", OTHER_ISSUER)
+
+
+def test_renamed_issuer_keeps_owners(network: Network) -> None:
+    """The old and the new URL of one issuer, sharing a namespace, own alike."""
+    renamed = "https://login.example.org"
+    old, new = network.add(Issuer()), network.add(Issuer(renamed))
+    oidc = authenticator(entry(), entry(renamed, namespace=ISSUER))
+    before, after = authenticate(oidc, old.token(), new.token())
+    assert before.owner == after.owner == f"{ISSUER}|alice"
+    assert (before.issuer, after.issuer) == (ISSUER, renamed)
+
+
+def test_principal_namespace_defaults_to_issuer() -> None:
+    """A principal built without a namespace has its issuer's."""
+    principal = Principal(issuer=ISSUER, subject="alice", via="oidc")
+    assert (principal.namespace, principal.owner) == (ISSUER, f"{ISSUER}|alice")
 
 
 # -- soft start ---------------------------------------------------------------------
@@ -659,6 +928,24 @@ def test_act_claim_is_actor(issuer: Issuer, act: Any, actor: Actor) -> None:
     (principal,) = authenticate(authenticator(), issuer.token(act=act))
     assert principal.actor == actor
     assert principal.owner == f"{ISSUER}|alice"
+
+
+@pytest.mark.parametrize(
+    ("act", "listed"),
+    [
+        ({"sub": "gateway"}, True),
+        ({"sub": "gateway", "iss": ISSUER}, True),
+        ({"sub": "engine"}, False),
+        ({"sub": "gateway", "iss": OTHER_ISSUER}, False),
+    ],
+    ids=["listed", "listed-explicit-issuer", "unlisted", "other-issuer"],
+)
+def test_actor_listed(issuer: Issuer, act: dict[str, Any], *, listed: bool) -> None:
+    """An actor is listed if its `sub` is in `actors` and it is of the issuer."""
+    oidc = authenticator(entry(actors=["gateway"]))
+    (principal,) = authenticate(oidc, issuer.token(act=act))
+    assert principal.actor is not None
+    assert principal.actor.listed is listed
 
 
 @pytest.mark.parametrize(

@@ -21,8 +21,9 @@ credential no link recognises, or none at all, is a `401`.
 
 By default, authorization is an **owner-only rule**: every task row
 carries an `owner` column, and callers see and cancel only the rows
-whose `owner` is their own. An optional claim rule and an external
-decision service change that; see [Authorization](./authorization.md).
+whose `owner` is their own. An optional claim rule per issuer and an
+external decision service change that; see
+[Authorization](./authorization.md).
 
 ![Authenticator chain: before and after, use case by use case](/auth-chain.gif)
 
@@ -37,18 +38,28 @@ auth:
   enabled: true
   issuers:
     - issuer:          https://keycloak.example.org/realms/poiesis
-      audience:        poiesis
-      principalClaim:  sub     # see "Owner and principal claim" below
+      audience:        poiesis # or a list, see "Audience" below
+      tokenTypes:      [JWT]   # default [at+jwt], see "Token type" below
+      clients:         [poiesis-cli, portal] # optional, see "Clients"
+    # namespace:       kc      # optional, see "Owner and namespace"
+      principalClaim:  sub     # see "Owner and namespace" below
       requiredScopes:  []      # optional: reject tokens missing these
+      requiredClaim:           # optional admission rule, see Authorization
+        name:          groups
+        values:        [/poiesis-users]
+      actors:          []      # optional, see "Delegation" below
       userinfo:
         enabled:       false   # see "User info" below
       jwksCacheTtl:    3600    # seconds to cache the issuer's keys
       clockSkew:       30      # seconds of leeway on exp / nbf / iat
       timeout:         10      # seconds per call to the issuer
+      keyMinting:              # optional, see API keys
+        clients:       [poiesis-cli]
     # A gateway (Envoy, Istio, oauth2-proxy) that signs its own JWTs
     # and publishes only its keys: no discovery, no userinfo.
     - issuer:          https://gateway.example.org
       audience:        poiesis
+      tokenTypes:      [JWT]   # the typ its JWTs carry
       jwksUri:         http://gateway.mesh.svc/.well-known/jwks.json
 ```
 
@@ -57,17 +68,42 @@ The same configuration as environment variables:
 ```bash
 POIESIS_AUTH_ENABLED=true
 POIESIS_AUTH_ISSUERS='[
-  {"issuer": "https://keycloak.example.org/realms/poiesis", "audience": "poiesis"},
+  {"issuer": "https://keycloak.example.org/realms/poiesis", "audience": "poiesis",
+   "tokenTypes": ["JWT"], "clients": ["poiesis-cli", "portal"],
+   "requiredClaim": {"name": "groups", "values": ["/poiesis-users"]},
+   "keyMinting": {"clients": ["poiesis-cli"]}},
   {"issuer": "https://gateway.example.org", "audience": "poiesis",
+   "tokenTypes": ["JWT"],
    "jwksUri": "http://gateway.mesh.svc/.well-known/jwks.json"}
 ]'
 ```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `issuer` | required | Exact `iss` of the tokens; the discovery base URL. |
+| `audience` | required | Accepted `aud`: a string or a list; see [Audience](#audience). |
+| `tokenTypes` | `[at+jwt]` | Accepted header `typ` values; `[]` turns the check off. See [Token type](#token-type). |
+| `clients` | any | Accepted clients (`azp`, else `client_id`). See [Clients](#clients). |
+| `namespace` | the issuer | Prefix of the owner id. See [Owner and namespace](#owner-and-namespace). |
+| `principalClaim` | `sub` | Claim naming the subject; dotted paths walk nested objects. |
+| `requiredScopes` | none | Scopes every token must carry, else `403`. |
+| `requiredClaim` | none | Admission rule for this issuer's callers; see [Authorization](./authorization.md#claim-rule). |
+| `actors` | none | Actors the built-in policy accepts; see [Delegation](#delegation). |
+| `userinfo.enabled` | `false` | Fetch userinfo per token; see [User info](#user-info). |
+| `jwksUri` | discovery | Static key set URL; skips discovery. |
+| `jwksCacheTtl` | `3600` | Seconds to cache the keys. |
+| `clockSkew` | `30` | Seconds of leeway on `exp` / `nbf` / `iat`. |
+| `timeout` | `10` | Seconds per call to the issuer. |
+| `keyMinting` | none | Which tokens may mint API keys; see [API keys](./api-keys.md#configuration). |
 
 Each entry needs `issuer` and `audience`; everything else has the
 defaults shown. Poiesis refuses to start (and the chart's JSON schema
 refuses to install) when auth is enabled with no issuer, an entry lacks
 `issuer` or `audience`, an issuer is listed twice, an entry has an
-unknown key, or `userinfo` is combined with `jwksUri`. The old
+unknown key, an empty value in a list (`audience`, `tokenTypes`,
+`clients`, `actors`, `requiredScopes`), an empty `clients` list, a
+`namespace` that is empty or contains `|`, an incomplete
+`requiredClaim`, or `userinfo` combined with `jwksUri`. The old
 `auth.oidc.*` values and `POIESIS_AUTH_OIDC_*` variables are gone: any
 `POIESIS_AUTH_OIDC_*` variable left in the environment refuses to start,
 naming `POIESIS_AUTH_ISSUERS` as its replacement.
@@ -90,8 +126,10 @@ the configured list, by **exact** string match: a trailing `/` matters.
 A token from any other issuer is a `401`. Keys are only ever fetched
 from the configured issuer's discovery document or `jwksUri`, never from
 a URL the token names. The token is then verified in full against that
-issuer: signature (RS, ES or PS algorithms), `iss`, `aud`, `exp` with
-`clockSkew` of leeway, and the issuer's `requiredScopes`.
+issuer: signature (RS, ES or PS algorithms), `iss`, `aud` (one of the
+issuer's `audience`), `exp` with `clockSkew` of leeway, the header
+`typ` (`tokenTypes`), the client (`clients`, if set) and the issuer's
+`requiredScopes`.
 
 The discovery document's own `issuer` must equal the configured
 `issuer` exactly; otherwise the issuer is misconfigured (see below).
@@ -104,17 +142,111 @@ ignored, also behind a proxy: a gateway that authenticates users in its
 own way (SAML, LDAP, mTLS) must sign a JWT for Poiesis and be listed as
 an issuer, usually with `jwksUri`.
 
-## Owner and principal claim
+## Audience
 
-The owner stamped on every task is the opaque string
-`<issuer>|<subject>`, where `<subject>` is the value of the issuer's
-`principalClaim` (default `sub`). Two issuers that issue the same `sub`
-therefore never share tasks:
+A token passes if its `aud` (a string or a list) holds one of the
+issuer's `audience` values. Give each Poiesis instance an audience of
+its own, so that a token issued for another service (a gateway, a
+portal, another TES) is refused here: that is what makes forwarding or
+exchanging tokens per hop (RFC 8693) safe. Several values are meant for
+migrations, e.g. while moving from a shared audience to a per-instance
+one:
+
+```yaml
+    - issuer: https://login.example.org
+      audience: [poiesis-node-1, poiesis]  # drop `poiesis` once moved
+```
+
+A plain string is one value, as before.
+
+## Token type
+
+Many IdPs sign several kinds of JWT with the same keys: access tokens,
+ID tokens, logout tokens. Only access tokens may call Poiesis.
+[RFC 9068](https://www.rfc-editor.org/rfc/rfc9068#section-2.1) access
+tokens say so in their header, `typ: at+jwt`, and by default
+(`tokenTypes: [at+jwt]`) Poiesis accepts no other `typ`. This matters
+most where `audience` is a client id (common with LS Login, where `aud`
+is the client): an ID token of that client has the same `aud`.
+
+- Values compare without regard to case, and `application/` is
+  optional (RFC 7515), so `at+jwt` and `application/at+jwt` are the
+  same.
+- A token without `typ` fails any non-empty list.
+- A refused `typ` is a `401` (`invalid token`), logged at `WARNING`
+  with the issuer, the `typ` seen and the setting to change.
+- **Keycloak** puts `typ: JWT` in the header of its access tokens, so
+  list `tokenTypes: [JWT]` for it (the dev manifest does). It puts the
+  same `typ` on its ID tokens, so for Keycloak the check doesn't tell
+  them apart: keep `audience` different from every client id (its ID
+  tokens carry the client id as `aud`).
+- `tokenTypes: []` turns the check off, for IdPs that type their tokens
+  inconsistently. That is weaker: then any JWT of the issuer with the
+  audience passes, so make sure only access tokens carry it.
+
+## Clients
+
+`clients` optionally lists the OAuth clients whose tokens are accepted:
+the token's `azp` (OIDC), else its `client_id` (RFC 9068), must be one
+of them. Tokens of other clients, and tokens with neither claim, get a
+`401` (`invalid token`). Use it when other clients of the issuer can
+obtain tokens with your audience; leave it out to accept any client.
+
+```yaml
+    - issuer: https://keycloak.example.org/realms/poiesis
+      audience: poiesis
+      clients: [poiesis-cli, portal, poiesis-ci]
+```
+
+It is independent of `keyMinting.clients`, which only says which of the
+accepted clients may [mint API keys](./api-keys.md#configuration).
+
+## Owner and namespace
+
+The owner stamped on every task (and API key) is the opaque string
+`<namespace>|<subject>`. `<subject>` is the value of the issuer's
+`principalClaim` (default `sub`); `<namespace>` is the issuer's
+`namespace`, which defaults to the issuer itself. Two issuers that issue
+the same `sub` therefore never share tasks:
 
 | Caller | Issuer | `sub` | Owner |
 | --- | --- | --- | --- |
 | Alice | `https://kc.example.org/realms/poiesis` | `uuid-a` | `https://kc.example.org/realms/poiesis\|uuid-a` |
 | CI | `https://token.actions.githubusercontent.com` | `repo:org/x:ref:refs/heads/main` | `https://token.actions.githubusercontent.com\|repo:org/x:ref:refs/heads/main` |
+| Bob, with `namespace: ls-login` | `https://login.example.org` | `uuid-b` | `ls-login\|uuid-b` |
+
+A `namespace` must not be empty or contain `|`. Changing it (or the
+issuer URL, while it is the default) changes the owner of every caller
+of the issuer, so set it before the first tasks are created, or only
+for a rename (below).
+
+### Issuer renames
+
+When an IdP moves to a new URL, its tokens carry the new `iss`, and
+with the default namespace their owners change: the callers no longer
+see their tasks, and their API keys stop working. Give the new entry
+the old URL as `namespace` instead, so owners stay the same, with no
+data migration (as long as the IdP keeps its users' `sub` values
+across the move):
+
+```yaml
+auth:
+  issuers:
+    - issuer: https://kc.example.org/realms/poiesis       # old URL
+      audience: poiesis
+    - issuer: https://login.example.org/realms/poiesis    # new URL
+      audience: poiesis
+      namespace: https://kc.example.org/realms/poiesis
+```
+
+Keep the old entry while tokens of the old URL are still in use, then
+remove it; the namespace of the new entry stays. Issuers may share a
+namespace on purpose, but equal subjects of such issuers are then one
+owner, so Poiesis logs a `WARNING` at startup naming every set of
+issuers that share one. Never share a namespace between two different
+IdPs.
+
+### Principal claim
 
 Dotted paths walk nested objects:
 
@@ -137,7 +269,7 @@ Only `sub` is a safe owner: claims that users can change at the IdP,
 such as `email` or `preferred_username`, let one user take over
 another's tasks.
 
-### Worked example
+#### Worked example
 
 Setting `principalClaim: ctx.group_id` with a Keycloak protocol-mapper
 that nests `group_id` under `ctx`:
@@ -245,6 +377,27 @@ tokens with `403 forbidden`: it can't tell what an actor may do. With a
 decision service, the actor is sent along and the decision service
 decides; see [Authorization](./authorization.md#request).
 
+### Trusted actors
+
+Once an IdP issues `act` on exchanged tokens, a deployment behind a
+gateway (e.g. proTES) without a decision service would refuse every
+call. `actors` lists the actors whose delegated tokens of this issuer
+the built-in owner rule accepts anyway, typically the gateway's client
+id:
+
+```yaml
+    - issuer: https://login.example.org
+      audience: poiesis-node-1
+      actors: [protes-gateway]
+```
+
+A delegated token passes if its `act.sub` is listed and its `act.iss`
+(default: the token's issuer) is the token's issuer: an actor id of
+another issuer may name someone else. The actor then acts as the
+subject, with the subject's tasks and nothing more. Any other delegated
+token still gets `403`. With a decision service, `actors` has no effect:
+the decision service decides about every actor, listed or not.
+
 ## Disabling auth
 
 For local development and air-gapped single-tenant deployments set
@@ -275,13 +428,15 @@ applies.
 
 - **No `Authorization` header** → `401 unauthorized` with body
   `{"error":"unauthorized","message":"missing bearer token"}`.
-- **Malformed or expired token, or one from an unconfigured issuer**
-  → `401 unauthorized` with body
+- **Malformed or expired token, one from an unconfigured issuer, of
+  another audience, a token type not in `tokenTypes` or a client not
+  in `clients`** → `401 unauthorized` with body
   `{"error":"unauthorized","message":"invalid token"}`. The reason
-  (signature, audience, issuer, exp, …) is logged server-side at
-  `WARNING` but not returned to the client.
+  (signature, audience, issuer, exp, `typ`, client, …) is logged
+  server-side at `WARNING` but not returned to the client.
 - **Token missing a required scope** → `403 forbidden`.
-- **Delegated token without a decision service** → `403 forbidden`.
+- **Delegated token without a decision service**, unless its actor is
+  in the issuer's `actors` → `403 forbidden`.
 - **Issuer not reachable yet, or its keys never loaded** →
   `503 service_unavailable` with `Retry-After`.
 - **`GET /tasks/{id}` of a task you don't own** → `404 not found`
@@ -327,10 +482,11 @@ Migration `000003` renames `tasks.principal` to `tasks.owner`, adds a
 `tasks.groups` column and creates the `api_keys` table. It does **not**
 rewrite existing owners, since the database can't know which issuer
 they came from: rows that hold a bare `sub` match nobody afterwards.
-To give them back to their owners, prefix them with their issuer, once:
+To give them back to their owners, prefix them with their issuer (or
+the issuer's `namespace`, if you set one), once:
 
 ```sql
-UPDATE tasks SET owner = '<issuer>|' || owner
+UPDATE tasks SET owner = '<namespace>|' || owner
 WHERE owner NOT IN ('__anonymous__', '__legacy__')
   AND position('|' in owner) = 0;
 ```
@@ -342,3 +498,22 @@ needed.
 Replace `auth.oidc` in your Helm values with a one-entry
 `auth.issuers` list (same keys, plus `issuer` per entry), or, without
 Helm, the `POIESIS_AUTH_OIDC_*` variables with `POIESIS_AUTH_ISSUERS`.
+
+### Upgrading to issuer hardening
+
+![Issuer hardening: before and after, case by case](/issuer-hardening.gif)
+
+Existing owners keep working: the default `namespace` is the issuer,
+as before, and `clients` and `actors` are off until set. Two changes
+need attention:
+
+- **Token type.** Tokens must now carry `typ: at+jwt` in the header by
+  default. If your IdP types its access tokens otherwise (Keycloak:
+  `JWT`), set `tokenTypes` for it, or every request gets `401` (the
+  `WARNING` in the log names the `typ` seen).
+- **Claim rule.** The global `authz.requiredClaim` is gone: it matched
+  the claim value whichever issuer the token came from. Move it to the
+  issuer it is meant for, as `auth.issuers[].requiredClaim`. The chart
+  refuses to render while `authz.requiredClaim` is set, and the API
+  refuses to start while any `POIESIS_AUTHZ_REQUIRED_CLAIM_*` variable
+  is set.

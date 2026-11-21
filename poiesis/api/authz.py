@@ -1,10 +1,13 @@
-"""Authorization: a built-in claim rule and an optional decision service.
+"""Authorization: per-issuer claim rules and an optional decision service.
 
 Two independent parts, both off by default; when both are set, both
 must allow:
 
-- The claim rule admits a caller if one claim holds one of the
-    configured values or starts with one of the configured prefixes.
+- An issuer's claim rule (``requiredClaim``) admits a principal of that
+    issuer (a token, or an API key minted with one) if one claim holds
+    one of the configured values or starts with one of the configured
+    prefixes. It never applies to another issuer's principals, so an
+    issuer can't admit its tokens by copying another's claim values.
 - The decision service is an OpenID AuthZEN 1.0 Access Evaluation
     endpoint (``POST`` ``/access/v1/evaluation``) that gets one question
     per decision, in the ``tes-authzen/1`` profile: the subject (owner id,
@@ -14,7 +17,8 @@ must allow:
     as action, and a ``tes_task`` (get, cancel) or a ``tes_task_set``
     ``own``/``all`` (create, list) as resource. Without it, the built-in
     owner rule applies: callers see and cancel only their own tasks, and
-    delegated tokens (with an RFC 8693 ``act`` claim) are refused.
+    delegated tokens (with an RFC 8693 ``act`` claim) are refused unless
+    the actor is in the token issuer's ``actors``.
 
 Any failure of the decision service denies with ``503``.
 
@@ -28,6 +32,7 @@ import logging
 import re
 import time
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -42,7 +47,7 @@ from poiesis.api.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from poiesis.api.settings import AuthzSettings
+from poiesis.api.settings import AuthzSettings, IssuerSettings
 from poiesis.api.tes.models import TesInput, TesOutput, TesTask
 
 logger = logging.getLogger(__name__)
@@ -53,15 +58,22 @@ _SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 
 
 class Authz:
-    """The claim rule and, if configured, the decision service."""
+    """The issuers' claim rules and, if configured, the decision service."""
 
     def __init__(
-        self, settings: AuthzSettings, client: httpx.AsyncClient | None = None
+        self,
+        settings: AuthzSettings,
+        issuers: Sequence[IssuerSettings] = (),
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         """Read the settings; open a client if a decision service is set."""
-        self._claim = settings.required_claim_name
-        self._values = frozenset(settings.required_claim_values)
-        self._prefixes = settings.required_claim_prefixes
+        # By issuer, not by namespace: issuers sharing a namespace may
+        # still admit differently.
+        self._rules = {
+            entry.issuer: entry.required_claim
+            for entry in issuers
+            if entry.required_claim is not None
+        }
         self._url = settings.decision_service_url
         self._timeout = settings.decision_service_timeout
         self._allowlist = settings.decision_service_claims
@@ -89,22 +101,26 @@ class Authz:
             await self._client.aclose()
 
     def gate(self, principal: Principal) -> None:
-        """Apply the claim rule and the built-in delegation rule.
+        """Apply the principal's issuer's claim rule and the delegation rule.
 
-        Raises ``403`` unless the claim rule is off or admits, and for a
-        delegated token (one with an actor) when there is no decision
-        service: the built-in owner rule can't tell what an actor may do.
+        Raises ``403`` unless the issuer of the principal has no claim
+        rule or it admits, and for a delegated token (one with an actor)
+        when there is no decision service, unless the actor is listed in
+        the issuer's ``actors``: the built-in owner rule can't tell what
+        any other actor may do.
         """
-        if self._client is None and principal.actor is not None:
+        actor = principal.actor
+        if self._client is None and actor is not None and not actor.listed:
             raise ForbiddenError("delegated tokens (act claim) need a decision service")
-        if not self._claim:
+        rule = self._rules.get(principal.issuer)
+        if rule is None:
             return
-        value = principal.claim(self._claim)
+        value = principal.claim(rule.name)
         values = [value] if isinstance(value, str) else value
         if not (
             isinstance(values, list)
             and all(isinstance(v, str) for v in values)
-            and any(v in self._values or v.startswith(self._prefixes) for v in values)
+            and any(v in rule.values or v.startswith(rule.prefixes) for v in values)
         ):
             raise ForbiddenError("forbidden")
 
@@ -196,7 +212,7 @@ class Authz:
             for key, value in (
                 ("iss", principal.issuer),
                 ("sub", token.get("sub")),
-                ("client_id", token.get("azp") or token.get("client_id")),
+                ("client_id", principal.client),
                 ("via", principal.via),
                 ("credential_id", principal.credential_id),
             )

@@ -90,8 +90,18 @@ class Issuer:
         self.key = ECKey.generate_key("P-256", auto_kid=True)
         self.published = [self.key]
 
-    def token(self, key: ECKey | None = None, **claims: Any) -> str:
-        """Mint an access token for `alice`, valid five minutes, plus `claims`."""
+    def token(
+        self,
+        key: ECKey | None = None,
+        *,
+        typ: str | None = "at+jwt",
+        **claims: Any,
+    ) -> str:
+        """Mint an access token for `alice`, valid five minutes, plus `claims`.
+
+        `typ` is the header's token type: RFC 9068's `at+jwt` by default,
+        none for `None`.
+        """
         key = key or self.key
         payload = {
             "iss": self.url,
@@ -99,7 +109,10 @@ class Issuer:
             "sub": "alice",
             "exp": int(time.time()) + 300,
         } | claims
-        token = jwt.encode({"alg": "ES256", "kid": key.kid}, payload, key)
+        header = {"alg": "ES256", "kid": key.kid}
+        if typ is not None:
+            header["typ"] = typ
+        token = jwt.encode(header, payload, key, default_type=None)
         self.tokens[token] = payload
         return token
 

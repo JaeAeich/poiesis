@@ -7,9 +7,10 @@ though its tasks are fine. Poiesis API keys fix that: an owner logs in
 once, mints a key for the run and gives the key to the engine.
 
 A key is `poi_`, 43 random characters (256 bits) and a 6-character
-checksum. It authenticates as
-the owner who minted it: the same owner id (`issuer|subject`), so the
-same tasks. Keys are the second link of the authenticator chain (see
+checksum. It authenticates as the owner who minted it: the same owner
+id (`namespace|subject`, see
+[Owner and namespace](./authentication.md#owner-and-namespace)), so
+the same tasks. Keys are the second link of the authenticator chain (see
 [Authentication](./authentication.md)); the first link, for JWTs, never
 looks at them.
 
@@ -78,8 +79,9 @@ the configured issuers; minting also needs a token from a client in its
 issuer's `keyMinting` (and a recent login with `maxAuthAge`). An API
 key can't mint, list or revoke keys (a leaked key can't extend
 itself), and neither can a delegated token
-(one with an `act` claim). The [claim rule](./authorization.md#claim-rule)
-applies as on every TES call.
+(one with an `act` claim). The issuer's
+[claim rule](./authorization.md#claim-rule) applies as on every TES
+call.
 
 ### From the Swagger UI
 
@@ -218,8 +220,10 @@ Until then, an operator can do it in the database:
 
 ```sql
 UPDATE api_keys SET revoked_at = now()
-WHERE owner = '<issuer>|<subject>' AND revoked_at IS NULL;
+WHERE owner = '<namespace>|<subject>' AND revoked_at IS NULL;
 ```
+
+(The namespace is the issuer unless its entry sets `namespace`.)
 
 ## Sending a key
 
@@ -241,8 +245,8 @@ to the rest of the chain.
 A key carries a snapshot of its owner's claims, taken from the minting
 token (without `exp`, `iat`, `nbf`, `jti`, `auth_time`) and, if
 [userinfo](./authentication.md#user-info) is on, the userinfo answer.
-The claim rule and the decision service see the snapshot on every
-request made with the key, so they decide as they would for the
+The issuer's claim rule and the decision service see the snapshot on
+every request made with the key, so they decide as they would for the
 owner's token at minting time.
 
 The snapshot doesn't change afterwards. A user who leaves a group, or
@@ -251,6 +255,20 @@ keys expire or are revoked**: the deprovisioning lag is the key
 lifetime. Choose `maxTtl` with that in mind, and revoke keys when
 offboarding users. Removing an issuer from `auth.issuers` disables all
 keys of its owners at once.
+
+## Issuers and namespaces
+
+A key belongs to an owner, `<namespace>|<subject>`, not to an issuer
+URL. On every request Poiesis looks for a configured issuer with the
+key's namespace (the first one listed, if several share it): that
+issuer's claim rule applies, and it is the `iss` the decision service
+sees. So:
+
+- A key keeps working when its issuer moves to a new URL, as long as
+  the new entry keeps the old namespace (see
+  [Issuer renames](./authentication.md#issuer-renames)).
+- A key whose namespace no configured issuer has any more (the issuer
+  was removed, or its namespace changed) gets `401`.
 
 ## Security model
 
@@ -293,7 +311,7 @@ and (for mints) client, scopes and expiry; refused mints at `WARNING`.
 | Situation | Result |
 | --- | --- |
 | Unknown, malformed, revoked or expired key | `401`, `invalid token` |
-| Key of an issuer no longer in `auth.issuers` | `401`, `invalid token` |
+| Key of a namespace no issuer in `auth.issuers` has (any more) | `401`, `invalid token` |
 | Database unreachable while checking a key | `503`, `Retry-After: 5` |
 | Key lacks the operation's scope | `403` |
 | Minting, listing or revoking with a key or a delegated token | `403` |

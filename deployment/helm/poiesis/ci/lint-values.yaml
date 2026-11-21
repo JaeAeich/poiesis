@@ -9,6 +9,11 @@ auth:
   issuers:
     - issuer: https://keycloak.example.org/realms/poiesis
       audience: poiesis
+      tokenTypes: [JWT]
+      clients: [poiesis-cli]
+      requiredClaim:
+        name: groups
+        prefixes: [/poiesis-]
   swaggerUi:
     issuer: https://keycloak.example.org/realms/poiesis
     clientId: poiesis-cli

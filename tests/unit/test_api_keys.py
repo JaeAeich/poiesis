@@ -40,7 +40,11 @@ from poiesis.api.apikey_auth import (
 )
 from poiesis.api.auth import Principal
 from poiesis.api.authz import Authz
-from poiesis.api.exceptions import ServiceUnavailableError, UnauthorizedError
+from poiesis.api.exceptions import (
+    ForbiddenError,
+    ServiceUnavailableError,
+    UnauthorizedError,
+)
 from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.routes.api_keys import mint_refusal
 from poiesis.api.settings import (
@@ -627,9 +631,16 @@ def test_delegated_token_cannot_manage_keys(client: TestClient, issuer: Issuer) 
 def test_claim_rule_applies_to_minting(
     app_env: pytest.MonkeyPatch, issuer: Issuer
 ) -> None:
-    """The claim rule gates key management like every TES call."""
-    app_env.setenv("POIESIS_AUTHZ_REQUIRED_CLAIM_NAME", "groups")
-    app_env.setenv("POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES", '["lab-alpha"]')
+    """The issuer's claim rule gates key management like every TES call."""
+    set_issuers(
+        app_env,
+        {
+            "issuer": ISSUER,
+            "audience": AUDIENCE,
+            "keyMinting": {"clients": [LOGIN]},
+            "requiredClaim": {"name": "groups", "values": ["lab-alpha"]},
+        },
+    )
     with TestClient(app_module.create_app()) as client:
         assert mint(client, issuer.token()).status_code == HTTPStatus.FORBIDDEN
         token = issuer.token(groups=["lab-alpha"])
@@ -801,7 +812,7 @@ def test_flush_cancelled_keeps_batch(
             started.set()
             await asyncio.sleep(10)
 
-        authenticator = ApiKeyAuthenticator(Pool(), (ISSUER,))
+        authenticator = ApiKeyAuthenticator(Pool(), issuers(ISSUER))
         request: Any = SimpleNamespace(headers={"authorization": f"Bearer {key}"})
         await authenticator.authenticate(request)
         with monkeypatch.context() as patch:
@@ -818,11 +829,22 @@ def test_flush_cancelled_keeps_batch(
     assert [batch.keys() for batch in table.touched] == [{key_id}]
 
 
-def principal_for(table: KeyTable, key: str, issuers: tuple[str, ...]) -> Any:
+def issuers(*entries: str | dict[str, Any]) -> list[IssuerSettings]:
+    """Return issuer settings: an issuer URL, or camelCase extra settings."""
+    return [
+        IssuerSettings.model_validate(
+            {"audience": AUDIENCE}
+            | ({"issuer": entry} if isinstance(entry, str) else entry)
+        )
+        for entry in entries
+    ]
+
+
+def principal_for(table: KeyTable, key: str, configured: list[IssuerSettings]) -> Any:
     """Authenticate `key` with a fresh authenticator; principal or error."""
 
     async def main() -> Any:
-        authenticator = ApiKeyAuthenticator(Pool(), issuers)
+        authenticator = ApiKeyAuthenticator(Pool(), configured)
         request: Any = SimpleNamespace(headers={"authorization": f"Bearer {key}"})
         try:
             return await authenticator.authenticate(request)
@@ -844,7 +866,7 @@ def test_principal(table: KeyTable) -> None:
         claims_snapshot=snapshot,
         created_at=minted,
     )
-    principal = principal_for(table, key, (ISSUER, GATEWAY))
+    principal = principal_for(table, key, issuers(ISSUER, GATEWAY))
     assert principal == Principal(
         issuer=GATEWAY,
         subject="a|b",
@@ -863,8 +885,129 @@ def test_issuer_removed(table: KeyTable) -> None:
     """Removing an issuer from the settings disables its owners' keys."""
     key = new_key()
     table.insert(key)
-    assert isinstance(principal_for(table, key, (ISSUER,)), Principal)
-    assert isinstance(principal_for(table, key, (GATEWAY,)), UnauthorizedError)
+    assert isinstance(principal_for(table, key, issuers(ISSUER)), Principal)
+    assert isinstance(principal_for(table, key, issuers(GATEWAY)), UnauthorizedError)
+
+
+RENAMED = "https://login.example.org"
+
+
+def test_renamed_issuer_keeps_keys(table: KeyTable) -> None:
+    """A key keeps working when its issuer's new URL keeps the old namespace.
+
+    The owner stays `<old issuer>|alice`; the principal's issuer is the
+    configured one with that namespace.
+    """
+    key = new_key()
+    table.insert(key)
+    principal = principal_for(
+        table, key, issuers({"issuer": RENAMED, "namespace": ISSUER})
+    )
+    assert isinstance(principal, Principal)
+    assert (principal.issuer, principal.namespace) == (RENAMED, ISSUER)
+    assert principal.owner == ALICE
+
+
+def test_shared_namespace_first_issuer(table: KeyTable) -> None:
+    """Of issuers sharing the key's namespace, the first one listed is its issuer."""
+    key = new_key()
+    table.insert(key)
+    configured = issuers({"issuer": RENAMED, "namespace": ISSUER}, ISSUER)
+    assert principal_for(table, key, configured).issuer == RENAMED
+    assert principal_for(table, key, configured[::-1]).issuer == ISSUER
+
+
+@pytest.mark.parametrize(
+    "configured",
+    [
+        [{"issuer": ISSUER, "namespace": "ls-login"}],
+        [{"issuer": RENAMED}],
+    ],
+    ids=["issuer-got-a-namespace", "renamed-without-namespace"],
+)
+def test_namespace_no_longer_configured(
+    table: KeyTable, configured: list[dict[str, Any]]
+) -> None:
+    """A key whose namespace no configured issuer has is a 401."""
+    key = new_key()
+    table.insert(key)
+    assert isinstance(
+        principal_for(table, key, issuers(*configured)), UnauthorizedError
+    )
+
+
+def test_minted_owner_uses_namespace(
+    app_env: pytest.MonkeyPatch, issuer: Issuer, table: KeyTable
+) -> None:
+    """A key is minted for `<namespace>|<subject>` and authenticates as it."""
+    set_issuers(
+        app_env,
+        {
+            "issuer": ISSUER,
+            "audience": AUDIENCE,
+            "namespace": "ls-login",
+            "keyMinting": {"clients": [LOGIN]},
+        },
+    )
+    with TestClient(app_module.create_app()) as client:
+        created = minted(client, issuer)
+        assert table.rows[uuid.UUID(created["id"])]["owner"] == "ls-login|alice"
+        listed = client.get(KEYS, headers=bearer(issuer.token())).json()
+        assert [k["id"] for k in listed] == [created["id"]]
+        response = client.get(TASKS, headers=bearer(created["key"]))
+        assert response.status_code == HTTPStatus.OK
+
+
+# -- claim rules per issuer ------------------------------------------------------
+
+#: The required group of the fake issuer's rule.
+GROUP = "lab-alpha"
+
+
+def gated(
+    table: KeyTable, owner: str, claims: dict[str, Any], *entries: dict[str, Any]
+) -> bool:
+    """Whether a key of `owner` with snapshot `claims` passes the issuers' rules."""
+    key = new_key()
+    table.insert(key, owner=owner, claims_snapshot={"claims": claims, "userinfo": {}})
+    configured = issuers(*entries)
+    principal = principal_for(table, key, configured)
+    assert isinstance(principal, Principal)
+    try:
+        Authz(AuthzSettings(), configured).gate(principal)
+    except ForbiddenError:
+        return False
+    return True
+
+
+RULED = {"issuer": ISSUER, "requiredClaim": {"name": "groups", "values": [GROUP]}}
+
+
+@pytest.mark.parametrize(
+    ("claims", "admitted"),
+    [({"groups": [GROUP]}, True), ({"groups": ["other"]}, False), ({}, False)],
+    ids=["member", "other-group", "no-claim"],
+)
+def test_key_judged_by_its_issuers_rule(
+    table: KeyTable, claims: dict[str, Any], *, admitted: bool
+) -> None:
+    """A key is judged by its issuer's rule, on the snapshot's claims."""
+    assert gated(table, ALICE, claims, RULED, {"issuer": GATEWAY}) is admitted
+
+
+def test_key_of_other_issuer_not_judged_by_rule(table: KeyTable) -> None:
+    """Another issuer's key with the required value is judged by its own rule."""
+    owner = f"{GATEWAY}|alice"
+    assert gated(table, owner, {"groups": [GROUP]}, RULED, {"issuer": GATEWAY})
+    assert gated(table, owner, {}, RULED, {"issuer": GATEWAY})
+    other_rule = {"name": "groups", "values": ["gateway-users"]}
+    assert not gated(
+        table,
+        owner,
+        {"groups": [GROUP]},
+        RULED,
+        {"issuer": GATEWAY, "requiredClaim": other_rule},
+    )
 
 
 # -- scopes -------------------------------------------------------------------------
@@ -924,7 +1067,9 @@ def test_last_used_batched(table: KeyTable) -> None:
     first_id, second_id = table.insert(first), table.insert(second)
 
     async def main() -> None:
-        authenticator = ApiKeyAuthenticator(Pool(), (ISSUER,), flush_interval=3600)
+        authenticator = ApiKeyAuthenticator(
+            Pool(), issuers(ISSUER), flush_interval=3600
+        )
         await authenticator.start()
         for key in (first, second, first, first):
             request: Any = SimpleNamespace(headers={"authorization": f"Bearer {key}"})
@@ -958,7 +1103,9 @@ def test_last_used_flushed_in_background(table: KeyTable) -> None:
     key_id = table.insert(key)
 
     async def main() -> None:
-        authenticator = ApiKeyAuthenticator(Pool(), (ISSUER,), flush_interval=0.01)
+        authenticator = ApiKeyAuthenticator(
+            Pool(), issuers(ISSUER), flush_interval=0.01
+        )
         await authenticator.start()
         request: Any = SimpleNamespace(headers={"authorization": f"Bearer {key}"})
         try:

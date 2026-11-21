@@ -144,11 +144,41 @@ auth:
   #                   https://keycloak.example.org/realms/poiesis. Also the
   #                   OIDC discovery base URL; the discovery document's
   #                   `issuer` must equal it exactly.
-  #   audience        REQUIRED. Expected `aud` claim.
-  #   principalClaim  Claim naming the subject (default `sub`); the owner
-  #                   stamped on tasks is `<issuer>|<subject>`. Dotted
+  #   audience        REQUIRED. Accepted `aud` claim: a string, or a list
+  #                   of which the token's `aud` must hold one. Use one
+  #                   value per Poiesis instance; several only during a
+  #                   migration (e.g. shared -> per-instance audience).
+  #   tokenTypes      Accepted JWT header `typ` values, compared without
+  #                   case, `application/` optional (default [at+jwt],
+  #                   RFC 9068 access tokens), so that ID tokens and other
+  #                   JWTs of the issuer are refused. Keycloak access
+  #                   tokens carry `JWT` by default: list [JWT]. [] turns
+  #                   the check off (weaker: any JWT of the issuer with
+  #                   the audience passes).
+  #   clients         OAuth clients (token `azp`, else `client_id`) whose
+  #                   tokens are accepted; tokens of other clients, or
+  #                   without one, get 401. Unset: any client.
+  #   namespace       Prefix of the owner id stamped on tasks and keys:
+  #                   `<namespace>|<subject>` (default: the issuer). No
+  #                   `|`. When an issuer's URL changes, give the new
+  #                   entry the old URL as namespace so owners stay the
+  #                   same (a startup WARNING names issuers sharing one).
+  #   principalClaim  Claim naming the subject (default `sub`). Dotted
   #                   paths walk nested objects (`ctx.group_id`).
   #   requiredScopes  Scopes a token MUST carry (default none).
+  #   requiredClaim   Admission rule for this issuer's tokens (and keys
+  #                   minted with them): {name, values, prefixes}. The
+  #                   claim `name` (exact name first, then a dotted path;
+  #                   token first, then userinfo) must be a string or
+  #                   list of strings holding one of `values` or
+  #                   starting with one of `prefixes`, else 403. Prefixes
+  #                   are raw: include the delimiter (`urn:...:vo:`).
+  #                   Never applies to other issuers' tokens. Unset: all
+  #                   of the issuer's tokens are admitted.
+  #   actors          Actors (RFC 8693 `act.sub`, e.g. a gateway's client
+  #                   id) whose delegated tokens of this issuer the
+  #                   built-in policy accepts when there is no decision
+  #                   service; other delegated tokens get 403.
   #   userinfo        {enabled: true} fetches the issuer's userinfo per
   #                   token (cached until it expires, at most 5 minutes)
   #                   for claims missing from access tokens (default off).
@@ -169,6 +199,9 @@ auth:
   #   issuers:
   #     - issuer: https://keycloak.example.org/realms/poiesis
   #       audience: poiesis
+  #       tokenTypes: [JWT]
+  #       clients: [poiesis-cli, portal]
+  #       requiredClaim: {name: groups, values: [/poiesis-users]}
   #       keyMinting: {clients: [poiesis-cli], maxAuthAge: 600}
   #     - issuer: https://gateway.example.org
   #       audience: poiesis
@@ -199,18 +232,11 @@ auth:
     # Space-separated scopes requested.
     scopes: openid
 
-# Authorization (see the "Authorization" docs page). Both parts are off by
-# default; when both are set, both must allow. Needs auth.enabled.
+# Authorization (see the "Authorization" docs page). Off by default; when
+# both an issuer's requiredClaim (above) and the decision service are set,
+# both must allow. Needs auth.enabled. The former global
+# `authz.requiredClaim` is refused: set it per issuer instead.
 authz:
-  # Built-in claim rule for every TES action: callers whose claim `name`
-  # (exact name first, then a dotted path; token first, then userinfo) is
-  # not a string or list of strings holding one of `values` or starting
-  # with one of `prefixes` get 403. Prefixes are raw: include the
-  # delimiter (e.g. `urn:...:group:vo:`). Empty `name` disables it.
-  requiredClaim:
-    name: ""
-    values: []
-    prefixes: []
   # External decision service: an OpenID AuthZEN 1.0 Access Evaluation
   # endpoint asked once per decision. Empty `url` keeps the built-in
   # owner rule. Any failure or timeout is a 503.
