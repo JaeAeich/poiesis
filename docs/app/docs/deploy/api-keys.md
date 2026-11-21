@@ -214,16 +214,54 @@ revokes a key (`204`). It stops working with the next request: keys are
 looked up on every request, not cached. Revoking a revoked key is a
 `204` too; a key that isn't yours, or doesn't exist, is a `404`.
 
-Revoking every key of an owner, for an administrator, comes with the
-admin role ([#123](https://github.com/jaeaeich/poiesis/issues/123)).
-Until then, an operator can do it in the database:
+## Offboarding
 
-```sql
-UPDATE api_keys SET revoked_at = now()
-WHERE owner = '<namespace>|<subject>' AND revoked_at IS NULL;
+When someone leaves, an admin revokes all their keys at once, by owner
+id (`<namespace>|<subject>`; the namespace is the issuer unless its
+entry sets `namespace`, see
+[Owner and namespace](./authentication.md#owner-and-namespace)):
+
+```bash
+OWNER='https://keycloak.example.org/realms/poiesis|<subject>'
+curl -X DELETE -G https://poiesis.example.org/poiesis/v1/api-keys \
+  --data-urlencode "owner=$OWNER" -H "Authorization: Bearer $TOKEN"
 ```
 
-(The namespace is the issuer unless its entry sets `namespace`.)
+```json
+{"revoked": 2}
+```
+
+Every **active** key of the owner (neither revoked nor expired) is
+revoked and stops working with the next request; `revoked` counts them.
+Revoked and expired keys stay as they are, and an owner without active
+keys is `{"revoked": 0}`. `GET` with the same `owner` lists that
+owner's keys, as the owner would see them (metadata, never the key):
+
+```bash
+curl -G https://poiesis.example.org/poiesis/v1/api-keys \
+  --data-urlencode "owner=$OWNER" -H "Authorization: Bearer $TOKEN"
+```
+
+Who counts as an admin is the [admin](./authorization.md#admin) policy:
+
+- **Without a decision service**: the built-in admins, the callers
+  matching their issuer's `admin` rule. They may do this whether
+  `authz.adminRead` is on or not, since keys hold no task data.
+- **With a decision service**: whoever it allows the action
+  `RevokeApiKeys` (for `DELETE`) or `ListApiKeys` (for `GET`) on the
+  resource `{"type": "poiesis_api_keys", "id": "<owner>"}`, see
+  [API keys of an owner](./authorization.md#api-keys-of-an-owner).
+
+As for all key management, an OIDC token is needed: an API key or a
+delegated token gets `403`, even an admin's. With `owner`, the call is
+an admin call also when the owner is the caller's own; without it, `GET`
+lists the caller's keys as before. An `owner` that isn't
+`namespace|subject` is a `400`, and `DELETE` without `owner` a `422`.
+Both calls are in the [audit log](./audit-log.md)
+(`apikey.revoke_owner` with the count, `apikey.list_owner`).
+
+Revoking keys doesn't stop the user's tokens: disable the user at the
+IdP too. A user who can still log in may mint new keys.
 
 ## Sending a key
 
@@ -253,8 +291,8 @@ The snapshot doesn't change afterwards. A user who leaves a group, or
 is disabled at the IdP, keeps the access their keys had **until the
 keys expire or are revoked**: the deprovisioning lag is the key
 lifetime. Choose `maxTtl` with that in mind, and revoke keys when
-offboarding users. Removing an issuer from `auth.issuers` disables all
-keys of its owners at once.
+offboarding users (see [Offboarding](#offboarding)). Removing an issuer
+from `auth.issuers` disables all keys of its owners at once.
 
 ## Issuers and namespaces
 
@@ -303,8 +341,10 @@ What remains, and what to do about it:
 To scan for leaked keys, match `poi_[A-Za-z0-9_-]{43}[0-9A-Za-z]{6}`;
 the last 6 characters are the base62 CRC32 of the 43 before them.
 
-Every mint and revocation is logged at `INFO` with the key id, owner
-and (for mints) client, scopes and expiry; refused mints at `WARNING`.
+Every mint and revocation, refused ones included, is in the
+[audit log](./audit-log.md) with the key id, owner and client (for
+mints also scopes and expiry), never the key; refused mints are also
+logged at `WARNING` with the reason.
 
 ## Behaviour the client sees
 
@@ -320,6 +360,8 @@ and (for mints) client, scopes and expiry; refused mints at `WARNING`.
 | Malformed body (`name`, `ttl`, unknown scope) | `422` |
 | `maxPerOwner` active keys already | `409`, revoke one first |
 | Revoking someone else's or a missing key | `404` |
+| Listing or revoking keys by `owner` without being an admin, or denied by the decision service | `403` |
+| `owner` that isn't `namespace\|subject` | `400` |
 
 What a key can do beyond its scopes is decided as for its owner: the
 built-in owner rule, or the decision service, which learns that the

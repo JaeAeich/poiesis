@@ -108,7 +108,16 @@
           }
         },
         "sharing":   { "type": "boolean" },
-        "maxOwners": { "type": "integer", "minimum": 1 }
+        "maxOwners": { "type": "integer", "minimum": 1 },
+        "adminRead": { "type": "boolean" }
+      }
+    },
+
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" }
       }
     },
 
@@ -233,6 +242,21 @@
   },
 
   "$defs": {
+    "claimRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name":     { "type": "string", "minLength": 1 },
+        "values":   { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "prefixes": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "anyOf": [
+        { "required": ["values"],   "properties": { "values":   { "minItems": 1 } } },
+        { "required": ["prefixes"], "properties": { "prefixes": { "minItems": 1 } } }
+      ]
+    },
+
     "issuerSpec": {
       "type": "object",
       "additionalProperties": false,
@@ -264,20 +288,8 @@
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         },
-        "requiredClaim": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["name"],
-          "properties": {
-            "name":     { "type": "string", "minLength": 1 },
-            "values":   { "type": "array", "items": { "type": "string", "minLength": 1 } },
-            "prefixes": { "type": "array", "items": { "type": "string", "minLength": 1 } }
-          },
-          "anyOf": [
-            { "required": ["values"],   "properties": { "values":   { "minItems": 1 } } },
-            { "required": ["prefixes"], "properties": { "prefixes": { "minItems": 1 } } }
-          ]
-        },
+        "requiredClaim": { "$ref": "#/$defs/claimRule" },
+        "admin":          { "$ref": "#/$defs/claimRule" },
         "actors": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }

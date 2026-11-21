@@ -299,12 +299,13 @@ class KeyMintingSettings(BaseModel):
         return self
 
 
-class RequiredClaimSettings(BaseModel):
-    """An issuer's admission rule (``requiredClaim``), see `poiesis.api.authz`.
+class ClaimRuleSettings(BaseModel):
+    """A claim rule of an issuer (``requiredClaim``, ``admin``).
 
-    A principal of the issuer is admitted if its claim ``name`` holds
-    one of ``values`` or starts with one of ``prefixes``. Prefixes are
-    raw strings: include the delimiter.
+    A principal of the issuer matches if its claim ``name`` holds one of
+    ``values`` or starts with one of ``prefixes`` (see
+    `poiesis.api.authz`). Prefixes are raw strings: include the
+    delimiter.
     """
 
     model_config = ConfigDict(alias_generator=to_camel, extra="forbid", frozen=True)
@@ -315,12 +316,12 @@ class RequiredClaimSettings(BaseModel):
     prefixes: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def _check_rule(self) -> RequiredClaimSettings:
-        """Need values or prefixes, none empty (an empty prefix admits all)."""
+    def _check_rule(self) -> ClaimRuleSettings:
+        """Need values or prefixes, none empty (an empty prefix matches all)."""
         if not (self.values or self.prefixes):
-            raise ValueError("requiredClaim needs values or prefixes")
+            raise ValueError("a claim rule needs values or prefixes")
         if "" in self.values + self.prefixes:
-            raise ValueError("requiredClaim values and prefixes must not be empty")
+            raise ValueError("claim rule values and prefixes must not be empty")
         return self
 
 
@@ -358,7 +359,11 @@ class IssuerSettings(BaseModel):
     # Scopes every token of this issuer must carry.
     required_scopes: tuple[str, ...] = ()
     # Admission rule for this issuer's principals; none when unset.
-    required_claim: RequiredClaimSettings | None = None
+    required_claim: ClaimRuleSettings | None = None
+    # Built-in admin rule for this issuer's principals, only without a
+    # decision service (there, admin is policy); none when unset. What an
+    # admin may do is in `AuthzSettings` and the "Authorization" docs.
+    admin: ClaimRuleSettings | None = None
     # Actors (RFC 8693 `act.sub` of this issuer) whose delegated tokens
     # the built-in policy accepts when there is no decision service.
     actors: tuple[str, ...] = ()
@@ -659,11 +664,13 @@ def _warn_shared_namespaces(issuers: tuple[IssuerSettings, ...]) -> None:
 class AuthzSettings(BaseModel):
     """Authorization settings: the decision service, off by default.
 
-    Claim rules are set per issuer (``IssuerSettings.required_claim``).
-    ``sharing`` lets the decision service show tasks to others than
-    their owner (off: owner-only, whatever it answers); ``max_owners``
-    caps the owners one list scope may name. See ``poiesis.api.authz``
-    and the "Authorization" docs page.
+    Claim rules are set per issuer (``IssuerSettings.required_claim``
+    and ``admin``). ``sharing`` lets the decision service show tasks to
+    others than their owner (off: owner-only, whatever it answers);
+    ``max_owners`` caps the owners one list scope may name.
+    ``admin_read`` gives the built-in admins (no decision service) read
+    and cancel of every task (off: admins see their own tasks only). See
+    ``poiesis.api.authz`` and the "Authorization" docs page.
     """
 
     decision_service_url: str = Field(
@@ -699,6 +706,12 @@ class AuthzSettings(BaseModel):
         # Defaults aren't validated otherwise, and this one comes from env.
         validate_default=True,
     )
+    # Strict like sharing: a misspelled "off" must not open every task.
+    admin_read: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            "POIESIS_AUTHZ_ADMIN_READ", default=False
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -719,9 +732,9 @@ class AuthzSettings(BaseModel):
         """Refuse configurations that would not do what they say.
 
         Called at app startup: authorization without authentication (no
-        real subject could reach a decision), decision service settings
-        without a URL (sharing included: only a decision service shares),
-        and a URL that isn't http(s).
+        real subject could reach a decision, nor be an admin), decision
+        service settings without a URL (sharing included: only a decision
+        service shares), and a URL that isn't http(s).
         """
         service = (
             self.decision_service_url,
@@ -729,7 +742,7 @@ class AuthzSettings(BaseModel):
             self.decision_service_credential_file,
             self.sharing,
         )
-        if not auth_enabled and any(service):
+        if not auth_enabled and (any(service) or self.admin_read):
             raise ValueError("POIESIS_AUTHZ_* is set but auth is disabled")
         try:
             url = httpx.URL(self.decision_service_url)
@@ -740,6 +753,17 @@ class AuthzSettings(BaseModel):
                 "POIESIS_AUTHZ_DECISION_SERVICE_* needs an http(s) "
                 "POIESIS_AUTHZ_DECISION_SERVICE_URL"
             )
+
+
+class AuditSettings(BaseModel):
+    """The audit log (see `poiesis.api.audit`): on by default."""
+
+    # Strict: a typo must not silently turn the audit trail off.
+    enabled: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            "POIESIS_AUDIT_ENABLED", default=True
+        ),
+    )
 
 
 class Settings(BaseModel):
@@ -853,6 +877,7 @@ class Settings(BaseModel):
     )
     auth: AuthSettings = Field(default_factory=AuthSettings)
     authz: AuthzSettings = Field(default_factory=AuthzSettings)
+    audit: AuditSettings = Field(default_factory=AuditSettings)
 
     def runtime_config(self) -> RuntimeConfig:
         """Materialise the TaskPod RuntimeConfig used by the spec builder."""

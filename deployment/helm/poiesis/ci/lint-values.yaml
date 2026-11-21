@@ -14,6 +14,17 @@ auth:
       requiredClaim:
         name: groups
         prefixes: [/poiesis-]
+      # Built-in admins (no decision service here), with task read.
+      admin:
+        name: groups
+        values: [/poiesis-admins]
   swaggerUi:
     issuer: https://keycloak.example.org/realms/poiesis
     clientId: poiesis-cli
+
+authz:
+  adminRead: true
+
+# Off, so that an explicit false is rendered as false.
+audit:
+  enabled: false

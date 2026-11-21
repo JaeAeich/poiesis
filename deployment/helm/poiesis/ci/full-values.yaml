@@ -36,6 +36,12 @@ auth:
         prefixes:
           - "urn:geant:lifescience-ri.eu:group:example-vo:"
       actors: [gateway-client]
+      # Ignored here (a decision service is set; startup WARNING), but
+      # validated by the schema.
+      admin:
+        name: eduperson_entitlement
+        prefixes:
+          - "urn:geant:lifescience-ri.eu:group:example-vo:admins"
       jwksCacheTtl: 600
       clockSkew: 10
       timeout: 2.5
@@ -73,6 +79,10 @@ authz:
     credentialFile: /var/run/secrets/authz/token
   sharing: true
   maxOwners: 2000000
+  adminRead: false
+
+audit:
+  enabled: true
 
 api:
   replicas: 1

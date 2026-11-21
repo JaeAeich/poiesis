@@ -1,10 +1,16 @@
-"""API key routes: mint, list and revoke the caller's own keys.
+"""API key routes: mint, list and revoke keys.
 
 Mounted at ``/poiesis/v1`` only when auth and API keys are enabled (see
 `poiesis.api.app`). Managing keys needs an interactive OIDC login: an
 API key can't mint, list or revoke keys (so a leaked key can't extend
 itself), nor can a delegated token. Keys are bound to the caller's owner
 id; see `poiesis.api.apikey_auth` for how they authenticate.
+
+Callers manage their own keys. With ``?owner=``, an admin lists or
+revokes all keys of an owner (offboarding): a built-in admin without a
+decision service, else whoever the decision service allows
+(`poiesis.api.authz.Authz.check_key_admin`). Every mint and revocation,
+and every owner-wide call, is in the audit log (`poiesis.api.audit`).
 
 Note: no ``from __future__ import annotations``; FastAPI introspects the
 handlers and models below at runtime (see `poiesis.api.auth`).
@@ -17,13 +23,15 @@ from datetime import datetime
 from http import HTTPStatus
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from poiesis.api import audit
 from poiesis.api.apikey_auth import DB_ERRORS, SCOPES, hash_key, new_key
-from poiesis.api.auth import Principal, get_principal
-from poiesis.api.authz import Authz, get_authz
+from poiesis.api.audit import ALLOW, BUILTIN, DENY, ERROR
+from poiesis.api.auth import Principal, get_principal, is_owner_id
+from poiesis.api.authz import Authz, Grant, get_authz
 from poiesis.api.deps import get_db_pool
 from poiesis.api.exceptions import (
     BadRequestError,
@@ -104,6 +112,22 @@ class ApiKeyInfo(_Camel):
     revoked_at: datetime | None = None
 
 
+class RevokedApiKeys(_Camel):
+    """The result of revoking all keys of an owner."""
+
+    revoked: int = Field(description="How many active keys were revoked.")
+
+
+#: The ``owner`` query parameter of listing keys.
+OwnerQuery = Annotated[
+    str | None,
+    Query(
+        description="An owner (`<namespace>|<subject>`) whose keys to list, "
+        "for admins; omit for your own keys.",
+    ),
+]
+
+
 class CreatedApiKey(_Camel):
     """A freshly minted key; ``key`` is shown this once and never again."""
 
@@ -121,21 +145,27 @@ def get_api_key_settings(request: Request) -> ApiKeySettings:
 
 
 async def key_manager(
+    request: Request,
     principal: Annotated[Principal, Depends(get_principal)],
     authz: Annotated[Authz, Depends(get_authz)],
 ) -> Principal:
     """FastAPI dependency: a principal allowed to manage its keys.
 
     It must come from an OIDC token, not be delegated, and pass the
-    claim rule; anyone else gets ``403``.
+    claim rule; anyone else gets ``403`` (audited for mints,
+    revocations and owner-wide calls).
     """
-    if principal.via == "apikey":
-        raise ForbiddenError("a key can't mint or manage keys; use an OIDC token")
-    if principal.via != "oidc":
-        raise ForbiddenError("managing API keys needs an OIDC token")
-    if principal.actor is not None:
-        raise ForbiddenError("delegated tokens can't manage keys")
-    authz.gate(principal)
+    try:
+        if principal.via == "apikey":
+            raise ForbiddenError("a key can't mint or manage keys; use an OIDC token")
+        if principal.via != "oidc":
+            raise ForbiddenError("managing API keys needs an OIDC token")
+        if principal.actor is not None:
+            raise ForbiddenError("delegated tokens can't manage keys")
+        authz.gate(principal)
+    except ForbiddenError:
+        audit.denied(request, principal)
+        raise
     return principal
 
 
@@ -174,9 +204,39 @@ async def key_minter(
     issuer = next((i for i in issuers if i.issuer == principal.issuer), None)
     refusal = mint_refusal(principal, issuer, time.time())
     if refusal is not None:
+        # The reason may quote a claim (the client), so it stays out of
+        # the audit line.
         logger.warning("API key minting refused for %s: %s", principal.owner, refusal)
+        audit.denied(request, principal)
         raise ForbiddenError(refusal)
     return principal
+
+
+def _target_owner(owner: str) -> str:
+    """Return ``owner`` if it is an owner id, else raise ``400``."""
+    if not is_owner_id(owner):
+        raise BadRequestError("owner must be an owner id: <namespace>|<subject>")
+    return owner
+
+
+def _audit_owner_call(
+    event: str,
+    outcome: str,
+    principal: Principal,
+    grant: Grant,
+    owner: str,
+    count: int | None = None,
+) -> None:
+    """Audit an allowed owner-wide call: its outcome and, if done, the count."""
+    audit.emit(
+        event,
+        outcome,
+        principal,
+        decided_by=grant.decided_by,
+        admin=grant.admin,
+        target_owner=owner,
+        count=count,
+    )
 
 
 @router.post(
@@ -227,13 +287,14 @@ async def create_api_key(
             f"at most {settings.max_per_owner} active API keys per owner; "
             "revoke one first"
         )
-    logger.info(
-        "API key %s minted for %s by client %s: scopes %s, expires %s",
-        record.id,
-        principal.owner,
-        principal.client,
-        ",".join(record.scopes),
-        record.expires_at.isoformat(),
+    audit.emit(
+        "apikey.mint",
+        ALLOW,
+        principal,
+        decided_by=BUILTIN,
+        key_id=str(record.id),
+        scopes=list(record.scopes),
+        expires_at=record.expires_at.isoformat(),
     )
     return CreatedApiKey(
         id=record.id,
@@ -253,14 +314,28 @@ async def create_api_key(
 )
 async def list_api_keys(
     principal: Annotated[Principal, Depends(key_manager)],
+    authz: Annotated[Authz, Depends(get_authz)],
     pool: Annotated[Any, Depends(get_db_pool)],
+    owner: OwnerQuery = None,
 ) -> list[ApiKeyInfo]:
-    """List the caller's keys, revoked and expired ones included, newest first."""
+    """List keys, revoked and expired ones included, newest first.
+
+    The caller's own keys; with ``owner``, that owner's (admins only).
+    """
+    target, grant = principal.owner, None
+    if owner is not None:
+        target = _target_owner(owner)
+        grant = await authz.check_key_admin(principal, "ListApiKeys", target)
+    event = "apikey.list_owner"
     try:
         async with pool.acquire() as conn:
-            records = await api_keys_db.list_api_keys(conn, principal.owner)
+            records = await api_keys_db.list_api_keys(conn, target)
     except DB_ERRORS as exc:
+        if grant is not None:
+            _audit_owner_call(event, ERROR, principal, grant, target)
         raise _store_unavailable(exc) from exc
+    if grant is not None:
+        _audit_owner_call(event, ALLOW, principal, grant, target, len(records))
     return [
         ApiKeyInfo(
             id=record.id,
@@ -296,6 +371,43 @@ async def revoke_api_key(
             revoked = await api_keys_db.revoke_api_key(conn, key_id, principal.owner)
     except DB_ERRORS as exc:
         raise _store_unavailable(exc) from exc
+    # Someone else's key is a deny, like a missing one (both 404).
+    outcome = ALLOW if revoked else DENY
+    audit.emit(
+        "apikey.revoke", outcome, principal, decided_by=BUILTIN, key_id=str(key_id)
+    )
     if not revoked:
         raise NotFoundError(f"API key {id} not found")
-    logger.info("API key %s revoked by %s", key_id, principal.owner)
+
+
+@router.delete(
+    "/api-keys",
+    status_code=HTTPStatus.OK,
+    operation_id="RevokeApiKeys",
+    response_model_by_alias=True,
+)
+async def revoke_owner_api_keys(
+    owner: Annotated[
+        str,
+        Query(description="The owner (`<namespace>|<subject>`) whose keys to revoke."),
+    ],
+    principal: Annotated[Principal, Depends(key_manager)],
+    authz: Annotated[Authz, Depends(get_authz)],
+    pool: Annotated[Any, Depends(get_db_pool)],
+) -> RevokedApiKeys:
+    """Revoke every active key of an owner (admins only), e.g. when offboarding.
+
+    The keys stop working with the next request. Revoked and expired
+    keys stay as they are; an owner without active keys is ``0``.
+    """
+    target = _target_owner(owner)
+    grant = await authz.check_key_admin(principal, "RevokeApiKeys", target)
+    event = "apikey.revoke_owner"
+    try:
+        async with pool.acquire() as conn:
+            count = await api_keys_db.revoke_owner_api_keys(conn, target)
+    except DB_ERRORS as exc:
+        _audit_owner_call(event, ERROR, principal, grant, target)
+        raise _store_unavailable(exc) from exc
+    _audit_owner_call(event, ALLOW, principal, grant, target, count)
+    return RevokedApiKeys(revoked=count)

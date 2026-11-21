@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from poiesis.api.auth import Authenticator
     from poiesis.api.settings import AuthSettings, Settings
 
+from poiesis.api import audit
 from poiesis.api.apikey_auth import ApiKeyAuthenticator
 from poiesis.api.authz import Authz
 from poiesis.api.constants import get_poiesis_api_constants
@@ -169,6 +170,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     logging.basicConfig(level=getattr(logging, constants.LOG_LEVEL))
     settings = settings or load_settings()
     settings.authz.validate_for(auth_enabled=settings.auth.enabled)
+    audit.configure(enabled=settings.audit.enabled)
 
     app = FastAPI(
         title="Poiesis",
@@ -181,6 +183,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.add_exception_handler(APIError, handle_api_exception)
     app.add_exception_handler(Exception, handle_unexpected_exception)
+    # The request id of audit lines, echoed in every response.
+    app.add_middleware(audit.RequestIdMiddleware)
 
     security = _docs_security(settings.auth)
     # Mount under the TES-canonical prefix so direct callers and the

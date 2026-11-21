@@ -219,3 +219,38 @@ async def touch_api_keys(
         list(used),
         list(used.values()),
     )
+
+
+async def revoke_owner_api_keys(
+    conn: asyncpg.Connection, owner: str, lock_timeout_ms: int = 5000
+) -> int:
+    """Revoke every active key of ``owner``; return how many were revoked.
+
+    Active is neither revoked nor expired; revoked and expired keys keep
+    their state. Takes the owner's minting lock (see
+    :func:`create_api_key`), so a mint in flight either ends before and
+    is revoked too, or starts after. Waiting for it is bounded by
+    ``lock_timeout_ms`` (``asyncpg.LockNotAvailableError`` past that).
+    """
+    async with conn.transaction():
+        await conn.execute(
+            "SELECT set_config('lock_timeout', $1, true)", f"{int(lock_timeout_ms)}ms"
+        )
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtext('poiesis.api_keys'), hashtext($1))",
+            owner,
+        )
+        revoked = await conn.fetchval(
+            """
+            WITH revoked AS (
+                UPDATE api_keys SET revoked_at = clock_timestamp()
+                WHERE owner = $1
+                    AND revoked_at IS NULL
+                    AND expires_at > clock_timestamp()
+                RETURNING 1
+            )
+            SELECT count(*) FROM revoked
+            """,
+            owner,
+        )
+    return int(revoked)

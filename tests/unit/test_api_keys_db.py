@@ -88,10 +88,11 @@ def test_expiry_is_ttl_from_now() -> None:
     """A key expires its TTL after it was minted."""
 
     async def test(pool: Any) -> None:
-        before = datetime.now(UTC)
         record = await mint(pool, ttl=timedelta(hours=2))
         assert record is not None
-        lifetime = record.expires_at - before
+        # Both times from the database's clock: comparing with the host's
+        # clock flakes where the two drift (Docker on macOS).
+        lifetime = record.expires_at - record.created_at
         assert timedelta(hours=2) <= lifetime < timedelta(hours=2, minutes=1)
 
     run(test)
@@ -188,5 +189,45 @@ def test_touch_never_moves_back() -> None:
             await api_keys_db.touch_api_keys(conn, {record.id: older})
             listed = await api_keys_db.list_api_keys(conn, ALICE)
         assert listed[0].last_used_at == newer
+
+    run(test)
+
+
+def test_revoke_owner_keys() -> None:
+    """Revoking an owner's keys revokes the active ones only, and no one else's.
+
+    Already revoked keys keep their first time and expired ones stay
+    unrevoked; neither is counted. A second call revokes nothing.
+    """
+
+    async def test(pool: Any) -> None:
+        active = [await mint(pool) for _ in range(2)]
+        revoked, expired, other = (
+            await mint(pool),
+            await mint(pool),
+            await mint(pool, BOB),
+        )
+        assert None not in (*active, revoked, expired, other)
+        async with pool.acquire() as conn:
+            assert revoked is not None
+            assert expired is not None
+            await api_keys_db.revoke_api_key(conn, revoked.id, ALICE)
+            first = await conn.fetchval(
+                "SELECT revoked_at FROM api_keys WHERE id = $1", revoked.id
+            )
+            await conn.execute(
+                "UPDATE api_keys SET expires_at = clock_timestamp() - interval '1 s' "
+                "WHERE id = $1",
+                expired.id,
+            )
+            revoked_now = await api_keys_db.revoke_owner_api_keys(conn, ALICE)
+            assert revoked_now == 2  # noqa: PLR2004
+            assert await api_keys_db.revoke_owner_api_keys(conn, ALICE) == 0
+            listed = {k.id: k for k in await api_keys_db.list_api_keys(conn, ALICE)}
+            bob = await api_keys_db.list_api_keys(conn, BOB)
+        assert all(listed[k.id].revoked_at is not None for k in active if k)
+        assert listed[revoked.id].revoked_at == first
+        assert listed[expired.id].revoked_at is None
+        assert [k.revoked_at for k in bob] == [None]
 
     run(test)

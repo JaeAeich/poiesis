@@ -48,6 +48,9 @@ auth:
       requiredClaim:           # optional admission rule, see Authorization
         name:          groups
         values:        [/poiesis-users]
+      admin:                   # optional built-in admins, see Authorization
+        name:          groups
+        values:        [/poiesis-admins]
       actors:          []      # optional, see "Delegation" below
       userinfo:
         enabled:       false   # see "User info" below
@@ -89,6 +92,7 @@ POIESIS_AUTH_ISSUERS='[
 | `principalClaim` | `sub` | Claim naming the subject; dotted paths walk nested objects. |
 | `requiredScopes` | none | Scopes every token must carry, else `403`. |
 | `requiredClaim` | none | Admission rule for this issuer's callers; see [Authorization](./authorization.md#claim-rule). |
+| `admin` | none | Built-in admins of this issuer, without a decision service; see [Authorization](./authorization.md#admin). |
 | `actors` | none | Actors the built-in policy accepts; see [Delegation](#delegation). |
 | `userinfo.enabled` | `false` | Fetch userinfo per token; see [User info](#user-info). |
 | `jwksUri` | discovery | Static key set URL; skips discovery. |
@@ -104,7 +108,7 @@ refuses to install) when auth is enabled with no issuer, an entry lacks
 unknown key, an empty value in a list (`audience`, `tokenTypes`,
 `clients`, `actors`, `requiredScopes`), an empty `clients` list, a
 `namespace` that is empty or contains `|`, an incomplete
-`requiredClaim`, or `userinfo` combined with `jwksUri`. The old
+`requiredClaim` or `admin`, or `userinfo` combined with `jwksUri`. The old
 `auth.oidc.*` values and `POIESIS_AUTH_OIDC_*` variables are gone: any
 `POIESIS_AUTH_OIDC_*` variable left in the environment refuses to start,
 naming `POIESIS_AUTH_ISSUERS` as its replacement.
