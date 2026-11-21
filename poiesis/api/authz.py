@@ -8,8 +8,9 @@ must allow:
 - The decision service is an OpenID AuthZEN 1.0 Access Evaluation
     endpoint (``POST`` ``/access/v1/evaluation``) that gets one question
     per decision, in the ``tes-authzen/1`` profile: the subject (owner id,
-    ``iss``, ``sub``, ``client_id``, ``scope``, the ``actor`` of a delegated
-    token and allowlisted claims; never the token), the TES ``operationId``
+    ``iss``, ``sub``, ``client_id``, ``scope``, the authenticator ``via``
+    and ``credential_id``, the ``actor`` of a delegated token and
+    allowlisted claims; never the token), the TES ``operationId``
     as action, and a ``tes_task`` (get, cancel) or a ``tes_task_set``
     ``own``/``all`` (create, list) as resource. Without it, the built-in
     owner rule applies: callers see and cancel only their own tasks, and
@@ -32,6 +33,7 @@ from typing import Annotated, Any
 import httpx
 from fastapi import Depends, Request
 
+from poiesis.api.apikey_auth import TASKS_READ, TASKS_WRITE
 from poiesis.api.auth import Principal, get_principal
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.api.exceptions import (
@@ -194,6 +196,8 @@ class Authz:
                 ("iss", principal.issuer),
                 ("sub", token.get("sub")),
                 ("client_id", token.get("azp") or token.get("client_id")),
+                ("via", principal.via),
+                ("credential_id", principal.credential_id),
             )
             if value is not None
         }
@@ -283,6 +287,37 @@ async def authorized_principal(
 ) -> Principal:
     """FastAPI dependency: the principal, admitted by the claim rule."""
     authz.gate(principal)
+    return principal
+
+
+def require_scope(principal: Principal, scope: str) -> None:
+    """Raise ``403`` if an API key principal lacks ``scope``.
+
+    Only API keys are limited by their scopes (``tasks:write`` implies
+    ``tasks:read``); a token's scopes are the issuer's business
+    (``requiredScopes``) and don't restrict TES operations.
+    """
+    if principal.via != "apikey":
+        return
+    granted = principal.scopes
+    if scope in granted or (scope == TASKS_READ and TASKS_WRITE in granted):
+        return
+    raise ForbiddenError(f"API key lacks scope {scope}")
+
+
+async def task_reader(
+    principal: Annotated[Principal, Depends(authorized_principal)],
+) -> Principal:
+    """FastAPI dependency: an admitted principal that may read tasks."""
+    require_scope(principal, TASKS_READ)
+    return principal
+
+
+async def task_writer(
+    principal: Annotated[Principal, Depends(authorized_principal)],
+) -> Principal:
+    """FastAPI dependency: an admitted principal that may create or cancel."""
+    require_scope(principal, TASKS_WRITE)
     return principal
 
 

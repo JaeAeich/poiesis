@@ -38,7 +38,8 @@
           "openid",
           "eduperson_entitlement"
         ],
-        "sub": "{{sub}}"
+        "sub": "{{sub}}",
+        "via": "oidc"
       },
       "type": "user"
     }

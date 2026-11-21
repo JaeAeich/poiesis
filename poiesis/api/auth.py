@@ -7,8 +7,9 @@ recognises the credential returns the :class:`Principal`, which route
 handlers get from the :func:`get_principal` FastAPI dependency.
 
 Identity only ever comes from a credential an authenticator verifies
-itself (today: a signed JWT, see `poiesis.api.jwt_auth`), never from a
-plain header such as ``X-User`` or ``X-Forwarded-User``.
+itself (a signed JWT, see `poiesis.api.jwt_auth`, or a Poiesis API key,
+see `poiesis.api.apikey_auth`), never from a plain header such as
+``X-User`` or ``X-Forwarded-User``.
 
 Note: this module does NOT use ``from __future__ import annotations``.
 FastAPI introspects the signature of :func:`get_principal` at runtime
@@ -46,7 +47,8 @@ class Principal:
     ``subject`` is the value of the issuer's ``principalClaim`` (default
     ``sub``) and ``owner`` (``issuer|subject``) the id stamped on the
     tasks it creates. ``via`` names the authenticator, ``credential_id``
-    the credential (a token's ``jti``) for audit, and ``actor`` the
+    the credential (a token's ``jti``, an API key's id) for audit,
+    ``scopes`` what it grants, and ``actor`` the
     party acting for the subject (delegation). ``claims`` carries the
     validated token payload, ``userinfo`` the issuer's userinfo answer
     when that lookup is on (empty otherwise), kept apart from the claims.
@@ -54,7 +56,7 @@ class Principal:
 
     issuer: str
     subject: str
-    via: str  # "oidc" or "anonymous"
+    via: str  # "oidc", "apikey" or "anonymous"
     credential_id: str | None = None
     actor: Actor | None = None
     scopes: frozenset[str] = frozenset()

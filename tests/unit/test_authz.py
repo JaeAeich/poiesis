@@ -723,7 +723,9 @@ def test_subject_is_owner(env: Env) -> None:
     assert subject["id"] == ALICE
     assert subject["properties"]["iss"] == ISSUER
     assert subject["properties"]["sub"] == "alice"
+    assert subject["properties"]["via"] == "oidc"
     assert "actor" not in subject["properties"]
+    assert "credential_id" not in subject["properties"]
 
 
 # -- delegation ----------------------------------------------------------------------

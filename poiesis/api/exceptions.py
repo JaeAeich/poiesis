@@ -95,6 +95,13 @@ class NotFoundError(APIError):
     error_code = "not_found"
 
 
+class ConflictError(APIError):
+    """The request conflicts with the current state, e.g. a limit is reached."""
+
+    status_code = HTTPStatus.CONFLICT.value
+    error_code = "conflict"
+
+
 class InternalServerError(APIError):
     """An unexpected condition was encountered."""
 
