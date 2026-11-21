@@ -32,6 +32,8 @@ Modules:
     volumes            — the PVC, the Pod's volumes, every container's mounts
     executors          — the task's executor containers
     system_containers  — trec, tif, tof and ack, their env and security
+    pod                — Pod-level settings and executor resources (the seam
+                        for scheduling, security and resource features)
     config             — `RuntimeConfig` and `PodSecurityEnforce`
 
 The package is pure — no I/O, no kubernetes API calls. It constructs the

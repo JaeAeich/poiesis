@@ -7,12 +7,13 @@ from typing import TYPE_CHECKING
 from kubernetes.client import V1Container, V1EnvVar
 
 from poiesis.core import executor_shell, ignore_error
+from poiesis.core.taskpod.pod import executor_resources
 from poiesis.core.taskpod.volumes import executor_mounts
 
 if TYPE_CHECKING:
     from kubernetes.client import V1VolumeMount
 
-    from poiesis.api.tes.models import TesExecutor
+    from poiesis.api.tes.models import TesExecutor, TesTask
     from poiesis.core.taskpod.config import RuntimeConfig
 
 
@@ -21,6 +22,7 @@ def build_executor(
     index: int,
     config: RuntimeConfig,
     path_mounts: list[V1VolumeMount],
+    task: TesTask,
 ) -> V1Container:
     """One executor init container.
 
@@ -30,7 +32,8 @@ def build_executor(
     under ``/bin/sh``, which opens the ``stdin``/``stdout``/``stderr``
     files and, with ``ignore_error``, records the exit code in the
     termination message and exits 0 (see ``executor_shell``). The
-    container's own stdin stays closed (``stdin: false``).
+    container's own stdin stays closed (``stdin: false``). Requests and
+    limits come from `pod.executor_resources`.
     """
     env = [V1EnvVar(name=k, value=v) for k, v in (executor.env or {}).items()]
     container = V1Container(
@@ -42,6 +45,7 @@ def build_executor(
         env=env or None,
         volume_mounts=executor_mounts(config, path_mounts),
         stdin=False,
+        resources=executor_resources(executor, task, config),
     )
     if executor.ignore_error:
         container.termination_message_path = ignore_error.TERMINATION_MESSAGE_PATH

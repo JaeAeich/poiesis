@@ -8,7 +8,6 @@ from kubernetes.client import (
     V1Container,
     V1Job,
     V1JobSpec,
-    V1LocalObjectReference,
     V1ObjectMeta,
     V1OwnerReference,
     V1PersistentVolumeClaim,
@@ -17,6 +16,7 @@ from kubernetes.client import (
 )
 
 from poiesis.core.taskpod.executors import build_executor
+from poiesis.core.taskpod.pod import pod_settings
 from poiesis.core.taskpod.system_containers import (
     build_ack_container,
     build_tif,
@@ -102,15 +102,8 @@ def build_job(
     pod_spec = V1PodSpec(
         init_containers=init_containers,
         containers=main_containers,
-        restart_policy="Never",
-        service_account_name=config.taskpod_service_account,
-        # executors run user images: no token for them (see `build_trec`)
-        automount_service_account_token=False,
-        termination_grace_period_seconds=config.grace_period_seconds,
         volumes=pod_volumes(pvc_name, config),
-        image_pull_secrets=(
-            [V1LocalObjectReference(name=n) for n in config.image_pull_secrets] or None
-        ),
+        **pod_settings(task, config),
     )
 
     return V1Job(
@@ -143,7 +136,7 @@ def build_init_containers(task: TesTask, config: RuntimeConfig) -> list[V1Contai
         containers.append(build_tif(task, config, dirs))
 
     for idx, executor in enumerate(task.executors):
-        containers.append(build_executor(executor, idx, config, path_mounts))
+        containers.append(build_executor(executor, idx, config, path_mounts, task))
 
     if task.outputs:
         containers.append(build_tof(task, config))
