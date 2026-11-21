@@ -66,7 +66,7 @@ onUnmounted(() => io && io.disconnect());
             <span class="fact">{{ e.fact }}</span>
           </div>
         </div>
-        <p class="tap-fact" aria-live="polite">{{ active >= 0 ? els[active].fact : "Tap an element." }}</p>
+        <p class="tap-fact" aria-live="polite">{{ active >= 0 ? els[active].fact : "" }}</p>
         <div class="fbase"><span>© 2026 Poiesis contributors · Illustrations: public domain, Wikimedia Commons</span><a class="by" href="https://jaeaeich.com">Made by jaeaeich</a><span>Built for workflows that matter</span></div>
       </div>
     </footer>

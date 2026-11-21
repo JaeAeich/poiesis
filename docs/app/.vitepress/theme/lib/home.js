@@ -353,7 +353,7 @@ function enginePlay(){
   const release=()=>{if(!drag)return;const b=drag.b,now=performance.now(),h=drag.hist.filter(p=>now-p[0]<120),a=h[0]||[now,0,0],z=h[h.length-1]||a,dt=Math.max(16,z[0]-a[0]);
     b.vx=(z[1]-a[1])/dt*16.7;b.vy=(z[2]-a[2])/dt*16.7;b.held=false;b.el.classList.remove("held");lastMoved=drag.moved;drag=null;if(reduce){b.x=b.ax;b.y=b.ay;draw()}};
   field.addEventListener("pointerup",release);field.addEventListener("pointercancel",release);
-  field.addEventListener("click",e=>{const pl=e.target.closest(".pl");if(pl&&(lastMoved>=5||pl.tagName!=="A"))e.preventDefault();lastMoved=0});
+  field.addEventListener("click",e=>{const pl=e.target.closest(".pl");if(pl&&lastMoved>=5)e.preventDefault();lastMoved=0});
   const link=(i,v)=>{const pl=els.find(x=>x.dataset.i==i),li=rows.find(x=>x.dataset.i==i);if(pl)pl.classList.toggle("hl",v);if(li)li.classList.toggle("hl",v)};
   els.forEach(el=>{el.addEventListener("pointerenter",()=>link(el.dataset.i,true));el.addEventListener("pointerleave",()=>link(el.dataset.i,false))});
   rows.forEach(li=>{li.addEventListener("pointerenter",()=>link(li.dataset.i,true));li.addEventListener("pointerleave",()=>link(li.dataset.i,false))});

@@ -9,14 +9,14 @@ const CWL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColo
 const img = (f, cls = "") => `<img ${cls ? `class="${cls}" ` : ""}src="${withBase("/logos/" + f)}" alt="">`;
 // Status is only what we have run end to end; keep it honest.
 const engines = [
-  { name: "Nextflow", detail: "nf-ga4gh 1.5.0", st: "", label: "Tested · 25.10.4", logo: NF, size: 96 },
-  { name: "Snakemake", detail: "TES executor 0.1.3", st: "", label: "Tested · 9.27.2", logo: img("snakemake.svg"), size: 88 },
-  { name: "py-tes", detail: "GA4GH Python client", st: "", label: "Tested · 1.1.4", logo: img("ga4gh.png"), size: 76 },
-  { name: "TES compliance suite", detail: "GA4GH conformance tests", st: "", label: "Passing", logo: img("ga4gh.png"), size: 70 },
-  { name: "Sprocket", detail: "WDL · 0.34.1, two workarounds for now", st: "part", label: "Partly tested", logo: img("sprocket.png", "crop"), size: 80 },
-  { name: "cwl-tes", detail: "API key as Basic password", st: "part", label: "Partly tested", logo: CWL, size: 68 },
-  { name: "Cromwell", detail: "WDL", st: "no", label: "Not tested yet", logo: img("cromwell.png"), size: 82 },
-  { name: "Toil", detail: "CWL, WDL", st: "no", label: "Not tested yet", logo: img("toil.svg"), size: 72 },
+  { name: "Nextflow", doc: "nextflow", detail: "nf-ga4gh 1.5.0", st: "", label: "Tested · 25.10.4", logo: NF, size: 96 },
+  { name: "Snakemake", doc: "snakemake", detail: "TES executor 0.1.3", st: "", label: "Tested · 9.27.2", logo: img("snakemake.svg"), size: 88 },
+  { name: "py-tes", doc: "py-tes", detail: "GA4GH Python client", st: "", label: "Tested · 1.1.4", logo: img("ga4gh.png"), size: 76 },
+  { name: "TES compliance suite", doc: "tes-compliance-suite", detail: "GA4GH conformance tests", st: "", label: "Passing", logo: img("ga4gh.png"), size: 70 },
+  { name: "Sprocket", doc: "sprocket", detail: "WDL · 0.34.1, two workarounds for now", st: "part", label: "Partly tested", logo: img("sprocket.png", "crop"), size: 80 },
+  { name: "cwl-tes", doc: "cwl-tes", detail: "API key as Basic password", st: "part", label: "Partly tested", logo: CWL, size: 68 },
+  { name: "Cromwell", doc: "cromwell", detail: "WDL", st: "no", label: "Not tested yet", logo: img("cromwell.png"), size: 82 },
+  { name: "Toil", doc: "toil", detail: "CWL, WDL", st: "no", label: "Not tested yet", logo: img("toil.svg"), size: 72 },
 ];
 const ISSUE = "https://github.com/JaeAeich/poiesis/issues/new?title=Engine%20support%3A%20&body=Engine%20and%20version%3A%0ALink%3A%0AWhat%20you%20tried%3A";
 const root = ref(null);
@@ -51,7 +51,7 @@ onUnmounted(() => stop());
           <ul class="eng">
             <li v-for="(e, i) in engines" :key="e.name" :class="e.st" :data-i="i">
               <span class="ic" v-html="e.logo"></span>
-              <span class="nm">{{ e.name }}<small>{{ e.detail }}</small></span>
+              <span class="nm"><a class="row-link" :href="withBase('/docs/guides/workflow-engines#' + e.doc)">{{ e.name }}</a><small>{{ e.detail }}</small></span>
               <span class="st" :class="e.st">{{ e.label }}</span>
             </li>
             <li class="ask" :data-i="engines.length">
@@ -63,7 +63,7 @@ onUnmounted(() => stop());
         </div>
       </div>
       <div class="field" id="eng-field" aria-hidden="true">
-        <span v-for="(e, i) in engines" :key="e.name" class="pl" :class="e.st" :data-i="i" :data-s="e.size" :style="{ '--s': e.size + 'px' }" :title="e.name + ': ' + e.label" v-html="e.logo"></span>
+        <a v-for="(e, i) in engines" :key="e.name" class="pl" :class="e.st" :data-i="i" :data-s="e.size" :style="{ '--s': e.size + 'px' }" :title="e.name + ': ' + e.label" :href="withBase('/docs/guides/workflow-engines#' + e.doc)" tabindex="-1" v-html="e.logo"></a>
         <a class="pl ask" :data-i="engines.length" data-s="66" style="--s:66px" tabindex="-1" target="_blank" rel="noopener" :href="ISSUE" title="Using another engine? Ask us to test it">?</a>
       </div>
     </div>

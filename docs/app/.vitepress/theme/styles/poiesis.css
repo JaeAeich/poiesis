@@ -452,3 +452,10 @@ html.dark .poi .eng .ic{background:#d6dee8;border-color:transparent;color:#0d203
 .poi .stage.amoeba-hover{cursor:crosshair}
 .poi #s-task .world{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;display:block}
 .poi #s-task>.wrap{position:relative;z-index:1}
+.poi .eng li{position:relative}
+.poi .eng .row-link{color:inherit;text-decoration:none}
+.poi .eng .row-link::after{content:"";position:absolute;inset:0}
+.poi .eng li:has(.row-link):hover{background:var(--surface)}
+.poi .eng .row-link:focus-visible{outline:none}
+.poi .eng li:has(.row-link:focus-visible){outline:2px solid var(--blue);outline-offset:-2px;border-radius:6px}
+.poi .pl{text-decoration:none}
