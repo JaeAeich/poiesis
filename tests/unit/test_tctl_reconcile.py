@@ -278,14 +278,19 @@ class TestOrphans:
         assert world.writes[T1][0] is TesState.CANCELED
         assert world.deleted == [f"task-{T1}"]  # after the write, as for any orphan
 
-    def test_a_completed_job_without_pod_does_not_keep_the_task(
+    def test_a_completed_job_without_pod_completes_the_task(
         self, world: World
     ) -> None:
+        """The Job saw its Pod succeed: not an orphan, not an error (#163)."""
         world.states[T1] = TesState.RUNNING
         world.jobs = [job(T1, conditions=[{"type": "Complete", "status": "True"}])]
         world.tick()
-        world.tick(after=31)
-        assert world.writes[T1][0] is TesState.SYSTEM_ERROR
+        assert world.writes == {T1: (TesState.COMPLETE, None)}
+        assert world.system_logs[T1] == [
+            "the Job reports that its pod succeeded, but the pod was gone before "
+            "tctl read it: executor logs that trec did not record are missing"
+        ]
+        assert world.deleted == []  # a finished Job is left to its TTL
 
     def test_pod_keeps_the_task(self, world: World) -> None:
         world.states[T1] = TesState.RUNNING
@@ -393,6 +398,25 @@ def test_pass_stops_once_the_lease_is_no_longer_held(
     world.tick()
     assert set(world.writes) == {T1}
     assert "lease no longer held; stopping the pass" in caplog.text
+
+
+def test_pod_stuck_terminating_on_a_lost_node_ends_the_task(world: World) -> None:
+    """Without the Job's time limit the task stayed RUNNING forever (#163)."""
+    world.states[T1] = TesState.RUNNING
+    no_limit = job(T1)
+    no_limit["spec"] = {}
+    world.jobs = [no_limit]
+    stuck = pod(T1)
+    stuck["metadata"]["deletion_timestamp"] = datetime.now(UTC) - timedelta(
+        seconds=200
+    )
+    world.pods = [stuck]
+    world.tick()
+    assert world.writes == {}  # within the grace: the kubelet may still stop it
+    stuck["metadata"]["deletion_timestamp"] -= timedelta(seconds=200)
+    world.tick()
+    assert world.writes == {T1: (TesState.SYSTEM_ERROR, "Pod stuck terminating")}
+    assert world.deleted == [f"task-{T1}"]
 
 
 class TestPodlessJobs:

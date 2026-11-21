@@ -29,12 +29,17 @@ Cases the reconciler covers:
     waits until the Job's time limit, or, when the operator set an
     unschedulable timeout, until that ends it as SYSTEM_ERROR with the
     scheduler's message.
+    * Pod still terminating `_TERMINATING_GRACE_SECONDS` past its deletion
+    deadline (its node stopped answering) → SYSTEM_ERROR "Pod stuck
+    terminating".
     * Task `CANCELING` with a Job → delete the Job. The API deletes it on
     cancel; this covers a delete that failed and a Job created after it.
     * Job without a Pod: a failed Job → SYSTEM_ERROR with the Job's
-    reason. A live Job that has made no Pod yet (ResourceQuota, admission)
-    is queued like an unscheduled Pod: it waits, or hits the unschedulable
-    timeout when one is set.
+    reason; a complete Job → COMPLETE, its Pod having succeeded, with a
+    system log that the executor logs trec didn't record are missing. A
+    live Job that has made no Pod yet (ResourceQuota, admission) is queued
+    like an unscheduled Pod: it waits, or hits the unschedulable timeout
+    when one is set.
     * Task non-terminal in DB with neither a live Job nor a Pod, on every
     pass for `_ORPHAN_GRACE_SECONDS` (so we don't race with brand-new
     tasks whose Job hasn't been created yet) → SYSTEM_ERROR. The writer's
@@ -126,6 +131,10 @@ _PENDING_TIMEOUT_SECONDS = 300
 #: orphaned: how long tctl must have seen it that way, by its own monotonic
 #: clock. Covers the window between the API's row insert and its Job create.
 _ORPHAN_GRACE_SECONDS = 30
+#: How long past its deletion deadline a TaskPod may still be terminating
+#: before tctl ends its task: a Pod on a node that stopped answering stays
+#: `Terminating` until the node comes back or someone force-deletes it.
+_TERMINATING_GRACE_SECONDS = 300
 #: (connect, read) timeouts of every Kubernetes call tctl makes, so a stuck
 #: API server can't hold a pass forever.
 _REQUEST_TIMEOUT_SECONDS = (10, 30)
@@ -411,6 +420,7 @@ async def _reconcile_once(
         pending=_PENDING_TIMEOUT_SECONDS,
         unschedulable=unschedulable_timeout,
         orphan_grace=_ORPHAN_GRACE_SECONDS,
+        terminating=_TERMINATING_GRACE_SECONDS,
     )
     plans = {
         task.task_id: decide(

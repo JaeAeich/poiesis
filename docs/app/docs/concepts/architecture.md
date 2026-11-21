@@ -59,7 +59,7 @@ leader reads the non-terminal tasks from Postgres, then lists the Jobs
 and Pods labelled `poiesis.io/task`. Jobs and Pods of tasks that aren't
 non-terminal in Postgres (already finished, or another installation's)
 are skipped, except that a `CANCELING` task's Job is still deleted. It
-has seven jobs:
+has these jobs:
 
 - **Phase reconciliation**: a `Succeeded` Pod becomes `COMPLETE`; a
   `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, a failed
@@ -72,8 +72,9 @@ has seven jobs:
   says `DeadlineExceeded`, the task becomes `SYSTEM_ERROR` with reason
   `DeadlineExceeded` and "task exceeded its time limit of N seconds" in
   `system_logs`. TCtl reads the Job first, so this holds whether the Pod
-  is gone, `Failed`, still stopping or never scheduled; the exit code of
-  the killed executor (137, 143) is not taken as the cause.
+  is gone, `Failed`, still stopping or never scheduled, and whether the
+  Job is being deleted; the exit code of the killed executor (137, 143)
+  is not taken as the cause.
 - **Missing-pod reconciliation**: a non-terminal task that has neither
   a Job nor a Pod on every pass for 30 seconds becomes `SYSTEM_ERROR`
   ("Pod disappeared before reaching terminal phase"). TCtl times the 30
@@ -83,9 +84,23 @@ has seven jobs:
   takes precedence, so they land as `CANCELED`.
 - **Jobs without a Pod**: a failed Job whose Pod is gone (the Pod was
   deleted or lost with its node) becomes `SYSTEM_ERROR` with the Job's
-  reason, such as `Job failed: BackoffLimitExceeded`. A live Job that
+  reason, such as `Job failed: BackoffLimitExceeded`, also while the Job
+  is being deleted. A `Complete` Job whose Pod is gone saw that Pod
+  succeed: every container exited 0, `tof` included, so the outputs were
+  uploaded. The task becomes `COMPLETE`, with "the Job reports that its
+  pod succeeded, but the pod was gone before tctl read it: executor logs
+  that trec did not record are missing" in `system_logs`. A live Job that
   has created no Pod yet (a ResourceQuota is full, an admission webhook
   rejects the Pod) keeps its task `QUEUED`: see below.
+- **Pods stuck terminating**: a Pod still listed 5 minutes after its
+  deletion deadline (`metadata.deletionTimestamp`), without having
+  reached `Succeeded` or `Failed`, is on a node that stopped answering;
+  only that node or a forced delete can remove it. The task becomes
+  `SYSTEM_ERROR` ("Pod stuck terminating") and its Job is deleted. A
+  cancelled task lands as `CANCELED`.
+- **Several Pods of one task**: a `Succeeded` or `Failed` Pod, or the
+  Job's time limit, decides the task before a timeout of another Pod
+  does.
 - **Pending timeout**: a Pod bound to a node but still `Pending` 5
   minutes after `status.startTime` becomes `SYSTEM_ERROR`, with the
   reason in `system_logs` (an image that can't be pulled, a volume that
@@ -101,8 +116,8 @@ has seven jobs:
 
 - **Job cleanup**: TCtl deletes the Job of every `CANCELING` task that
   still has one, on each pass until it is gone. It also deletes the Job
-  after it ends a task for a missing Pod or a pending or unschedulable
-  timeout, so a Pod that becomes runnable later can't run a task
+  after it ends a task for a missing Pod, a Pod stuck terminating or a
+  pending or unschedulable timeout, so a Pod that becomes runnable later can't run a task
   already reported as failed. If that delete fails, TCtl logs it and
   doesn't retry; the Job's [time limit](./tasks.md#time-limit), if
   set, still ends it. The Job of a finished Pod is left to its TTL.
