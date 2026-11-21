@@ -4,14 +4,31 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from kubernetes import client, config
+from urllib3.exceptions import HTTPError
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from kubernetes.client import V1Job, V1PersistentVolumeClaim
 
 logger = logging.getLogger(__name__)
+
+#: (connect, read) timeouts of every Kubernetes call the API makes, so a
+#: slow API server fails the request instead of holding a worker thread.
+#: The read timeout covers admission webhooks, which Kubernetes lets run
+#: for up to 30 seconds.
+_REQUEST_TIMEOUT_SECONDS = (5, 30)
+
+
+class K8sRequestError(Exception):
+    """The Kubernetes API didn't answer: a timeout or a connection failure.
+
+    Unlike an `ApiException`, the call may have taken effect: a create
+    that timed out may still have created the object.
+    """
 
 
 def load_config() -> None:
@@ -32,8 +49,10 @@ class K8sClient:
     """Async wrapper over `BatchV1Api` and `CoreV1Api`.
 
     Each method runs the underlying sync call in a worker thread via
-    `asyncio.to_thread`. The wrapper holds no per-call state — instances
-    are cheap and safe to share across requests.
+    `asyncio.to_thread`, with a request timeout; a call the API server
+    doesn't answer raises `K8sRequestError`. The wrapper holds no
+    per-call state — instances are cheap and safe to share across
+    requests.
     """
 
     def __init__(self) -> None:
@@ -45,7 +64,7 @@ class K8sClient:
         self, namespace: str, pvc: V1PersistentVolumeClaim
     ) -> V1PersistentVolumeClaim:
         """Create a PVC, returning the server-side object (with uid populated)."""
-        return await asyncio.to_thread(
+        return await _call(
             self._core.create_namespaced_persistent_volume_claim,
             namespace=namespace,
             body=pvc,
@@ -53,7 +72,7 @@ class K8sClient:
 
     async def create_job(self, namespace: str, job: V1Job) -> V1Job:
         """Create a Job, returning the server-side object (with uid populated)."""
-        return await asyncio.to_thread(
+        return await _call(
             self._batch.create_namespaced_job,
             namespace=namespace,
             body=job,
@@ -66,9 +85,23 @@ class K8sClient:
         automatically through the PVC's `ownerReferences` pointing at the
         Job — kube-controller-manager handles it.
         """
-        await asyncio.to_thread(
+        await _call(
             self._batch.delete_namespaced_job,
             name=name,
             namespace=namespace,
             propagation_policy="Background",
         )
+
+
+async def _call(method: Callable[..., Any], **kwargs: Any) -> Any:
+    """Run a client call in a worker thread, with the request timeout.
+
+    Raises `K8sRequestError` when the API server doesn't answer in time
+    or can't be reached; an `ApiException` (an answer) passes through.
+    """
+    try:
+        return await asyncio.to_thread(
+            method, **kwargs, _request_timeout=_REQUEST_TIMEOUT_SECONDS
+        )
+    except HTTPError as exc:
+        raise K8sRequestError(str(exc)) from exc

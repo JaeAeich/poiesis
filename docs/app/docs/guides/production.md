@@ -158,6 +158,11 @@ default TaskPod NetworkPolicy) is planned
 - On rollouts the API sleeps `api.preStopSleepSeconds` (5 s) before
   SIGTERM, then gunicorn lets running requests finish for up to 30 s.
   Keep `api.terminationGracePeriodSeconds` (40 s) at least their sum.
+- What the API does when the Kubernetes API server is slow or down:
+  each call gives up after 30 seconds (5 to connect). CreateTask then
+  answers 503 with `Retry-After`, ends the task as `SYSTEM_ERROR` with
+  the reason in its system logs, and deletes its Job in case the create
+  went through. No database connection is held while it waits.
 - `tctl.replicas` above 1 for faster failover (leader election means
   only one is active). The chart has no TCtl PodDisruptionBudget: an
   evicted TCtl only delays task state updates until a replica holds the

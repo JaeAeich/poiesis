@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from kubernetes.client import V1Job, V1ObjectMeta
 from kubernetes.client.exceptions import ApiException
+from urllib3.exceptions import MaxRetryError, ReadTimeoutError
 
 from poiesis.api.exceptions import (
     BadRequestError,
@@ -23,6 +24,8 @@ from poiesis.api.exceptions import (
 )
 from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.tes.models import TesCancelTaskResponse, TesState
+from poiesis.k8s import K8sRequestError
+from poiesis.k8s import client as k8s_client
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -36,7 +39,7 @@ class Fakes:
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self.held = 0
         self.calls: list[str] = []
-        self.errors: dict[str, ApiException] = {}
+        self.errors: dict[str, Exception] = {}
         self.terminal: list[tuple[TesState, str]] = []
         self.system_logs: list[str] = []
         self.state = TesState.RUNNING
@@ -150,13 +153,25 @@ def test_create_task_releases_the_connection_before_kubernetes(
             BadRequestError,
             ["create_job", "create_pvc", "delete_job"],
         ),
+        (
+            "create_job",
+            K8sRequestError("Read timed out"),
+            ServiceUnavailableError,
+            ["create_job", "delete_job"],
+        ),
+        (
+            "create_pvc",
+            K8sRequestError("Read timed out"),
+            ServiceUnavailableError,
+            ["create_job", "create_pvc", "delete_job"],
+        ),
     ],
-    ids=["job-403", "job-500", "pvc-404"],
+    ids=["job-403", "job-500", "pvc-404", "job-timeout", "pvc-timeout"],
 )
 def test_submit_failure_marks_system_error_without_holding_a_connection(
     monkeypatch: pytest.MonkeyPatch,
     call: str,
-    exc: ApiException,
+    exc: Exception,
     error: type[Exception],
     calls: list[str],
 ) -> None:
@@ -185,3 +200,45 @@ def test_cancel_task_releases_the_connection_before_kubernetes(
     )
     assert response == TesCancelTaskResponse()
     assert fakes.calls == ["delete_job"]
+
+
+class FakeApi:
+    """A generated-client method: records its kwargs, then raises or answers."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.kwargs: dict[str, Any] = {}
+        self.error = error
+
+    def __call__(self, **kwargs: Any) -> str:
+        self.kwargs = kwargs
+        if self.error is not None:
+            raise self.error
+        return "ok"
+
+
+def test_kubernetes_calls_have_a_request_timeout() -> None:
+    """A slow API server fails the call instead of pinning a worker (#164)."""
+    method = FakeApi()
+    assert asyncio.run(k8s_client._call(method, namespace="tasks")) == "ok"
+    assert method.kwargs == {
+        "namespace": "tasks",
+        "_request_timeout": k8s_client._REQUEST_TIMEOUT_SECONDS,
+    }
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ReadTimeoutError(None, "/apis/batch/v1", "Read timed out."),  # ty: ignore
+        MaxRetryError(None, "/apis/batch/v1"),  # ty: ignore
+    ],
+    ids=["read-timeout", "unreachable"],
+)
+def test_no_answer_is_a_k8s_request_error(error: Exception) -> None:
+    with pytest.raises(K8sRequestError):
+        asyncio.run(k8s_client._call(FakeApi(error)))
+
+
+def test_an_answer_passes_through() -> None:
+    with pytest.raises(ApiException):
+        asyncio.run(k8s_client._call(FakeApi(ApiException(status=409))))
