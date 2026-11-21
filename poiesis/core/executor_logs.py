@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 #: How much of the end of an executor's log is kept.
 MAX_OUTPUT_BYTES = 64 * 1024
 _CHUNK_BYTES = 16 * 1024
+#: Lines asked of the kubelet, which reads them from the end of the log, so
+#: a huge log isn't sent whole; the bytes are then trimmed here.
+_TAIL_LINES = 4096
 #: (connect, read) timeouts so a stuck API server can't hold the recorder.
 _REQUEST_TIMEOUT_SECONDS = (10, 30)
 
@@ -61,9 +64,9 @@ def _read_tail(
 ) -> bytes:
     """Stream the container log and keep only its last `MAX_OUTPUT_BYTES`.
 
-    The log API's ``limitBytes`` keeps the *start* of a log, so the
-    response is streamed and trimmed here; memory stays bounded however
-    long the log is.
+    The log API's ``limitBytes`` keeps the *start* of a log, so only the
+    last ``_TAIL_LINES`` lines are asked for, and the response is streamed
+    and trimmed here; memory stays bounded however long the log is.
     """
     # The stubs don't list the client's `_preload_content`/`_request_timeout`.
     api: Any = core_v1
@@ -71,6 +74,7 @@ def _read_tail(
         name=pod_name,
         namespace=namespace,
         container=container,
+        tail_lines=_TAIL_LINES,
         _preload_content=False,
         _request_timeout=_REQUEST_TIMEOUT_SECONDS,
     )

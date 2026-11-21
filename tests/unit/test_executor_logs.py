@@ -67,6 +67,8 @@ def test_reads_the_executor_container_log() -> None:
     assert call["namespace"] == "tasks"
     assert call["container"] == "exec-2"
     assert call["_preload_content"] is False
+    # The kubelet sends only the end of a long log.
+    assert call["tail_lines"] == executor_logs._TAIL_LINES
     assert core_v1.responses[0].released
 
 
