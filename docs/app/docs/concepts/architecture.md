@@ -49,6 +49,15 @@ the other containers have ended: it reads the Pod once more, records what
 the watch hadn't delivered, and exits 0, so the Pod ends without waiting
 out its grace period.
 
+TRec holds no database connection between writes: each write opens one
+and closes it. If Postgres can't be reached it retries for about a
+minute (backoff from 0.5 to 30 seconds), then exits and the kubelet
+restarts it. An observation counts as recorded only once its write
+succeeded, so one that failed is written from the next Pod status; a
+restarted TRec records the Pod from the start, and the `executor_logs`
+rows it writes again are ignored. On `SIGTERM` it stops waiting for
+Postgres and its last read tries once more within 10 seconds.
+
 ## TCtl
 
 The only writer of terminal state, leader-elected

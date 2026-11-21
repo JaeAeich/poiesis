@@ -51,7 +51,19 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
     (default 10). Count the most replicas you run:
     `autoscaling.maxReplicas` when autoscaling is on, else `api.replicas`.
   - Each TCtl replica opens up to 4; the standby keeps 1 open.
+  - Each running task opens a connection only while TRec writes an
+    event (start, each executor's end) and while `tif` and `tof`
+    start; it holds none in between. Thousands of tasks ending at once
+    still open that many short connections.
   - Keep a few for the migration Job and for your own access.
+  - Rule of thumb: `max_connections` ≥ API replicas × `maxSize` + 4 ×
+    TCtl replicas + the tasks that start or end at the same moment + a
+    few spare.
+  - Put PgBouncer (transaction pooling) in front of Postgres when that
+    sum is near `max_connections`, or when many tasks start and end
+    together. Poiesis's database client (asyncpg) uses prepared
+    statements, so use PgBouncer 1.21 or later with
+    `max_prepared_statements` set.
   - A request waits at most `database.pool.acquireTimeoutSeconds` for a
     free connection, then gets a 503 with `Retry-After`. Raise `maxSize`
     if clients see that under normal load; add replicas if Postgres has

@@ -60,6 +60,16 @@ class FakeCoreV1:
         return response
 
 
+class _NoConnection:
+    """A trec database whose writes run with no connection (statements faked)."""
+
+    async def write(self, statement: Any, *args: Any, **kwargs: Any) -> None:
+        await statement(None, *args, **kwargs)
+
+
+NO_DB: Any = _NoConnection()
+
+
 def read(core_v1: FakeCoreV1, ordinal: int = 0) -> str | None:
     return asyncio.run(read_executor_output(core_v1, "pod-1", "tasks", ordinal))
 
@@ -131,7 +141,7 @@ def test_trec_stores_executor_output(appended: list[dict[str, Any]]) -> None:
         read_for.append(index)
         return "boom\n", None
 
-    asyncio.run(trec._apply_event(None, "t1", finished(1, 3), read_output))
+    asyncio.run(trec._apply_event(NO_DB, "t1", finished(1, 3), read_output))
     assert read_for == [1]
     (row,) = appended
     assert row["ordinal"] == 1
@@ -149,7 +159,7 @@ def test_trec_records_the_row_when_the_log_cannot_be_read(
     async def read_output(index: int) -> tuple[str | None, str | None]:
         return await read_executor_streams(core_v1, "pod-1", "tasks", index)
 
-    asyncio.run(trec._apply_event(None, "t1", finished(0, 1), read_output))
+    asyncio.run(trec._apply_event(NO_DB, "t1", finished(0, 1), read_output))
     (row,) = appended
     assert row["exit_code"] == 1
     assert row["stdout"] is None

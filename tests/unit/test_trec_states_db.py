@@ -5,9 +5,10 @@ inputs were still staging. Skipped without ``POIESIS_TEST_DATABASE_URL``
 (see `postgres.py`).
 """
 
+import asyncio
 from typing import Any
 
-from postgres import needs_postgres, run
+from postgres import DSN, needs_postgres, run
 
 from poiesis.api.tes.models import TesExecutor, TesState, TesTask
 from poiesis.core import trec
@@ -36,6 +37,16 @@ def pod(**containers: dict[str, Any]) -> dict[str, Any]:
             for name, state in containers.items()
         ],
     }
+
+
+class OnConn:
+    """A trec database whose writes all run on one given connection."""
+
+    def __init__(self, conn: Any) -> None:
+        self.conn = conn
+
+    async def write(self, statement: Any, *args: Any, **kwargs: Any) -> None:
+        await statement(self.conn, *args, **kwargs)
 
 
 async def no_output(_ordinal: int) -> tuple[None, None]:
@@ -69,11 +80,15 @@ def test_initializing_while_staging_then_running() -> None:
             await trec._mark_initializing(conn, task_id)
             assert await state(conn, task_id) == "INITIALIZING"
             await trec._apply_pod_snapshot(
-                conn, task_id, pod(tif=STARTED), snapshot, no_output
+                OnConn(conn), task_id, pod(tif=STARTED), snapshot, no_output
             )
             assert await state(conn, task_id) == "INITIALIZING"
             await trec._apply_pod_snapshot(
-                conn, task_id, pod(tif=FINISHED, exec_0=STARTED), snapshot, no_output
+                OnConn(conn),
+                task_id,
+                pod(tif=FINISHED, exec_0=STARTED),
+                snapshot,
+                no_output,
             )
             assert await state(conn, task_id) == "RUNNING"
             assert snapshot.running
@@ -92,7 +107,7 @@ def test_finished_executor_seen_first_marks_running() -> None:
             task_id = await create(conn)
             await trec._mark_initializing(conn, task_id)
             await trec._apply_pod_snapshot(
-                conn,
+                OnConn(conn),
                 task_id,
                 pod(tif=FINISHED, exec_0=FINISHED),
                 TaskStateSnapshot(),
@@ -114,7 +129,11 @@ def test_cancel_from_initializing_wins() -> None:
             assert await state_db.mark_canceling(conn, task_id)
             await trec._mark_initializing(conn, task_id)
             await trec._apply_pod_snapshot(
-                conn, task_id, pod(exec_0=STARTED), TaskStateSnapshot(), no_output
+                OnConn(conn),
+                task_id,
+                pod(exec_0=STARTED),
+                TaskStateSnapshot(),
+                no_output,
             )
             assert await state(conn, task_id) == "CANCELING"
             assert await state_db.list_non_terminal_task_ids(
@@ -140,5 +159,38 @@ def test_failed_staging_ends_from_initializing() -> None:
             )
             assert result is state_db.TerminalWriteResult.APPLIED
             assert await state(conn, task_id) == "SYSTEM_ERROR"
+
+    run(test)
+
+
+def test_each_write_opens_and_closes_its_own_connection() -> None:
+    """trec's writes reach Postgres; none of its connections stays open (#164)."""
+
+    async def test(pool: Any) -> None:
+        async with pool.acquire() as conn:
+            task_id = await create(conn)
+            schema = await conn.fetchval("SELECT current_schema()")
+        sep = "&" if "?" in DSN else "?"
+        db = trec._Database(f"{DSN}{sep}search_path={schema}&application_name={schema}")
+        await db.write(trec._mark_initializing, task_id)
+        await trec._apply_pod_snapshot(
+            db,
+            task_id,
+            pod(tif=FINISHED, exec_0=FINISHED),
+            TaskStateSnapshot(),
+            no_output,
+        )
+        async with pool.acquire() as conn:
+            assert await state(conn, task_id) == "RUNNING"
+            assert await state_db.recorded_executor_ordinals(conn, task_id) == {0}
+            for _ in range(50):
+                left = await conn.fetchval(
+                    "SELECT count(*) FROM pg_stat_activity WHERE application_name = $1",
+                    schema,
+                )
+                if left == 0:
+                    break
+                await asyncio.sleep(0.02)
+            assert left == 0
 
     run(test)
