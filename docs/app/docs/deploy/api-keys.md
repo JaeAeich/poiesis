@@ -119,8 +119,8 @@ only: the token it gets is validated like any other, and the
 ### With curl
 
 Any access token works, e.g. one from
-[oidc-agent](https://indigo-dc.gitbook.io/oidc-agent/) (`oidc-token
-<account>`) or a device flow:
+[oidc-agent](https://indigo-dc.gitbook.io/oidc-agent/)
+(`oidc-token <account>`) or a device flow:
 
 ```bash
 TOKEN=$(oidc-token poiesis)
