@@ -25,14 +25,14 @@ function overview() {
       `<g class="grp"><rect x="360" y="16" width="390" height="172" rx="12"/><text class="gl" x="376" y="38">TaskPod · one per task</text></g>` +
       box(376, 56, 78, 40, "tif", "stage in") + box(464, 56, 104, 40, "exec-0…N", "your images", "hot") + box(578, 56, 72, 40, "tof", "stage out") + box(660, 56, 74, 40, "ack", "main") +
       arrow("M454 76H462", "", 0, 0, "tiny") + arrow("M568 76H576", "", 0, 0, "tiny") + arrow("M650 76H658", "", 0, 0, "tiny") +
-      box(376, 126, 358, 44, "trec · native sidecar", "records state and logs as the Pod runs", "side") +
+      box(376, 126, 358, 44, "trec · native sidecar", "marks RUNNING, writes logs as the Pod runs", "side") +
       db(175, 236, 120, 64, "PostgreSQL") + box(600, 262, 150, 40, "TCtl", "leader-elected") +
       arrow("M120 82H168", "HTTP", 144, 74) +
       arrow("M300 82H358", "submits Job", 329, 74) +
       arrow("M235 102V234", "reads / writes", 241, 172, "") +
-      arrow("M440 170C440 228 350 258 297 262", "writes state", 400, 236) +
-      arrow("M675 262V190", "watches Pods", 681, 230) +
-      arrow("M600 284H297", "backstop write", 450, 300)
+      arrow("M440 170C440 228 350 258 297 262", "RUNNING + logs", 400, 236) +
+      arrow("M675 262V190", "polls Pods", 681, 230) +
+      arrow("M600 284H297", "terminal state", 450, 300)
   };
 }
 
@@ -40,13 +40,13 @@ function taskpod() {
   let b = defs + `<g class="grp"><rect x="16" y="16" width="488" height="372" rx="14"/><text class="gl" x="34" y="40">TaskPod</text></g>`;
   b += `<text class="gl sm" x="34" y="66">init containers, in order</text>`;
   const y0 = 78;
-  [["tif", "stage inputs onto the volume"], ["exec-0", "your first command"], ["exec-…", "each reads what the last wrote"], ["exec-N", "your last command"], ["tof", "upload outputs"]].forEach(([l, s], i) => {
+  [["tif", "stage inputs, if any"], ["exec-0", "your first command"], ["exec-…", "each reads what the last wrote"], ["exec-N", "your last command"], ["tof", "upload outputs, if any"]].forEach(([l, s], i) => {
     const y = y0 + i * 52; b += box(34, y, 250, 40, l, s, l.startsWith("exec") ? "hot" : "");
     if (i < 4) b += arrow(`M159 ${y + 40}V${y + 50}`, "", 0, 0, "tiny");
   });
   b += box(34, y0 + 5 * 52 + 4, 250, 36, "ack", "main container, exits 0");
-  b += `<g class="bx side tall"><rect x="306" y="78" width="180" height="222" rx="8"/><text class="t" x="396" y="176">trec</text><text class="s" x="396" y="194">native sidecar</text><text class="s" x="396" y="210">restartPolicy: Always</text><text class="s" x="396" y="232">watches the Pod,</text><text class="s" x="396" y="248">writes state and logs</text></g>`;
-  b += `<g class="vol"><rect x="306" y="314" width="180" height="62" rx="8"/><text class="t" x="396" y="340">volume</text><text class="s" x="396" y="358">shared by every container</text></g>`;
+  b += `<g class="bx side tall"><rect x="306" y="78" width="180" height="222" rx="8"/><text class="t" x="396" y="176">trec</text><text class="s" x="396" y="194">native sidecar</text><text class="s" x="396" y="210">restartPolicy: Always</text><text class="s" x="396" y="232">marks RUNNING,</text><text class="s" x="396" y="248">writes logs</text></g>`;
+  b += `<g class="vol"><rect x="306" y="314" width="180" height="62" rx="8"/><text class="t" x="396" y="340">volume</text><text class="s" x="396" y="358">shared by all but ack</text></g>`;
   return { vb: "0 0 520 404", label: "TaskPod layout: init containers in order, a native sidecar, a shared volume", body: b };
 }
 
@@ -55,8 +55,8 @@ function lifecycle() {
   const X = Object.fromEntries(A.map(([k], i) => [k, 60 + i * 107]));
   const M = [
     ["c", "api", "POST /tasks"], ["api", "api", "validate, assign id"], ["api", "pg", "INSERT task (QUEUED)"], ["api", "k", "create Job (TaskPod)"], ["api", "k", "create PVC, owned by the Job"], ["api", "c", "200 {id}", "r"],
-    ["k", "pod", "schedule"], ["pod", "trec", "start native sidecar"], ["trec", "pg", "state RUNNING"], ["pod", "pod", "tif → exec-0…N → tof"], ["trec", "pg", "executor and system logs"], ["k", "pod", "phase Succeeded"], ["trec", "pg", "state COMPLETE"],
-    ["note"], ["tctl", "pg", "backstop write", "r"],
+    ["k", "pod", "schedule"], ["pod", "trec", "start native sidecar"], ["trec", "pg", "state RUNNING"], ["pod", "pod", "tif → exec-0…N → tof"], ["trec", "pg", "executor and system logs"], ["k", "pod", "phase Succeeded"],
+    ["note"], ["tctl", "k", "list Pods, every 5 s"], ["tctl", "pg", "state COMPLETE"],
     ["c", "api", "GET /tasks/{id}"], ["api", "pg", "SELECT task"], ["api", "c", "200 {state}", "r"]];
   const top = 64, row = 34, H = top + M.length * row + 40;
   let b = defs;
@@ -64,7 +64,7 @@ function lifecycle() {
   let n = 0;
   M.forEach((m, i) => {
     const y = top + 20 + i * row;
-    if (m[0] === "note") { b += `<g class="note"><rect x="${X.tctl - 52}" y="${y - 15}" width="${X.pg - X.tctl + 104}" height="24" rx="6"/><text class="s" x="${(X.tctl + X.pg) / 2}" y="${y + 1}">backstop, always running</text></g>`; return; }
+    if (m[0] === "note") { b += `<g class="note"><rect x="${X.tctl - 52}" y="${y - 15}" width="${X.pg - X.tctl + 104}" height="24" rx="6"/><text class="s" x="${(X.tctl + X.pg) / 2}" y="${y + 1}">sole writer of final states</text></g>`; return; }
     const [f, t, label, r] = m; n++;
     if (f === t) b += arrow(`M${X[f]} ${y - 6}h34v14h-32`, "", 0, 0, "self") + `<text class="lb l" x="${X[f] + 42}" y="${y + 4}">${esc(label)}</text>`;
     else { const d = X[t] > X[f] ? -1 : 1; b += arrow(`M${X[f]} ${y}H${X[t] + d * 2}`, "", 0, 0, r ? "dash" : "") + `<text class="lb l" x="${Math.min(X[f], X[t]) + 14}" y="${y - 7}">${esc(label)}</text>`; }

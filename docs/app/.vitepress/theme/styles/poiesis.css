@@ -140,29 +140,17 @@ html.dark .poi .eng .ic{background:#d6dee8;border-color:transparent;color:#0d203
 .poi .cta{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap}
 .poi footer{border-top:1px solid var(--line);padding:64px 0 32px;font-size:14px;color:var(--muted);overflow:hidden}
 .poi footer .wrap{display:block}
-.poi .fcols{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:32px}
+.poi .fcols{display:grid;grid-template-columns:2fr 1fr 1fr;gap:32px}
 .poi .fcols b{display:block;color:var(--fg);font-weight:600;font-size:14px;margin-bottom:12px}
 .poi .fcols a,.poi .fcols span{display:block;color:var(--body);margin:6px 0}
 .poi .fcols p{margin:0;max-width:22em}
 .poi .elements{display:grid;grid-template-columns:repeat(5,1fr);gap:clamp(6px,1.2vw,16px);margin:56px 0 0}
-.poi .el{position:relative;aspect-ratio:1/1.06;border:1.5px solid var(--line-strong);border-radius:clamp(6px,1vw,14px);padding:clamp(6px,1.2vw,16px);display:flex;flex-direction:column;justify-content:space-between;color:var(--fg);transition:transform .35s var(--ease),border-color .3s,background .3s}
-.poi .el i{font:500 clamp(10px,1.3vw,18px)/1 var(--mono);font-style:normal;color:var(--blue-ink);transition:color .3s}
-.poi .el b{font:600 clamp(40px,10vw,150px)/.9 var(--sans);letter-spacing:-.04em;color:var(--fg);align-self:center;margin:auto 0;transition:color .3s}
-.poi .el span{font-size:clamp(9px,1.1vw,15px);color:var(--body);text-align:center}
-.poi .el small{position:absolute;top:clamp(6px,1.2vw,16px);right:clamp(6px,1.2vw,16px);font:clamp(9px,1.05vw,14px)/1 var(--mono);color:var(--muted)}
-.poi .el:nth-child(3){border-color:var(--coral);background:var(--coral-wash)}
-.poi .el:nth-child(3) b{color:var(--coral-ink)}
-.poi .el:hover{transform:translateY(-6px);border-color:var(--blue);background:var(--blue-wash)}
-.poi .el:hover b{color:var(--blue)}
-.poi .el:nth-child(3):hover{border-color:var(--coral);background:var(--coral);}
-.poi .el:nth-child(3):hover b,.poi .el:nth-child(3):hover i,.poi .el:nth-child(3):hover small{color:#fff}
 .poi .elements{position:relative}
 .poi .elements::after{content:"";position:absolute;left:0;right:0;bottom:-29px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--blue),var(--coral) 50%,var(--blue));opacity:.5}
 .poi .fbase{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:56px;font-size:13px}
 @media (max-width:760px){.poi .fcols{grid-template-columns:1fr 1fr}
 .poi .fcols>div:first-child{grid-column:1/-1}
-.poi .el span{display:none}
-.poi .el small{display:none}}
+}
 .poi footer a{color:var(--body)}
 .poi footer .dotlist span+span::before{content:"·";margin:0 8px;color:var(--line-strong)}
 .poi .tfig{border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}

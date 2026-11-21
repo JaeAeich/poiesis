@@ -51,7 +51,11 @@ html.dark .VPDoc .content-container::before { background-image: url("data:image/
 .vp-doc tr { background: none !important; border-top: 0; }
 .vp-doc th { background: none; border: 0; border-bottom: 1px solid var(--line-strong); text-align: left; font: 500 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 10px 12px 10px 0; }
 .vp-doc td { border: 0; border-bottom: 1px solid var(--line); padding: 11px 12px 11px 0; vertical-align: top; }
-.vp-doc td code { font-size: 12.5px; }
+.vp-doc td code { font-size: 12.5px; overflow-wrap: anywhere; word-break: break-word; }
+/* tables never spill past the content column: long values wrap, very wide tables scroll */
+.vp-doc table { table-layout: auto; max-width: 100%; }
+.vp-doc table:has(td code) { display: block; overflow-x: auto; }
+.vp-doc td, .vp-doc th { min-width: 0; }
 @media (max-width: 760px) { .vp-doc table { display: block; overflow-x: auto; } }
 
 /* ::: tip / info / warning look like the prototype callouts */
