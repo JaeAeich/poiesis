@@ -31,6 +31,7 @@ spec:
       {{- end }}
       securityContext:
         {{- include "poiesis.podSecurityContext" . | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
       containers:
         - name: api
           image: {{ include "poiesis.image" $args }}
@@ -78,12 +79,25 @@ spec:
             httpGet: { path: /readyz, port: http }
             periodSeconds: {{ .Values.api.probes.readiness.periodSeconds }}
             timeoutSeconds: {{ .Values.api.probes.readiness.timeoutSeconds }}
+            {{- with .Values.api.probes.readiness.failureThreshold }}
+            failureThreshold: {{ . }}
+            {{- end }}
           {{- end }}
           {{- if .Values.api.probes.liveness.enabled }}
           livenessProbe:
             httpGet: { path: /healthz, port: http }
             periodSeconds: {{ .Values.api.probes.liveness.periodSeconds }}
             timeoutSeconds: {{ .Values.api.probes.liveness.timeoutSeconds }}
+            {{- with .Values.api.probes.liveness.failureThreshold }}
+            failureThreshold: {{ . }}
+            {{- end }}
+          {{- end }}
+          {{- /* Endpoints and ingresses drop the Pod while it sleeps, before SIGTERM. */}}
+          {{- with .Values.api.preStopSleepSeconds }}
+          lifecycle:
+            preStop:
+              exec:
+                command: [sleep, {{ . | quote }}]
           {{- end }}
           volumeMounts:
             {{- include "poiesis.volumeMounts" $args | nindent 12 }}
@@ -107,4 +121,15 @@ spec:
       {{- with include "poiesis.affinity" $args }}
       affinity:
         {{- . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- range . }}
+        {{- /* Without a labelSelector, spread the API Pods. */}}
+        {{- $c := . }}
+        {{- if not (hasKey $c "labelSelector") }}
+        {{- $c = merge (dict "labelSelector" (dict "matchLabels" (include "poiesis.componentSelectorLabels" (dict "component" "api" "root" $) | fromYaml))) $c }}
+        {{- end }}
+        - {{ toYaml $c | nindent 10 | trim }}
+        {{- end }}
       {{- end }}

@@ -361,10 +361,27 @@ api:
       enabled: true
       periodSeconds: 5
       timeoutSeconds: 2
+      failureThreshold: 3
     liveness:
       enabled: true
       periodSeconds: 10
       timeoutSeconds: 2
+      failureThreshold: 3
+
+  # Shutdown. The preStop sleep runs first, so Services and ingresses stop
+  # sending new requests before the API gets SIGTERM; gunicorn then lets
+  # running requests finish for up to 30 s (its graceful timeout). The grace
+  # period covers both: keep it >= preStopSleepSeconds + 30, or Kubernetes
+  # kills requests still running. preStopSleepSeconds: 0 → no preStop hook.
+  preStopSleepSeconds: 5
+  terminationGracePeriodSeconds: 40
+
+  # Pod topologySpreadConstraints, e.g. one replica per zone:
+  #   - maxSkew: 1
+  #     topologyKey: topology.kubernetes.io/zone
+  #     whenUnsatisfiable: ScheduleAnyway
+  # An entry without labelSelector gets the API Pods' selector labels.
+  topologySpreadConstraints: []
 
   service:
     type: ClusterIP
@@ -411,7 +428,10 @@ api:
 
 tctl:
   # Leader election means only one replica is active at a time. Increasing
-  # this gives faster failover, not throughput.
+  # this gives faster failover, not throughput. There is no tctl
+  # PodDisruptionBudget: with one replica it would block node drains, and an
+  # evicted tctl only delays task state updates until a replica holds the
+  # lease again.
   replicas: 1
 
   # How long a task may wait, in seconds, for its Pod to be created and

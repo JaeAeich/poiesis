@@ -191,6 +191,19 @@ below only. The migration hook and TaskPods are not selected.
 |---|---|---|---|
 | `tctl.unschedulableTimeoutSeconds` | integer / null | `null` | How long a task may wait for its Pod to be created and scheduled (ResourceQuota full, no node with room), counted from the Pod's (or, with no Pod yet, the Job's) creation. Past it, tctl ends the task as `SYSTEM_ERROR` with the scheduler's message and deletes its Job. `null` → the task stays `QUEUED` until `taskpods.activeDeadlineSeconds` ends it. Integer ≥ 1. A Pod already bound to a node that doesn't start (image pull, volume mount) always fails after 5 minutes. |
 
+### Rollout (`api.preStopSleepSeconds`, `api.terminationGracePeriodSeconds`, `api.topologySpreadConstraints`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `api.preStopSleepSeconds` | integer | `5` | preStop sleep before SIGTERM, so endpoints drop the Pod first. `0` → no hook. |
+| `api.terminationGracePeriodSeconds` | integer | `40` | Gunicorn drains running requests for up to 30 s after SIGTERM; keep this ≥ `preStopSleepSeconds` + 30. |
+| `api.topologySpreadConstraints` | list | `[]` | Pod topology spread. An entry without `labelSelector` gets the API Pods' selector labels. |
+| `api.probes.{readiness,liveness}.failureThreshold` | integer | `3` | Probe failures before the Pod is marked unready / restarted. |
+
+tctl has no PodDisruptionBudget: with the default one replica it would
+block node drains, and an evicted tctl only delays task state updates
+until a replica holds the lease again.
+
 ### Component overrides (`api:`, `tctl:`)
 
 Standard layered overrides: image, resources, probes, scheduling,

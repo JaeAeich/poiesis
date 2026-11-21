@@ -85,7 +85,24 @@ audit:
   enabled: true
 
 api:
-  replicas: 1
+  replicas: 2
+  probes:
+    readiness:
+      failureThreshold: 2
+    liveness:
+      failureThreshold: 6
+  preStopSleepSeconds: 10
+  terminationGracePeriodSeconds: 45
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: api
   resources:
     requests:
       cpu: 100m

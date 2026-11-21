@@ -114,3 +114,48 @@ def test_schema_refuses_unknown_keys(override: str, error: str) -> None:
 def test_schema_accepts_global() -> None:
     """Helm passes `global` to a chart used as a dependency."""
     assert render(LINT, sets=("global.imageRegistry=example.org",))
+
+
+def api_pod(*values: str, sets: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Pod spec of the API Deployment."""
+    return find(render(*values, sets=sets), "Deployment", "api")["spec"]["template"][
+        "spec"
+    ]
+
+
+def test_api_shutdown_defaults() -> None:
+    """A preStop sleep and a grace period covering gunicorn's 30 s drain."""
+    pod = api_pod(LINT)
+    container = pod["containers"][0]
+    sleep = int(container["lifecycle"]["preStop"]["exec"]["command"][1])
+    assert sleep == 5  # noqa: PLR2004
+    assert pod["terminationGracePeriodSeconds"] >= sleep + 30
+    assert container["readinessProbe"]["failureThreshold"] == 3  # noqa: PLR2004
+    assert container["livenessProbe"]["failureThreshold"] == 3  # noqa: PLR2004
+    assert "topologySpreadConstraints" not in pod
+
+
+def test_api_rollout_values_are_rendered() -> None:
+    """Probe thresholds, shutdown and topology spread from values."""
+    pod = api_pod(FULL)
+    container = pod["containers"][0]
+    assert container["readinessProbe"]["failureThreshold"] == 2  # noqa: PLR2004
+    assert container["livenessProbe"]["failureThreshold"] == 6  # noqa: PLR2004
+    assert container["lifecycle"]["preStop"]["exec"]["command"] == ["sleep", "10"]
+    assert pod["terminationGracePeriodSeconds"] == 45  # noqa: PLR2004
+    zone, host = pod["topologySpreadConstraints"]
+    # Without a labelSelector, the API Pods' own labels.
+    assert zone["labelSelector"]["matchLabels"] == {
+        "app.kubernetes.io/name": "poiesis",
+        "app.kubernetes.io/instance": "t",
+        "app.kubernetes.io/component": "api",
+    }
+    assert host["labelSelector"]["matchLabels"] == {
+        "app.kubernetes.io/component": "api"
+    }
+
+
+def test_prestop_sleep_zero_drops_the_hook() -> None:
+    """preStopSleepSeconds: 0 renders no lifecycle hook."""
+    pod = api_pod(LINT, sets=("api.preStopSleepSeconds=0",))
+    assert "lifecycle" not in pod["containers"][0]

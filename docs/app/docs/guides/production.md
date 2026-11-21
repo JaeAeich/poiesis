@@ -131,8 +131,15 @@ default TaskPod NetworkPolicy) is planned
 ## Availability
 
 - `api.replicas` above 1 and `api.pdb.enabled`, or `api.autoscaling`.
+- `api.topologySpreadConstraints` to spread API replicas across zones
+  or nodes.
+- On rollouts the API sleeps `api.preStopSleepSeconds` (5 s) before
+  SIGTERM, then gunicorn lets running requests finish for up to 30 s.
+  Keep `api.terminationGracePeriodSeconds` (40 s) at least their sum.
 - `tctl.replicas` above 1 for faster failover (leader election means
-  only one is active).
+  only one is active). The chart has no TCtl PodDisruptionBudget: an
+  evicted TCtl only delays task state updates until a replica holds the
+  lease again.
 
 ## Observability
 

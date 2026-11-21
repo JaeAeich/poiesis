@@ -157,8 +157,11 @@ starting. See [Service info](../guides/production.md#service-info).
 | `api.image` | `{}` | Image override (registry, repository, tag, pullPolicy), e.g. for canaries; TaskPods use the same image. |
 | `api.resources` | requests `100m`/`256Mi`, limits `1000m`/`512Mi` | Container resources. |
 | `api.probes.startup` | enabled, every 2 s, 30 failures | Startup probe. |
-| `api.probes.readiness` | enabled, every 5 s, timeout 2 s | Readiness probe. |
-| `api.probes.liveness` | enabled, every 10 s, timeout 2 s | Liveness probe. |
+| `api.probes.readiness` | enabled, every 5 s, timeout 2 s, 3 failures | Readiness probe. |
+| `api.probes.liveness` | enabled, every 10 s, timeout 2 s, 3 failures | Liveness probe. |
+| `api.preStopSleepSeconds` | `5` | Seconds the Pod sleeps in a preStop hook before SIGTERM, so Services and ingresses stop sending it requests first. `0` is no hook. |
+| `api.terminationGracePeriodSeconds` | `40` | Grace period. Gunicorn lets running requests finish for up to 30 s after SIGTERM; keep it at least `preStopSleepSeconds` + 30. |
+| `api.topologySpreadConstraints` | `[]` | Pod topology spread, e.g. across zones. An entry without `labelSelector` gets the API Pods' labels. |
 | `api.service.type`, `.port`, `.annotations` | `ClusterIP`, `8000`, `{}` | The API Service. |
 | `api.ingress.enabled` | `false` | Create an Ingress. |
 | `api.ingress.className` | `""` | Ingress class; empty for the cluster default. |
@@ -174,7 +177,7 @@ starting. See [Service info](../guides/production.md#service-info).
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `tctl.replicas` | `1` | Leader election keeps one active; more give faster failover, not throughput. |
+| `tctl.replicas` | `1` | Leader election keeps one active; more give faster failover, not throughput. The chart renders no PodDisruptionBudget for TCtl: with one replica it would block node drains, and an evicted TCtl only delays task state updates. |
 | `tctl.unschedulableTimeoutSeconds` | `null` | Seconds a task may wait for its Pod to be created and scheduled before it ends `SYSTEM_ERROR`, at least 1. `null` waits until the [time limit](../concepts/tasks.md#time-limit). |
 | `tctl.image` | `{}` | Image override. |
 | `tctl.resources` | requests `50m`/`128Mi`, limits `500m`/`256Mi` | Container resources. |
