@@ -297,7 +297,9 @@ others) don't include TES, so Toil can't send tasks to Poiesis today.
 ## TES compliance suite
 
 Poiesis passes the [GA4GH TES compliance
-suite](https://github.com/ga4gh/openapi-test-runner).
+suite](https://github.com/ga4gh/openapi-test-runner) for TES 1.1.0; CI
+runs it on every pull request. To run it yourself, see
+[Testing](./testing.md#tes-compliance-suite).
 
 ## Other clients
 

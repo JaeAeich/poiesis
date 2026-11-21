@@ -1,0 +1,33 @@
+# Chart values for the end-to-end tests (tests/e2e/setup.sh): the images
+# built from this checkout, the dependencies of tests/e2e/deps.yaml, auth
+# off (every request is the anonymous principal), small task volumes.
+# setup.sh sets the image tags.
+image:
+  registry: docker.io
+  repository: library/poiesis
+  pullPolicy: Never
+
+migrations:
+  image:
+    registry: docker.io
+    repository: library/poiesis-migrations
+    pullPolicy: Never
+
+database:
+  existingSecret: poiesis-db
+
+s3:
+  endpoint: http://s3:9000
+  region: us-east-1
+  existingSecret: poiesis-s3
+
+auth:
+  enabled: false
+
+logLevel: DEBUG
+
+taskpods:
+  persistence:
+    defaultSizeGi: 1
+    maxSizeGi: 2
+  activeDeadlineSeconds: 600
