@@ -2,7 +2,15 @@
 // every part of the drawing looks like at that moment.
 import { clamp, ease, lerp } from "../core.js";
 import { CONTAINER_PADDING, rectCenter } from "./taskLayout.js";
-import { CONTAINERS, FILES, INPUT_FILE, OUTPUT_FILE, STEP, TASK_STEPS } from "./taskSteps.js";
+import {
+  CONTAINERS,
+  FILES,
+  INPUT_FILE,
+  OUTPUT_FILE,
+  PHASE_STATE,
+  STEP,
+  TASK_STEPS,
+} from "./taskSteps.js";
 
 /** Length of one step, ms. */
 export const STEP_MS = 2600;
@@ -64,6 +72,7 @@ export function advanceTimeline(state, elapsed) {
  * @typedef {object} TaskFrame
  * @property {{ state: "idle" | "run" | "done", barWidth: string }[]} containers
  * @property {"Pending" | "Running" | "Succeeded"} phase
+ * @property {string} state the TES state shown on the badge
  * @property {string} volumeOpacity
  * @property {string} volumeNote
  * @property {boolean[]} filesShown
@@ -86,6 +95,11 @@ function containerState(step, index, progress) {
 function phaseAt(step, progress) {
   if (step === STEP.SUBMIT) return progress < POD_STARTS_AT ? "Pending" : "Running";
   return step < STEP.CLEAN_UP ? "Running" : "Succeeded";
+}
+
+/** The task is INITIALIZING from the Pod's start until the first executor starts. */
+function stateAt(phase, step) {
+  return phase === "Running" && step <= STEP.STAGE_IN ? "INITIALIZING" : PHASE_STATE[phase];
 }
 
 function volumeOpacity(step, progress) {
@@ -166,6 +180,7 @@ export function taskFrame(step, rawProgress, layout) {
   return {
     containers,
     phase: phaseAt(step, progress),
+    state: stateAt(phaseAt(step, progress), step),
     volumeOpacity: volumeOpacity(step, progress),
     volumeNote:
       step === STEP.CLEAN_UP && progress > VOLUME_DELETED_AT ? "deleted" : layout.volumeText,

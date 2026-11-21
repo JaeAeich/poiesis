@@ -35,7 +35,9 @@ volume at `/transfer`. See [Tasks and TaskPods](./tasks.md).
 
 The in-pod recorder. It watches its own Pod and writes:
 
-- `RUNNING` when it starts, before `tif` and the executors;
+- `INITIALIZING` when it starts, before `tif` and the executors;
+- `RUNNING` when it sees the first executor start (or end, if the watch
+  missed the start);
 - one `executor_logs` row per executor: start, end, exit code, and the
   last 64 KiB of the container log as `stdout` (or of the executor's
   `stdout` and `stderr` files, read from the task volume);
@@ -119,7 +121,9 @@ TCtl is on every path: TRec never finalises a task, clean runs included.
 
 Terminal states go through `write_terminal_state`, a conditional
 `UPDATE` that requires the row to be non-terminal and gives `CANCELING`
-precedence. TRec's `RUNNING` update applies only to a `QUEUED` row. That
+precedence. TRec's `INITIALIZING` update applies only to a `QUEUED` row, its
+`RUNNING` update only to a `QUEUED` or `INITIALIZING` one, so neither
+overwrites `CANCELING` or a final state. That
 keeps TCtl's write and a racing cancel write-once without application
 locks.
 

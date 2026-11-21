@@ -11,13 +11,17 @@ export const TASK_STEPS = [
   {
     label: "Submit",
     caption:
-      "The engine sends <code>POST /tasks</code>. Poiesis stores it as <code>QUEUED</code> and creates one Pod and a volume of the size it asked for. <code>trec</code> starts first and marks it <code>RUNNING</code>.",
+      "The engine sends <code>POST /tasks</code>. Poiesis stores it as <code>QUEUED</code> and creates one Pod and a volume of the size it asked for. <code>trec</code> starts first and marks it <code>INITIALIZING</code>.",
   },
   {
     label: "Stage in",
     caption: "<code>tif</code> copies the inputs from object storage onto the volume.",
   },
-  { label: "exec-0", caption: "Executors run in order, in your image, with your command." },
+  {
+    label: "exec-0",
+    caption:
+      "The first executor starts and the task is <code>RUNNING</code>. Executors run in order, in your image, with your command.",
+  },
   { label: "exec-1", caption: "Each executor reads what the one before it wrote." },
   { label: "Stage out", caption: "<code>tof</code> uploads the outputs." },
   {
@@ -45,7 +49,7 @@ export const FILES = ["reads.fq", "aligned.sam", "sorted.bam"];
 export const INPUT_FILE = FILES[0];
 export const OUTPUT_FILE = FILES[2];
 
-/** Pod phase shown on the badge, and the TES state it maps to. */
+/** Pod phase, and the TES state shown on the badge for it (INITIALIZING until exec-0). */
 export const PHASE_STATE = { Pending: "QUEUED", Running: "RUNNING", Succeeded: "COMPLETE" };
 
 export const POD_NAME = "pod/task-7f3a";

@@ -59,8 +59,8 @@ export default {
       sideLine(176, "trec", "t"),
       sideLine(194, "native sidecar"),
       sideLine(210, "restartPolicy: Always"),
-      sideLine(232, "marks RUNNING,"),
-      sideLine(248, "writes logs"),
+      sideLine(232, "marks INITIALIZING,"),
+      sideLine(248, "RUNNING, writes logs"),
     ]),
     group("vol", [
       node("rect", { x: SIDE_X, y: 314, width: SIDE_WIDTH, height: 62, rx: 8 }),

@@ -40,9 +40,9 @@ Poiesis image, so no second image pull.
 ### Task Recorder (TRec)
 
 Native sidecar (an init container with `restartPolicy: Always`, K8s
-1.29+) that watches its own Pod, marks the task `RUNNING` and writes
-executor logs (and filer failures) to Postgres. It never writes the
-terminal state; that is [TCtl](#task-controller-tctl)'s.
+1.29+) that watches its own Pod, marks the task `INITIALIZING`, then
+`RUNNING` when the first executor starts, and writes executor logs
+(and filer failures) to Postgres. It never writes the terminal state; that is [TCtl](#task-controller-tctl)'s.
 
 ### Task Controller (TCtl)
 

@@ -14,14 +14,15 @@ happens.
   uploads outputs. All share the task's [volume](./task-volumes.md).
 - An executor that exits non-zero stops the task, unless it sets
   [`ignore_error`](#executors-that-may-fail).
-- `trec` marks the task `RUNNING` and writes executor logs to Postgres
+- `trec` marks the task `INITIALIZING` when it starts, `RUNNING` when
+  the first executor starts, and writes executor logs to Postgres
   as the Pod runs; `tctl` writes every final state.
 
 ## The containers
 
 | Container | Kind | Does |
 | --- | --- | --- |
-| `trec` | Native sidecar | Watches its own Pod, marks the task `RUNNING` and writes executor logs to Postgres. |
+| `trec` | Native sidecar | Watches its own Pod, marks the task `INITIALIZING`, then `RUNNING` when the first executor starts, and writes executor logs to Postgres. |
 | `tif` | Init | Stages `inputs` onto the volume: `s3://`, `http(s)://`, inline `content`, then creates the task's [directories](./task-volumes.md#task-paths) that have no mount of their own. Only if the task has inputs or such directories. |
 | `exec-0` … `exec-N` | Init | Your executors, in order, in your images. |
 | `tof` | Init | Uploads `outputs` from the volume: `s3://`, `http(s)://`. Only if the task has outputs. |
@@ -158,7 +159,8 @@ stops the sidecar last, and TRec exits 0 on `SIGTERM`.
   edges: [['api','db'],['trec','db'],['tctl','db']],
   hops: [
     { f: 'api', t: 'db', label: 'QUEUED', cap: 'CreateTask stores the task as QUEUED, then submits a Job and a volume owned by it.' },
-    { f: 'trec', t: 'db', label: 'RUNNING', cap: 'trec writes RUNNING when it starts, before inputs are staged, and executor logs as each one ends.' },
+    { f: 'trec', t: 'db', label: 'INITIALIZING', cap: 'trec writes INITIALIZING when it starts, while images are pulled and inputs staged.' },
+    { f: 'trec', t: 'db', label: 'RUNNING', cap: 'trec writes RUNNING when the first executor starts, and executor logs as each one ends.' },
     { f: 'tctl', t: 'db', label: 'COMPLETE', tone: 'ok', cap: 'Polling every 5 s, tctl sees the Pod Succeeded and writes the final state. trec never does.' },
     { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a failed tif or tof, the time limit, a scheduled Pod still Pending after 5 minutes, a Job or Pod that vanished.' }
   ]
