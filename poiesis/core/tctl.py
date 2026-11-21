@@ -82,6 +82,7 @@ from kubernetes.client.exceptions import ApiException
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
+    from pathlib import Path
 
     from poiesis.api.tes.models import TesState
 
@@ -144,13 +145,16 @@ async def run(
     lease_namespace: str | None = None,
     identity: str | None = None,
     unschedulable_timeout: float | None = None,
+    heartbeat: Path | None = None,
 ) -> int:
     """Run the TCtl reconciliation loop until SIGTERM/SIGINT.
 
     `namespace` is where the TaskPods are; `lease_namespace` is where the
     leader Lease is kept (default: `namespace`). `unschedulable_timeout`
     is how many seconds a task may wait for its Pod to be created and
-    scheduled; None waits until the Job's time limit. Holds the Lease while
+    scheduled; None waits until the Job's time limit. `heartbeat`, if set,
+    is a file touched at startup and after each loop iteration, leader or
+    standby, for a liveness probe to check its age. Holds the Lease while
     reconciling; gives it up cleanly on signal. Returns 0 on clean shutdown.
     """
     lease_namespace = lease_namespace or namespace
@@ -163,6 +167,7 @@ async def run(
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=4)
     try:
         while not cancelled.is_set():
+            _beat(heartbeat)
             started = time.monotonic()
             acquired = await _hold_lease(coord_v1, lease_namespace, identity)
             if not acquired:
@@ -181,10 +186,25 @@ async def run(
                 cancelled,
                 _Leadership(started),
                 unschedulable_timeout,
+                heartbeat=heartbeat,
             )
     finally:
         await pool.close()
     return 0
+
+
+def _beat(heartbeat: Path | None) -> None:
+    """Touch the heartbeat file: this loop is not hung.
+
+    A failed touch is logged, not raised: the liveness probe then sees an
+    old file and restarts tctl, which is the signal wanted.
+    """
+    if heartbeat is None:
+        return
+    try:
+        heartbeat.touch()
+    except OSError as exc:
+        logger.warning("tctl: could not touch heartbeat %s: %s", heartbeat, exc)
 
 
 async def _hold_lease(
@@ -287,6 +307,8 @@ async def _reconcile_while_leader(  # noqa: PLR0913 (one pass's inputs and the L
     cancelled: asyncio.Event,
     leadership: _Leadership,
     unschedulable_timeout: float | None = None,
+    *,
+    heartbeat: Path | None = None,
 ) -> None:
     """Reconcile every `_RECONCILE_INTERVAL_SECONDS` until the Lease is lost.
 
@@ -319,6 +341,7 @@ async def _reconcile_while_leader(  # noqa: PLR0913 (one pass's inputs and the L
                 logger.exception(
                     "tctl: reconcile tick raised; will retry next interval"
                 )
+            _beat(heartbeat)
             await _wait_or_cancel(cancelled, _RECONCILE_INTERVAL_SECONDS)
     finally:
         renewer.cancel()

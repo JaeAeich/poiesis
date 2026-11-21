@@ -137,6 +137,10 @@ TCtl is on every path: TRec never finalises a task, clean runs included.
   only after it expires. If two leaders ever overlap, the conditional
   terminal write (see [Postgres](#postgres)) still lets only one write
   land per task.
+- **A hung TCtl**: after each loop iteration, leader or standby, TCtl
+  touches `/tmp/poiesis-tctl-heartbeat`. The chart's liveness probe
+  fails when the file is older than `tctl.probes.liveness.maxHeartbeatAgeSeconds`
+  (10 minutes by default), and the kubelet restarts TCtl.
 
 ## Postgres
 

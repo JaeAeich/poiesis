@@ -149,6 +149,23 @@ default TaskPod NetworkPolicy) is planned
   only one is active). The chart has no TCtl PodDisruptionBudget: an
   evicted TCtl only delays task state updates until a replica holds the
   lease again.
+- `tctl.probes.liveness` left on. TCtl touches a heartbeat file after
+  each loop iteration; the probe restarts it when the file is older than
+  `maxHeartbeatAgeSeconds` (10 minutes). Raise that if a pass can take
+  longer, which needs thousands of tasks or a very slow API server.
+- What TCtl does in an outage:
+  - **API server down or slow**: each call times out (30 seconds at
+    most). A pass that can't list every Job and Pod does nothing; a
+    leader that can't renew its Lease within 20 seconds stops acting
+    and stands down. Tasks stay as they are and are finalised once the
+    API server answers again.
+  - **Postgres down**: each pass fails when it reads the task rows, and
+    does nothing. A terminal write that fails rolls back with its logs
+    and is tried again on the next pass.
+  - In both, TCtl keeps running and keeps touching its heartbeat, so it
+    isn't restarted. Tasks that finish meanwhile are recorded when the
+    outage ends, as long as their Job hasn't been removed after
+    `retainAfterSeconds` ([#171](https://github.com/jaeaeich/poiesis/issues/171)).
 
 ## Observability
 

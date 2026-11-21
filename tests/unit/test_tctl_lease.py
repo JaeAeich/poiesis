@@ -9,6 +9,7 @@ terminal state.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -46,9 +47,7 @@ class Harness:
         #: Passes before tctl is stopped.
         self.passes = 1
         #: What a pass does before it ends, given its `still_leader`.
-        self.during_pass: Callable[[Callable[[], bool]], Awaitable[None]] = (
-            _no_wait
-        )
+        self.during_pass: Callable[[Callable[[], bool]], Awaitable[None]] = _no_wait
 
         async def lease(_coord: Any, **kwargs: Any) -> bool:
             self.lease_namespaces.append(kwargs["namespace"])
@@ -261,6 +260,7 @@ def test_cli_passes_both_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POIESIS_TASKPOD_NAMESPACE", TASK_NS)
     monkeypatch.setenv("DATABASE_URL", "dsn")
     monkeypatch.delenv("POIESIS_POD_NAME", raising=False)
+    monkeypatch.delenv("POIESIS_TCTL_HEARTBEAT_FILE", raising=False)
 
     result = CliRunner().invoke(tctl_cli.TctlCommand().create_command(), ["run"])
 
@@ -271,6 +271,7 @@ def test_cli_passes_both_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:
         "lease_namespace": RELEASE_NS,
         "identity": None,
         "unschedulable_timeout": None,
+        "heartbeat": None,
     }
 
 
@@ -280,3 +281,76 @@ def test_unschedulable_timeout_reaches_the_pass(
     harness = Harness(monkeypatch)
     assert harness.run(unschedulable_timeout=900) == 0
     assert harness.timeouts == [900]
+
+
+def test_heartbeat_is_touched_by_leader_and_standby(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Each loop iteration touches the file a liveness probe checks (#163)."""
+    heartbeat = tmp_path / "heartbeat"
+    harness = Harness(monkeypatch)
+    beats: list[str] = []
+    real_beat = tctl._beat
+
+    def beat(path: Path | None) -> None:
+        real_beat(path)
+        beats.append("leader" if harness.reconciled else "standby")
+
+    monkeypatch.setattr(tctl, "_beat", beat)
+    # Standby first: the Lease is held by another instance twice.
+    answers = iter([False, False])
+
+    async def lease(_coord: Any, **_: Any) -> bool:
+        return next(answers, True)
+
+    monkeypatch.setattr(tctl, "try_acquire_or_renew", lease)
+    assert harness.run(heartbeat=heartbeat) == 0
+    assert heartbeat.exists()
+    assert beats == ["standby", "standby", "standby", "leader"]
+
+
+def test_heartbeat_that_cannot_be_written_is_logged(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    """tctl keeps running; the probe sees no fresh file and restarts it."""
+    harness = Harness(monkeypatch)
+    assert harness.run(heartbeat=tmp_path / "missing" / "heartbeat") == 0
+    assert harness.reconciled == [TASK_NS]
+    assert "could not touch heartbeat" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("", None), ("/tmp/poiesis-tctl-heartbeat", "/tmp/poiesis-tctl-heartbeat")],
+)
+def test_cli_reads_the_heartbeat_file(
+    monkeypatch: pytest.MonkeyPatch, value: str, expected: str | None
+) -> None:
+    seen: dict[str, Any] = {}
+
+    async def run(namespace: str, dsn: str, **kwargs: Any) -> int:
+        seen.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(tctl_cli, "run", run)
+    monkeypatch.setattr(tctl_cli, "load_config", lambda: None)
+    monkeypatch.setenv("POIESIS_TASKPOD_NAMESPACE", TASK_NS)
+    monkeypatch.setenv("DATABASE_URL", "dsn")
+    monkeypatch.setenv("POIESIS_TCTL_HEARTBEAT_FILE", value)
+    result = CliRunner().invoke(tctl_cli.TctlCommand().create_command(), ["run"])
+    assert result.exit_code == 0, result.output
+    assert seen["heartbeat"] == (Path(expected) if expected else None)
+
+
+def test_cli_refuses_a_relative_heartbeat_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(tctl_cli, "load_config", lambda: None)
+    monkeypatch.setenv("POIESIS_TASKPOD_NAMESPACE", TASK_NS)
+    monkeypatch.setenv("DATABASE_URL", "dsn")
+    monkeypatch.setenv("POIESIS_TCTL_HEARTBEAT_FILE", "heartbeat")
+    result = CliRunner().invoke(tctl_cli.TctlCommand().create_command(), ["run"])
+    assert result.exit_code != 0
+    assert "must be an absolute path" in result.output

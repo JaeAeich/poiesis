@@ -217,6 +217,14 @@ tctl has no PodDisruptionBudget: with the default one replica it would
 block node drains, and an evicted tctl only delays task state updates
 until a replica holds the lease again.
 
+### TCtl liveness (`tctl.probes.liveness`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `tctl.probes.liveness.enabled` | bool | `true` | tctl touches `/tmp/poiesis-tctl-heartbeat` after each loop iteration, leader or standby; an exec probe fails when the file is missing or older than the limit below, and the kubelet restarts tctl. `/tmp` is the chart's writable `emptyDir`. |
+| `tctl.probes.liveness.maxHeartbeatAgeSeconds` | integer | `600` | Age of the heartbeat at which the probe fails. Keep it above your longest pass. |
+| `tctl.probes.liveness.periodSeconds`, `.timeoutSeconds`, `.failureThreshold` | integer | `30`, `5`, `3` | Probe timing. A hung tctl is restarted about `maxHeartbeatAgeSeconds + periodSeconds × failureThreshold` after its last iteration. |
+
 ### Component overrides (`api:`, `tctl:`)
 
 Standard layered overrides: image, resources, probes, scheduling,
