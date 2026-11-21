@@ -414,6 +414,16 @@ tctl:
   # this gives faster failover, not throughput.
   replicas: 1
 
+  # How long a task may wait, in seconds, for its Pod to be created and
+  # scheduled (ResourceQuota full, no node with room) before tctl ends it as
+  # SYSTEM_ERROR with the scheduler's message and deletes its Job.
+  # null → no limit: the task stays QUEUED until the Job's time limit
+  # (taskpods.activeDeadlineSeconds) ends it. On a busy cluster waiting is
+  # normal queueing; set this only to fail fast. Integer >= 1.
+  # A Pod already bound to a node that doesn't start (image pull) always
+  # fails after 5 minutes.
+  unschedulableTimeoutSeconds: null
+
   image: {}
 
   resources:
@@ -499,8 +509,8 @@ taskpods:
   # Job, counted from the Job's creation, so time spent waiting for a node
   # or pulling images counts. Kubernetes stops a task that runs longer and
   # the task fails. Integer >= 1.
-  # null → no limit. A task whose Pod can never be scheduled then stays
-  # QUEUED until it is cancelled.
+  # null → no limit. A task whose Pod can't be scheduled then waits for as
+  # long as it takes, unless tctl.unschedulableTimeoutSeconds is set.
   activeDeadlineSeconds: 3600
 
   # What TOF does when an output glob (e.g. /outputs/*.vcf) matches no file.

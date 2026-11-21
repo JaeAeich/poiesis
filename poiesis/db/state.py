@@ -1,8 +1,10 @@
 """Task state-machine transitions.
 
-The single code path for terminal writes. Callers (the in-Pod recorder and
-the global controller) compose these onto a shared connection so they
-race-correctly through Postgres row-level locking, not application-level locks.
+The single code path for terminal writes. Its callers are the global
+controller (TCtl), for every task that was submitted, and the API, for a
+task whose submission to Kubernetes failed; the in-Pod recorder (TRec)
+never writes a terminal state. They race correctly through Postgres
+row-level locking, not application-level locks.
 
 Two operations matter:
 
@@ -162,8 +164,9 @@ async def list_non_terminal_task_ids(
 
     Used by tctl to find orphan tasks — non-terminal rows whose pod has
     disappeared without a Succeeded/Failed transition observable to the
-    reconciler. The grace period filters out tasks the API has just
-    submitted but whose pod hasn't yet appeared in a list call.
+    reconciler. `creation_time` is stamped by the API Pod's clock, not the
+    database's, so `older_than_seconds` is no reliable grace period: tctl
+    passes 0 and times the grace itself.
     """
     rows = await conn.fetch(
         """
@@ -174,6 +177,18 @@ async def list_non_terminal_task_ids(
         """,
         list(NON_TERMINAL_STATES),
         str(older_than_seconds),
+    )
+    return [r["id"] for r in rows]
+
+
+async def list_canceling_task_ids(conn: asyncpg.Connection) -> list[str]:
+    """List the ids of the tasks in `CANCELING`.
+
+    Used by tctl to delete the Jobs of cancelled tasks the API's own
+    delete didn't reach.
+    """
+    rows = await conn.fetch(
+        "SELECT id::text AS id FROM tasks WHERE state = 'CANCELING'",
     )
     return [r["id"] for r in rows]
 

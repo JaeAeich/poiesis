@@ -91,7 +91,7 @@ kubectl -n poiesis-tasks create secret generic poiesis-s3 \
 
 | Path | Type | Default | Description |
 |---|---|---|---|
-| `taskpods.activeDeadlineSeconds` | integer / null | `3600` | `activeDeadlineSeconds` on the per-task Job: how long a task may take, counted from the Job's creation. Kubernetes stops a task that runs longer and the task fails. Integer ≥ 1. `null` → no limit; a task whose Pod can never be scheduled then stays `QUEUED` until cancelled. |
+| `taskpods.activeDeadlineSeconds` | integer / null | `3600` | `activeDeadlineSeconds` on the per-task Job: how long a task may take, counted from the Job's creation. Kubernetes stops a task that runs longer and the task fails. Integer ≥ 1. `null` → no limit; a task whose Pod can't be scheduled then waits for as long as it takes, unless `tctl.unschedulableTimeoutSeconds` is set. |
 
 ### Outputs (`taskpods.outputGlobFallback`)
 
@@ -166,6 +166,12 @@ built-in value; invalid values stop the API from starting.
 | `podSecurityEnforce` | string | `restricted` | PSS profile for poiesis-owned containers. `restricted` / `baseline` / `off`. Executors are exempt. |
 | `imagePullSecrets`   | list   | `[]`         | Propagated to every chart component and every TaskPod. |
 | `database.caConfigmap` | string | `""`       | ConfigMap (key `ca.crt`) mounted at `/etc/ssl/poiesis` for Postgres TLS. |
+
+### Unschedulable timeout (`tctl.unschedulableTimeoutSeconds`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `tctl.unschedulableTimeoutSeconds` | integer / null | `null` | How long a task may wait for its Pod to be created and scheduled (ResourceQuota full, no node with room), counted from the Pod's (or, with no Pod yet, the Job's) creation. Past it, tctl ends the task as `SYSTEM_ERROR` with the scheduler's message and deletes its Job. `null` → the task stays `QUEUED` until `taskpods.activeDeadlineSeconds` ends it. Integer ≥ 1. A Pod already bound to a node that doesn't start (image pull, volume mount) always fails after 5 minutes. |
 
 ### Component overrides (`api:`, `tctl:`)
 
@@ -251,6 +257,8 @@ out-of-band cleanup process.
 | `Volume zone mismatch` | Scheduler can't find a node in the PV's AZ |
 | `Quota exceeded` | Namespace `ResourceQuota` reached |
 | `Job submission rejected: namespace quota exceeded` | Same as above, surfaced at submit time |
+| `pending timeout: the Job created no Pod` | The Job had no Pod after 5 minutes: a `ResourceQuota` or an admission webhook rejects the Pod (see the Job's events) |
+| `job failed without a pod: <reason>` | The Job failed and its Pod is gone: `DeadlineExceeded` when the time limit ran out, `BackoffLimitExceeded` when the Pod was deleted or lost with its node |
 
 ## What this chart does NOT do
 

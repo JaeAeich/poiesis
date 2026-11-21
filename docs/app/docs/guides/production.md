@@ -62,6 +62,10 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 - `taskpods.activeDeadlineSeconds` set above your longest task. The
   default stops every task after one hour. See
   [Time limit](../concepts/tasks.md#time-limit).
+- `tctl.unschedulableTimeoutSeconds` left `null` if tasks may queue for
+  capacity (a full cluster, a ResourceQuota, an autoscaler adding
+  nodes): they wait in `QUEUED` until the time limit. Set it to fail
+  tasks that wait longer for a node.
 
 ## Identity
 
@@ -94,7 +98,9 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
   namespace: `tof` and executors can reach whatever host a URL names.
 - Rate-limit at the ingress or gateway: Poiesis doesn't.
 - Split tasks into their own namespace with `taskpods.namespace` if
-  you want them apart from the control plane.
+  you want them apart from the control plane. The API and TCtl stay in
+  the release namespace, and so does TCtl's leader Lease; the chart
+  renders their Roles for Jobs, PVCs and Pods in the task namespace.
   Create the database and S3 Secrets in that namespace too: TaskPods
   read them there, and the chart does not copy them. See
   [`taskpods.databaseSecret`](../reference/helm-values.md#taskpods).

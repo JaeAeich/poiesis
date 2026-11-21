@@ -195,6 +195,7 @@
       "required": ["replicas", "resources"],
       "properties": {
         "replicas":  { "type": "integer", "minimum": 1 },
+        "unschedulableTimeoutSeconds": { "type": ["integer", "null"], "minimum": 1 },
         "image":     { "$ref": "#/$defs/imageOverride" },
         "resources": { "type": "object" },
 

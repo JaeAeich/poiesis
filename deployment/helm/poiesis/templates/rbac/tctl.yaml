@@ -1,8 +1,9 @@
 {{/*
-TCtl: leases for leader election in the release namespace, pod and pod log
-read in the taskpod namespace for the reconcile loop (the log read backfills
-executor output). No deletes, no writes — tctl only writes to Postgres,
-never to Kubernetes.
+TCtl: leases for leader election in the release namespace; pod, pod log and
+job read in the taskpod namespace for the reconcile loop (the log read
+backfills executor output; a task with a live Job is not an orphan). Job
+delete, for cancelled tasks and tasks tctl timed out; that is its only
+write to Kubernetes.
 */}}
 {{- $tpNs := include "poiesis.taskpodNamespace" . -}}
 {{- $relNs := .Release.Namespace -}}
@@ -50,6 +51,9 @@ rules:
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get]
+  - apiGroups: ["batch"]
+    resources: [jobs]
+    verbs: [get, list, watch, delete]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

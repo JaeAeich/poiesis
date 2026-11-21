@@ -233,9 +233,14 @@ async def cancel_task(
 ) -> TesCancelTaskResponse:
     """Mark the task CANCELING and delete its wrapping Kubernetes Job.
 
-    TES treats cancel on a terminal task as a no-op success. The TaskPod
-    self-finalises to CANCELED via TRec's SIGTERM handler; if TRec is dead,
-    TCtl writes CANCELED when it observes the Pod terminate.
+    TES treats cancel on a terminal task as a no-op success. This route
+    never writes `CANCELED`, and neither does TRec: TCtl is the single
+    writer of terminal state. With the Job deleted the Pod disappears;
+    TCtl's orphan pass finds the task without a Job or Pod and proposes
+    `SYSTEM_ERROR`, which the writer's `CANCELING` precedence lands as
+    `CANCELED`. A Pod that reaches a terminal phase first lands as
+    `CANCELED` the same way. If the delete here fails, TCtl deletes the
+    Job of the `CANCELING` task on its next pass.
     """
     try:
         task_uuid = str(uuid.UUID(id))
@@ -248,9 +253,15 @@ async def cancel_task(
 
     async with pool.acquire() as conn:
         transitioned = await state_db.mark_canceling(conn, task_uuid)
-    if not transitioned:
-        # Already terminal (or already CANCELING) — TES spec says return success.
-        return TesCancelTaskResponse()
+        if not transitioned:
+            current = await tasks_db.get_task_meta(conn, task_uuid)
+            if current is None or current["state"] != TesState.CANCELING.value:
+                # Already terminal — TES spec says return success.
+                return TesCancelTaskResponse()
+
+    # Also when the task was CANCELING already: an earlier cancel may have
+    # failed to delete the Job, or the Job was created after it. The delete
+    # is idempotent, so repeating it is safe.
 
     try:
         await k8s.delete_job(runtime_config.taskpod_namespace, job_name_for(task_uuid))

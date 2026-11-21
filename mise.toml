@@ -8,7 +8,9 @@ mr = "mise run"
 description = "helm lint + draft 2020-12 schema validation"
 run = [
   "mise x -- check-jsonschema --schemafile deployment/helm/poiesis/values.schema.json deployment/helm/poiesis/ci/full-values.yaml",
+  "mise x -- helm lint deployment/helm/poiesis -f deployment/helm/poiesis/ci/full-values.yaml --strict",
   "mise x -- helm lint deployment/helm/poiesis -f deployment/helm/poiesis/ci/lint-values.yaml --strict",
+  "mise x -- helm lint deployment/helm/poiesis -f deployment/helm/poiesis/ci/lint-values.yaml -f deployment/helm/poiesis/ci/split-namespace-values.yaml --strict",
 ]
 
 [tasks."chart:render"]

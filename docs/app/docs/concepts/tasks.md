@@ -155,7 +155,7 @@ stops the sidecar last, and TRec exits 0 on `SIGTERM`.
     { f: 'api', t: 'db', label: 'QUEUED', cap: 'CreateTask stores the task as QUEUED, then submits a Job and a volume owned by it.' },
     { f: 'trec', t: 'db', label: 'RUNNING', cap: 'trec writes RUNNING when it starts, before inputs are staged, and executor logs as each one ends.' },
     { f: 'tctl', t: 'db', label: 'COMPLETE', tone: 'ok', cap: 'Polling every 5 s, tctl sees the Pod Succeeded and writes the final state. trec never does.' },
-    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a failed tif or tof, a started Pod still Pending after 5 minutes, a Pod that vanished.' }
+    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a failed tif or tof, the time limit, a scheduled Pod still Pending after 5 minutes, a Job or Pod that vanished.' }
   ]
 }" />
 
@@ -177,23 +177,44 @@ taskpods:
 
 The clock starts when the Job is created, so time spent waiting for a
 node, pulling images and staging inputs counts. When it runs out,
-Kubernetes deletes the Pod and the task fails, normally as
-`SYSTEM_ERROR`: [TCtl](./architecture.md#tctl) finds the task without
-a Pod.
+Kubernetes stops the Pod and marks the Job failed with reason
+`DeadlineExceeded`. [TCtl](./architecture.md#tctl) reads that from the
+Job and ends the task as `SYSTEM_ERROR` with reason `DeadlineExceeded`
+and "task exceeded its time limit of N seconds" in `system_logs`,
+whether the Pod is already gone, `Failed` or still stopping. The killed
+executor's exit code (137 or 143) is not reported as the cause.
 
 A new value applies to tasks created after the API restarts with it;
 tasks that already have a Job keep the limit they were created with.
 
-With `null` there is no limit. A task whose Pod can never be scheduled
-(no fitting node, a volume that can't be bound) then stays `QUEUED`
-until it is cancelled.
+A task whose Pod can't be scheduled yet (no node with room, a full
+ResourceQuota) waits in `QUEUED`; by default this limit is what ends
+the wait. To fail such tasks sooner, set
+`tctl.unschedulableTimeoutSeconds`:
+
+```yaml
+tctl:
+  unschedulableTimeoutSeconds: 1800 # null (default): wait for the limit
+```
+
+With `taskpods.activeDeadlineSeconds: null` there is no limit, and a
+task that can't be scheduled waits for as long as it takes unless
+`tctl.unschedulableTimeoutSeconds` is set. A Pod that was scheduled but
+doesn't start (an image that can't be pulled) still fails after 5
+minutes: TCtl's [pending timeout](./architecture.md#tctl) doesn't depend
+on either setting.
 
 ## Cancelling
 
 `POST /tasks/{id}:cancel` writes `CANCELING` and deletes the Job. The Pod
 disappears before reaching a terminal phase; TCtl finds the task
-without a Pod and writes the final state, which lands as `CANCELED` because `CANCELING`
+without a Job or Pod and writes the final state, which lands as `CANCELED` because `CANCELING`
 takes precedence.
+
+If the Job delete fails, the call returns `500` and the task stays
+`CANCELING`. Cancel again to retry the delete; TCtl also deletes the Job
+of a `CANCELING` task on its next pass, within about 5 seconds. Cancelling a
+task that is already terminal changes nothing and returns `200`.
 
 ## Tags
 

@@ -36,8 +36,8 @@ Three ServiceAccounts with namespace-scoped Roles:
   logs. Kubernetes deletes each PVC with its Job.
 - `poiesis-taskpod`: read Pods and Pod logs. Used by TRec inside
   TaskPods; executors don't get its token.
-- `poiesis-tctl`: watch Pods, read Pod logs, create, read and update
-  Leases.
+- `poiesis-tctl`: watch Pods and Jobs, read Pod logs, delete Jobs,
+  create, read and update Leases.
 
 ## 1. Build the images
 

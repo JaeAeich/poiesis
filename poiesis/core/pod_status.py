@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -488,6 +488,40 @@ def _timestamp(value: object) -> datetime | None:
         return None
 
 
+def created_at(obj: Mapping[str, Any]) -> datetime | None:
+    """`metadata.creationTimestamp` of a Pod or Job, made timezone-aware."""
+    metadata = obj.get("metadata") or {}
+    created = _timestamp(
+        metadata.get("creationTimestamp") or metadata.get("creation_timestamp")
+    )
+    if created is not None and created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    return created
+
+
+def extract_job_failure(job: Mapping[str, Any]) -> tuple[bool, str | None]:
+    """Whether a Job has finished, and why it failed if it did.
+
+    Returns `(finished, failure)`: `finished` is True once the Job carries
+    a `Complete` or `Failed` condition; `failure` is the `Failed`
+    condition's `reason: message` (e.g. `BackoffLimitExceeded: Job has
+    reached the specified backoff limit`), None for a Job that didn't fail.
+    A Job past its time limit fails too; `job_deadline_terminal` gives it
+    its own state and log line, so callers check that first.
+    """
+    finished = False
+    for cond in (job.get("status") or {}).get("conditions") or []:
+        if cond.get("status") != "True":
+            continue
+        if cond.get("type") == "Failed":
+            reason = str(cond.get("reason") or "Failed")
+            message = cond.get("message")
+            return True, f"{reason}: {message}" if message else reason
+        if cond.get("type") == "Complete":
+            finished = True
+    return finished, None
+
+
 def extract_pending_failure_reason(pod: Mapping[str, Any]) -> str:
     """Best-effort human-readable cause for a stuck-Pending Pod.
 
@@ -518,6 +552,19 @@ def extract_pending_failure_reason(pod: Mapping[str, Any]) -> str:
             return str(cond.get("reason") or "Unschedulable")
 
     return "Pending timeout"
+
+
+def extract_unschedulable_message(pod: Mapping[str, Any]) -> str | None:
+    """The scheduler's message for a Pod it couldn't place, if any.
+
+    That is the ``PodScheduled``/``False`` condition's message, e.g.
+    ``0/3 nodes are available: 3 Insufficient cpu.``
+    """
+    for cond in (pod.get("status") or {}).get("conditions") or []:
+        if cond.get("type") == "PodScheduled" and cond.get("status") == "False":
+            message = cond.get("message")
+            return str(message) if message else None
+    return None
 
 
 #: Storage-failure classifiers.

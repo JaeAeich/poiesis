@@ -22,7 +22,8 @@ FastAPI under `/ga4gh/tes/v1` (see [TES API](../reference/api.md)).
   by the Job.
 - `CancelTask` writes `CANCELING` and deletes the Job; the
   conditional-update writer guarantees the final state lands as
-  `CANCELED`.
+  `CANCELED`. Cancelling a task that is already `CANCELING` deletes the
+  Job again, so a cancel whose delete failed can be retried.
 
 ## TaskPod
 
@@ -50,28 +51,59 @@ out its grace period.
 
 The only writer of terminal state, leader-elected
 (`coordination.k8s.io` Leases): one replica is active at a time, so more
-replicas give faster failover, not throughput. Every 5 seconds the
-leader lists the Pods labelled `poiesis.io/task` and the non-terminal
-tasks in Postgres. It has three jobs:
+replicas give faster failover, not throughput. The Lease is kept in the
+release namespace, also when `taskpods.namespace` puts the tasks
+elsewhere; if a Lease call fails, TCtl logs it and tries again 10
+seconds later without reconciling. Every 5 seconds the
+leader reads the non-terminal tasks from Postgres, then lists the Jobs
+and Pods labelled `poiesis.io/task`. It has seven jobs:
 
 - **Phase reconciliation**: a `Succeeded` Pod becomes `COMPLETE`; a
-  `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, deadline,
-  a failed `tif` or `tof`) or `EXECUTOR_ERROR` (any other failure, and
-  a declared output the executors didn't produce). A failed filer's
-  cause, read from its termination message, goes to `system_logs`; see
+  `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, a failed
+  `tif` or `tof`) or `EXECUTOR_ERROR` (any other failure, and a declared
+  output the executors didn't produce). A failed filer's cause, read
+  from its termination message, goes to `system_logs`; see
   [Staging failures](./storage.md#staging-failures). Executors TRec
   didn't record get their `executor_logs` rows here, output included.
-- **Missing-pod reconciliation**: a non-terminal task older than 30
-  seconds with no Pod becomes `SYSTEM_ERROR`. Cancelled tasks delete the
-  Job, so their Pod vanishes too; `CANCELING` takes precedence, so they
-  land as `CANCELED`.
-- **Pending timeout**: a Pod still `Pending` with a `status.startTime`
-  older than 5 minutes becomes `SYSTEM_ERROR` (an image that can't be
-  pulled). A Pod that is never scheduled (unbindable PVC, no fitting
-  node) has no `startTime`; it ends when the Job's
-  `activeDeadlineSeconds` runs out (`taskpods.activeDeadlineSeconds`,
-  one hour by default; never, if that is `null`). See
-  [Time limit](./tasks.md#time-limit).
+- **Time limit**: when the Job's `Failed` (or `FailureTarget`) condition
+  says `DeadlineExceeded`, the task becomes `SYSTEM_ERROR` with reason
+  `DeadlineExceeded` and "task exceeded its time limit of N seconds" in
+  `system_logs`. TCtl reads the Job first, so this holds whether the Pod
+  is gone, `Failed`, still stopping or never scheduled; the exit code of
+  the killed executor (137, 143) is not taken as the cause.
+- **Missing-pod reconciliation**: a non-terminal task that has neither
+  a Job nor a Pod on every pass for 30 seconds becomes `SYSTEM_ERROR`
+  ("Pod disappeared before reaching terminal phase"). TCtl times the 30
+  seconds on its own clock, and a new leader starts them again. A task
+  whose Job exists is not missing, whether or not the Job has a Pod yet.
+  Cancelled tasks delete the Job, so their Pod vanishes too; `CANCELING`
+  takes precedence, so they land as `CANCELED`.
+- **Jobs without a Pod**: a failed Job whose Pod is gone (the Pod was
+  deleted or lost with its node) becomes `SYSTEM_ERROR` with the Job's
+  reason, such as `Job failed: BackoffLimitExceeded`. A live Job that
+  has created no Pod yet (a ResourceQuota is full, an admission webhook
+  rejects the Pod) keeps its task `QUEUED`: see below.
+- **Pending timeout**: a Pod bound to a node but still `Pending` 5
+  minutes after `status.startTime` becomes `SYSTEM_ERROR`, with the
+  reason in `system_logs` (an image that can't be pulled, a volume that
+  can't be mounted). This timeout isn't configurable.
+- **Waiting to be scheduled**: a Pod the scheduler hasn't placed (no
+  node with room, an unbindable PVC, taints) has no `startTime`. On a
+  busy cluster that is queueing, not a fault: by default the task stays
+  `QUEUED` until the Job's [time limit](./tasks.md#time-limit) ends it.
+  Set `tctl.unschedulableTimeoutSeconds` to fail fast: a task waiting
+  longer than that, counted from the Pod's creation (or the Job's, with
+  no Pod yet), becomes `SYSTEM_ERROR` with the scheduler's message, or
+  `Job created no Pod`, in `system_logs`.
+
+- **Job cleanup**: TCtl deletes the Job of every `CANCELING` task that
+  still has one, on each pass until it is gone. It also deletes the Job
+  after it ends a task for a missing Pod or a pending or unschedulable
+  timeout, so a Pod that becomes runnable later can't run a task
+  already reported as failed. If that delete fails, TCtl logs it and
+  doesn't retry; the Job's [time limit](./tasks.md#time-limit), if
+  set, still ends it. The Job of a finished Pod is left to its TTL.
+  Deleting Jobs is TCtl's only write to Kubernetes.
 
 TCtl is on every path: TRec never finalises a task, clean runs included.
 
