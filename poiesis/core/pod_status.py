@@ -28,6 +28,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from poiesis.api.tes.models import TesState
+from poiesis.core import ignore_error
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -249,6 +250,10 @@ def _container_finished_event(
         exit_code = terminated.get("exitCode")
         if exit_code is None:
             exit_code = terminated.get("exit_code")
+        if executor_index is not None:
+            # An ignore_error executor exits 0 and reports the command's
+            # exit code in its termination message.
+            exit_code = ignore_error.recorded_exit_code(terminated)
         reason = terminated.get("reason")
         started_at = terminated.get("startedAt") or terminated.get("started_at")
         finished_at = terminated.get("finishedAt") or terminated.get("finished_at")
@@ -334,9 +339,9 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
 
     Reads the Pod-level `status.reason` first (NodeLost, Evicted,
     DeadlineExceeded all surface here), falls back to scanning container
-    terminated states for a more specific reason. Skips the `ack`
-    container so an `ack: exit 0` after a real failure doesn't shadow
-    the underlying error.
+    terminated states for a more specific reason. Skips containers that
+    completed (exit 0: trec, a filer, an earlier executor, `ack`) so they
+    don't shadow the underlying error of a failed Pod.
     """
     status = pod.get("status") or {}
     raw_reason = status.get("reason")
@@ -353,7 +358,10 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
         if cs.get("name") == ACK_NAME:
             continue
         terminated = (cs.get("state") or {}).get("terminated") or {}
+        exit_code = terminated.get("exitCode", terminated.get("exit_code"))
         cs_reason = terminated.get("reason")
+        if exit_code == 0 or cs_reason == PodTerminationReason.COMPLETED.value:
+            continue
         if cs_reason:
             return str(cs_reason)
     return PodTerminationReason.ERROR.value

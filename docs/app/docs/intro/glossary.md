@@ -25,7 +25,9 @@ last executor finishes. Supports `s3://`, `http(s)://`, and `file://`.
 ### Executor
 
 One step in a task's sequenced execution. Runs as an init container
-named `exec-{N}`. Failure of executor _i_ aborts executors _i+1..n_.
+named `exec-{N}`. Failure of executor _i_ aborts executors _i+1..n_,
+unless executor _i_ sets
+[`ignore_error`](../usage/usage.md#executors-that-may-fail).
 
 ### Ack
 
