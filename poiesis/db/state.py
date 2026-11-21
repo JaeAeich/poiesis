@@ -21,13 +21,15 @@ when the underlying cause was a user cancel.
 
 from __future__ import annotations
 
+import json
 import uuid
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from poiesis.api.tes.models import TesState
+from poiesis.api.tes.models import TesOutputFileLog, TesState
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import datetime
 
     import asyncpg
@@ -243,6 +245,33 @@ async def append_executor_log(
         exit_code,
         stdout,
         stderr,
+    )
+
+
+async def set_output_logs(
+    conn: asyncpg.Connection,
+    task_id: str,
+    outputs: Sequence[TesOutputFileLog],
+) -> None:
+    """Store `outputs` as the `outputs` of the task's active log row.
+
+    Replaces what was stored, so a retried TOF, which uploads every
+    output again, doesn't add a second entry for a file. TOF writes
+    them once every output is uploaded; they change no state.
+    """
+    await conn.execute(
+        """
+        UPDATE task_logs
+            SET outputs = $2::jsonb
+        WHERE id = (
+            SELECT id FROM task_logs
+            WHERE task_id = $1
+            ORDER BY ordinal DESC
+            LIMIT 1
+        )
+        """,
+        uuid.UUID(task_id),
+        json.dumps([o.model_dump(mode="json") for o in outputs]),
     )
 
 

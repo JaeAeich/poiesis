@@ -123,12 +123,19 @@ def test_sigterm_records_the_last_state_and_exits(
     monkeypatch.setattr(trec.state_db, "append_executor_log", append)
     monkeypatch.setattr(trec, "read_executor_streams", read_streams)
 
+    async def mark_running(_conn: Any, _task_id: str) -> None:
+        rows.append({"state": "RUNNING"})
+
+    monkeypatch.setattr(trec, "_mark_running", mark_running)
+
     async def main() -> int:
         asyncio.get_running_loop().call_later(0.05, sigterm.set)
         async with asyncio.timeout(5):
             return await trec._run_until_terminal(None, "t1", "pod-1", "tasks", {})
 
     assert asyncio.run(main()) == 0
+    running = rows.pop(0)
+    assert running == {"state": "RUNNING"}
     (read,) = core_v1.reads
     assert (read["name"], read["namespace"]) == ("pod-1", "tasks")
     (row,) = rows

@@ -73,7 +73,7 @@ def _enabled() -> list[_SchemeEntry]:
 
 def _lookup(uri: str | None) -> _SchemeEntry | None:
     """Registry entry for `uri`, or None if its scheme or path is refused."""
-    entry = _SCHEMES.get(_scheme(uri))
+    entry = _SCHEMES.get(scheme(uri))
     if entry is not None and entry.name == "file":
         assert uri is not None
         if not file_url_allowed(uri):
@@ -91,6 +91,14 @@ def can_output(uri: str | None) -> bool:
     """True if `uri` can be used as a TES output."""
     entry = _lookup(uri)
     return entry is not None and entry.output is not None
+
+
+def input_url(tes_input: TesInput) -> str | None:
+    """The URL `tes_input` is staged from; None stages its inline content.
+
+    TES: "If content is not empty, "url" must be ignored."
+    """
+    return None if tes_input.content else tes_input.url
 
 
 def create_input_strategy(uri: str | None, payload: TesInput) -> InputFilerStrategy:
@@ -113,7 +121,7 @@ def create_output_strategy(uri: str, payload: TesOutput) -> OutputFilerStrategy:
     return entry.output(payload)
 
 
-def _scheme(uri: str | None) -> str:
+def scheme(uri: str | None) -> str:
     """Lowercase URI scheme; empty string for inline content (no URL)."""
     if not uri:
         return ""

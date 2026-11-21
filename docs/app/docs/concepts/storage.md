@@ -35,6 +35,10 @@ after they finish.
   (see [Local paths](#local-paths)).
 - Inline content as an output, or an unknown scheme, is refused with
   `400`. `GET /service-info` lists the supported schemes.
+- Also refused with `400` at submit, since they would only fail in the
+  Pod: an input with neither `url` nor `content`, a `DIRECTORY` input
+  over `http(s)://` or as inline `content`, and an `s3://` input or
+  output when the deployment gives `tif` and `tof` no S3 credentials.
 
 ## Common patterns
 
@@ -42,7 +46,8 @@ after they finish.
   scheduling.
 - **S3 in, S3 out**: `inputs[]` and `outputs[]` point at object storage.
 - **Inline content**: `inputs[].content` carries the file body; no
-  external storage needed.
+  external storage needed. An input with non-empty `content` ignores its
+  `url`, as TES requires.
 - **Multi-executor**: executors run in order; data persists between them
   only under the task's [paths](./task-volumes.md#task-paths).
 
@@ -87,8 +92,12 @@ taskpods:
 If the Secret is missing in the task namespace, no TaskPod can start, not
 only the ones that use `s3://`.
 
-On EKS, leave `existingSecret` empty and give the service accounts an IAM
-role through IRSA instead:
+`tif` and `tof` need an access key: from `existingSecret`, from
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in the API's environment,
+or from `taskpods.extraEnv`. Without one, a task with an `s3://` input or
+output is refused with `400`.
+
+On EKS, the service accounts can carry an IAM role through IRSA:
 
 ```yaml
 serviceAccount:
@@ -99,6 +108,9 @@ serviceAccount:
     annotations:
       eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/poiesis
 ```
+
+An IRSA role alone isn't enough yet: `tif` and `tof` still require an
+access key, so without one `s3://` URLs are refused at submit.
 
 <Callout type="info">
 
@@ -217,6 +229,26 @@ Responses:
 - The URL is stored with the task, including any signature in its query
   string, so issue presigned URLs with a short expiry.
 
+## Output file logs
+
+Once every output is uploaded, `tof` stores one entry per uploaded file
+in the task's `logs[].outputs`, shown in the `BASIC` and `FULL` views:
+
+| Field | Value |
+| --- | --- |
+| `path` | The file's path in the executor, e.g. `/outputs/dir/a.txt`. |
+| `size_bytes` | The file's size, as a string. |
+| `url` | Where the file was uploaded, without the URL's query string or fragment. |
+
+- A `DIRECTORY` or glob output gives one entry per file under it, each
+  with the URL that file went to.
+- The query of a presigned URL is its signature, so it is not stored in
+  the entry. The output's own `url` in `outputs[]` keeps it, as submitted.
+- A `tof` that runs again replaces the entries; it doesn't add more.
+- If `tof` can't store the entries, it fails and the task ends in
+  `SYSTEM_ERROR`, though its files are uploaded: a `COMPLETE` task
+  always has its file list.
+
 ## Staging failures
 
 When `tif` or `tof` fails, the task's `system_logs` say why. The filer
@@ -234,7 +266,7 @@ are cut from it, since the query of a presigned URL is its signature.
 | --- | --- |
 | Storage unreachable, a `5xx`, a timeout | `SYSTEM_ERROR` |
 | Access denied, an expired or rejected URL, a missing input | `SYSTEM_ERROR` |
-| A full task volume, or the task can't be read from the database | `SYSTEM_ERROR` |
+| A full task volume, or the task can't be read from or its output file logs written to the database | `SYSTEM_ERROR` |
 | A declared output the executors didn't produce | `EXECUTOR_ERROR` |
 
 The rule: a failed filer is `SYSTEM_ERROR`, because no executor failed.

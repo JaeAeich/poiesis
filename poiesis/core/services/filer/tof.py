@@ -1,7 +1,10 @@
 """Entry point for the TOF service."""
 
+from __future__ import annotations
+
 import logging
 import os
+from typing import TYPE_CHECKING
 
 from poiesis.api.tes.models import TesFileType, TesOutput
 from poiesis.core.filer_error import MissingOutputError
@@ -9,6 +12,14 @@ from poiesis.core.services.filer.filer import Filer
 from poiesis.core.services.filer.filer_strategy_factory import create_output_strategy
 from poiesis.core.services.filer.strategy import filer_strategy
 from poiesis.core.services.filer.strategy.filer_strategy import redact_url
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from poiesis.api.tes.models import TesOutputFileLog
+
+    #: Stores the task's output file logs, replacing any stored before.
+    RecordOutputs = Callable[[list[TesOutputFileLog]], Awaitable[None]]
 
 logger = logging.getLogger(__name__)
 
@@ -19,13 +30,21 @@ class Tof(Filer):
     Args:
         name: Name of the task.
         outputs: List of task outputs.
+        record: Stores one entry per uploaded file once every output is
+            uploaded; a failure to store them fails the filer.
     """
 
-    def __init__(self, name: str, outputs: list[TesOutput]) -> None:
+    def __init__(
+        self,
+        name: str,
+        outputs: list[TesOutput],
+        record: RecordOutputs | None = None,
+    ) -> None:
         """Task output filer."""
         super().__init__()
         self._name = name
         self.outputs = outputs
+        self._record = record
 
     @property
     def name(self) -> str:
@@ -33,7 +52,8 @@ class Tof(Filer):
         return self._name
 
     async def file(self) -> None:
-        """Filing logic — upload outputs."""
+        """Filing logic — upload outputs, then record the files uploaded."""
+        uploaded: list[TesOutputFileLog] = []
         for output in self.outputs:
             if output.url is None:
                 raise ValueError("output.url is required for TOF")
@@ -51,6 +71,13 @@ class Tof(Filer):
                     raise MissingOutputError(missing) from e
                 # Names the output in the cause the filer reports.
                 e.add_note(f"output {output.path}")
+                raise
+            uploaded.extend(strategy.uploaded)
+        if self._record is not None:
+            try:
+                await self._record(uploaded)
+            except Exception as e:
+                e.add_note("recording the output file logs in the database")
                 raise
 
 

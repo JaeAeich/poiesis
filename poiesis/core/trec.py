@@ -8,6 +8,10 @@ output as `stdout` and `stderr`: from its container log, or from the
 files on the task volume it writes them to (see
 `poiesis.core.executor_logs`).
 
+Trec writes two non-terminal states: INITIALIZING when it starts, while
+images are pulled and inputs staged, and RUNNING once it sees the first
+executor start (or finish, if the watch missed its start).
+
 Trec does NOT write terminal state. The cluster-wide controller (tctl)
 owns terminal transitions exclusively — see `poiesis/core/tctl.py`. Trec's
 job ends when either the Pod reaches a terminal phase (it returns 0 and
@@ -70,7 +74,7 @@ async def run(
     """
     conn = await asyncpg.connect(dsn)
     try:
-        await _mark_running(conn, task_id)
+        await _mark_initializing(conn, task_id)
         return await _run_until_terminal(
             conn, task_id, pod_name, namespace, streams or {}
         )
@@ -188,7 +192,11 @@ async def _apply_pod_snapshot(
     the tasks row is tctl's job, not trec's.
     """
     pod_terminated = False
-    for event in translate(pod_status, snapshot):
+    events = translate(pod_status, snapshot)
+    if not snapshot.running and any(e.kind in _EXECUTOR_KINDS for e in events):
+        await _mark_running(conn, task_id)
+        object.__setattr__(snapshot, "running", True)
+    for event in events:
         await _apply_event(conn, task_id, event, read_output)
         _advance_snapshot(snapshot, event)
         if event.kind is EventKind.POD_TERMINATED:
@@ -236,6 +244,7 @@ _FILER_DEFAULT_REASON = {
     EventKind.TOF_FINISHED: "output filer exited non-zero",
 }
 _FILER_FINISHED_KINDS = frozenset(_FILER_DEFAULT_REASON)
+_EXECUTOR_KINDS = frozenset({EventKind.EXECUTOR_STARTED, EventKind.EXECUTOR_FINISHED})
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -258,8 +267,28 @@ def _advance_snapshot(snapshot: TaskStateSnapshot, event: TaskEvent) -> None:
         object.__setattr__(snapshot, "pod_terminated", True)
 
 
+async def _mark_initializing(conn: asyncpg.Connection, task_id: str) -> None:
+    """Transition a QUEUED task to INITIALIZING; no-op in any other state.
+
+    Trec is the Pod's first container, so it starts once the Pod is
+    scheduled, before images are pulled and inputs staged.
+    """
+    await conn.execute(
+        """
+        UPDATE tasks
+            SET state = 'INITIALIZING'
+        WHERE id = $1
+            AND state = 'QUEUED'
+        """,
+        uuid.UUID(task_id),
+    )
+
+
 async def _mark_running(conn: asyncpg.Connection, task_id: str) -> None:
-    """Transition the task to RUNNING; no-op if it's already past that."""
+    """Transition the task to RUNNING once the first executor has started.
+
+    A no-op if it's already past that: CANCELING or terminal.
+    """
     await conn.execute(
         """
         UPDATE tasks

@@ -113,6 +113,8 @@ class TaskStateSnapshot:
     executors_finished: frozenset[int] = frozenset()
     tof_finished: bool = False
     pod_terminated: bool = False
+    #: Set by trec once it wrote RUNNING; the translator ignores it.
+    running: bool = False
 
 
 def classify_container(name: str) -> tuple[ContainerKind, int | None]:

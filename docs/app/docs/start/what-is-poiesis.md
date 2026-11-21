@@ -27,7 +27,7 @@ for migrations), one PostgreSQL schema, no broker.
 | --- | --- |
 | **API** | FastAPI service exposing TES under `/ga4gh/tes/v1`. No scheduler, no reconciler. |
 | **TaskPod** | One Pod per task: `trec` (sidecar), then `tif`, `exec-0..N`, `tof`, `ack`. `tif` and `tof` only if the task has inputs or outputs. |
-| **TRec** | In-pod recorder. Watches the surrounding Pod, marks the task `RUNNING` and writes executor logs. |
+| **TRec** | In-pod recorder. Watches the surrounding Pod, marks the task `INITIALIZING`, then `RUNNING` when the first executor starts, and writes executor logs. |
 | **TCtl** | Leader-elected Deployment. Writes every final state from the Pod's phase, including OOMKill, eviction, node loss, pending timeouts and vanished Pods. |
 | **Postgres** | Relational store. Conditional `UPDATE`s make concurrent state writes (TRec, TCtl, a cancel) race-correct. |
 

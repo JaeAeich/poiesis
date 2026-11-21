@@ -18,7 +18,12 @@ from abc import ABC, abstractmethod
 from glob import glob
 from urllib.parse import urlsplit, urlunsplit
 
-from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
+from poiesis.api.tes.models import (
+    TesFileType,
+    TesInput,
+    TesOutput,
+    TesOutputFileLog,
+)
 from poiesis.core.constants import FILER_PVC_PATH, OUTPUT_GLOB_FALLBACK_ENV
 from poiesis.core.filer_error import OutputOutsideVolumeError
 
@@ -165,7 +170,30 @@ class InputFilerStrategy(BaseFilerStrategy, ABC):
 
 
 class OutputFilerStrategy(BaseFilerStrategy, ABC):
-    """Strategy that can upload TES outputs from the shared task volume."""
+    """Strategy that can upload TES outputs from the shared task volume.
+
+    Each concrete upload calls `_record_upload` once per file it uploads;
+    `uploaded` is then the output's entries for `TesTaskLog.outputs`.
+    """
+
+    def __init__(self, payload: TesInput | TesOutput):
+        """Initialise with the TES output the strategy will upload."""
+        super().__init__(payload)
+        self.uploaded: list[TesOutputFileLog] = []
+
+    def _record_upload(self, container_path: str, url: str) -> None:
+        """Note that the file at `container_path` was uploaded to `url`.
+
+        The entry has the file's path in the executor, its size, and `url`
+        without its query: the query of a presigned URL is its signature.
+        """
+        self.uploaded.append(
+            TesOutputFileLog(
+                url=redact_url(url) or url,
+                path=self._get_path_as_in_exec_pod(container_path),
+                size_bytes=str(os.path.getsize(container_path)),
+            )
+        )
 
     @abstractmethod
     async def upload_output_file(self, container_path: str) -> None:

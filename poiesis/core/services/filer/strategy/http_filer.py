@@ -93,6 +93,7 @@ class HttpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         """PUT the output file at `container_path` to the output URL."""
         assert self.output is not None
         _put(container_path, self.output.url)
+        self._record_upload(container_path, self.output.url)
 
     async def upload_output_directory(self, container_path: str) -> None:
         """PUT each file under `container_path` to the output URL.
@@ -103,7 +104,8 @@ class HttpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         assert self.output is not None
         if not os.path.isdir(container_path):
             raise FileNotFoundError(f"Output directory not found: {container_path}")
-        _put_directory(container_path, self.output.url)
+        for path, url in _put_directory(container_path, self.output.url):
+            self._record_upload(path, url)
 
     async def upload_glob(self, glob_files: list[tuple[str, str, bool]]) -> None:
         """PUT each glob match to the output URL plus its relative path.
@@ -114,17 +116,26 @@ class HttpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         for path, relative_path, is_directory in glob_files:
             url = _join(self.output.url, relative_path)
             if is_directory:
-                _put_directory(path, url)
+                for file_path, file_url in _put_directory(path, url):
+                    self._record_upload(file_path, file_url)
             else:
                 _put(path, url)
+                self._record_upload(path, url)
 
 
-def _put_directory(directory: str, url: str) -> None:
-    """PUT each file under `directory` to `url` plus its relative path."""
+def _put_directory(directory: str, url: str) -> list[tuple[str, str]]:
+    """PUT each file under `directory` to `url` plus its relative path.
+
+    Returns the `(path, url)` of each file uploaded.
+    """
+    uploaded: list[tuple[str, str]] = []
     for root, _, files in os.walk(directory):
         for name in files:
             path = os.path.join(root, name)
-            _put(path, _join(url, os.path.relpath(path, directory)))
+            file_url = _join(url, os.path.relpath(path, directory))
+            _put(path, file_url)
+            uploaded.append((path, file_url))
+    return uploaded
 
 
 def _get(url: str, path: str) -> None:

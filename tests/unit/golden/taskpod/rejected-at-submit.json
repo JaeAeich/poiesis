@@ -1,0 +1,7 @@
+{
+  "input-content-directory": "inputs[0] has inline content, which can't be a DIRECTORY",
+  "input-http-directory": "inputs[0] is a DIRECTORY with an HTTP(S) url; directories can't be downloaded over HTTP(S), list each file as a FILE input",
+  "input-s3-unconfigured": "inputs[0].url is an s3:// URL, but this deployment has no S3 credentials; ask your administrator to configure S3 storage",
+  "input-without-url-or-content": "inputs[0] must set url or content",
+  "output-s3-unconfigured": "outputs[0].url is an s3:// URL, but this deployment has no S3 credentials; ask your administrator to configure S3 storage"
+}

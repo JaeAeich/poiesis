@@ -3,6 +3,7 @@
 import logging
 import os
 import shutil
+from pathlib import Path
 
 from poiesis.api.tes.models import TesInput, TesOutput
 from poiesis.core.services.filer.file_urls import resolve_file_url
@@ -50,6 +51,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         assert self.output.url
         destination_path = resolve_file_url(self.output.url)
         self._copy_file(container_path, destination_path)
+        self._record_upload(container_path, Path(destination_path).as_uri())
 
     async def upload_output_directory(self, container_path: str):
         """Upload output directory to a local path."""
@@ -58,6 +60,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         assert self.output.url
         destination_path = resolve_file_url(self.output.url)
         self._copy_directory(container_path, destination_path)
+        self._record_directory(container_path, destination_path)
 
     async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
         """Upload files and directories using wildcard pattern.
@@ -83,11 +86,21 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
                 os.makedirs(destination_path, exist_ok=True)
                 # Copy directory contents recursively
                 self._copy_directory(file_path, destination_path)
+                self._record_directory(file_path, destination_path)
             else:
                 # Ensure the destination directory exists
                 os.makedirs(os.path.dirname(destination_path), exist_ok=True)
                 logger.info(f"Uploading file {file_path} to {destination_path}")
                 self._copy_file(file_path, destination_path)
+                self._record_upload(file_path, Path(destination_path).as_uri())
+
+    def _record_directory(self, src: str, dst: str) -> None:
+        """Record each file under `src` as uploaded to the same path under `dst`."""
+        for root, _, files in os.walk(src):
+            for name in files:
+                path = os.path.join(root, name)
+                target = os.path.join(dst, os.path.relpath(path, src))
+                self._record_upload(path, Path(target).as_uri())
 
     def _copy_file(self, src: str, dst: str):
         """Copy a file from src to dst with validation."""

@@ -52,6 +52,9 @@ def settings(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
         monkeypatch.delenv(name, raising=False)
     for name, value in env.items():
         monkeypatch.setenv(name, value)
+    # The task has s3:// URLs, which need S3 credentials (#166).
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "id")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "key")
     return Settings(auth=AuthSettings(enabled=False))
 
 

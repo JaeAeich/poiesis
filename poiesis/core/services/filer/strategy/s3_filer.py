@@ -124,6 +124,7 @@ class S3FilerStrategy(InputFilerStrategy, OutputFilerStrategy):
             raise FileNotFoundError(f"Output file not found: {container_path}")
         try:
             self.client.upload_file(container_path, self.bucket, self.key)
+            self._record_upload(container_path, f"s3://{self.bucket}/{self.key}")
             logger.info("Uploaded %s to %s", container_path, self.output.url)
         except Exception:
             logger.exception("S3 upload failed")
@@ -148,6 +149,7 @@ class S3FilerStrategy(InputFilerStrategy, OutputFilerStrategy):
                         s3_key,
                     )
                     self.client.upload_file(local_file_path, self.bucket, s3_key)
+                    self._record_upload(local_file_path, f"s3://{self.bucket}/{s3_key}")
             logger.info(
                 "Uploaded directory from %s to %s",
                 container_path,
@@ -199,8 +201,12 @@ class S3FilerStrategy(InputFilerStrategy, OutputFilerStrategy):
                         self.client.upload_file(
                             local_file_path, self.bucket, file_s3_key
                         )
+                        self._record_upload(
+                            local_file_path, f"s3://{self.bucket}/{file_s3_key}"
+                        )
             else:
                 logger.debug(
                     f"Uploading {file_path} to s3://{self.bucket}/{_s3_key}",
                 )
                 self.client.upload_file(file_path, self.bucket, _s3_key)
+                self._record_upload(file_path, f"s3://{self.bucket}/{_s3_key}")

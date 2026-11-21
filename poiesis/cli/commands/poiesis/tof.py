@@ -8,12 +8,14 @@ from typing import Any
 import asyncpg
 import click
 
+from poiesis.api.tes.models import TesOutputFileLog
 from poiesis.cli.commands.poiesis.base import BaseCommand
 from poiesis.core import filer_error
 from poiesis.core.services.filer.filer_strategy_factory import (
     supported_output_schemes,
 )
 from poiesis.core.services.filer.tof import Tof
+from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
 
 
@@ -77,7 +79,14 @@ async def _run(task_id: str, dsn: str) -> int:
         click.echo("no outputs declared; nothing to upload")
         return 0
 
-    await Tof(task_id, outputs).execute()
+    async def record(files: list[TesOutputFileLog]) -> None:
+        conn = await asyncpg.connect(dsn)
+        try:
+            await state_db.set_output_logs(conn, task_id, files)
+        finally:
+            await conn.close()
+
+    await Tof(task_id, outputs, record).execute()
     return 0
 
 

@@ -1,6 +1,5 @@
 // Draws TaskFrames onto the task figure's DOM.
 import { createWriter, showPlayState } from "./dom.js";
-import { PHASE_STATE } from "./taskSteps.js";
 
 /**
  * Returns a function that draws a TaskFrame onto the view, touching only what changed.
@@ -24,7 +23,7 @@ export function createTaskPainter(view) {
     });
 
     write.attr(view.badge, "class", "badge " + frame.phase);
-    write.text(view.badgeText, PHASE_STATE[frame.phase]);
+    write.text(view.badgeText, frame.state);
     write.style(view.volume, "opacity", frame.volumeOpacity);
     write.text(view.volumeNote, frame.volumeNote);
     view.files.forEach((file, i) => write.style(file, "opacity", frame.filesShown[i] ? "1" : "0"));
