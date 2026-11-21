@@ -202,6 +202,9 @@ class Authz:
             if value is not None
         }
         scope = token.get("scope", token.get("scp"))
+        if principal.via == "apikey":
+            # The key's own scopes, not those of the token that minted it.
+            scope = sorted(principal.scopes)
         if isinstance(scope, str):
             scope = scope.split()
         if isinstance(scope, list):

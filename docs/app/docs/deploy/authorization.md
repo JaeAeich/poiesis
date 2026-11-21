@@ -129,11 +129,12 @@ retries) and allows only on `200` with `{"decision": true}`.
 - `subject.properties.via` names how the caller authenticated: `oidc`
   for an access token, `apikey` for an [API key](./api-keys.md).
   `credential_id` identifies the credential when there is one: the
-  token's `jti`, or the key's id. For a key, `iss`, `sub`, `client_id`,
-  `scope` and `claims` come from the snapshot of the minting token
-  (see [Deprovisioning lag](./api-keys.md#deprovisioning-lag)), so a
-  policy written for tokens applies to keys unchanged; use `via` to
-  treat keys differently. Both fields were added to the
+  token's `jti`, or the key's id. For a key, `iss`, `sub`, `client_id`
+  and `claims` come from the snapshot of the minting token (see
+  [Deprovisioning lag](./api-keys.md#deprovisioning-lag)), so a
+  policy written for tokens applies to keys unchanged; `scope` is the
+  key's own (`tasks:read`, `tasks:write`). Use `via` to treat keys
+  differently. Both fields were added to the
   `tes-authzen/1` profile without changing its name: a service that
   ignores unknown properties is unaffected.
 - `subject.properties.actor` is present only for a delegated token: the

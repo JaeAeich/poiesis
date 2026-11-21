@@ -779,13 +779,20 @@ def test_subject_names_the_key() -> None:
     """The AuthZEN subject says how the caller authenticated."""
     authz = Authz(AuthzSettings())
     key = Principal(
-        issuer=ISSUER, subject="alice", via="apikey", credential_id="k-1", claims={}
+        issuer=ISSUER,
+        subject="alice",
+        via="apikey",
+        credential_id="k-1",
+        scopes=frozenset({"tasks:read"}),
+        # The minting token's scope stays in the snapshot, but isn't sent.
+        claims={"scope": "openid profile"},
     )
     token = Principal(issuer=ISSUER, subject="alice", via="oidc", claims={})
     assert authz._subject(key)["properties"] == {
         "iss": ISSUER,
         "via": "apikey",
         "credential_id": "k-1",
+        "scope": ["tasks:read"],
         "claims": {},
     }
     assert authz._subject(token)["properties"]["via"] == "oidc"
