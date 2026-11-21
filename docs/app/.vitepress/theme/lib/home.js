@@ -67,7 +67,7 @@ function heroBg(){
     const r=stage.getBoundingClientRect();if(!r.width)return;dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
     const w=$("#wheel").getBoundingClientRect(),a=$("#hero-actions").getBoundingClientRect();
     fx=w.left-r.left+w.width/2;fy=w.top-r.top+w.height/2;
-    helixY=Math.max(a.bottom,W>760?w.bottom-30:0)-r.top+72;
+    helixY=Math.max(Math.max(a.bottom,W>760?w.bottom-30:0)-r.top+72,H-(W>760?190:150));
     colors();buildLattice();computeSlots();if(reduce)frame(performance.now());
   }
   
@@ -159,7 +159,7 @@ function heroBg(){
   /* one large amoeba resting in the top-left corner, organelles visible */
   const am={seed:Math.random()*100,cx:0,cy:0,R:0,px:0,py:0,on:false,reach:0,pa:0,food:[]};
   const inAmoeba=(x,y)=>am.R&&Math.hypot(x-am.cx,y-am.cy)<am.R*1.08;
-  const amGeom=(t=0)=>{const R=Math.min(W,H)*(W>760?.3:.24);return{R,cx:R*.42+Math.sin(t*.00007)*R*.05+Math.sin(t*.00019)*R*.015,cy:R*.5+Math.cos(t*.00005)*R*.04}};
+  const amGeom=(t=0)=>{const R=Math.min(Math.min(W,H)*(W>760?.3:.24),W>760?270:150);return{R,cx:R*.42+Math.sin(t*.00007)*R*.05+Math.sin(t*.00019)*R*.015,cy:R*.5+Math.cos(t*.00005)*R*.04}};
   function blob(cx,cy,r,t,amp,seed,n=72){ctx.beginPath();for(let i=0;i<=n;i++){const a=i/n*Math.PI*2;
     let da=Math.abs(((a-am.pa)%(Math.PI*2)+Math.PI*3)%(Math.PI*2)-Math.PI);const pod=am.reach*.38*Math.pow(Math.max(0,Math.cos(da)),8);
     const w=1+pod+amp*(.55*Math.sin(a*3+t*.00035+seed)+.35*Math.sin(a*5-t*.0005+seed*2)+.6*Math.max(0,Math.sin(a*2-t*.00022+seed))**3);
