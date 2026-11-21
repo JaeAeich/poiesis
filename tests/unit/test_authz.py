@@ -489,6 +489,31 @@ def test_builtin_owner_rule(env: Env) -> None:
     assert env.pdp.requests == []
 
 
+def _nulls(value: Any, path: str = "") -> list[str]:
+    """Return the paths of every `null` in a JSON value."""
+    if value is None:
+        return [path]
+    if isinstance(value, dict):
+        return [p for k, v in value.items() for p in _nulls(v, f"{path}.{k}")]
+    if isinstance(value, list):
+        return [p for i, v in enumerate(value) for p in _nulls(v, f"{path}[{i}]")]
+    return []
+
+
+@pytest.mark.parametrize("view", ["MINIMAL", "BASIC", "FULL"])
+def test_responses_omit_null(env: Env, view: str) -> None:
+    """Unset fields are left out, never `null` (py-tes can't parse it)."""
+    client = env.start()
+    own = client.post(TASKS, json=TASK).json()["id"]
+    got = client.get(f"{TASKS}/{own}", params={"view": view})
+    listed = client.get(TASKS, params={"view": view})
+    assert got.status_code == listed.status_code == 200  # noqa: PLR2004
+    assert got.json()["id"] == own
+    assert [t["id"] for t in listed.json()["tasks"]] == [own]
+    assert _nulls(got.json()) == []
+    assert _nulls(listed.json()) == []
+
+
 def test_server_assigned_fields(env: Env) -> None:
     """Without configuration too, client id, state, logs and time are ignored."""
     submitted = TASK | {

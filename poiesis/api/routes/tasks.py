@@ -50,6 +50,9 @@ router = APIRouter(tags=["TaskService"])
     "/tasks",
     status_code=HTTPStatus.OK,
     operation_id="CreateTask",
+    # Omit unset fields: TES clients such as py-tes (Snakemake, cwl-tes)
+    # can't parse `null` where an object or list is expected.
+    response_model_exclude_none=True,
 )
 async def create_task(
     task: TesTask,
@@ -218,6 +221,7 @@ def _classify_submit_exception(
     "/tasks/{id}:cancel",
     status_code=HTTPStatus.OK,
     operation_id="CancelTask",
+    response_model_exclude_none=True,
 )
 async def cancel_task(
     id: str,
@@ -262,6 +266,7 @@ async def cancel_task(
     "/tasks/{id}",
     status_code=HTTPStatus.OK,
     operation_id="GetTask",
+    response_model_exclude_none=True,
 )
 async def get_task(
     id: str,
@@ -311,6 +316,7 @@ def _list_filters(
     "/tasks",
     status_code=HTTPStatus.OK,
     operation_id="ListTasks",
+    response_model_exclude_none=True,
 )
 async def list_tasks(
     filters: Annotated[ListFilters, Depends(_list_filters)],
