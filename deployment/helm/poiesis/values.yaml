@@ -216,6 +216,15 @@ auth:
   #       audience: poiesis
   #       jwksUri: http://gateway.mesh.svc/.well-known/jwks.json
   issuers: []
+  # Public URL of this Poiesis, e.g. https://poiesis.example.org (no
+  # query, fragment or credentials; a trailing / is dropped). Clients
+  # discover how to authenticate from it: Poiesis serves OAuth 2.0
+  # Protected Resource Metadata (RFC 9728) at
+  # <origin>/.well-known/oauth-protected-resource<path>, listing the
+  # issuers above, and every 401 points there in WWW-Authenticate. With
+  # a path (https://example.org/poiesis), route that well-known URL to
+  # the API too. Empty: no metadata; 401s carry a plain Bearer challenge.
+  resource: ""
   # Poiesis API keys (`poi_...`) for clients that outlive an access token,
   # such as workflow engines. Owners mint them at POST /poiesis/v1/api-keys
   # with an OIDC token; see the "API keys" docs page. Off by default: an

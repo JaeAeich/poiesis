@@ -80,6 +80,8 @@ See [Authentication](./authentication.md) for the production model.
 kubectl -n po port-forward svc/poiesis-api 8000:8000 &
 kubectl -n deps port-forward svc/keycloak 8080:8080 &
 curl http://localhost:8000/ga4gh/tes/v1/service-info
+# where to log in (RFC 9728), see Authentication → Discovery
+curl http://localhost:8000/.well-known/oauth-protected-resource
 ```
 
 ### 4. Get a token

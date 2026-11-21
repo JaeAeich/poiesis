@@ -79,6 +79,14 @@ class UnauthorizedError(APIError):
 
     status_code = HTTPStatus.UNAUTHORIZED.value
     error_code = "unauthorized"
+    # RFC 6750 error code of the `WWW-Authenticate` challenge.
+    bearer_error: str | None = "invalid_token"
+
+
+class MissingCredentialError(UnauthorizedError):
+    """The request carries no credential at all."""
+
+    bearer_error = None
 
 
 class ForbiddenError(APIError):

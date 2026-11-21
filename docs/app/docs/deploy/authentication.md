@@ -37,6 +37,7 @@ list reaches the API pod as one environment variable,
 ```yaml
 auth:
   enabled: true
+  resource: https://poiesis.example.org # public URL, see "Discovery" below
   issuers:
     - issuer:          https://keycloak.example.org/realms/poiesis
       audience:        poiesis # or a list, see "Audience" below
@@ -71,6 +72,7 @@ The same configuration as environment variables:
 
 ```bash
 POIESIS_AUTH_ENABLED=true
+POIESIS_AUTH_RESOURCE=https://poiesis.example.org
 POIESIS_AUTH_ISSUERS='[
   {"issuer": "https://keycloak.example.org/realms/poiesis", "audience": "poiesis",
    "tokenTypes": ["JWT"], "clients": ["poiesis-cli", "portal"],
@@ -421,7 +423,7 @@ column; it makes everyone the same owner.
 
 | Surface          | Enforcement                                                              |
 | ---------------- | ------------------------------------------------------------------------ |
-| HTTP handler     | `Depends(get_principal)` on every TES and API key route. `service-info` is unauthed. |
+| HTTP handler     | `Depends(get_principal)` on every TES and API key route. `service-info` and the resource metadata are unauthed. |
 | Database         | `tasks.owner` stamped on every insert; reads are scoped by authz.        |
 | Workers          | TaskPods and `tctl` access the DB directly without an owner filter.      |
 
@@ -432,11 +434,14 @@ applies.
 ## Behaviour the client sees
 
 - **No `Authorization` header** → `401 unauthorized` with body
-  `{"error":"unauthorized","message":"missing bearer token"}`.
+  `{"error":"unauthorized","message":"missing bearer token"}` and
+  `WWW-Authenticate: Bearer resource_metadata="…"` (see
+  [Discovery](#discovery)).
 - **Malformed or expired token, one from an unconfigured issuer, of
   another audience, a token type not in `tokenTypes` or a client not
   in `clients`** → `401 unauthorized` with body
-  `{"error":"unauthorized","message":"invalid token"}`. The reason
+  `{"error":"unauthorized","message":"invalid token"}` and
+  `WWW-Authenticate: Bearer error="invalid_token", resource_metadata="…"`. The reason
   (signature, audience, issuer, exp, `typ`, client, …) is logged
   server-side at `WARNING` but not returned to the client.
 - **Token missing a required scope** → `403 forbidden`.
@@ -453,6 +458,57 @@ API keys behave the same, plus their own cases (revoked, expired, a
 missing scope); see [API keys](./api-keys.md#behaviour-the-client-sees).
 With a claim rule or a decision service, see
 [Authorization](./authorization.md#behaviour-the-client-sees).
+
+## Discovery
+
+A client that knows only the URL of a Poiesis can find out where to
+get a token. With `auth.resource` (`POIESIS_AUTH_RESOURCE`) set to the
+public URL, Poiesis serves **OAuth 2.0 Protected Resource Metadata**
+([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), and every `401`
+points to it:
+
+![Discovery: before and after, case by case](/discovery.gif)
+
+```console
+$ curl -i https://poiesis.example.org/ga4gh/tes/v1/tasks
+HTTP/1.1 401 Unauthorized
+www-authenticate: Bearer resource_metadata="https://poiesis.example.org/.well-known/oauth-protected-resource"
+
+$ curl https://poiesis.example.org/.well-known/oauth-protected-resource
+{
+  "resource": "https://poiesis.example.org",
+  "authorization_servers": ["https://keycloak.example.org/realms/poiesis"],
+  "bearer_methods_supported": ["header"],
+  "resource_name": "Poiesis",
+  "resource_documentation": "https://poiesis.jaeaeich.com"
+}
+```
+
+From there the client reads the issuer's own metadata
+(`<issuer>/.well-known/openid-configuration`) for its device or
+authorization endpoint, and logs in. The same pattern serves MCP
+servers, so generic OAuth clients and SDKs already follow it.
+
+| Field | From |
+| --- | --- |
+| `resource` | `auth.resource`, without a trailing `/`. Clients check that it equals the URL they asked. |
+| `authorization_servers` | The issuers, except those with `jwksUri` (gateways publish only keys, clients can't log in there). |
+| `scopes_supported` | The issuers' `requiredScopes`, if any. |
+| `bearer_methods_supported` | `header`: tokens and API keys go in `Authorization`. |
+
+Set `resource` to the URL clients use, scheme included: behind a TLS
+ingress, `https://…`, though Poiesis itself sees plain HTTP. Poiesis
+never derives it from the request's `Host`. With a path
+(`https://example.org/poiesis`), the metadata is at
+`https://example.org/.well-known/oauth-protected-resource/poiesis`
+(RFC 9728 §3.1): route that path to the API as well. Unset, nothing is
+served and a `401` carries a plain `WWW-Authenticate: Bearer` (with
+`error="invalid_token"` for a bad credential), as RFC 6750 asks.
+
+The metadata names no audience: issuers set it (Keycloak with an
+audience mapper), or, with
+[resource indicators (RFC 8707)](https://www.rfc-editor.org/rfc/rfc8707),
+the client asks for `resource`; then list that URL in `audience`.
 
 ## How clients obtain a token
 
