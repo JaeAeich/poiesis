@@ -69,6 +69,7 @@ onUnmounted(() => stop());
     </div>
 
     <div class="sheet layer" id="s-task">
+      <canvas class="world" id="world" aria-hidden="true"></canvas>
       <div class="wrap li">
         <div class="intro"><h2>How a task <em>runs.</em></h2></div>
         <div class="figwrap"><TaskFigure /></div>

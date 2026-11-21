@@ -30,7 +30,8 @@ html.dark .poi .btn.primary:hover{background:var(--coral-ink);border-color:var(-
 @keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .poi .stage{position:relative;overflow:hidden;isolation:isolate}
 .poi .layer{position:relative}
-@media (min-width:960px){.poi .layer{position:sticky;top:64px}}
+.poi .layer{position:sticky;top:0}
+@media (min-width:960px){.poi .layer{top:64px}}
 .poi #stage{z-index:0}
 .poi #s-eng{z-index:1}
 .poi #s-task{z-index:2}
@@ -445,3 +446,11 @@ html.dark .poi .eng .ic{background:#d6dee8;border-color:transparent;color:#0d203
 .poi .tcap{padding-left:14px}
 .poi .sheet{border-radius:20px 20px 0 0}}
 @media (prefers-reduced-motion:reduce){.poi,.poi *,.poi *::before,.poi *::after{animation-duration:.001ms!important;animation-delay:0s!important;transition-duration:.001ms!important}}
+
+
+/* playthings: dragging and clicking never selects text */
+.poi #stage,.poi #s-eng,.poi-footer .elements{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.poi #stage a,.poi #s-eng a{-webkit-user-drag:none}
+.poi .stage.amoeba-hover{cursor:crosshair}
+.poi #s-task .world{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;display:block}
+.poi #s-task>.wrap{position:relative;z-index:1}
