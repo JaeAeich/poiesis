@@ -86,15 +86,42 @@ describe("valuesYamlLines", () => {
     });
   });
 
-  it("IRSA annotates both service accounts and drops the S3 Secret", () => {
+  it("IRSA sets s3.roleArn, not service account annotations, and drops the S3 Secret", () => {
     const yaml = valuesYaml((config) => {
       config.s3Credentials = "irsa";
       config.s3RoleArn = "arn:aws:iam::1:role/x";
     });
-    const annotation =
-      '    annotations:\n      eks.amazonaws.com/role-arn: "arn:aws:iam::1:role/x"\n';
-    expect(yaml).toContain(`serviceAccount:\n  api:\n${annotation}  taskpod:\n${annotation}`);
-    expect(yaml).not.toMatch(/^s3:\n(.*\n)*? {2}existingSecret/m);
+    expect(yaml).toContain('s3:\n  region: ""  # required\n  roleArn: "arn:aws:iam::1:role/x"\n');
+    expect(yaml).not.toContain("serviceAccount:");
+    expect(yaml).not.toContain("existingSecret: poiesis-s3");
+  });
+
+  it("Google Cloud Storage writes gcs, not s3", () => {
+    const yaml = valuesYaml((config) => {
+      config.storage = "gcs";
+      config.gcsSecret = "gcs-key";
+    });
+    expect(yaml).toContain("gcs:\n  enabled: true\n  existingSecret: gcs-key\n\n");
+    expect(yaml).not.toContain("s3:");
+  });
+
+  it("Azure writes the account with a Secret or a workload identity", () => {
+    const withSecret = valuesYaml((config) => {
+      config.storage = "azure";
+      config.azureAccount = "data";
+    });
+    expect(withSecret).toContain(
+      'azure:\n  enabled: true\n  accountName: data\n  existingSecret: ""  # required\n\n',
+    );
+    const withIdentity = valuesYaml((config) => {
+      config.storage = "azure";
+      config.azureAccount = "data";
+      config.azureCredentials = "identity";
+      config.azureClientId = "c-1";
+      config.azureTenantId = "t-1";
+    });
+    expect(withIdentity).toContain("  accountName: data\n  clientId: c-1\n  tenantId: t-1\n\n");
+    expect(withIdentity).not.toContain('existingSecret: ""  # required\n\nauth');
   });
 
   it("marks every example value and only those", () => {

@@ -193,48 +193,7 @@ const SPECS = {
       },
     ],
   }),
-  storage: (config) => ({
-    title: "Storage",
-    points: [
-      "Only task inputs and outputs touch object storage.",
-      "Credentials come from your Secret, or from workload identity.",
-      "While a task runs, its files live on its own volume.",
-    ],
-    nodes: {
-      in: { x: 10, y: 30, w: 100, label: "s3://in" },
-      tif: { x: 155, y: 30, w: 110, label: "tif", sub: "stage in" },
-      vol: { x: 155, y: 115, w: 110, label: "volume" },
-      tof: { x: 155, y: 200, w: 110, label: "tof", sub: "stage out" },
-      out: { x: 310, y: 200, w: 100, label: "s3://out" },
-      cr: {
-        x: 310,
-        y: 30,
-        w: 100,
-        label: "credentials",
-        sub: config.s3Credentials === "secret" ? config.s3Secret || "Secret" : "IRSA",
-      },
-    },
-    edges: [
-      ["cr", "tif"],
-      ["in", "tif"],
-      ["tif", "vol"],
-      ["vol", "tof"],
-      ["tof", "out"],
-    ],
-    h: 260,
-    hops: [
-      { f: "cr", t: "tif", label: "AWS_*", cap: "tif gets the S3 credentials." },
-      { f: "in", t: "tif", label: "reads.fq", cap: "It downloads each input…" },
-      { f: "tif", t: "vol", label: "reads.fq", cap: "…onto the task's volume." },
-      {
-        f: "vol",
-        t: "tof",
-        label: "sorted.bam",
-        cap: "After the executors, tof picks up the outputs…",
-      },
-      { f: "tof", t: "out", label: "sorted.bam", tone: "ok", cap: "…and uploads them." },
-    ],
-  }),
+  storage: (config) => storageSpec(storeView(config)),
   volumes: () => ({
     title: "Task volumes",
     points: [
@@ -342,4 +301,68 @@ const REVIEW_SPEC = {
  */
 export function explainSpec(config, stepId) {
   return SPECS[stepId](config);
+}
+
+/** What the storage diagram shows for the chosen store. */
+function storeView(config) {
+  if (config.storage === "gcs") {
+    return {
+      scheme: "gs",
+      name: "GCS",
+      env: "GOOGLE_*",
+      credentials: config.gcsSecret || "Secret",
+    };
+  }
+  if (config.storage === "azure") {
+    const credentials =
+      config.azureCredentials === "secret" ? config.azureSecret || "Secret" : "Workload identity";
+    return { scheme: "az", name: "Azure", env: "AZURE_*", credentials };
+  }
+  const credentials = config.s3Credentials === "secret" ? config.s3Secret || "Secret" : "IRSA";
+  return { scheme: "s3", name: "S3", env: "AWS_*", credentials };
+}
+
+function storageSpec(store) {
+  return {
+    title: "Storage",
+    points: [
+      "Only task inputs and outputs touch object storage.",
+      "Credentials come from your Secret, or from workload identity.",
+      "While a task runs, its files live on its own volume.",
+    ],
+    nodes: {
+      in: { x: 10, y: 30, w: 100, label: `${store.scheme}://in` },
+      tif: { x: 155, y: 30, w: 110, label: "tif", sub: "stage in" },
+      vol: { x: 155, y: 115, w: 110, label: "volume" },
+      tof: { x: 155, y: 200, w: 110, label: "tof", sub: "stage out" },
+      out: { x: 310, y: 200, w: 100, label: `${store.scheme}://out` },
+      cr: {
+        x: 310,
+        y: 30,
+        w: 100,
+        label: "credentials",
+        sub: store.credentials,
+      },
+    },
+    edges: [
+      ["cr", "tif"],
+      ["in", "tif"],
+      ["tif", "vol"],
+      ["vol", "tof"],
+      ["tof", "out"],
+    ],
+    h: 260,
+    hops: [
+      { f: "cr", t: "tif", label: store.env, cap: `tif gets the ${store.name} credentials.` },
+      { f: "in", t: "tif", label: "reads.fq", cap: "It downloads each input…" },
+      { f: "tif", t: "vol", label: "reads.fq", cap: "…onto the task's volume." },
+      {
+        f: "vol",
+        t: "tof",
+        label: "sorted.bam",
+        cap: "After the executors, tof picks up the outputs…",
+      },
+      { f: "tof", t: "out", label: "sorted.bam", tone: "ok", cap: "…and uploads them." },
+    ],
+  };
 }

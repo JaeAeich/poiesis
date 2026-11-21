@@ -9,6 +9,11 @@ export const EXAMPLE_VALUES = Object.freeze({
   s3Region: "eu-central-1",
   s3Secret: "poiesis-s3",
   s3RoleArn: "arn:aws:iam::123456789012:role/poiesis",
+  gcsSecret: "poiesis-gcs",
+  azureAccount: "poiesisdata",
+  azureSecret: "poiesis-azure",
+  azureClientId: "11111111-2222-3333-4444-555555555555",
+  azureTenantId: "66666666-7777-8888-9999-000000000000",
   issuer: "https://keycloak.example.org/realms/poiesis",
   decisionServiceUrl: "http://opa.policy.svc:8181/access/v1/evaluation",
 });
@@ -31,10 +36,7 @@ export function fillStepExample(config, step) {
     if (config.tlsMode === "cert-manager") setExample(config, "clusterIssuer");
   }
   if (step === STEP.DATABASE) setExample(config, "databaseSecret");
-  if (step === STEP.STORAGE) {
-    setExample(config, "s3Region");
-    setExample(config, config.s3Credentials === "secret" ? "s3Secret" : "s3RoleArn");
-  }
+  if (step === STEP.STORAGE) fillStorageExample(config);
   if (step === STEP.AUTHENTICATION) {
     config.issuers.forEach((issuer, index) => {
       if (issuer.issuer || issuer.type !== "oidc") return;
@@ -44,6 +46,23 @@ export function fillStepExample(config, step) {
   }
   if (step === STEP.AUTHORIZATION && config.authzMode === "decision-service") {
     setExample(config, "decisionServiceUrl");
+  }
+}
+
+function fillStorageExample(config) {
+  if (config.storage === "gcs") {
+    setExample(config, "gcsSecret");
+  } else if (config.storage === "azure") {
+    setExample(config, "azureAccount");
+    if (config.azureCredentials === "secret") {
+      setExample(config, "azureSecret");
+    } else {
+      setExample(config, "azureClientId");
+      setExample(config, "azureTenantId");
+    }
+  } else {
+    setExample(config, "s3Region");
+    setExample(config, config.s3Credentials === "secret" ? "s3Secret" : "s3RoleArn");
   }
 }
 

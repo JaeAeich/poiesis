@@ -596,10 +596,9 @@
       ]
     },
     "allExamplesIrsaDecisionService": {
-      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    hosts:\n      - host: poiesis.example.org  # example, replace\n        paths: [{path: /, pathType: Prefix}]\n    tls:\n      - secretName: poiesis-tls\n        hosts: [poiesis.example.org]\n\ndatabase:\n  existingSecret: poiesis-db  # example, replace\n\ns3:\n  region: eu-central-1  # example, replace\n\nserviceAccount:\n  api:\n    annotations:\n      eks.amazonaws.com/role-arn: \"arn:aws:iam::123456789012:role/poiesis\"  # example, replace\n  taskpod:\n    annotations:\n      eks.amazonaws.com/role-arn: \"arn:aws:iam::123456789012:role/poiesis\"  # example, replace\n\nauth:\n  resource: https://poiesis.example.org  # example, replace\n  issuers:\n    - issuer: https://keycloak.example.org/realms/poiesis  # example, replace\n      audience: poiesis\n      tokenTypes: [JWT]  # Keycloak access tokens; other issuers default to at+jwt\n      clients: [poiesis-cli]\n\nauthz:\n  decisionService:\n    url: http://opa.policy.svc:8181/access/v1/evaluation  # example, replace\n",
+      "values": "# Poiesis values.yaml (non-default values only)\n\napi:\n  ingress:\n    enabled: true\n    hosts:\n      - host: poiesis.example.org  # example, replace\n        paths: [{path: /, pathType: Prefix}]\n    tls:\n      - secretName: poiesis-tls\n        hosts: [poiesis.example.org]\n\ndatabase:\n  existingSecret: poiesis-db  # example, replace\n\ns3:\n  region: eu-central-1  # example, replace\n  roleArn: \"arn:aws:iam::123456789012:role/poiesis\"  # example, replace\n\nauth:\n  resource: https://poiesis.example.org  # example, replace\n  issuers:\n    - issuer: https://keycloak.example.org/realms/poiesis  # example, replace\n      audience: poiesis\n      tokenTypes: [JWT]  # Keycloak access tokens; other issuers default to at+jwt\n      clients: [poiesis-cli]\n\nauthz:\n  decisionService:\n    url: http://opa.policy.svc:8181/access/v1/evaluation  # example, replace\n",
       "valuesSteps": [
-        -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 0, 4, 4,
-        4, 4, 4, 5, 5, 5, 5
+        -1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 4, 0, 4, 4, 4, 4, 4, 5, 5, 5, 5
       ],
       "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
       "installSteps": [-1, -1, -1, 1, 1, 1, -1, -1, -1],
@@ -673,14 +672,7 @@
         "",
         "<span class=\"k\">s3</span>:",
         "  <span class=\"k\">region</span>: <span class=\"s exv\">eu-central-1</span><span class=\"ex\">  # example, replace</span>",
-        "",
-        "<span class=\"k\">serviceAccount</span>:",
-        "  <span class=\"k\">api</span>:",
-        "    <span class=\"k\">annotations</span>:",
-        "      eks.amazonaws.com/role-arn: <span class=\"s exv\">&quot;arn:aws:iam::123456789012:role/poiesis&quot;</span><span class=\"ex\">  # example, replace</span>",
-        "  <span class=\"k\">taskpod</span>:",
-        "    <span class=\"k\">annotations</span>:",
-        "      eks.amazonaws.com/role-arn: <span class=\"s exv\">&quot;arn:aws:iam::123456789012:role/poiesis&quot;</span><span class=\"ex\">  # example, replace</span>",
+        "  <span class=\"k\">roleArn</span>: <span class=\"s exv\">&quot;arn:aws:iam::123456789012:role/poiesis&quot;</span><span class=\"ex\">  # example, replace</span>",
         "",
         "<span class=\"k\">auth</span>:",
         "  <span class=\"k\">resource</span>: <span class=\"s exv\">https://poiesis.example.org</span><span class=\"ex\">  # example, replace</span>",
@@ -1440,8 +1432,8 @@
       }
     },
     "irsaRole": {
-      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: pg\n  caConfigmap: pg-ca\n\ns3:\n  endpoint: https://minio.local:9000\n  region: us-east-1\n\nserviceAccount:\n  api:\n    annotations:\n      eks.amazonaws.com/role-arn: \"arn:aws:iam::999:role/x\"\n  taskpod:\n    annotations:\n      eks.amazonaws.com/role-arn: \"arn:aws:iam::999:role/x\"\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
-      "valuesSteps": [-1, -1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4],
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: pg\n  caConfigmap: pg-ca\n\ns3:\n  endpoint: https://minio.local:9000\n  region: us-east-1\n  roleArn: \"arn:aws:iam::999:role/x\"\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4],
       "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic pg \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=verify-full&sslrootcert=/etc/ssl/poiesis/ca.crt'\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
       "installSteps": [-1, -1, -1, 1, 1, 1, -1, -1, -1],
       "missing": [
@@ -1501,14 +1493,7 @@
         "<span class=\"k\">s3</span>:",
         "  <span class=\"k\">endpoint</span>: <span class=\"s\">https://minio.local:9000</span>",
         "  <span class=\"k\">region</span>: <span class=\"s\">us-east-1</span>",
-        "",
-        "<span class=\"k\">serviceAccount</span>:",
-        "  <span class=\"k\">api</span>:",
-        "    <span class=\"k\">annotations</span>:",
-        "      eks.amazonaws.com/role-arn: <span class=\"s\">&quot;arn:aws:iam::999:role/x&quot;</span>",
-        "  <span class=\"k\">taskpod</span>:",
-        "    <span class=\"k\">annotations</span>:",
-        "      eks.amazonaws.com/role-arn: <span class=\"s\">&quot;arn:aws:iam::999:role/x&quot;</span>",
+        "  <span class=\"k\">roleArn</span>: <span class=\"s\">&quot;arn:aws:iam::999:role/x&quot;</span>",
         "",
         "<span class=\"k\">auth</span>:",
         "  <span class=\"k\">issuers</span>:",
@@ -1529,8 +1514,8 @@
       ]
     },
     "irsaRoleMissing": {
-      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n\nserviceAccount:\n  api:\n    annotations:\n      eks.amazonaws.com/role-arn: \"\"  # required\n  taskpod:\n    annotations:\n      eks.amazonaws.com/role-arn: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
-      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4],
+      "values": "# Poiesis values.yaml (non-default values only)\n\ndatabase:\n  existingSecret: \"\"  # required\n\ns3:\n  region: \"\"  # required\n  roleArn: \"\"  # required\n\nauth:\n  issuers:\n    - issuer: \"\"  # required\n      audience: poiesis\n      clients: [poiesis-cli]\n",
+      "valuesSteps": [-1, -1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4],
       "install": "# 1. Secrets. The chart references them; it never creates them.\nkubectl create namespace poiesis\n\nkubectl -n poiesis create secret generic poiesis-db \\\n  --from-literal=DATABASE_URL='postgresql://poiesis:…@db:5432/poiesis?sslmode=require'\n\n# 2. Install (from a checkout until the chart is published, #53)\nhelm install poiesis ./deployment/helm/poiesis \\\n  -n poiesis -f values.yaml\n",
       "installSteps": [-1, -1, -1, 1, 1, 1, -1, -1, -1],
       "missing": [
