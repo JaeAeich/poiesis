@@ -1,3 +1,7 @@
+---
+description: Who may do what to which task - the owner rule, per-issuer claim rules, built-in admins, an AuthZEN decision service and opt-in sharing.
+---
+
 # Authorization
 
 Poiesis decides who may do what to which task in three layers, each
@@ -33,9 +37,26 @@ built-in admin, image or resource limits, GA4GH Passport visas) belongs
 in the decision service, not in Poiesis. Both need
 `auth.enabled: true`; Poiesis refuses to start otherwise.
 
-Every decision is written to the [audit log](./audit-log.md).
+Every decision is written to the [audit log](../reference/audit-log.md).
 
-![Authorization: before and after](/authz.gif)
+<FlowDiagram :spec="{
+  title: 'Three layers of authorization',
+  h: 220,
+  nodes: {
+    rq: { x: 4, y: 20, w: 104, label: 'alice', sub: 'GET task' },
+    cr: { x: 158, y: 20, w: 118, label: 'Claim rule', sub: 'groups ok?' },
+    pdp: { x: 312, y: 20, w: 104, label: 'Decision', sub: 'owner or AuthZEN' },
+    db: { x: 312, y: 140, w: 104, label: 'Task', sub: 'read' },
+    no: { x: 158, y: 140, w: 118, label: '403 / 404', sub: 'denied' }
+  },
+  edges: [['rq','cr'],['cr','pdp'],['pdp','db'],['cr','no'],['pdp','no']],
+  hops: [
+    { f: 'rq', t: 'cr', label: 'token', cap: 'An authenticated caller first meets the claim rule of its issuer, if one is set.' },
+    { f: 'cr', t: 'pdp', label: 'admitted', cap: 'Admitted: the owner rule, or the decision service, decides about this task.' },
+    { f: 'pdp', t: 'db', label: 'allow', tone: 'ok', cap: 'Allowed: only then is the task read.' },
+    { f: 'pdp', t: 'no', label: 'deny', tone: 'bad', cap: 'A denied get is 404, so foreign tasks look like missing ones.' }
+  ]
+}" />
 
 ## Configuration
 
@@ -125,8 +146,6 @@ to render while it is set, and the API refuses to start while any
 
 ## Admin
 
-![Admin and audit: before and after, case by case](/admin-audit.gif)
-
 Admin is **policy**. With a decision service, an admin is whoever it
 allows: it answers `all` and foreign `GetTask` and `CancelTask` with
 [sharing](#sharing) on, and [`RevokeApiKeys` and
@@ -178,7 +197,7 @@ any is set. `adminRead` without any issuer's `admin` rule warns too: it
 names nobody. Like `sharing`, an unrecognised `POIESIS_AUTHZ_ADMIN_READ`
 value refuses to start, and so does `adminRead` with auth disabled.
 
-The [audit log](./audit-log.md) flags with `"admin": true` every
+The [audit log](../reference/audit-log.md) flags with `"admin": true` every
 operation that only the built-in admin rule allowed.
 
 ## Decision service
@@ -223,7 +242,7 @@ Poiesis, TESK, Funnel and other TES implementations alike.
 
 - `context.tes.service_id` is the deployment's service-info `id`
   (`serviceInfo.id`, see
-  [Service info](./deploying-poiesis.md#service-info)),
+  [Service info](../guides/production.md#service-info)),
   `org.ga4gh.poiesis` unless configured. A decision service shared by
   several deployments can tell them apart by it.
 - `subject` comes from the validated token and userinfo only, never
@@ -296,7 +315,7 @@ Poiesis, TESK, Funnel and other TES implementations alike.
 - Tags and other task fields are what the client submitted, not facts.
 - Each request carries a new `X-Request-ID`, which Poiesis logs with
   the decision, next to the id of the API request that asked (its
-  `request_id` in the [audit log](./audit-log.md)).
+  `request_id` in the [audit log](../reference/audit-log.md)).
 
 Poiesis refuses to start if `claims`, `credentialFile` or `sharing` is
 set without `url`, or if `url` isn't `http(s)`.
@@ -399,8 +418,6 @@ revokes; a deny or an obligation is `403`, a failure `503`. Managing
 one's own keys (without `owner`) isn't asked.
 
 ### Sharing
-
-![tes-authzen/2 and sharing: before and after, case by case](/tes-authzen-2.gif)
 
 Tasks reference and contain data (inputs, outputs, logs, environment)
 that is usually granted to one person, so **a task is visible to its

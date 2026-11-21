@@ -182,3 +182,5 @@ SquareX Safe File Viewer
 docs/app/.vitepress/cache/
 docs/app/public/openapi.yaml
 docs/app/node_modules/
+docs/app/public/llms.txt
+docs/app/public/llms-full.txt

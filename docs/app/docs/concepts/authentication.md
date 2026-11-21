@@ -1,3 +1,7 @@
+---
+description: How Poiesis validates bearer tokens from trusted issuers - configuration, audience, token type, owners, outages, userinfo, delegation and RFC 9728 discovery.
+---
+
 # Authentication
 
 Poiesis is a **resource server**: it validates signed bearer tokens
@@ -26,7 +30,25 @@ external decision service can restrict that further; only with
 sharing turned on can a decision service show a task to anyone but
 its owner. See [Authorization](./authorization.md).
 
-![Authenticator chain: before and after, use case by use case](/auth-chain.gif)
+<FlowDiagram :spec="{
+  title: 'The authenticator chain',
+  h: 230,
+  nodes: {
+    rq: { x: 4, y: 88, w: 104, label: 'Request', sub: 'Authorization' },
+    jwt: { x: 154, y: 20, w: 118, label: 'JWT link', sub: 'iss matches' },
+    key: { x: 154, y: 88, w: 118, label: 'API key link', sub: 'poi_...' },
+    no: { x: 154, y: 160, w: 118, label: '401', sub: 'nobody claims it' },
+    ow: { x: 316, y: 88, w: 100, label: 'Caller', sub: 'issuer|sub' }
+  },
+  edges: [['rq','jwt'],['rq','key'],['rq','no'],['jwt','ow'],['key','ow']],
+  hops: [
+    { f: 'rq', t: 'jwt', label: 'eyJ...', cap: 'A JWT goes to the issuer named in its iss claim, matched exactly.' },
+    { f: 'jwt', t: 'ow', label: 'alice', tone: 'ok', cap: 'Signature, audience, token type and client pass: the caller is issuer|alice.' },
+    { f: 'rq', t: 'key', label: 'poi_7Kq', cap: 'An API key, as Bearer or as a Basic password, is looked up by its hash.' },
+    { f: 'key', t: 'ow', label: 'alice', tone: 'ok', cap: 'It acts as the owner who minted it.' },
+    { f: 'rq', t: 'no', label: 'none', tone: 'bad', cap: 'No credential, or one no link recognises: 401 with WWW-Authenticate.' }
+  ]
+}" />
 
 ## Configuration
 
@@ -329,8 +351,6 @@ issuer:
 
 ## User info
 
-![Userinfo lookup: before and after](/auth-userinfo.gif)
-
 Some IdPs release claims (e.g. group memberships such as
 `eduperson_entitlement`) at the OIDC userinfo endpoint but not in
 access tokens. With `userinfo.enabled: true` on an issuer, Poiesis
@@ -516,7 +536,7 @@ Out of Poiesis's scope, but the standard answers:
 
 - **Workflow engines**: an [API key](./api-keys.md), minted once with
   a token; engines read their credential once, and runs outlive tokens.
-  See [Workflow engines](../usage/workflow-engines.md).
+  See [Workflow engines](../guides/workflow-engines.md).
 - **CLIs and scripts**: OAuth 2.0 device flow against one of the
   configured issuers, or a token from
   [oidc-agent](https://indigo-dc.gitbook.io/oidc-agent/).
@@ -529,6 +549,7 @@ Out of Poiesis's scope, but the standard answers:
   (authorization code + PKCE for SPAs, etc.). The Swagger UI at
   `/docs` can log in this way to mint API keys; see
   [From the Swagger UI](./api-keys.md#from-the-swagger-ui).
+  For a Keycloak setup, see the [Keycloak guide](../guides/keycloak.md).
 
 Poiesis accepts any valid token from a configured issuer. The IdPs, not
 Poiesis, decide who is allowed to authenticate.

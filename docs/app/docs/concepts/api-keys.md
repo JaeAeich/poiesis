@@ -1,3 +1,7 @@
+---
+description: Long-lived poi_ keys for workflow engines - configuration, minting from the Swagger UI, curl or a CLI, scopes, revoking, offboarding and the security model.
+---
+
 # API keys
 
 Workflow engines read one credential when they start and then poll
@@ -15,9 +19,24 @@ the same tasks. Keys are the second link of the authenticator chain (see
 looks at them.
 
 For engine settings (Nextflow, Snakemake, cwl-tes, py-tes), see
-[Workflow engines](../usage/workflow-engines.md).
+[Workflow engines](../guides/workflow-engines.md).
 
-![API keys: before and after, case by case](/api-keys.gif)
+<FlowDiagram :spec="{
+  title: 'Minting and using a key',
+  h: 200,
+  nodes: {
+    u: { x: 4, y: 20, w: 104, label: 'Owner', sub: 'logs in once' },
+    api: { x: 158, y: 20, w: 104, label: 'Poiesis', sub: 'stores SHA-256' },
+    eng: { x: 312, y: 20, w: 104, label: 'Engine', sub: 'holds the key' },
+    t: { x: 158, y: 136, w: 104, label: 'Tasks', sub: 'as the owner' }
+  },
+  edges: [['u','api'],['api','eng'],['eng','t']],
+  hops: [
+    { f: 'u', t: 'api', label: 'POST /api-keys', cap: 'The owner mints a key with an OIDC token from a client allowed to mint.' },
+    { f: 'api', t: 'eng', label: 'poi_7Kq', cap: 'The key is shown once; only its SHA-256 is stored. It goes to the engine.' },
+    { f: 'eng', t: 't', label: 'Bearer poi_', tone: 'ok', cap: 'For days or weeks the engine submits and polls as the owner, until the key expires or is revoked.' }
+  ]
+}" />
 
 ## Configuration
 
@@ -257,7 +276,7 @@ delegated token gets `403`, even an admin's. With `owner`, the call is
 an admin call also when the owner is the caller's own; without it, `GET`
 lists the caller's keys as before. An `owner` that isn't
 `namespace|subject` is a `400`, and `DELETE` without `owner` a `422`.
-Both calls are in the [audit log](./audit-log.md)
+Both calls are in the [audit log](../reference/audit-log.md)
 (`apikey.revoke_owner` with the count, `apikey.list_owner`).
 
 Revoking keys doesn't stop the user's tokens: disable the user at the
@@ -332,9 +351,9 @@ What remains, and what to do about it:
 - **A key is a bearer credential**: whoever holds it can use it,
   from anywhere, until it expires or is revoked. Serve Poiesis over
   TLS only, keep keys in the engine's secret store or environment (see
-  [Workflow engines](../usage/workflow-engines.md)), not in committed
+  [Workflow engines](../guides/workflow-engines.md)), not in committed
   configuration, and mint short-lived keys for one-off runs.
-- **Deprovisioning lag**: see below.
+- **Deprovisioning lag**: see [above](#deprovisioning-lag).
 - **Request floods**: a well-formed key with a valid checksum costs one
   indexed lookup. Rate-limit at the ingress or gateway.
 
@@ -342,7 +361,7 @@ To scan for leaked keys, match `poi_[A-Za-z0-9_-]{43}[0-9A-Za-z]{6}`;
 the last 6 characters are the base62 CRC32 of the 43 before them.
 
 Every mint and revocation, refused ones included, is in the
-[audit log](./audit-log.md) with the key id, owner and client (for
+[audit log](../reference/audit-log.md) with the key id, owner and client (for
 mints also scopes and expiry), never the key; refused mints are also
 logged at `WARNING` with the reason.
 

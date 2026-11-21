@@ -1,11 +1,16 @@
-# Nextflow on Poiesis
+---
+description: Run Nextflow on Poiesis with the nf-ga4gh plugin - config, API key, S3 work directory and two complete example workflows.
+---
+
+# Nextflow end to end
 
 [Nextflow](https://www.nextflow.io/) can dispatch process tasks through
 a TES backend via the
 [`nf-ga4gh`](https://github.com/nextflow-io/nf-ga4gh) plugin. Pointed
 at Poiesis, each process becomes a TaskPod on Kubernetes.
 
-Tested with Nextflow `25.04.2`.
+This page was written against Nextflow `25.04.2`; authentication was
+checked with `25.10.4` (`nf-ga4gh` 1.5.0).
 
 ## Minimal config
 
@@ -21,7 +26,7 @@ tes.endpoint = 'http://localhost:8000/ga4gh/tes'
 The plugin appends `/v1` to the endpoint, so point it at
 `/ga4gh/tes` rather than `/ga4gh/tes/v1`.
 
-With auth on (the default), add an [API key](../deploy/api-keys.md):
+With auth on (the default), add an [API key](../concepts/api-keys.md):
 
 ```groovy
 tes.oauthToken = 'poi_k7H2pQ…'
@@ -57,7 +62,7 @@ tes.endpoint = 'http://localhost:8000/ga4gh/tes'
 ```
 
 Create the `workDir` bucket once before running anything. The
-[deployment guide](../deploy/deploying-poiesis.md#s3-inputs-and-outputs)
+[Quickstart](../start/quickstart.md#s3-inputs-and-outputs)
 shows how.
 
 Recent Nextflow versions send the AWS SDK's default checksums, which

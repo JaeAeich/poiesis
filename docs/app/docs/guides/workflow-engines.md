@@ -1,16 +1,36 @@
+---
+description: Point Nextflow, Snakemake, Sprocket, cwl-tes, py-tes or Cromwell at Poiesis - endpoints, API keys, storage and known issues, with what has been tested.
+---
+
 # Workflow engines
 
+| Engine | Status | Checked with |
+| --- | --- | --- |
+| Nextflow (`nf-ga4gh`) | Tested | Nextflow 25.10.4, `nf-ga4gh` 1.5.0 |
+| Snakemake (TES executor) | Tested | Snakemake 9.27.2, plugin 0.1.3 |
+| py-tes | Tested | 1.1.4 |
+| Sprocket | Partly tested: two workarounds | 0.34.1 |
+| cwl-tes | Partly tested: API key as Basic password only | main branch |
+| Cromwell | Not tested yet | |
+| Toil | Not tested yet | |
+
+Tested means real workflows ran end to end. Using another engine?
+[Open an issue](https://github.com/jaeaeich/poiesis/issues/new?title=Engine%20support%3A%20)
+or send a PR with the setup.
+
+## Credentials
+
 Workflow engines read one credential when they start and use it for the
-whole run. Give them a Poiesis [API key](../deploy/api-keys.md), not an
+whole run. Give them a Poiesis [API key](../concepts/api-keys.md), not an
 access token: a token expires within the hour, a key lasts as long as
 you minted it for (7 days by default, if your operator turned keys
 on).
 
 Mint a key first, from the Swagger UI at `<API URL>/docs` or with
-`curl` (see [Minting a key](../deploy/api-keys.md#minting-a-key)), and
+`curl` (see [Minting a key](../concepts/api-keys.md#minting-a-key)), and
 keep it out of version control. The examples use
 `http://localhost:8000`, the port-forwarded
-[dev stack](../deploy/deploying-poiesis.md).
+[dev stack](../start/quickstart.md).
 
 | Engine | Bearer (preferred) | Basic (key as password) |
 | --- | --- | --- |
@@ -18,10 +38,10 @@ keep it out of version control. The examples use
 | Snakemake (TES executor) | `--tes-token` | `--tes-user`, `--tes-password` |
 | cwl-tes | not usable (see below) | `--user`, `--password` |
 | py-tes | `HTTPClient(token=…)` | `HTTPClient(user=…, password=…)` |
+| Sprocket | `auth.type = "bearer"` | `auth.type = "basic"` |
 
-Checked with Nextflow 25.10.4 (`nf-ga4gh` 1.5.0), Snakemake 9.27.2
-(`snakemake-executor-plugin-tes` 0.1.3) and py-tes 1.1.4, each with
-both forms.
+Nextflow, Snakemake and py-tes were checked with both forms; Sprocket
+with both.
 
 ## Nextflow
 
@@ -60,7 +80,7 @@ tes.basicPassword = 'poi_k7H2pQ…'
 ```
 
 Set only one of the two: both write the `Authorization` header. See
-[Nextflow on Poiesis](./nextflow.md) for storage and a full example.
+[Nextflow end to end](./nextflow.md) for storage and a full example.
 
 ## Snakemake
 
@@ -140,8 +160,73 @@ print(client.get_task(task_id).state)
 `tes.HTTPClient(url, user="py-tes", password="poi_k7H2pQ…")` sends
 Basic instead. Set either `token` or `user` and `password`, not both.
 
+## Sprocket
+
+[Sprocket](https://sprocket.bio) (St. Jude's WDL engine) has a TES
+backend. Name it in `sprocket.toml` and give it the key as a bearer
+token:
+
+```toml
+[run]
+backend = "poiesis"
+
+[run.backends.poiesis]
+type = "tes"
+url = "http://localhost:8000/ga4gh/tes/v1"
+insecure = true          # needed for an http:// URL
+inputs = "s3://poiesis-test/sprocket/inputs/"
+outputs = "s3://poiesis-test/sprocket/outputs/"
+cgroup_usage = false     # see below
+
+[run.backends.poiesis.auth]
+type = "bearer"
+token = "poi_k7H2pQ…"
+
+[run.storage.s3]
+region = "us-east-1"
+endpoint = "http://localhost:9000"
+
+[run.storage.s3.auth]
+access_key_id = "admin"
+secret_access_key = "password"
+```
+
+Unlike Nextflow and Snakemake, Sprocket uses `url` as is, so it ends
+in `/ga4gh/tes/v1` (with `/ga4gh/tes`, task creation gets `404`). For
+Basic, use `type = "basic"`, any `username`, and the key as
+`password`.
+
+TaskPods don't share a file system with the host running Sprocket, so
+`inputs` and `outputs` must be S3 URLs (ending in `/`), and
+`[run.storage.s3]` must let Sprocket itself reach the same bucket:
+it uploads local `File` inputs under `inputs` and reads each task's
+`stdout`, `stderr` and output files from under `outputs`. `s3://`
+`File` inputs are passed to Poiesis as they are.
+
+Things that trip runs up:
+
+- Sprocket declares `/mnt/task/stdout` and `/mnt/task/stderr` as the
+  executor's `stdout` and `stderr` and as `FILE` outputs. Poiesis
+  doesn't write the executor's output to those paths yet, so TOF
+  fails and the task ends in `EXECUTOR_ERROR`. Until it does, start
+  each `command` with
+  `exec > /mnt/task/stdout 2> /mnt/task/stderr`.
+- With `cgroup_usage` on (the default), Sprocket adds a task volume
+  `/mnt/task/usage` and also lists it as a `DIRECTORY` output.
+  Poiesis doesn't create volume directories, so the directory is
+  missing and TOF fails. Set `cgroup_usage = false`.
+- Sprocket runs commands with `bash` by default; for images without it
+  (`alpine`), set `shell = "sh"` under `[run.task]`.
+
+Sprocket sends `ignore_error: true` and reads the exit code from the
+task log, so a task with a non-zero exit is `COMPLETE` in Poiesis and
+failed in Sprocket.
+
+Checked with Sprocket 0.34.1, bearer and Basic.
+
 ## Cromwell
 
+Not tested end to end yet. One known incompatibility is handled:
 Cromwell's TES backend tags every task with `workflow_id`,
 `root_workflow_id` and `parent_workflow_id`, which is `null` for a
 top-level workflow. TES tag values are strings, so Poiesis drops tags
@@ -162,4 +247,4 @@ revoked or expired; mint a new one. A `403` on create or cancel with
 A client that logs in by itself (to mint a key, say) needn't be told
 where: the `WWW-Authenticate` header of any `401` points to the
 deployment's metadata, which lists its issuers; see
-[Discovery](../deploy/authentication.md#discovery).
+[Discovery](../concepts/authentication.md#discovery).

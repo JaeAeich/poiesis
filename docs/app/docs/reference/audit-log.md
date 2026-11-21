@@ -1,3 +1,7 @@
+---
+description: One JSON line per authorization outcome and API key event on the API's stdout - fields, events, request ids and retention.
+---
+
 # Audit log
 
 Poiesis writes one line of JSON to the API's standard output for every
@@ -71,7 +75,7 @@ call, with:
 | Field | Meaning |
 | --- | --- |
 | `decided_by` | `builtin` (claim rule, owner rule, built-in admin, key scopes, `maxOwners`) or `decision_service`. |
-| `admin` | `true` when only the built-in [admin](./authorization.md#admin) rule allowed it (with `adminRead`), else `false`. |
+| `admin` | `true` when only the built-in [admin](../concepts/authorization.md#admin) rule allowed it (with `adminRead`), else `false`. |
 | `task_id` | The task (absent for lists, and for a create that was refused). |
 | `list_scope` | For allowed lists: `own`, `all` or `own+scope` (own tasks and those of the decision service's scope). |
 
@@ -87,7 +91,7 @@ allowed and then fails in Kubernetes is still an `allow`.
 | --- | --- | --- |
 | `apikey.mint` | A key is minted, or minting is refused | `key_id`, `scopes`, `expires_at` (allowed only) |
 | `apikey.revoke` | A caller revokes one of their keys; `deny` for a key that isn't theirs or doesn't exist | `key_id` |
-| `apikey.revoke_owner` | All keys of an owner are revoked ([offboarding](./api-keys.md#offboarding)) | `target_owner`, `count` (allowed only), `admin` |
+| `apikey.revoke_owner` | All keys of an owner are revoked ([offboarding](../concepts/api-keys.md#offboarding)) | `target_owner`, `count` (allowed only), `admin` |
 | `apikey.list_owner` | An owner's keys are listed by an admin | `target_owner`, `count` (allowed only), `admin` |
 
 They carry `decided_by` too. Refusals (a key or a delegated token
