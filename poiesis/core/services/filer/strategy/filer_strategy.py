@@ -20,6 +20,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
 from poiesis.core.constants import FILER_PVC_PATH, OUTPUT_GLOB_FALLBACK_ENV
+from poiesis.core.filer_error import OutputOutsideVolumeError
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ def assert_within_volume(path: str) -> None:
         real = os.path.realpath(entry)
         if real != volume and not real.startswith(volume + os.sep):
             shown = entry.removeprefix(FILER_PVC_PATH) or "/"
-            raise PermissionError(
+            raise OutputOutsideVolumeError(
                 f"output {shown} is a symlink that points outside the task volume"
             )
 

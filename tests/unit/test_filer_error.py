@@ -201,6 +201,24 @@ def test_output_the_executors_did_not_produce_is_the_users_error(
     assert storage == []
 
 
+def test_output_symlink_leaving_the_volume_is_the_users_error(
+    message: Path, pvc: Path, storage: list[str], tmp_path: Path
+) -> None:
+    """The executors left the link, so the task ends in EXECUTOR_ERROR."""
+    secret = tmp_path / "environ"
+    secret.write_text("DATABASE_URL=postgres://secret")
+    (pvc / "outputs").mkdir(parents=True, exist_ok=True)
+    (pvc / "outputs" / "leak").symlink_to(secret)
+    run(Tof("task", [TesOutput(url="https://example.org/up", path="/outputs/leak")]))
+    state, reason, logs = terminal(failed_pod("tof", message.read_text()))
+    assert (state, reason) == (TesState.EXECUTOR_ERROR, "Error")
+    assert logs == [
+        "container tof exited with code 1: "
+        "output /outputs/leak is a symlink that points outside the task volume"
+    ]
+    assert storage == []
+
+
 def test_directory_output_that_is_a_file_is_the_users_error(
     message: Path, pvc: Path
 ) -> None:

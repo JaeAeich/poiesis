@@ -11,8 +11,8 @@ A filer failure is the system's: storage that can't be reached, a rejected
 or expired URL, denied access, a full volume. The task ends in
 ``SYSTEM_ERROR``.
 
-A declared output the executors didn't produce is the user's
-(`MissingOutputError`). The line starts with a marker and the task ends in
+A declared output the executors didn't produce, or one that is a symlink
+leading off the volume, is the user's (`UserError`). The line starts with a marker and the task ends in
 ``EXECUTOR_ERROR``.
 
 The line is at most `MAX_BYTES` long and carries no query string and no
@@ -47,10 +47,21 @@ _QUERY_RE = re.compile(rf"\?{_QUERY_CHAR}*={_QUERY_CHAR}*")
 _USERINFO_RE = re.compile(r"(?<=://)[^/\s'\"<>@]+@")
 
 
-class MissingOutputError(FileNotFoundError):
+class UserError(Exception):
+    """Marks a filer failure that is the user's, not the system's."""
+
+
+class MissingOutputError(UserError, FileNotFoundError):
     """A declared output isn't on the task's volume as declared.
 
     The executors didn't produce it, so the failure is the user's.
+    """
+
+
+class OutputOutsideVolumeError(UserError, PermissionError):
+    """An output is a symlink that leads off the task's volume.
+
+    The executors left it there, so the failure is the user's.
     """
 
 
@@ -71,7 +82,7 @@ def describe(error: BaseException) -> str:
     The filers note which input or output they were handling (PEP 678
     ``add_note``); the notes come first.
     """
-    if isinstance(error, MissingOutputError):
+    if isinstance(error, UserError):
         return sanitise(str(error))
     message = str(error)
     parts = [
@@ -98,7 +109,7 @@ def write(cause: str, *, user_error: bool = False) -> None:
 
 def record(error: BaseException) -> None:
     """Write why the filer failed with `error` as its termination message."""
-    write(describe(error), user_error=isinstance(error, MissingOutputError))
+    write(describe(error), user_error=isinstance(error, UserError))
 
 
 def cause(terminated: Mapping[str, Any]) -> tuple[str, bool] | None:
