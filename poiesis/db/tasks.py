@@ -16,6 +16,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import asyncpg
 
 from poiesis.api.tes.models import (
@@ -40,13 +42,34 @@ class TaskView(StrEnum):
     FULL = "FULL"
 
 
+@dataclass(frozen=True, slots=True)
+class TaskScope:
+    """Tasks shared with a caller beyond their own, from a decision service.
+
+    A fixed vocabulary, turned into parameterised SQL by `list_tasks`
+    and never into a raw predicate. Each dimension that is not ``None``
+    must match (dimensions are joined by AND); within one, any value
+    matches (values are joined by OR): the task's owner is one of
+    ``owners``, its ``groups`` overlap ``groups``, its tags hold one of
+    the ``tags`` (key, value) pairs. Build one only with at least one
+    dimension, each with at least one value: an empty dimension matches
+    nothing.
+    """
+
+    owners: tuple[str, ...] | None = None
+    groups: tuple[str, ...] | None = None
+    tags: tuple[tuple[str, str], ...] | None = None
+
+
 @dataclass(slots=True)
 class ListFilters:
     """Filters and pagination cursor for `list_tasks`.
 
-    ``owner`` restricts the list to one owner. ``None`` lists every
-    task: internal call sites (workers, migrations), and the route when
-    the decision service allows the caller to list all tasks.
+    ``owner`` restricts the list to one owner's tasks and, if ``scope``
+    is set, the tasks it matches as well (``scope`` is ignored without
+    ``owner``). ``owner=None`` lists every task: internal call sites
+    (workers, migrations), and the route when the decision service
+    allows the caller to list all tasks.
     """
 
     name_prefix: str | None = None
@@ -56,18 +79,26 @@ class ListFilters:
     page_size: int = 256
     page_token: str | None = None
     owner: str | None = None
+    scope: TaskScope | None = None
 
 
 # -- writes ------------------------------------------------------------------
 
 
-async def create_task(conn: asyncpg.Connection, task: TesTask, owner: str) -> str:
+async def create_task(
+    conn: asyncpg.Connection,
+    task: TesTask,
+    owner: str,
+    groups: Sequence[str] = (),
+) -> str:
     """Persist a new task tree and return its id.
 
     Opens an internal transaction; the entire task aggregate inserts atomically.
     If `task.id` is unset, a UUID is generated. ``owner`` is the opaque
     owner id supplied by the API layer (``issuer|subject``, or the
-    anonymous sentinel when auth is disabled).
+    anonymous sentinel when auth is disabled). ``groups`` are the groups
+    the task is shared with: set by the decision service, empty unless
+    the operator enabled sharing.
     """
     task_id = task.id or str(uuid.uuid4())
     resources = task.resources or TesResources()
@@ -79,13 +110,13 @@ async def create_task(conn: asyncpg.Connection, task: TesTask, owner: str) -> st
             id, state, name, description,
             cpu_cores, preemptible, ram_gb, disk_gb, zones,
             backend_parameters, backend_parameters_strict,
-            volumes, tags, creation_time, owner
+            volumes, tags, creation_time, owner, groups
             )
             VALUES (
             $1, $2, $3, $4,
             $5, $6, $7, $8, $9,
             $10::jsonb, $11,
-            $12, $13::jsonb, $14, $15
+            $12, $13::jsonb, $14, $15, $16
             )
             """,
             uuid.UUID(task_id),
@@ -103,6 +134,7 @@ async def create_task(conn: asyncpg.Connection, task: TesTask, owner: str) -> st
             _dumps(task.tags),
             _parse_dt(task.creation_time),
             owner,
+            list(groups),
         )
 
         for idx, inp in enumerate(task.inputs or []):
@@ -368,12 +400,13 @@ async def get_task(
 async def get_task_meta(
     conn: asyncpg.Connection, task_id: str
 ) -> dict[str, Any] | None:
-    """Return a task's ``owner``, ``state`` and ``tags``, or ``None``.
+    """Return a task's ``owner``, ``state``, ``tags`` and ``groups``, or ``None``.
 
     No owner filter: the caller decides who may see the task.
     """
     row = await conn.fetchrow(
-        "SELECT owner, state, tags FROM tasks WHERE id = $1", uuid.UUID(task_id)
+        "SELECT owner, state, tags, groups FROM tasks WHERE id = $1",
+        uuid.UUID(task_id),
     )
     if row is None:
         return None
@@ -381,6 +414,7 @@ async def get_task_meta(
         "owner": row["owner"],
         "state": row["state"],
         "tags": _load_jsonb(row["tags"]) or {},
+        "groups": list(row["groups"]),
     }
 
 
@@ -419,7 +453,9 @@ async def list_tasks(
 
     tasks: list[TesTask] = []
     for r in rows:
-        full = await get_task(conn, str(r["id"]), view=view, owner=filters.owner)
+        # No owner filter: the rows already passed the visibility clause,
+        # which with a scope admits other owners' tasks too.
+        full = await get_task(conn, str(r["id"]), view=view)
         if full is not None:
             tasks.append(full)
     return tasks, next_token
@@ -432,7 +468,11 @@ def _build_filter_clauses(filters: ListFilters) -> tuple[list[str], list[Any]]:
 
     if filters.owner is not None:
         params.append(filters.owner)
-        clauses.append(f"owner = ${len(params)}")
+        visible = [f"owner = ${len(params)}"]
+        shared = _scope_clauses(filters.scope, params)
+        if shared:
+            visible.append("(" + " AND ".join(shared) + ")")
+        clauses.append("(" + " OR ".join(visible) + ")")
     if filters.name_prefix is not None:
         params.append(f"{filters.name_prefix}%")
         clauses.append(f"name LIKE ${len(params)}")
@@ -452,6 +492,28 @@ def _build_filter_clauses(filters: ListFilters) -> tuple[list[str], list[Any]]:
         params.extend([cursor[0], cursor[1]])
         clauses.append(f"(creation_time, id) < (${len(params) - 1}, ${len(params)})")
     return clauses, params
+
+
+def _scope_clauses(scope: TaskScope | None, params: list[Any]) -> list[str]:
+    """Return one clause per dimension of ``scope``; append its parameters.
+
+    Values are always bound as array parameters, never spliced in.
+    """
+    if scope is None:
+        return []
+    clauses: list[str] = []
+    if scope.owners is not None:
+        params.append(list(scope.owners))
+        clauses.append(f"owner = ANY(${len(params)}::text[])")
+    if scope.groups is not None:
+        params.append(list(scope.groups))
+        clauses.append(f"groups && ${len(params)}::text[]")
+    if scope.tags is not None:
+        # One single-pair object per (key, value): `@>` matches a task
+        # whose tags hold that pair, ANY joins the pairs by OR.
+        params.append([json.dumps({key: value}) for key, value in scope.tags])
+        clauses.append(f"tags @> ANY(${len(params)}::jsonb[])")
+    return clauses
 
 
 def _encode_page_token(creation_time: datetime, task_id: uuid.UUID) -> str:
