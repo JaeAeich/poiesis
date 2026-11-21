@@ -211,9 +211,12 @@ Kubernetes env-var limit); use a mounted ConfigMap for very large sets.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `networkPolicy.enabled` | `false` | Render NetworkPolicies for the API and TCtl. |
-| `networkPolicy.ingressFromPodSelector` | `{}` | Further pods (besides the release's own) allowed to reach the API. |
-| `networkPolicy.extraEgress` | `[]` | Extra egress rules for the API and TCtl. |
+| `networkPolicy.enabled` | `false` | Render NetworkPolicies for the API and TCtl. They may reach DNS, any address on TCP 443 and 6443, and Postgres; the API accepts traffic on 8000 from the release's own Pods and the peers below. |
+| `networkPolicy.databaseEgress.port` | `5432` | Postgres port. |
+| `networkPolicy.databaseEgress.to` | `[]` | NetworkPolicy peers where Postgres is (`ipBlock`, `namespaceSelector`, `podSelector`); empty is any address. `databaseEgress: null` drops the rule. |
+| `networkPolicy.ingressFrom` | `[]` | Peers allowed to reach the API, e.g. the ingress controller's namespace. |
+| `networkPolicy.ingressFromPodSelector` | `{}` | Labels of further Pods in the release namespace allowed to reach the API. |
+| `networkPolicy.extraEgress` | `[]` | Extra egress rules for the API and TCtl, e.g. an issuer or S3 endpoint on another port. |
 
 ## migrations
 

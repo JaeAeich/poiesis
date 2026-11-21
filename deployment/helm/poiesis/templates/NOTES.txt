@@ -80,6 +80,15 @@ Then:
   curl http://localhost:{{ .Values.api.service.port }}/ga4gh/tes/v1/service-info
 {{- end }}
 
+{{- with .Values.networkPolicy }}
+{{- if and .enabled $.Values.api.ingress.enabled (not .ingressFrom) (not .ingressFromPodSelector) }}
+
+NetworkPolicy: the API accepts traffic from this release's Pods only. If the
+ingress controller runs in another namespace, list it in
+networkPolicy.ingressFrom or the Ingress cannot reach the API.
+{{- end }}
+{{- end }}
+
 Verify the deploy:
 
   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

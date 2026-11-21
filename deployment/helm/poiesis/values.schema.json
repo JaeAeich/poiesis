@@ -264,8 +264,18 @@
       "additionalProperties": false,
       "properties": {
         "enabled":                { "type": "boolean" },
+        "databaseEgress": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["port"],
+          "properties": {
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "to":   { "type": "array", "items": { "type": "object" } }
+          }
+        },
+        "ingressFrom":            { "type": "array", "items": { "type": "object" } },
         "ingressFromPodSelector": { "type": "object" },
-        "extraEgress":            { "type": "array" }
+        "extraEgress":            { "type": "array", "items": { "type": "object" } }
       }
     },
 

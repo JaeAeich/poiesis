@@ -96,6 +96,25 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
   with the namespace's PodSecurity admission level.
 - `networkPolicy.enabled`, and restrict egress from the task
   namespace: `tof` and executors can reach whatever host a URL names.
+  The policies cover the API and TCtl. They allow DNS, TCP 443 and
+  6443 to any address, and Postgres on `networkPolicy.databaseEgress.port`
+  (default `5432`, to any address). Narrow Postgres with
+  `databaseEgress.to`, and add an issuer or S3 endpoint on another port
+  with `networkPolicy.extraEgress`.
+- With an ingress controller in another namespace, allow it to reach
+  the API:
+
+  ```yaml
+  networkPolicy:
+    enabled: true
+    ingressFrom:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: ingress-nginx
+  ```
+
+  The migration hook isn't selected by the policies; under a default-deny
+  policy of your own, allow it to reach Postgres too.
 - Rate-limit at the ingress or gateway: Poiesis doesn't.
 - Split tasks into their own namespace with `taskpods.namespace` if
   you want them apart from the control plane. The API and TCtl stay in

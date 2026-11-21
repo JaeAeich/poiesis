@@ -167,6 +167,22 @@ built-in value; invalid values stop the API from starting.
 | `imagePullSecrets`   | list   | `[]`         | Propagated to every chart component and every TaskPod. |
 | `database.caConfigmap` | string | `""`       | ConfigMap (key `ca.crt`) mounted at `/etc/ssl/poiesis` for Postgres TLS. |
 
+### NetworkPolicy (`networkPolicy`)
+
+With `networkPolicy.enabled`, the API and tctl Pods may reach DNS, any
+address on TCP 443 and 6443 (Kubernetes API, S3, issuers) and Postgres.
+The API accepts traffic on 8000 from this release's Pods and the peers
+below only. The migration hook and TaskPods are not selected.
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `networkPolicy.enabled` | bool | `false` | Render the API and tctl NetworkPolicies. |
+| `networkPolicy.databaseEgress.port` | integer | `5432` | Postgres port the API and tctl may reach. |
+| `networkPolicy.databaseEgress.to` | list | `[]` | NetworkPolicy peers (`ipBlock`, `namespaceSelector`, `podSelector`) where Postgres is. Empty: any address. `databaseEgress: null` drops the rule. |
+| `networkPolicy.ingressFrom` | list | `[]` | Peers allowed to reach the API, e.g. a `namespaceSelector` for the ingress controller's namespace. |
+| `networkPolicy.ingressFromPodSelector` | object | `{}` | Labels of further Pods in the release namespace allowed to reach the API. |
+| `networkPolicy.extraEgress` | list | `[]` | Extra egress rules, e.g. an issuer or S3 endpoint on another port. |
+
 ### Unschedulable timeout (`tctl.unschedulableTimeoutSeconds`)
 
 | Path | Type | Default | Description |
