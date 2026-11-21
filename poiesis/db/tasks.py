@@ -275,13 +275,7 @@ async def get_task(
         return None
 
     if view is TaskView.MINIMAL:
-        return TesTask(
-            id=str(task_row["id"]),
-            state=TesState(task_row["state"]),
-            executors=[],
-            # Else the model's default, the time of this request, is shown.
-            creation_time=_format_dt(task_row["creation_time"]),
-        )
+        return _minimal_task(task_row)
 
     children = await _fetch_children(conn, [task_uuid])
     return _build_task(task_row, children, task_uuid, view)
@@ -340,16 +334,29 @@ async def list_tasks(
         rows = rows[: filters.page_size]
 
     if view is TaskView.MINIMAL:
-        return [
-            TesTask(id=str(r["id"]), state=TesState(r["state"]), executors=[])
-            for r in rows
-        ], next_token
+        return [_minimal_task(r) for r in rows], next_token
 
     # One query per child table for the whole page, not per task. No
     # owner filter: the rows already passed the visibility clause, which
     # with a scope admits other owners' tasks too.
     children = await _fetch_children(conn, [r["id"] for r in rows])
     return [_build_task(r, children, r["id"], view) for r in rows], next_token
+
+
+def _minimal_task(task_row: asyncpg.Record) -> TesTask:
+    """Map a task row to the MINIMAL view: its id and state only.
+
+    TES: "Task message will include ONLY the fields: tesTask.Id,
+    tesTask.State". `executors` is required by the schema, so it is an
+    empty list.
+    """
+    return TesTask(
+        id=str(task_row["id"]),
+        state=TesState(task_row["state"]),
+        executors=[],
+        # Explicitly None: the model's default is the time of this request.
+        creation_time=None,
+    )
 
 
 @dataclass(slots=True)

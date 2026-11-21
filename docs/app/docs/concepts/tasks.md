@@ -138,8 +138,10 @@ executor, its `size_bytes` and the `url` it was uploaded to. A
 `DIRECTORY` or glob output gives one entry per file. See
 [Output file logs](./storage.md#output-file-logs).
 
-The `BASIC` view leaves `stdout`, `stderr` and `system_logs` out;
-`MINIMAL` has no logs.
+The `BASIC` view leaves `stdout`, `stderr` and `system_logs` out.
+`MINIMAL`, the default of `GetTask` and `ListTasks`, holds only `id` and
+`state`, plus `executors` as an empty list because the schema requires
+it.
 `system_logs` holds lines from Poiesis itself, such as a non-zero exit of
 `tif` or `tof` with its [cause](./storage.md#staging-failures). TRec
 stopping when the Pod ends isn't one: Kubernetes
