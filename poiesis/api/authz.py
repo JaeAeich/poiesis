@@ -214,8 +214,14 @@ class Authz:
         settings: AuthzSettings,
         issuers: Sequence[IssuerSettings] = (),
         client: httpx.AsyncClient | None = None,
+        service_id: str | None = None,
     ) -> None:
-        """Read the settings; open a client if a decision service is set."""
+        """Read the settings; open a client if a decision service is set.
+
+        ``service_id`` is this deployment's service-info ``id``, sent as
+        ``context.tes.service_id`` (default: the built-in one).
+        """
+        self._service_id = service_id or get_poiesis_api_constants().SERVICE_ID
         # By issuer, not by namespace: issuers sharing a namespace may
         # still admit differently.
         self._rules = {
@@ -536,7 +542,7 @@ class Authz:
             "context": {
                 "tes": {
                     "profile": PROFILE,
-                    "service_id": get_poiesis_api_constants().SERVICE_ID,
+                    "service_id": self._service_id,
                 }
             },
         }

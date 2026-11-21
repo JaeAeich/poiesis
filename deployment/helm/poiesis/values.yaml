@@ -291,6 +291,33 @@ authz:
 audit:
   enabled: true
 
+# GA4GH service info (GET /service-info): how registries and clients tell
+# this deployment apart. Empty keeps the built-in value; `environment` is
+# then left out and `createdAt` is the time of the request. `version` is
+# always the Poiesis version, `type.version` the TES version. Invalid
+# values stop the API from starting.
+serviceInfo:
+  # Unique id of this deployment, reverse domain name recommended, e.g.
+  # org.example.tes.prod. Also sent to the decision service as
+  # context.tes.service_id. Built-in: org.ga4gh.poiesis.
+  id: ""
+  # Human-readable name and description.
+  name: ""
+  description: ""
+  # Who runs this deployment; `url` is an http(s) URL.
+  organization:
+    name: ""
+    url: ""
+  # http(s) URL of a contact form, or mailto:<address>.
+  contactUrl: ""
+  # http(s) URL of the documentation for this deployment's users.
+  documentationUrl: ""
+  # E.g. prod, test, dev or staging.
+  environment: ""
+  # When first deployed: ISO 8601 with a UTC offset, e.g.
+  # 2026-01-15T09:00:00Z.
+  createdAt: ""
+
 # S3-compatible storage. Optional: required only when task inputs/outputs
 # reference s3:// URLs.
 s3:

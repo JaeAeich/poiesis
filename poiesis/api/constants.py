@@ -15,8 +15,9 @@ class PoiesisApiConstants:
             implementor-specific but compliant edits.
         TES_VERSION: TES API version implemented.
         BASE_PATH: URL prefix the FastAPI router is mounted under.
-        SERVICE_ID: The service-info ``id``, also sent to the decision
-            service as ``context.tes.service_id``.
+        SERVICE_ID: The default service-info ``id``, also sent to the
+            decision service as ``context.tes.service_id``; a deployment
+            sets its own with ``POIESIS_SERVICE_INFO_ID``.
     """
 
     SPEC_GIT_HASH = "c4c17c9"

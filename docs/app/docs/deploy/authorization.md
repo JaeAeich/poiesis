@@ -221,6 +221,11 @@ Poiesis, TESK, Funnel and other TES implementations alike.
 }
 ```
 
+- `context.tes.service_id` is the deployment's service-info `id`
+  (`serviceInfo.id`, see
+  [Service info](./deploying-poiesis.md#service-info)),
+  `org.ga4gh.poiesis` unless configured. A decision service shared by
+  several deployments can tell them apart by it.
 - `subject` comes from the validated token and userinfo only, never
   from request headers or the body. `iss` is the token's (configured)
   issuer and `sub` its `sub` claim. `client_id` is the token's `azp`
