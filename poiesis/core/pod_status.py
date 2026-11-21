@@ -335,6 +335,42 @@ def pod_terminated_terminal(
     return TesState.EXECUTOR_ERROR, pod_reason
 
 
+def job_deadline_terminal(
+    job: Mapping[str, Any],
+) -> tuple[TesState, str, str] | None:
+    """Terminal state, reason and system log line for a Job past its deadline.
+
+    When a Job's `activeDeadlineSeconds` runs out, the Job controller
+    deletes the Pod and sets a `Failed` condition with reason
+    `DeadlineExceeded` on the Job (newer clusters set `FailureTarget`
+    first, while the Pod is still terminating). The Pod itself carries no
+    such reason: it is gone, or seen `Failed` with a killed executor. So
+    the Job is the only place the cause can be read.
+
+    Args:
+        job: A Job as a dict, from `to_dict()` (snake_case) or a raw
+            payload (camelCase).
+
+    Returns:
+        `(SYSTEM_ERROR, "DeadlineExceeded", log line)` when the Job hit its
+        deadline, else None.
+    """
+    conditions = (job.get("status") or {}).get("conditions") or []
+    if not any(
+        cond.get("type") in {"Failed", "FailureTarget"}
+        and str(cond.get("status")) == "True"
+        and cond.get("reason") == PodTerminationReason.DEADLINE_EXCEEDED.value
+        for cond in conditions
+    ):
+        return None
+    spec = job.get("spec") or {}
+    seconds = spec.get("active_deadline_seconds", spec.get("activeDeadlineSeconds"))
+    line = "task exceeded its time limit"
+    if seconds is not None:
+        line += f" of {seconds} seconds"
+    return TesState.SYSTEM_ERROR, PodTerminationReason.DEADLINE_EXCEEDED.value, line
+
+
 def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
     """Map a Pod's status to one of `PodTerminationReason.*.value`.
 

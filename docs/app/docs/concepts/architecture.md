@@ -66,7 +66,9 @@ tasks in Postgres. It has three jobs:
   older than 5 minutes becomes `SYSTEM_ERROR` (an image that can't be
   pulled). A Pod that is never scheduled (unbindable PVC, no fitting
   node) has no `startTime`; it ends when the Job's
-  `activeDeadlineSeconds` (one hour) runs out.
+  `activeDeadlineSeconds` runs out (`taskpods.activeDeadlineSeconds`,
+  one hour by default; never, if that is `null`). See
+  [Time limit](./tasks.md#time-limit).
 
 TCtl is on every path: TRec never finalises a task, clean runs included.
 

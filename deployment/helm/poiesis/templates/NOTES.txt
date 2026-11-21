@@ -15,6 +15,12 @@ Per-task storage:
   retention:      {{ .Values.taskpods.persistence.retainAfterSeconds }}s after Job completion
 {{- end }}
 
+{{- if kindIs "invalid" .Values.taskpods.activeDeadlineSeconds }}
+Task time limit:  none
+{{- else }}
+Task time limit:  {{ .Values.taskpods.activeDeadlineSeconds | int64 }}s (tasks running longer are stopped)
+{{- end }}
+
 TaskPod extensions:
   extraEnv:           {{ len .Values.taskpods.extraEnv }}
   extraVolumes:       {{ len .Values.taskpods.extraVolumes }}

@@ -486,6 +486,14 @@ taskpods:
     # Job and PVC until manually deleted (audit-retention deployments).
     retainAfterSeconds: 3600
 
+  # Time limit of a task, in seconds: activeDeadlineSeconds on the per-task
+  # Job, counted from the Job's creation, so time spent waiting for a node
+  # or pulling images counts. Kubernetes stops a task that runs longer and
+  # the task fails. Integer >= 1.
+  # null → no limit. A task whose Pod can never be scheduled then stays
+  # QUEUED until it is cancelled.
+  activeDeadlineSeconds: 3600
+
   # What TOF does when an output glob (e.g. /outputs/*.vcf) matches no file.
   #   false → uploads nothing for that output and logs a warning.
   #   true  → uploads every file under the output's path_prefix instead, for

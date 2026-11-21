@@ -52,6 +52,16 @@ data:
   POIESIS_JOB_TTL_SECONDS: {{ .Values.taskpods.persistence.retainAfterSeconds | quote }}
   {{- end }}
 
+  # ---- Time limit ------------------------------------------------------------
+  # activeDeadlineSeconds: nil → null sentinel reaches the runtime as None and
+  # activeDeadlineSeconds is omitted from the Job entirely (no limit).
+  {{- if kindIs "invalid" .Values.taskpods.activeDeadlineSeconds }}
+  POIESIS_ACTIVE_DEADLINE_SECONDS: "null"
+  {{- else }}
+  # int64: a large number from a values file is a float, quoted as "1e+07".
+  POIESIS_ACTIVE_DEADLINE_SECONDS: {{ .Values.taskpods.activeDeadlineSeconds | int64 | quote }}
+  {{- end }}
+
   # ---- Outputs ---------------------------------------------------------------
   # Whether an output glob that matches no file uploads its path_prefix.
   POIESIS_OUTPUT_GLOB_FALLBACK: {{ .Values.taskpods.outputGlobFallback | default false | quote }}
