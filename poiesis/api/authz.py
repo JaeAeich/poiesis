@@ -85,9 +85,10 @@ PROFILE = "tes-authzen/2"
 _SCOPE_DIMENSIONS = frozenset({"owners", "groups", "tags"})
 #: A leading RFC 3986 scheme and ``://`` (ASCII only, unlike ``\w``).
 _SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
-#: The resource type of an owner's API keys, for the decision service:
-#: a Poiesis extension of the profile (keys aren't TES).
-API_KEYS_RESOURCE = "poiesis_api_keys"
+#: The resource type of an owner's set of API keys, for the decision
+#: service: a Poiesis extension of the profile (keys aren't TES). A type
+#: name, not a secret.
+OWNER_ACCESS_TYPE = "poiesis_api_keys"
 #: Audit events of the owner-wide key actions.
 _KEY_EVENTS = {
     "RevokeApiKeys": "apikey.revoke_owner",
@@ -459,7 +460,7 @@ class Authz:
                 return Grant(BUILTIN, admin=True)
             _audit(event, principal, DENY, BUILTIN, target_owner=owner)
             raise ForbiddenError("only admins may list or revoke keys by owner")
-        resource = {"type": API_KEYS_RESOURCE, "id": owner}
+        resource = {"type": OWNER_ACCESS_TYPE, "id": owner}
         with _errors_audited(event, principal, target_owner=owner):
             decision = await self._ask(principal, action, resource)
         if not decision.allow:
