@@ -125,6 +125,8 @@ to render while it is set, and the API refuses to start while any
 
 ## Admin
 
+![Admin and audit: before and after, case by case](/admin-audit.gif)
+
 Admin is **policy**. With a decision service, an admin is whoever it
 allows: it answers `all` and foreign `GetTask` and `CancelTask` with
 [sharing](#sharing) on, and [`RevokeApiKeys` and
