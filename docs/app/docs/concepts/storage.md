@@ -217,6 +217,26 @@ Responses:
 - The URL is stored with the task, including any signature in its query
   string, so issue presigned URLs with a short expiry.
 
+## Output file logs
+
+Once every output is uploaded, `tof` stores one entry per uploaded file
+in the task's `logs[].outputs`, shown in the `BASIC` and `FULL` views:
+
+| Field | Value |
+| --- | --- |
+| `path` | The file's path in the executor, e.g. `/outputs/dir/a.txt`. |
+| `size_bytes` | The file's size, as a string. |
+| `url` | Where the file was uploaded, without the URL's query string or fragment. |
+
+- A `DIRECTORY` or glob output gives one entry per file under it, each
+  with the URL that file went to.
+- The query of a presigned URL is its signature, so it is not stored in
+  the entry. The output's own `url` in `outputs[]` keeps it, as submitted.
+- A `tof` that runs again replaces the entries; it doesn't add more.
+- If `tof` can't store the entries, it fails and the task ends in
+  `SYSTEM_ERROR`, though its files are uploaded: a `COMPLETE` task
+  always has its file list.
+
 ## Staging failures
 
 When `tif` or `tof` fails, the task's `system_logs` say why. The filer
@@ -234,7 +254,7 @@ are cut from it, since the query of a presigned URL is its signature.
 | --- | --- |
 | Storage unreachable, a `5xx`, a timeout | `SYSTEM_ERROR` |
 | Access denied, an expired or rejected URL, a missing input | `SYSTEM_ERROR` |
-| A full task volume, or the task can't be read from the database | `SYSTEM_ERROR` |
+| A full task volume, or the task can't be read from or its output file logs written to the database | `SYSTEM_ERROR` |
 | A declared output the executors didn't produce | `EXECUTOR_ERROR` |
 
 The rule: a failed filer is `SYSTEM_ERROR`, because no executor failed.

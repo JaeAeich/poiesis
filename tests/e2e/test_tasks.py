@@ -105,13 +105,13 @@ def test_s3_input_and_output_round_trip(tes: Tes) -> None:
     assert s3_get(f"{prefix}/out.txt") == "FROM S3\n"
 
 
-@pytest.mark.xfail(strict=True, reason="#166: logs[].outputs is never written")
 def test_output_log_lists_uploaded_files(tes: Tes) -> None:
     """The task log lists each uploaded output (TES OutputFileLog)."""
     task, _, url_out = s3_round_trip(tes)
 
     outputs = task["logs"][-1]["outputs"]
     assert [o["url"] for o in outputs] == [url_out]
+    assert [(o["path"], o["size_bytes"]) for o in outputs] == [("/data/out.txt", "8")]
 
 
 def test_list_paginates_and_filters_by_tag(tes: Tes) -> None:

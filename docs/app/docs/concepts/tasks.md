@@ -132,6 +132,11 @@ files and then `exec`s the command:
   TRec missed, has no access to task volumes and stores only the
   container log.
 
+`logs[].outputs` lists each file `tof` uploaded: its `path` in the
+executor, its `size_bytes` and the `url` it was uploaded to. A
+`DIRECTORY` or glob output gives one entry per file. See
+[Output file logs](./storage.md#output-file-logs).
+
 The `BASIC` view leaves `stdout`, `stderr` and `system_logs` out;
 `MINIMAL` has no logs.
 `system_logs` holds lines from Poiesis itself, such as a non-zero exit of

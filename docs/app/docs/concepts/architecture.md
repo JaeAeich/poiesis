@@ -113,7 +113,7 @@ TCtl is on every path: TRec never finalises a task, clean runs included.
 | --- | --- |
 | `tasks` | The canonical task row, with `owner` and `groups`. |
 | `task_inputs`, `task_outputs`, `task_executors` | Typed children: a relational TES schema. |
-| `task_logs` | One row per attempt: `system_logs[]`, metadata, timestamps. |
+| `task_logs` | One row per attempt: `system_logs[]`, metadata, timestamps, and the [files `tof` uploaded](./storage.md#output-file-logs) (`outputs`). |
 | `executor_logs` | One row per executor exit: start, end, exit code, output tail. |
 | `api_keys` | [API keys](./api-keys.md): SHA-256 hashes and metadata, never keys. |
 
