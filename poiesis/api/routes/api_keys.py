@@ -151,7 +151,7 @@ def mint_refusal(
     if issuer is None or issuer.key_minting is None:
         return "tokens of this issuer can't mint API keys"
     minting = issuer.key_minting
-    client = principal.claims.get("azp") or principal.claims.get("client_id")
+    client = principal.client
     if client not in minting.clients:
         return f"tokens of client {str(client)[:100]!r} can't mint API keys"
     if minting.max_auth_age is not None:
@@ -231,7 +231,7 @@ async def create_api_key(
         "API key %s minted for %s by client %s: scopes %s, expires %s",
         record.id,
         principal.owner,
-        principal.claims.get("azp") or principal.claims.get("client_id"),
+        principal.client,
         ",".join(record.scopes),
         record.expires_at.isoformat(),
     )

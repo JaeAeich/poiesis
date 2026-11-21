@@ -1,4 +1,4 @@
-"""Tests for authorization: the claim rule and the decision service hook.
+"""Tests for authorization: the claim rules and the decision service hook.
 
 The TES routes run in a real app with real token validation (fake
 issuer, see `fake_issuer.py`), an in-memory task store instead of
@@ -14,11 +14,11 @@ import os
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 import pytest
-from fake_issuer import AUDIENCE, ISSUER, Issuer, Network
+from fake_issuer import AUDIENCE, ISSUER, OTHER_ISSUER, Issuer, Network
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -190,18 +190,24 @@ class Env:
             ENTITLEMENT: [MEMBER],
         }
 
-    def start(self, **settings: Any) -> TestClient:
-        """Build the app with `AuthzSettings(**settings)`; return a client."""
-        issuer = IssuerSettings(
-            issuer=ISSUER, audience=AUDIENCE, userinfo={"enabled": True}
+    def start(
+        self, issuer: dict[str, Any] | None = None, **settings: Any
+    ) -> TestClient:
+        """Build the app with `AuthzSettings(**settings)`; return a client.
+
+        `issuer` adds (camelCase) settings to the fake issuer's entry.
+        """
+        entry = IssuerSettings.model_validate(
+            {"issuer": ISSUER, "audience": AUDIENCE, "userinfo": {"enabled": True}}
+            | (issuer or {})
         )
-        oidc = JWTAuthenticator([issuer])
+        oidc = JWTAuthenticator([entry])
         asyncio.run(oidc.start())
         app = FastAPI()
         app.add_exception_handler(APIError, handle_api_exception)
         app.include_router(tasks_routes.router, prefix="/ga4gh/tes/v1")
         app.state.authenticators = [oidc]
-        app.state.authz = Authz(AuthzSettings(**settings))
+        app.state.authz = Authz(AuthzSettings(**settings), [entry])
         self.pool = Pool()
         app.dependency_overrides[get_db_pool] = lambda: self.pool
         app.dependency_overrides[get_k8s] = K8s
@@ -211,13 +217,20 @@ class Env:
         token = self.issuer.token(**self.claims)
         return TestClient(app, headers={"Authorization": f"Bearer {token}"})
 
-    def pdp_on(self, **settings: Any) -> TestClient:
+    def pdp_on(
+        self, issuer: dict[str, Any] | None = None, **settings: Any
+    ) -> TestClient:
         """Start with the stub decision service and the entitlement allowlisted."""
         defaults = {
             "decision_service_url": PDP,
             "decision_service_claims": (ENTITLEMENT,),
         }
-        return self.start(**defaults | settings)
+        return self.start(issuer, **defaults | settings)
+
+
+def rule(name: str = ENTITLEMENT, **match: Any) -> dict[str, Any]:
+    """Return issuer settings with a `requiredClaim` on `name`."""
+    return {"requiredClaim": {"name": name} | match}
 
 
 @pytest.fixture
@@ -276,19 +289,25 @@ def test_strip_url(case: dict[str, Any]) -> None:
 # -- claim rule ------------------------------------------------------------------
 
 
-def gate(claims: dict[str, Any], **rule: Any) -> bool:
-    """Whether the claim rule admits a principal with `claims`."""
-    settings = {"required_claim_name": ENTITLEMENT} | rule
+def gate(claims: dict[str, Any], name: str = ENTITLEMENT, **match: Any) -> bool:
+    """Whether the issuer's claim rule on `name` admits a principal with `claims`.
+
+    Without `match` the issuer has no rule.
+    """
+    entry = {"issuer": ISSUER, "audience": AUDIENCE} | (
+        rule(name, **match) if match else {}
+    )
+    issuers = [IssuerSettings.model_validate(entry)]
     try:
         principal = Principal(issuer=ISSUER, subject="a", via="oidc", claims=claims)
-        Authz(AuthzSettings(**settings)).gate(principal)
+        Authz(AuthzSettings(), issuers).gate(principal)
     except APIError:
         return False
     return True
 
 
 class TestClaimRule:
-    """The claim rule: exact values or raw prefixes, on a string or list."""
+    """A claim rule: exact values or raw prefixes, on a string or list."""
 
     @pytest.mark.parametrize(
         ("value", "admitted"),
@@ -305,7 +324,7 @@ class TestClaimRule:
     )
     def test_values(self, value: Any, *, admitted: bool) -> None:
         """Exact values match a string or any list element; other types deny."""
-        assert gate({ENTITLEMENT: value}, required_claim_values=("a",)) is admitted
+        assert gate({ENTITLEMENT: value}, values=["a"]) is admitted
 
     @pytest.mark.parametrize(
         ("value", "admitted"),
@@ -313,13 +332,11 @@ class TestClaimRule:
     )
     def test_prefixes(self, value: str, *, admitted: bool) -> None:
         """Prefixes are raw: the delimiter is part of the prefix."""
-        assert gate({ENTITLEMENT: [value]}, required_claim_prefixes=("urn:g:vo:",)) is (
-            admitted
-        )
+        assert gate({ENTITLEMENT: [value]}, prefixes=["urn:g:vo:"]) is admitted
 
-    def test_off_without_name(self) -> None:
-        """No claim name, no rule."""
-        assert gate({}, required_claim_name="")
+    def test_off_without_rule(self) -> None:
+        """An issuer without a rule admits its principals."""
+        assert gate({})
 
     @pytest.mark.parametrize(
         ("name", "claims"),
@@ -330,7 +347,88 @@ class TestClaimRule:
     )
     def test_names(self, name: str, claims: dict[str, Any]) -> None:
         """The claim is found by dotted path or by exact (URI) name."""
-        assert gate(claims, required_claim_name=name, required_claim_values=("a",))
+        assert gate(claims, name, values=["a"])
+
+
+def judge(
+    network: Network, other_rule: dict[str, Any], *tokens: tuple[str, dict[str, Any]]
+) -> list[bool]:
+    """Authenticate tokens of two issuers and gate them; whether each passes.
+
+    The fake issuer requires the entitlement `MEMBER`; the other issuer
+    has `other_rule` (camelCase settings). `tokens` are (issuer, claims).
+    """
+    fakes = {
+        ISSUER: network.add(Issuer()),
+        OTHER_ISSUER: network.add(Issuer(OTHER_ISSUER)),
+    }
+    entries = [
+        IssuerSettings.model_validate(
+            {"issuer": ISSUER, "audience": AUDIENCE} | rule(values=[MEMBER])
+        ),
+        IssuerSettings.model_validate(
+            {"issuer": OTHER_ISSUER, "audience": AUDIENCE} | other_rule
+        ),
+    ]
+    authz = Authz(AuthzSettings(), entries)
+
+    async def main() -> list[bool]:
+        oidc = JWTAuthenticator(entries)
+        await oidc.start()
+        results = []
+        try:
+            for iss, claims in tokens:
+                token = fakes[iss].token(**claims)
+                request: Any = SimpleNamespace(
+                    headers={"authorization": f"Bearer {token}"}
+                )
+                principal = await oidc.authenticate(request)
+                assert principal is not None
+                try:
+                    authz.gate(principal)
+                except APIError:
+                    results.append(False)
+                else:
+                    results.append(True)
+        finally:
+            await oidc.aclose()
+        return results
+
+    return asyncio.run(main())
+
+
+class TestRulePerIssuer:
+    """A claim rule binds to its issuer: (`iss`, claim, value), never the value."""
+
+    member: ClassVar = {ENTITLEMENT: [MEMBER]}
+
+    def test_other_issuer_copying_the_value(self, network: Network) -> None:
+        """Another issuer's token with the value is judged by that issuer's rule.
+
+        The other issuer has no rule: its tokens are admitted with or
+        without the value. With a rule of its own, the copied value
+        doesn't help.
+        """
+        assert judge(network, {}, (OTHER_ISSUER, self.member), (OTHER_ISSUER, {})) == [
+            True,
+            True,
+        ]
+        assert judge(
+            network,
+            rule(values=["urn:other"]),
+            (OTHER_ISSUER, self.member),
+            (OTHER_ISSUER, {ENTITLEMENT: ["urn:other"]}),
+        ) == [False, True]
+
+    def test_own_issuer(self, network: Network) -> None:
+        """The rule's own issuer needs the value; others' values don't count."""
+        assert judge(
+            network,
+            rule(values=["urn:other"]),
+            (ISSUER, self.member),
+            (ISSUER, {}),
+            (ISSUER, {ENTITLEMENT: ["urn:other"]}),
+        ) == [True, False, False]
 
 
 # -- startup checks ---------------------------------------------------------------
@@ -338,11 +436,7 @@ class TestClaimRule:
 
 @pytest.mark.parametrize(
     "settings",
-    [
-        {"decision_service_url": PDP},
-        {"required_claim_name": "g", "required_claim_values": ("a",)},
-        {"decision_service_claims": ("g",)},
-    ],
+    [{"decision_service_url": PDP}, {"decision_service_claims": ("g",)}],
 )
 def test_refused_without_auth(settings: dict[str, Any]) -> None:
     """Authorization settings with auth disabled refuse to start."""
@@ -351,19 +445,50 @@ def test_refused_without_auth(settings: dict[str, Any]) -> None:
 
 
 @pytest.mark.parametrize(
-    "settings",
+    ("claim_rule", "message"),
     [
-        {"required_claim_name": "g"},
-        {"required_claim_values": ("a",)},
-        {"required_claim_name": "g", "required_claim_prefixes": ("",)},
-        {"required_claim_name": "g", "required_claim_values": ("a", "")},
+        ({"name": "g"}, "values or prefixes"),
+        ({"name": "g", "values": [], "prefixes": []}, "values or prefixes"),
+        ({"values": ["a"]}, "name"),
+        ({"name": "", "values": ["a"]}, "name"),
+        ({"name": "g", "prefixes": [""]}, "must not be empty"),
+        ({"name": "g", "values": ["a", ""]}, "must not be empty"),
+        ({"name": "g", "values": ["a"], "value": "a"}, "value"),
     ],
-    ids=["no-values", "no-name", "empty-prefix", "empty-value"],
+    ids=[
+        "no-values",
+        "empty-lists",
+        "no-name",
+        "empty-name",
+        "empty-prefix",
+        "empty-value",
+        "unknown-key",
+    ],
 )
-def test_incomplete_rule_refused(settings: dict[str, Any]) -> None:
+def test_incomplete_rule_refused(claim_rule: dict[str, Any], message: str) -> None:
     """A rule needs a name and non-empty values or prefixes."""
-    with pytest.raises(ValueError, match="claim rule"):
-        AuthzSettings(**settings).validate_for(auth_enabled=True)
+    entry = {"issuer": ISSUER, "audience": AUDIENCE, "requiredClaim": claim_rule}
+    with pytest.raises(ValueError, match=f"(?s)requiredClaim.*{message}"):
+        IssuerSettings.model_validate(entry)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "POIESIS_AUTHZ_REQUIRED_CLAIM_NAME",
+        "POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES",
+        "POIESIS_AUTHZ_REQUIRED_CLAIM_PREFIXES",
+    ],
+)
+def test_global_claim_rule_refused(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    """A leftover global claim rule variable refuses to start, even empty.
+
+    It matched claim values whichever issuer the token came from; the
+    message names the per-issuer replacement.
+    """
+    monkeypatch.setenv(name, "")
+    with pytest.raises(ValueError, match=rf"{name}.*auth\.issuers\[\]\.requiredClaim"):
+        AuthzSettings()
 
 
 @pytest.mark.parametrize(
@@ -420,9 +545,9 @@ def test_timeout_argument_invalid(value: float) -> None:
 
 def test_settings_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Lists are JSON arrays (values may contain commas)."""
-    monkeypatch.setenv("POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES", '["a,b", "c"]')
+    monkeypatch.setenv("POIESIS_AUTHZ_DECISION_SERVICE_CLAIMS", '["a,b", "c"]')
     monkeypatch.setenv("POIESIS_AUTHZ_DECISION_SERVICE_TIMEOUT", "0.5")
-    assert AuthzSettings().required_claim_values == ("a,b", "c")
+    assert AuthzSettings().decision_service_claims == ("a,b", "c")
     assert AuthzSettings().decision_service_timeout == 0.5  # noqa: PLR2004
     monkeypatch.setenv("POIESIS_AUTHZ_DECISION_SERVICE_CLAIMS", "a,b")
     with pytest.raises(ValueError, match="not valid JSON"):
@@ -533,9 +658,7 @@ def test_server_assigned_fields(env: Env) -> None:
 
 def test_rule_only(env: Env) -> None:
     """A rule without a decision service and with no allowlist admits."""
-    client = env.start(
-        required_claim_name=ENTITLEMENT, required_claim_prefixes=(SUBGROUPS,)
-    )
+    client = env.start(rule(prefixes=[SUBGROUPS]))
     assert client.post(TASKS, json=TASK).status_code == 200  # noqa: PLR2004
 
 
@@ -551,9 +674,7 @@ def test_rule_only(env: Env) -> None:
 def test_rule_denies_before_decision(env: Env, method: str, path: str) -> None:
     """A failing rule gives 403 on every action; PDP and database untouched."""
     env.claims[ENTITLEMENT] = ["urn:geant:lifescience-ri.eu:group:other#x"]
-    client = env.pdp_on(
-        required_claim_name=ENTITLEMENT, required_claim_prefixes=(SUBGROUPS,)
-    )
+    client = env.pdp_on(rule(prefixes=[SUBGROUPS]))
     env.store.add(BOB, BOB_TASK)
     assert client.request(method, path, json=TASK).status_code == 403  # noqa: PLR2004
     assert env.pdp.requests == []
@@ -591,7 +712,7 @@ def test_no_connection_held_during_decision(
 def test_rule_denies_service_client(env: Env) -> None:
     """A client-credentials token without the claim gets 403."""
     env.claims = {"azp": "service", "sub": "service-account"}
-    client = env.start(required_claim_name=ENTITLEMENT, required_claim_values=(MEMBER,))
+    client = env.start(rule(values=[MEMBER]))
     assert client.post(TASKS, json=TASK).status_code == 403  # noqa: PLR2004
 
 
@@ -635,9 +756,7 @@ def test_create_denied(env: Env) -> None:
 def test_rule_and_decision(env: Env) -> None:
     """Rule passes, decision denies: 403."""
     env.pdp.decide = per_action()
-    client = env.pdp_on(
-        required_claim_name=ENTITLEMENT, required_claim_prefixes=(SUBGROUPS,)
-    )
+    client = env.pdp_on(rule(prefixes=[SUBGROUPS]))
     assert client.post(TASKS, json=TASK).status_code == 403  # noqa: PLR2004
     assert len(env.pdp.requests) == 1
 
@@ -741,6 +860,50 @@ def test_builtin_rule_refuses_actor(env: Env) -> None:
         assert response.status_code == 403  # noqa: PLR2004
         assert "decision service" in response.json()["message"]
     assert env.store.tasks.keys() == {ALICE_TASK}
+
+
+def test_builtin_rule_accepts_listed_actor(env: Env) -> None:
+    """A listed actor of the token's issuer acts for the subject, as the owner."""
+    env.claims["act"] = {"sub": "gateway"}
+    client = env.start({"actors": ["portal", "gateway"]})
+    env.store.add(ALICE, ALICE_TASK)
+    env.store.add(BOB, BOB_TASK)
+    created = client.post(TASKS, json=TASK)
+    assert created.status_code == 200  # noqa: PLR2004
+    assert env.store.tasks[created.json()["id"]][0] == ALICE
+    assert client.get(f"{TASKS}/{ALICE_TASK}").status_code == 200  # noqa: PLR2004
+    # Still the owner rule: the actor gets no more than the subject.
+    assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
+
+
+@pytest.mark.parametrize(
+    "act",
+    [
+        {"sub": "engine"},
+        {"sub": "gateway", "iss": OTHER_ISSUER},
+        {"sub": "gateway", "iss": f"{ISSUER}/"},
+    ],
+    ids=["unlisted", "other-issuer", "near-issuer"],
+)
+def test_builtin_rule_refuses_other_actors(env: Env, act: dict[str, Any]) -> None:
+    """An unlisted actor, or a listed id of another issuer, gets 403."""
+    env.claims["act"] = act
+    client = env.start({"actors": ["gateway"]})
+    response = client.post(TASKS, json=TASK)
+    assert response.status_code == 403  # noqa: PLR2004
+    assert "decision service" in response.json()["message"]
+    assert env.store.tasks == {}
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+def test_listed_actor_with_decision_service(env: Env, *, allowed: bool) -> None:
+    """With a decision service, it decides for listed actors as for any other."""
+    env.claims["act"] = {"sub": "gateway"}
+    env.pdp.decide = per_action(CreateTask=allowed)
+    response = env.pdp_on({"actors": ["gateway"]}).post(TASKS, json=TASK)
+    assert response.status_code == (200 if allowed else 403)
+    subject = env.pdp.bodies[0]["subject"]
+    assert subject["properties"]["actor"] == {"iss": ISSUER, "sub": "gateway"}
 
 
 @pytest.mark.parametrize(
@@ -909,9 +1072,8 @@ def test_userinfo_claims(env: Env) -> None:
     """Userinfo fills claims the token lacks; the token wins when both have one."""
     env.issuer.userinfo = {"groups": [MEMBER], ENTITLEMENT: ["other"]}
     client = env.pdp_on(
+        rule("groups", values=[MEMBER]),
         decision_service_claims=(ENTITLEMENT, "groups"),
-        required_claim_name="groups",
-        required_claim_values=(MEMBER,),
     )
     assert client.post(TASKS, json=TASK).status_code == 200  # noqa: PLR2004
     claims = env.pdp.bodies[0]["subject"]["properties"]["claims"]

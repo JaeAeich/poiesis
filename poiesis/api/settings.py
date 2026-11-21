@@ -21,6 +21,7 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
+    field_validator,
     model_validator,
 )
 from pydantic.alias_generators import to_camel
@@ -235,6 +236,21 @@ DEFAULT_POIESIS_IMAGE = "docker.io/jaeaeich/poiesis:latest"
 
 _ISSUERS_ENV = "POIESIS_AUTH_ISSUERS"
 _REMOVED_ENV_PREFIX = "POIESIS_AUTH_OIDC_"
+_REMOVED_CLAIM_ENV_PREFIX = "POIESIS_AUTHZ_REQUIRED_CLAIM_"
+
+
+def _refuse_removed_env(prefix: str, replacement: str) -> None:
+    """Refuse to start while a variable named ``prefix*`` is set.
+
+    For settings that were replaced: silently ignoring a leftover one
+    would run with settings the operator didn't intend.
+    """
+    removed = sorted(n for n in os.environ if n.startswith(prefix))
+    if removed:
+        raise ValueError(
+            ", ".join(removed) + f" is no longer read: {prefix}* was "
+            f"replaced by {replacement}"
+        )
 
 
 def _is_http_url(value: str) -> bool:
@@ -283,6 +299,31 @@ class KeyMintingSettings(BaseModel):
         return self
 
 
+class RequiredClaimSettings(BaseModel):
+    """An issuer's admission rule (``requiredClaim``), see `poiesis.api.authz`.
+
+    A principal of the issuer is admitted if its claim ``name`` holds
+    one of ``values`` or starts with one of ``prefixes``. Prefixes are
+    raw strings: include the delimiter.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, extra="forbid", frozen=True)
+
+    # Claim to look up: exact name first, then a dotted path.
+    name: str = Field(min_length=1)
+    values: tuple[str, ...] = ()
+    prefixes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _check_rule(self) -> RequiredClaimSettings:
+        """Need values or prefixes, none empty (an empty prefix admits all)."""
+        if not (self.values or self.prefixes):
+            raise ValueError("requiredClaim needs values or prefixes")
+        if "" in self.values + self.prefixes:
+            raise ValueError("requiredClaim values and prefixes must not be empty")
+        return self
+
+
 class IssuerSettings(BaseModel):
     """One trusted token issuer, an entry of ``POIESIS_AUTH_ISSUERS``.
 
@@ -297,12 +338,30 @@ class IssuerSettings(BaseModel):
 
     # Exact `iss` of the tokens; also the discovery base URL.
     issuer: str = Field(min_length=1)
-    # Expected `aud` claim.
-    audience: str = Field(min_length=1)
+    # Accepted `aud` values: a token passes if its `aud` holds any of
+    # them. A plain string is one value; several are for migrations
+    # (e.g. from a shared to a per-instance audience).
+    audience: tuple[str, ...] = Field(min_length=1)
+    # Accepted JWT header `typ` values (RFC 9068 access tokens by
+    # default), so that ID tokens and other JWTs of the issuer don't
+    # pass; empty turns the check off.
+    token_types: tuple[str, ...] = ("at+jwt",)
+    # OAuth clients (`azp`, else `client_id`) whose tokens are accepted;
+    # any client when unset.
+    clients: tuple[str, ...] | None = Field(default=None, min_length=1)
+    # Prefix of the owner ids of this issuer's subjects (default: the
+    # issuer). Issuers may share one, e.g. the old and the new URL of a
+    # renamed issuer, so that owners stay the same.
+    namespace: str | None = Field(default=None, min_length=1)
     # Claim naming the subject; a dotted path walks nested objects.
     principal_claim: str = Field(default="sub", min_length=1)
     # Scopes every token of this issuer must carry.
     required_scopes: tuple[str, ...] = ()
+    # Admission rule for this issuer's principals; none when unset.
+    required_claim: RequiredClaimSettings | None = None
+    # Actors (RFC 8693 `act.sub` of this issuer) whose delegated tokens
+    # the built-in policy accepts when there is no decision service.
+    actors: tuple[str, ...] = ()
     userinfo: UserinfoSettings = Field(default_factory=UserinfoSettings)
     # Static JWKS URL; when set, discovery is skipped.
     jwks_uri: str | None = None
@@ -316,12 +375,26 @@ class IssuerSettings(BaseModel):
     # Which of its tokens may mint API keys; none when unset.
     key_minting: KeyMintingSettings | None = None
 
+    @field_validator("audience", mode="before")
+    @classmethod
+    def _audience_list(cls, value: Any) -> Any:
+        """Take a plain string as a one-value list."""
+        return (value,) if isinstance(value, str) else value
+
+    @property
+    def owner_namespace(self) -> str:
+        """The prefix of this issuer's owner ids: ``namespace`` or the issuer."""
+        return self.namespace or self.issuer
+
     @model_validator(mode="after")
     def _check_urls(self) -> IssuerSettings:
         """Refuse settings that can't work, before any network call."""
+        # The owner id is `<namespace>|<subject>` (namespace default: the
+        # issuer); keep it unambiguous.
         if "|" in self.issuer:
-            # The owner id is `issuer|subject`; keep it unambiguous.
             raise ValueError("issuer must not contain '|'")
+        if self.namespace is not None and "|" in self.namespace:
+            raise ValueError("namespace must not contain '|'")
         if self.jwks_uri is not None:
             if not _is_http_url(self.jwks_uri):
                 raise ValueError("jwksUri must be an http(s) URL")
@@ -333,8 +406,15 @@ class IssuerSettings(BaseModel):
             raise ValueError(
                 "issuer must be an http(s) URL for OIDC discovery (or set jwksUri)"
             )
-        if "" in self.required_scopes:
-            raise ValueError("requiredScopes must not contain an empty scope")
+        for name, values in (
+            ("audience", self.audience),
+            ("requiredScopes", self.required_scopes),
+            ("tokenTypes", self.token_types),
+            ("clients", self.clients or ()),
+            ("actors", self.actors),
+        ):
+            if any(not value.strip() for value in values):
+                raise ValueError(f"{name} must not contain an empty value")
         return self
 
 
@@ -345,12 +425,9 @@ def _parse_issuers_env() -> tuple[IssuerSettings, ...]:
     ``POIESIS_AUTH_OIDC_*`` variable: they were replaced, and silently
     ignoring one would run with settings the operator didn't intend.
     """
-    removed = sorted(n for n in os.environ if n.startswith(_REMOVED_ENV_PREFIX))
-    if removed:
-        raise ValueError(
-            ", ".join(removed) + f" is no longer read: {_REMOVED_ENV_PREFIX}* was "
-            f"replaced by {_ISSUERS_ENV} (a JSON array of issuers)"
-        )
+    _refuse_removed_env(
+        _REMOVED_ENV_PREFIX, f"{_ISSUERS_ENV} (a JSON array of issuers)"
+    )
     raw = os.environ.get(_ISSUERS_ENV, "")
     if not raw.strip():
         return ()
@@ -519,6 +596,8 @@ class AuthSettings(BaseModel):
             if entry.issuer in seen:
                 raise ValueError(f"{_ISSUERS_ENV} lists {entry.issuer!r} twice")
             seen[entry.issuer] = entry
+        if self.enabled:
+            _warn_shared_namespaces(self.issuers)
         if self.enabled and self.swagger_ui is not None:
             # The UI reads the issuer's discovery document in the browser.
             login = seen.get(self.swagger_ui.issuer)
@@ -535,26 +614,35 @@ class AuthSettings(BaseModel):
         return self
 
 
-class AuthzSettings(BaseModel):
-    """Authorization settings: the claim rule and the decision service.
+def _warn_shared_namespaces(issuers: tuple[IssuerSettings, ...]) -> None:
+    """Warn about issuers that share an owner namespace.
 
-    Both are off by default. See ``poiesis.api.authz`` and the
-    "Authorization" docs page.
+    Allowed on purpose (a renamed issuer keeps its owners by sharing the
+    old URL's namespace), but equal subjects of such issuers are then
+    one owner, with the same tasks and keys: that must not happen by
+    accident.
+    """
+    by_namespace: dict[str, list[str]] = {}
+    for entry in issuers:
+        by_namespace.setdefault(entry.owner_namespace, []).append(entry.issuer)
+    for namespace, names in by_namespace.items():
+        if len(names) > 1:
+            logger.warning(
+                "Issuers %s share the owner namespace %r, so equal subjects of "
+                "them are one owner; intended only for one issuer under several "
+                "URLs, otherwise give each its own namespace",
+                ", ".join(names),
+                namespace,
+            )
+
+
+class AuthzSettings(BaseModel):
+    """Authorization settings: the decision service, off by default.
+
+    Claim rules are set per issuer (``IssuerSettings.required_claim``).
+    See ``poiesis.api.authz`` and the "Authorization" docs page.
     """
 
-    required_claim_name: str = Field(
-        default_factory=lambda: os.environ.get("POIESIS_AUTHZ_REQUIRED_CLAIM_NAME", ""),
-    )
-    required_claim_values: tuple[str, ...] = Field(
-        default_factory=lambda: _parse_json_strings_env(
-            "POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES"
-        ),
-    )
-    required_claim_prefixes: tuple[str, ...] = Field(
-        default_factory=lambda: _parse_json_strings_env(
-            "POIESIS_AUTHZ_REQUIRED_CLAIM_PREFIXES"
-        ),
-    )
     decision_service_url: str = Field(
         default_factory=lambda: os.environ.get(
             "POIESIS_AUTHZ_DECISION_SERVICE_URL", ""
@@ -578,37 +666,35 @@ class AuthzSettings(BaseModel):
         ),
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_global_claim_rule(cls, data: Any) -> Any:
+        """Refuse a leftover ``POIESIS_AUTHZ_REQUIRED_CLAIM_*`` variable.
+
+        The global claim rule matched the value whichever issuer the
+        token came from; rules are now set per issuer.
+        """
+        _refuse_removed_env(
+            _REMOVED_CLAIM_ENV_PREFIX,
+            f"auth.issuers[].requiredClaim (requiredClaim in {_ISSUERS_ENV}), "
+            "which applies to that issuer's tokens only",
+        )
+        return data
+
     def validate_for(self, *, auth_enabled: bool) -> None:
         """Refuse configurations that would not do what they say.
 
         Called at app startup: authorization without authentication (no
-        real subject could reach a decision), an incomplete claim rule or
-        one with empty values or prefixes (an empty prefix admits
-        everyone), decision service settings without a URL, and a URL
-        that isn't http(s).
+        real subject could reach a decision), decision service settings
+        without a URL, and a URL that isn't http(s).
         """
-        rule = (
-            self.required_claim_name,
-            self.required_claim_values,
-            self.required_claim_prefixes,
-        )
         service = (
             self.decision_service_url,
             self.decision_service_claims,
             self.decision_service_credential_file,
         )
-        if not auth_enabled and any(rule + service):
+        if not auth_enabled and any(service):
             raise ValueError("POIESIS_AUTHZ_* is set but auth is disabled")
-        if any(rule) and not (
-            self.required_claim_name
-            and (self.required_claim_values or self.required_claim_prefixes)
-        ):
-            raise ValueError(
-                "the claim rule needs POIESIS_AUTHZ_REQUIRED_CLAIM_NAME and "
-                "POIESIS_AUTHZ_REQUIRED_CLAIM_VALUES or _PREFIXES"
-            )
-        if "" in self.required_claim_values + self.required_claim_prefixes:
-            raise ValueError("the claim rule's values and prefixes must not be empty")
         try:
             url = httpx.URL(self.decision_service_url)
         except httpx.InvalidURL:

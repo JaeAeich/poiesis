@@ -4,7 +4,12 @@
 (``Authorization: Bearer <jwt>``). The token's unverified ``iss`` only
 selects one of the configured issuers (exact match); keys are fetched
 from that issuer's discovery document or static ``jwksUri``, never from
-a URL taken from the token. The token is then verified in full.
+a URL taken from the token. The token is then verified in full: the
+signature, ``iss``, ``aud`` (any of the issuer's audiences), ``exp``,
+the header ``typ`` (access tokens only, ``tokenTypes``), the client
+(``clients``, if set) and the issuer's required scopes. The owner of
+its principal is ``<namespace>|<subject>``, with the issuer's
+``namespace`` (default: the issuer).
 
 Each configured issuer is an :class:`IssuerValidator`, which is
 resilient to its issuer being down:
@@ -48,7 +53,7 @@ from joserfc.errors import JoseError
 from joserfc.jwk import KeySet
 from joserfc.jwt import JWTClaimsRegistry
 
-from poiesis.api.auth import Actor, Principal, walk_claim_path
+from poiesis.api.auth import Actor, Principal, client_of, walk_claim_path
 from poiesis.api.exceptions import (
     ForbiddenError,
     ServiceUnavailableError,
@@ -144,6 +149,9 @@ class IssuerValidator:
         self._lock = asyncio.Lock()
         self._retry_task: asyncio.Task[None] | None = None
         self._algorithms = list(_DEFAULT_ALGORITHMS)
+        self._token_types = frozenset(
+            normalize_token_type(typ) for typ in settings.token_types
+        )
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -337,18 +345,18 @@ class IssuerValidator:
         """Validate ``token`` (header ``kid``) and return its principal.
 
         Raises :class:`UnauthorizedError` for any cryptographic or claim
-        failure, :class:`ForbiddenError` when required scopes are
+        failure, a token type or client that isn't accepted,
+        :class:`ForbiddenError` when required scopes are
         missing, and :class:`ServiceUnavailableError` while the issuer
         has no key set yet.
         """
         keys = await self._keys_for(kid)
         try:
-            claims = dict(
-                jwt.decode(token, key=keys, algorithms=self._algorithms).claims
-            )
+            decoded = jwt.decode(token, key=keys, algorithms=self._algorithms)
+            claims = dict(decoded.claims)
             JWTClaimsRegistry(
                 iss={"essential": True, "value": self.settings.issuer},
-                aud={"essential": True, "value": self.settings.audience},
+                aud={"essential": True, "values": list(self.settings.audience)},
                 exp={"essential": True},
                 leeway=self.settings.clock_skew,
             ).validate(claims)
@@ -357,6 +365,9 @@ class IssuerValidator:
                 "JWT validation failed for %s: %s", self.settings.issuer, exc
             )
             raise UnauthorizedError("invalid token") from exc
+        # After the signature: only the issuer's own header and claims count.
+        self._check_token_type(decoded.header.get("typ"))
+        self._check_client(claims)
 
         scopes = _scopes(claims)
         missing = [s for s in self.settings.required_scopes if s not in scopes]
@@ -370,6 +381,43 @@ class IssuerValidator:
             userinfo = await self.userinfo(token, claims)
             principal = dataclasses.replace(principal, userinfo=userinfo)
         return principal
+
+    def _check_token_type(self, typ: Any) -> None:
+        """Raise ``401`` unless the header ``typ`` is one of ``tokenTypes``.
+
+        An empty ``tokenTypes`` accepts any (or no) ``typ``. The issuer's
+        ID tokens and other JWTs carry another ``typ`` than its access
+        tokens (RFC 9068's ``at+jwt``) at IdPs that set it; at those
+        that don't, the operator lists what their access tokens carry.
+        """
+        if not self._token_types:
+            return
+        if isinstance(typ, str) and normalize_token_type(typ) in self._token_types:
+            return
+        logger.warning(
+            "Token of %s refused: header typ %s is not in its tokenTypes %s; if "
+            "the issuer's access tokens carry it, add it to "
+            "auth.issuers[].tokenTypes",
+            self.settings.issuer,
+            "missing" if typ is None else repr(str(typ)[:64]),
+            list(self.settings.token_types),
+        )
+        raise UnauthorizedError("invalid token")
+
+    def _check_client(self, claims: dict[str, Any]) -> None:
+        """Raise ``401`` unless the token's client is in ``clients`` (if set)."""
+        allowed = self.settings.clients
+        if allowed is None:
+            return
+        client = client_of(claims)
+        if isinstance(client, str) and client in allowed:
+            return
+        logger.warning(
+            "Token of %s refused: client %s is not in its clients",
+            self.settings.issuer,
+            "missing" if client is None else repr(str(client)[:100]),
+        )
+        raise UnauthorizedError("invalid token")
 
     def principal_from(
         self, claims: dict[str, Any], scopes: frozenset[str] = frozenset()
@@ -389,8 +437,9 @@ class IssuerValidator:
             issuer=self.settings.issuer,
             subject=subject,
             via="oidc",
+            namespace=self.settings.owner_namespace,
             credential_id=jti if isinstance(jti, str) and jti else None,
-            actor=_actor(claims, self.settings.issuer),
+            actor=_actor(claims, self.settings.issuer, self.settings.actors),
             scopes=scopes,
             claims=claims,
         )
@@ -519,6 +568,16 @@ class JWTAuthenticator:
         )
 
 
+def normalize_token_type(value: str) -> str:
+    """Return the comparable form of a JWT ``typ`` header value.
+
+    Media types compare case-insensitively, and ``typ`` may leave out
+    the ``application/`` prefix (RFC 7515, section 4.1.9), so
+    ``application/at+jwt`` and ``AT+JWT`` both become ``at+jwt``.
+    """
+    return value.strip().lower().removeprefix("application/")
+
+
 def _bearer_jwt(header: str | None) -> str | None:
     """Return the token of a ``Bearer`` header if it is JWT-shaped."""
     if not header:
@@ -555,11 +614,16 @@ def _scopes(claims: dict[str, Any]) -> frozenset[str]:
     return frozenset()
 
 
-def _actor(claims: dict[str, Any], issuer: str) -> Actor | None:
+def _actor(
+    claims: dict[str, Any], issuer: str, listed: Sequence[str] = ()
+) -> Actor | None:
     """Return the RFC 8693 ``act`` claim's actor; nested chains are ignored.
 
-    A malformed ``act`` (not an object, no string ``sub``, a non-string
-    ``iss``) is a ``401``: delegation must not be guessed.
+    The actor is ``listed`` if its ``sub`` is in ``listed`` (the token
+    issuer's ``actors``) and it is of the token's own issuer: an actor
+    id of another issuer may name someone else. A malformed ``act``
+    (not an object, no string ``sub``, a non-string ``iss``) is a
+    ``401``: delegation must not be guessed.
     """
     act = claims.get("act")
     if act is None:
@@ -569,7 +633,7 @@ def _actor(claims: dict[str, Any], issuer: str) -> Actor | None:
     if not (isinstance(sub, str) and sub and isinstance(iss, str) and iss):
         logger.warning("Token with a malformed act claim")
         raise UnauthorizedError("invalid token")
-    return Actor(issuer=iss, subject=sub)
+    return Actor(issuer=iss, subject=sub, listed=iss == issuer and sub in listed)
 
 
 async def _get(

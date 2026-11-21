@@ -28,16 +28,21 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 #: Owner stamped on every task when ``auth.enabled`` is false. It has no
-#: ``|``, so it can never equal a real ``issuer|subject`` owner.
+#: ``|``, so it can never equal a real ``namespace|subject`` owner.
 ANONYMOUS_OWNER = "__anonymous__"
 
 
 @dataclass(slots=True, frozen=True)
 class Actor:
-    """Who acts on the subject's behalf: an RFC 8693 ``act`` claim."""
+    """Who acts on the subject's behalf: an RFC 8693 ``act`` claim.
+
+    ``listed`` says the actor is in its token issuer's ``actors``, which
+    the built-in policy accepts without a decision service.
+    """
 
     issuer: str
     subject: str
+    listed: bool = False
 
 
 @dataclass(slots=True, frozen=True)
@@ -45,11 +50,12 @@ class Principal:
     """The authenticated subject of a request.
 
     ``subject`` is the value of the issuer's ``principalClaim`` (default
-    ``sub``) and ``owner`` (``issuer|subject``) the id stamped on the
-    tasks it creates. ``via`` names the authenticator, ``credential_id``
-    the credential (a token's ``jti``, an API key's id) for audit,
-    ``scopes`` what it grants, and ``actor`` the
-    party acting for the subject (delegation). ``claims`` carries the
+    ``sub``) and ``owner`` (``namespace|subject``) the id stamped on the
+    tasks it creates; ``namespace`` is the issuer's, which defaults to
+    the issuer itself. ``via`` names the authenticator,
+    ``credential_id`` the credential (a token's ``jti``, an API key's
+    id) for audit, ``scopes`` what it grants, and ``actor`` the party
+    acting for the subject (delegation). ``claims`` carries the
     validated token payload, ``userinfo`` the issuer's userinfo answer
     when that lookup is on (empty otherwise), kept apart from the claims.
     """
@@ -57,6 +63,8 @@ class Principal:
     issuer: str
     subject: str
     via: str  # "oidc", "apikey" or "anonymous"
+    # Prefix of the owner id; empty means the issuer (set below).
+    namespace: str = ""
     credential_id: str | None = None
     # When the credential was issued (seconds since the epoch): an API
     # key's minting time, which is also when its claims were snapshot.
@@ -66,12 +74,23 @@ class Principal:
     claims: dict[str, Any] = field(default_factory=dict)
     userinfo: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        """Default the namespace to the issuer."""
+        if not self.namespace:
+            # Frozen: assign through object, as dataclasses do themselves.
+            object.__setattr__(self, "namespace", self.issuer)
+
     @property
     def owner(self) -> str:
-        """The opaque owner id: ``issuer|subject``, or the anonymous one."""
+        """The opaque owner id: ``namespace|subject``, or the anonymous one."""
         if self.via == "anonymous":
             return ANONYMOUS_OWNER
-        return f"{self.issuer}|{self.subject}"
+        return f"{self.namespace}|{self.subject}"
+
+    @property
+    def client(self) -> Any:
+        """The OAuth client of the (minting) token: ``azp``, else ``client_id``."""
+        return client_of(self.claims)
 
     def claim(self, name: str) -> Any:
         """Return the caller's value of claim ``name``, or ``None``.
@@ -116,6 +135,15 @@ class Authenticator(Protocol):
     async def authenticate(self, request: Request) -> Principal | None:
         """Return the request's principal, or ``None`` if not this kind."""
         ...
+
+
+def client_of(claims: dict[str, Any]) -> Any:
+    """Return a token's OAuth client: ``azp``, else ``client_id``, or ``None``.
+
+    ``azp`` is OIDC's (Keycloak, most IdPs), ``client_id`` RFC 9068's.
+    The value is unchecked: callers compare it with configured ids.
+    """
+    return claims.get("azp") or claims.get("client_id")
 
 
 def walk_claim_path(claims: dict[str, Any], path: str) -> Any:

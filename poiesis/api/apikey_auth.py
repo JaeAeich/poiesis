@@ -17,12 +17,14 @@ link for those keys:
 - Accepted as ``Authorization: Bearer poi_…`` and as HTTP Basic with
     any user name and the key as password (``user:poi_…``), for
     clients that only speak Basic.
-- The principal is the minting owner (``issuer|subject``) with
+- The principal is the minting owner (``namespace|subject``) with
     ``via="apikey"``, the key id as ``credential_id``, the key's scopes,
     and the claims and userinfo snapshot taken at minting, so the claim
     rule and decision service see what they saw for the owner's token.
-    A key of an issuer that has since been removed from ``auth.issuers``
-    no longer works.
+    Its issuer is the first configured issuer with the owner's
+    namespace, so a key survives an issuer rename when the new entry
+    keeps the old namespace; a key whose namespace no configured issuer
+    has (the issuer was removed) no longer works.
 - ``last_used_at`` is recorded in memory and written in one batch every
     minute and at shutdown, never once per request.
 """
@@ -53,6 +55,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from fastapi import Request
+
+    from poiesis.api.settings import IssuerSettings
 
 logger = logging.getLogger(__name__)
 
@@ -135,13 +139,16 @@ class ApiKeyAuthenticator:
     def __init__(
         self,
         pool: Any,
-        issuers: Iterable[str],
+        issuers: Iterable[IssuerSettings],
         *,
         flush_interval: float = _FLUSH_INTERVAL,
     ) -> None:
-        """Keep the database pool and the issuers whose keys still count."""
+        """Keep the database pool and the namespaces whose keys still count."""
         self._pool = pool
-        self._issuers = frozenset(issuers)
+        # Owner namespace -> issuer; the first issuer of a shared one wins.
+        self._issuers: dict[str, str] = {}
+        for entry in issuers:
+            self._issuers.setdefault(entry.owner_namespace, entry.issuer)
         self._flush_interval = flush_interval
         self._used: dict[uuid.UUID, datetime] = {}
         self._flush_task: asyncio.Task[None] | None = None
@@ -163,8 +170,8 @@ class ApiKeyAuthenticator:
         """Return the key's principal; ``None`` if the credential isn't a key.
 
         A ``poi_`` credential that is malformed, unknown, revoked or
-        expired, or whose owner's issuer is no longer configured, is a
-        ``401``; a database outage is a ``503`` with ``Retry-After``.
+        expired, or whose owner's namespace no configured issuer has, is
+        a ``401``; a database outage is a ``503`` with ``Retry-After``.
         """
         key = key_from_header(request.headers.get("authorization"))
         if key is None:
@@ -183,8 +190,9 @@ class ApiKeyAuthenticator:
         if record is None:
             logger.warning("Unknown API key")
             raise UnauthorizedError("invalid token")
-        issuer, _, subject = record.owner.partition("|")
-        refusal = self._refusal(record, issuer, subject)
+        # Namespaces have no `|`, subjects may.
+        namespace, _, subject = record.owner.partition("|")
+        refusal = self._refusal(record, namespace, subject)
         if refusal is not None:
             logger.warning("API key %s refused: %s", record.id, refusal)
             raise UnauthorizedError("invalid token")
@@ -192,9 +200,10 @@ class ApiKeyAuthenticator:
         snapshot = record.claims_snapshot
         claims, userinfo = snapshot.get("claims"), snapshot.get("userinfo")
         return Principal(
-            issuer=issuer,
+            issuer=self._issuers[namespace],
             subject=subject,
             via="apikey",
+            namespace=namespace,
             credential_id=str(record.id),
             credential_issued_at=(
                 record.created_at.timestamp() if record.created_at else None
@@ -205,15 +214,15 @@ class ApiKeyAuthenticator:
         )
 
     def _refusal(
-        self, record: api_keys_db.ApiKeyCredential, issuer: str, subject: str
+        self, record: api_keys_db.ApiKeyCredential, namespace: str, subject: str
     ) -> str | None:
         """Why a known key can't authenticate (for the log), or ``None``."""
         if record.revoked:
             return "revoked"
         if record.expired:
             return "expired"
-        if issuer not in self._issuers or not subject:
-            return f"issuer {issuer[:200]!r} is no longer configured"
+        if namespace not in self._issuers or not subject:
+            return f"no configured issuer has the namespace {namespace[:200]!r}"
         return None
 
     async def flush(self) -> None:

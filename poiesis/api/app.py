@@ -53,7 +53,7 @@ api_constants = get_poiesis_api_constants()
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Build process-wide resources at startup, tear them down at shutdown."""
     settings: Settings = app.state.settings
-    app.state.authz = Authz(settings.authz)
+    app.state.authz = Authz(settings.authz, settings.auth.issuers)
     app.state.runtime_config = settings.runtime_config()
 
     logger.info("Connecting to Postgres at %s", _redact_dsn(settings.database_url))
@@ -69,9 +69,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # After the JWT link: it only claims `poi_` credentials, which
             # never look like a JWT, so the order costs JWTs nothing.
             authenticators.append(
-                ApiKeyAuthenticator(
-                    app.state.db_pool, (i.issuer for i in settings.auth.issuers)
-                )
+                ApiKeyAuthenticator(app.state.db_pool, settings.auth.issuers)
             )
         try:
             for authenticator in authenticators:
