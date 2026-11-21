@@ -1,4 +1,6 @@
 {{- $args := dict "component" .Values.tctl "root" . -}}
+{{- $liveness := ((.Values.tctl.probes).liveness) | default dict -}}
+{{- $heartbeat := "/tmp/poiesis-tctl-heartbeat" -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -54,9 +56,28 @@ spec:
             - name: POIESIS_TCTL_UNSCHEDULABLE_TIMEOUT_SECONDS
               value: {{ .Values.tctl.unschedulableTimeoutSeconds | int64 | quote }}
             {{- end }}
+            {{- if $liveness.enabled }}
+            - name: POIESIS_TCTL_HEARTBEAT_FILE
+              value: {{ $heartbeat | quote }}
+            {{- end }}
             {{- with include "poiesis.extraEnv" $args }}
             {{- . | nindent 12 }}
             {{- end }}
+          {{- if $liveness.enabled }}
+          {{- /* Fails when the heartbeat is missing or older than the limit. */}}
+          {{- /* /tmp is the chart's writable emptyDir (poiesis.volumeMounts). */}}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - 'test "$(( $(date +%s) - $(stat -c %Y "$0") ))" -lt "$1"'
+                - {{ $heartbeat | quote }}
+                - {{ $liveness.maxHeartbeatAgeSeconds | int64 | quote }}
+            periodSeconds: {{ $liveness.periodSeconds }}
+            timeoutSeconds: {{ $liveness.timeoutSeconds }}
+            failureThreshold: {{ $liveness.failureThreshold }}
+          {{- end }}
           volumeMounts:
             {{- include "poiesis.volumeMounts" $args | nindent 12 }}
           resources:

@@ -206,6 +206,23 @@
       "properties": {
         "replicas":  { "type": "integer", "minimum": 1 },
         "unschedulableTimeoutSeconds": { "type": ["integer", "null"], "minimum": 1 },
+        "probes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "liveness": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled":                { "type": "boolean" },
+                "maxHeartbeatAgeSeconds": { "type": "integer", "minimum": 1 },
+                "periodSeconds":          { "type": "integer", "minimum": 1 },
+                "timeoutSeconds":         { "type": "integer", "minimum": 1 },
+                "failureThreshold":       { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        },
         "image":     { "$ref": "#/$defs/imageOverride" },
         "resources": { "$ref": "#/$defs/resources" },
 

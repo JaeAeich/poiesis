@@ -9,8 +9,10 @@ read the code back so the task logs show it.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import shutil
 import subprocess
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -198,7 +200,7 @@ def test_tctl_backfills_real_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
         },
     }
 
-    asyncio.run(tctl._backfill_executor_logs(None, None, "t1", pod))
+    _tctl_backfill(None, pod)
 
     assert written == {0: 3, 1: 0}
 
@@ -264,3 +266,14 @@ def test_other_failures_keep_their_log(
     pod = failed_pod(executor, wrapped=wrapped)
 
     assert tctl._terminal_system_logs(pod, TesState.EXECUTOR_ERROR) == [expected]
+
+
+def _tctl_backfill(core_v1: Any, pod: dict[str, Any]) -> None:
+    """Run tctl's executor log backfill of `pod`: read, then write the rows."""
+
+    async def backfill() -> None:
+        pool = SimpleNamespace(acquire=contextlib.nullcontext)
+        rows = await tctl._read_executor_logs(pool, core_v1, "t1", pod)  # ty: ignore
+        await tctl._write_executor_logs(None, "t1", rows)  # ty: ignore
+
+    asyncio.run(backfill())

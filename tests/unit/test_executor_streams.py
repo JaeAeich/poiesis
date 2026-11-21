@@ -11,11 +11,13 @@ task's directories that have no mount of their own (Sprocket's
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
 import stat
 import subprocess
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -605,7 +607,18 @@ def test_tctl_backfill_labels_the_container_log(
     }
     assert streams_from_pod(pod)[0].files  # what trec reads
 
-    asyncio.run(tctl._backfill_executor_logs(None, FakeCoreV1(b"oops\n"), "t1", pod))
+    _tctl_backfill(FakeCoreV1(b"oops\n"), pod)
 
     (row,) = rows
     assert (row["stdout"], row["stderr"]) == ("oops\n", None)
+
+
+def _tctl_backfill(core_v1: Any, pod: dict[str, Any]) -> None:
+    """Run tctl's executor log backfill of `pod`: read, then write the rows."""
+
+    async def backfill() -> None:
+        pool = SimpleNamespace(acquire=contextlib.nullcontext)
+        rows = await tctl._read_executor_logs(pool, core_v1, "t1", pod)  # ty: ignore
+        await tctl._write_executor_logs(None, "t1", rows)  # ty: ignore
+
+    asyncio.run(backfill())

@@ -3,6 +3,7 @@
 import asyncio
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 import click
@@ -14,6 +15,9 @@ from poiesis.k8s.client import load_config
 #: Seconds a task may wait for its Pod to be created and scheduled. Unset:
 #: it waits until the Job's time limit (`taskpods.activeDeadlineSeconds`).
 _UNSCHEDULABLE_TIMEOUT_ENV = "POIESIS_TCTL_UNSCHEDULABLE_TIMEOUT_SECONDS"
+#: File tctl touches after each loop iteration, for a liveness probe. Unset:
+#: no heartbeat is written.
+_HEARTBEAT_FILE_ENV = "POIESIS_TCTL_HEARTBEAT_FILE"
 
 
 class TctlCommand(BaseCommand):
@@ -38,11 +42,13 @@ class TctlCommand(BaseCommand):
             dsn = _required_env("DATABASE_URL")
             identity = os.environ.get("POIESIS_POD_NAME") or None
             unschedulable_timeout = _timeout_env(_UNSCHEDULABLE_TIMEOUT_ENV)
+            heartbeat = _path_env(_HEARTBEAT_FILE_ENV)
             load_config()
             click.echo(
                 f"--- TCtl --- namespace={namespace} "
                 f"lease-namespace={lease_namespace} identity={identity or 'auto'} "
-                f"unschedulable-timeout={unschedulable_timeout or 'none'}"
+                f"unschedulable-timeout={unschedulable_timeout or 'none'} "
+                f"heartbeat={heartbeat or 'none'}"
             )
             sys.exit(
                 asyncio.run(
@@ -52,6 +58,7 @@ class TctlCommand(BaseCommand):
                         lease_namespace=lease_namespace,
                         identity=identity,
                         unschedulable_timeout=unschedulable_timeout,
+                        heartbeat=heartbeat,
                     )
                 )
             )
@@ -91,3 +98,19 @@ def _timeout_env(name: str) -> int | None:
         msg = f"environment variable {name} must be an integer >= 1, got {raw!r}"
         raise click.ClickException(msg)
     return seconds
+
+
+def _path_env(name: str) -> Path | None:
+    """Read a file path: unset or empty is None, else an absolute path.
+
+    Strict: a relative path would depend on the working directory, which
+    the liveness probe doesn't share.
+    """
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        msg = f"environment variable {name} must be an absolute path, got {raw!r}"
+        raise click.ClickException(msg)
+    return path

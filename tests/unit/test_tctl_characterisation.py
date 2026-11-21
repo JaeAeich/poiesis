@@ -47,6 +47,12 @@ def _deleting_job() -> dict[str, Any]:
     return deleting
 
 
+def _deleting_deadline_job() -> dict[str, Any]:
+    deleting = job(T1, age=3600, conditions=deadline())
+    deleting["metadata"]["deletion_timestamp"] = datetime.now(UTC)
+    return deleting
+
+
 JOBS: dict[str, Callable[[], dict[str, Any] | None]] = {
     "none": lambda: None,
     "live-young": lambda: job(T1, age=60),
@@ -68,6 +74,7 @@ JOBS: dict[str, Callable[[], dict[str, Any] | None]] = {
         ],
     ),
     "complete": lambda: job(T1, conditions=[{"type": "Complete", "status": "True"}]),
+    "deadline-being-deleted": _deleting_deadline_job,
 }
 
 
@@ -104,11 +111,14 @@ def _finished(phase: str, *containers: dict[str, Any], **status: Any) -> dict:
     )
 
 
-def _terminating() -> dict[str, Any]:
+def _terminating(overdue: float = 0) -> dict[str, Any]:
+    """Running, being deleted, `overdue` seconds past its deletion deadline."""
     stopping = pod(
         T1, "Running", init_container_statuses=[_terminated("exec-0", 137, "Error")]
     )
-    stopping["metadata"]["deletion_timestamp"] = datetime.now(UTC)
+    stopping["metadata"]["deletion_timestamp"] = datetime.now(UTC) - timedelta(
+        seconds=overdue
+    )
     return stopping
 
 
@@ -132,6 +142,7 @@ PODS: dict[str, Callable[[], dict[str, Any] | None]] = {
     "failed-oom": lambda: _finished("Failed", _terminated("exec-0", 137, "OOMKilled")),
     "failed-evicted": lambda: pod(T1, "Failed", reason="Evicted"),
     "terminating": _terminating,
+    "terminating-stuck": lambda: _terminating(400),
 }
 
 UNSCHEDULABLE_TIMEOUTS: dict[str, float | None] = {"unset": None, "600": 600}
@@ -155,8 +166,9 @@ class Recorder(World):
         await super().append_log(conn, task_id, message)
         self.effects.append(["system_log", task_id, message])
 
-    async def backfill(self, conn: Any, core: Any, task_id: str, p: Any) -> None:
-        await super().backfill(conn, core, task_id, p)
+    async def backfill(self, conn: Any, task_id: str, rows: Any) -> None:
+        await super().backfill(conn, task_id, rows)
+        (p,) = rows  # `World.read_logs` stands for the rows with the Pod
         self.effects.append(["backfill", task_id, p["metadata"]["name"]])
 
     def delete_namespaced_job(self, **kwargs: Any) -> None:
