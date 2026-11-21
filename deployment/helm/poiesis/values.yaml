@@ -130,41 +130,43 @@ database:
   # tctl, and every taskpod's poiesis-owned container. Empty disables.
   caConfigmap: ""
 
-# OIDC resource-server auth. Poiesis validates incoming JWTs directly
-# against the configured issuer's JWKS. When `enabled: true` (default),
-# `oidc.issuer` and `oidc.audience` are REQUIRED — the schema rejects
-# empty values at `helm install` time. When `enabled: false` the API
-# accepts every request as a fixed anonymous principal; intended for
-# local dev and air-gapped single-tenant deployments only.
+# Resource-server auth. Poiesis validates incoming JWTs itself, against the
+# keys of the issuers listed here; a token's `iss` picks its issuer (exact
+# match). When `enabled: true` (default) at least one issuer is REQUIRED —
+# the schema rejects an empty list at `helm install` time. When
+# `enabled: false` the API accepts every request as a fixed anonymous
+# principal; intended for local dev and air-gapped single-tenant
+# deployments only. Rendered as POIESIS_AUTH_ISSUERS (JSON).
 auth:
   enabled: true
-  oidc:
-    # Full issuer URL, e.g. https://keycloak.example.org/realms/poiesis
-    issuer: ""
-    # Expected `aud` claim. Tokens not minted for this audience are rejected.
-    audience: ""
-    # Seconds to cache the JWKS before re-fetching. Lower values trade
-    # JWKS endpoint load for faster key-rotation pickup.
-    jwksCacheTtl: 3600
-    # Allowed clock-skew in seconds when validating exp/nbf/iat.
-    clockSkew: 30
-    # Seconds allowed for each call to the issuer: discovery, JWKS and
-    # userinfo.
-    timeout: 10
-    # Which claim names the principal. Default `sub` matches every
-    # standards-compliant OIDC provider. Dotted paths walk nested
-    # objects, e.g. `ctx.group_id` resolves `claims["ctx"]["group_id"]`.
-    # Useful when the operator's IdP groups tasks by a tenant or group
-    # identifier rather than the per-user `sub`.
-    principalClaim: sub
-    # Optional list of scopes a token MUST carry. Empty disables the check.
-    requiredScopes: []
-    # Fetch the issuer's userinfo (endpoint from OIDC discovery) for every
-    # token, cached until the token expires (at most 5 minutes), for claims
-    # the IdP releases there but not in access tokens. Its `sub` must equal
-    # the token's. Any failure is a 401.
-    userinfo:
-      enabled: false
+  # One entry per trusted issuer. Keys per entry:
+  #   issuer          REQUIRED. Exact `iss` of the tokens, e.g.
+  #                   https://keycloak.example.org/realms/poiesis. Also the
+  #                   OIDC discovery base URL; the discovery document's
+  #                   `issuer` must equal it exactly.
+  #   audience        REQUIRED. Expected `aud` claim.
+  #   principalClaim  Claim naming the subject (default `sub`); the owner
+  #                   stamped on tasks is `<issuer>|<subject>`. Dotted
+  #                   paths walk nested objects (`ctx.group_id`).
+  #   requiredScopes  Scopes a token MUST carry (default none).
+  #   userinfo        {enabled: true} fetches the issuer's userinfo per
+  #                   token (cached until it expires, at most 5 minutes)
+  #                   for claims missing from access tokens (default off).
+  #   jwksUri         Static JWKS URL; skips discovery. For gateways
+  #                   (Envoy, Istio, oauth2-proxy) that sign their own
+  #                   JWTs. Can't be combined with userinfo.
+  #   jwksCacheTtl    Seconds to cache the keys (default 3600). Unknown
+  #                   `kid`s refetch them anyway, at most every 30 s.
+  #   clockSkew       Seconds of leeway on exp/nbf/iat (default 30).
+  #   timeout         Seconds per call to the issuer (default 10).
+  # Example:
+  #   issuers:
+  #     - issuer: https://keycloak.example.org/realms/poiesis
+  #       audience: poiesis
+  #     - issuer: https://gateway.example.org
+  #       audience: poiesis
+  #       jwksUri: http://gateway.mesh.svc/.well-known/jwks.json
+  issuers: []
 
 # Authorization (see the "Authorization" docs page). Both parts are off by
 # default; when both are set, both must allow. Needs auth.enabled.

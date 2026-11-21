@@ -1,10 +1,14 @@
-"""OIDC authentication: JWT validation and the per-request principal.
+"""Authentication: the per-request principal and the authenticator chain.
 
-Poiesis is a resource server: it does not run an OAuth login flow. It
-trusts JWTs minted by a single configured issuer, fetched and cached
-from the issuer's JWKS endpoint. The validated identity is exposed to
-route handlers as :class:`Principal` via the :func:`get_principal`
-FastAPI dependency.
+Poiesis is a resource server: it does not run a login flow. Each request
+is offered to an ordered chain of :class:`Authenticator` objects (built
+at startup, kept in ``app.state.authenticators``); the first that
+recognises the credential returns the :class:`Principal`, which route
+handlers get from the :func:`get_principal` FastAPI dependency.
+
+Identity only ever comes from a credential an authenticator verifies
+itself (today: a signed JWT, see `poiesis.api.jwt_auth`), never from a
+plain header such as ``X-User`` or ``X-Forwarded-User``.
 
 Note: this module does NOT use ``from __future__ import annotations``.
 FastAPI introspects the signature of :func:`get_principal` at runtime
@@ -12,78 +16,57 @@ to wire dependency injection, so ``Request`` must be a live import,
 not a string forward reference. Same constraint as `poiesis.api.deps`.
 """
 
-import asyncio
-import copy
-import dataclasses
-import hashlib
-import logging
-import time
-from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
-from urllib.parse import urlsplit
+from typing import TYPE_CHECKING, Any, Protocol
 
-import httpx
 from fastapi import Request
-from joserfc import jwt
-from joserfc.errors import JoseError
-from joserfc.jwk import KeySet
-from joserfc.jwt import JWTClaimsRegistry
 
-from poiesis.api.exceptions import (
-    ForbiddenError,
-    ServiceUnavailableError,
-    UnauthorizedError,
-)
+from poiesis.api.exceptions import UnauthorizedError
 
 if TYPE_CHECKING:
-    from poiesis.api.settings import AuthSettings
+    from collections.abc import Sequence
 
-logger = logging.getLogger(__name__)
+#: Owner stamped on every task when ``auth.enabled`` is false. It has no
+#: ``|``, so it can never equal a real ``issuer|subject`` owner.
+ANONYMOUS_OWNER = "__anonymous__"
 
-#: Fixed principal id served to every request when ``auth.enabled`` is
-#: false. Chosen so it can never collide with a real OIDC ``sub``
-#: claim (which is always a non-empty string per the spec, but in
-#: practice operators may use anything).
-ANONYMOUS_PRINCIPAL_ID = "__anonymous__"
 
-_DISCOVERY_SUFFIX = "/.well-known/openid-configuration"
-#: Userinfo responses are cached per token until the token expires, but
-#: at most this many seconds (bounds the lag after a revocation) ...
-_USERINFO_MAX_AGE = 300.0
-#: ... and for at most this many tokens; the least recently used go first.
-_USERINFO_CACHE_SIZE = 4096
-#: ``Retry-After`` seconds advertised when the issuer can't be reached.
-_ISSUER_RETRY_AFTER = 5
-_BEARER_PREFIX = "Bearer "
-_DEFAULT_ALGORITHMS: tuple[str, ...] = (
-    "RS256",
-    "RS384",
-    "RS512",
-    "ES256",
-    "ES384",
-    "ES512",
-    "PS256",
-    "PS384",
-    "PS512",
-)
+@dataclass(slots=True, frozen=True)
+class Actor:
+    """Who acts on the subject's behalf: an RFC 8693 ``act`` claim."""
+
+    issuer: str
+    subject: str
 
 
 @dataclass(slots=True, frozen=True)
 class Principal:
     """The authenticated subject of a request.
 
-    ``id`` is the value of the configured ``principal_claim`` (default
-    ``sub``). ``claims`` carries the full validated JWT payload so
-    downstream code can inspect arbitrary fields without re-parsing the
-    token. ``userinfo`` holds the issuer's userinfo response when
-    ``POIESIS_AUTH_OIDC_USERINFO_ENABLED`` is on (empty otherwise), kept
-    apart from the token claims.
+    ``subject`` is the value of the issuer's ``principalClaim`` (default
+    ``sub``) and ``owner`` (``issuer|subject``) the id stamped on the
+    tasks it creates. ``via`` names the authenticator, ``credential_id``
+    the credential (a token's ``jti``) for audit, and ``actor`` the
+    party acting for the subject (delegation). ``claims`` carries the
+    validated token payload, ``userinfo`` the issuer's userinfo answer
+    when that lookup is on (empty otherwise), kept apart from the claims.
     """
 
-    id: str
+    issuer: str
+    subject: str
+    via: str  # "oidc" or "anonymous"
+    credential_id: str | None = None
+    actor: Actor | None = None
+    scopes: frozenset[str] = frozenset()
     claims: dict[str, Any] = field(default_factory=dict)
     userinfo: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def owner(self) -> str:
+        """The opaque owner id: ``issuer|subject``, or the anonymous one."""
+        if self.via == "anonymous":
+            return ANONYMOUS_OWNER
+        return f"{self.issuer}|{self.subject}"
 
     def claim(self, name: str) -> Any:
         """Return the caller's value of claim ``name``, or ``None``.
@@ -96,285 +79,41 @@ class Principal:
             if source.get(name) is not None:
                 return source[name]
         for source in (self.claims, self.userinfo):
-            value = _walk_claim_path(source, name)
+            value = walk_claim_path(source, name)
             if value is not None:
                 return value
         return None
 
 
-class OIDCValidator:
-    """Validates JWTs against a single OIDC issuer.
+#: Served to every request when auth is disabled.
+ANONYMOUS = Principal(issuer="", subject=ANONYMOUS_OWNER, via="anonymous")
 
-    Built once at app startup. JWKS is fetched on first use and
-    refreshed lazily after ``jwks_cache_ttl`` seconds. The discovery
-    document is fetched once at startup so misconfiguration fails
-    loudly before the first request lands.
+
+class Authenticator(Protocol):
+    """One way to authenticate a request, a link in the chain.
+
+    :meth:`authenticate` returns ``None`` for a credential that isn't
+    this authenticator's (the next one is tried) and raises
+    :class:`UnauthorizedError` for one that is but doesn't verify (or
+    another API error, e.g. ``503`` while its issuer is unreachable).
     """
 
-    def __init__(self, settings: "AuthSettings") -> None:
-        """Capture settings; defer network calls to :meth:`bootstrap`."""
-        settings.validate_required()
-        self._settings = settings
-        self._jwks_uri: str | None = None
-        self._userinfo_uri: str | None = None
-        self._userinfo_cache: OrderedDict[str, tuple[float, dict[str, Any]]] = (
-            OrderedDict()
-        )
-        self._issuer_from_discovery: str | None = None
-        self._jwks: KeySet | None = None
-        self._jwks_fetched_at: float = 0.0
-        self._algorithms = list(_DEFAULT_ALGORITHMS)
-        self._client: httpx.AsyncClient | None = None
+    name: str
 
-    def _http(self) -> httpx.AsyncClient:
-        """Return the validator's HTTP client, creating it on first use.
-
-        One client per validator keeps connections to the issuer alive
-        across discovery, JWKS and userinfo calls instead of paying a
-        new TCP and TLS handshake per uncached userinfo lookup.
-        """
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=self._settings.timeout)
-        return self._client
+    async def start(self) -> None:
+        """Prepare for requests; called once from the FastAPI ``lifespan``."""
+        ...
 
     async def aclose(self) -> None:
-        """Close the HTTP client; called from the FastAPI ``lifespan``."""
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        """Release resources; called at shutdown."""
+        ...
 
-    async def bootstrap(self) -> None:
-        """Fetch OIDC discovery and prime the JWKS cache.
-
-        Called from the FastAPI ``lifespan``. Any failure here aborts
-        startup — the operator sees a clear error rather than a half-
-        configured server that returns 401 on every request.
-        """
-        url = self._settings.issuer.rstrip("/") + _DISCOVERY_SUFFIX
-        resp = await _get(url, self._settings.timeout, client=self._http())
-        resp.raise_for_status()
-        doc = resp.json()
-        self._issuer_from_discovery = doc.get("issuer") or self._settings.issuer
-        self._jwks_uri = doc["jwks_uri"]
-        if self._settings.userinfo_enabled:
-            self._userinfo_uri = self._checked_userinfo_uri(
-                doc.get("userinfo_endpoint")
-            )
-        await self._refresh_jwks()
-        logger.info(
-            "OIDC discovery ok: issuer=%s jwks_uri=%s",
-            self._issuer_from_discovery,
-            self._jwks_uri,
-        )
-
-    def _checked_userinfo_uri(self, uri: Any) -> str:
-        """Return the discovered userinfo endpoint if tokens may go there.
-
-        It must be an absolute ``https`` URL, or ``http`` if the issuer
-        is ``http`` too (e.g. a development IdP), so that tokens never
-        travel less protected than the operator chose for the issuer.
-        """
-        parts = urlsplit(uri) if isinstance(uri, str) else None
-        allowed = {"https", urlsplit(self._settings.issuer).scheme}
-        if parts is None or parts.scheme not in allowed or not parts.netloc:
-            raise RuntimeError(
-                "POIESIS_AUTH_OIDC_USERINFO_ENABLED is on but the issuer's "
-                "discovery document has no usable userinfo_endpoint"
-            )
-        return uri
-
-    @property
-    def userinfo_enabled(self) -> bool:
-        """Whether principals carry the issuer's userinfo response."""
-        return self._userinfo_uri is not None
-
-    async def userinfo(self, token: str, claims: dict[str, Any]) -> dict[str, Any]:
-        """Return the userinfo response for a validated token.
-
-        Cached per token (by hash) until the token expires, at most
-        ``_USERINFO_MAX_AGE`` seconds; concurrent first requests with one
-        token may each fetch. Fails closed: a refused token, a non-JSON
-        answer or a ``sub`` that differs from the token's raises
-        :class:`UnauthorizedError`; an issuer that can't be reached, is
-        too slow or answers 5xx raises :class:`ServiceUnavailableError`,
-        so an IdP outage doesn't look like a bad token to clients.
-        """
-        if self._userinfo_uri is None:
-            raise RuntimeError("userinfo lookup is not enabled")
-        key = hashlib.sha256(token.encode()).hexdigest()
-        now = time.time()
-        cached = self._userinfo_cache.get(key)
-        if cached is not None and cached[0] > now:
-            self._userinfo_cache.move_to_end(key)
-            return copy.deepcopy(cached[1])
-
-        info = await self._fetch_userinfo(
-            self._userinfo_uri, token, self._settings.timeout, client=self._http()
-        )
-        sub = claims.get("sub")
-        if not isinstance(sub, str) or info.get("sub") != sub:
-            logger.warning("Userinfo sub does not match the token's sub")
-            raise UnauthorizedError("userinfo lookup failed")
-
-        expires = claims.get("exp")
-        until = now + _USERINFO_MAX_AGE
-        if isinstance(expires, int | float):
-            until = min(until, float(expires))
-        self._userinfo_cache[key] = (until, info)
-        self._userinfo_cache.move_to_end(key)
-        while len(self._userinfo_cache) > _USERINFO_CACHE_SIZE:
-            self._userinfo_cache.popitem(last=False)
-        return copy.deepcopy(info)
-
-    @staticmethod
-    async def _fetch_userinfo(
-        uri: str,
-        token: str,
-        timeout: float,
-        client: httpx.AsyncClient | None = None,
-    ) -> dict[str, Any]:
-        """GET userinfo at ``uri`` with ``token``.
-
-        An outage (transport error, timeout, 5xx) is a 503; any other
-        failure is a 401. Only plain JSON is accepted: signed or
-        encrypted userinfo (``application/jwt``) is not supported.
-        """
-        headers = {
-            "Authorization": _BEARER_PREFIX + token,
-            "Accept": "application/json",
-        }
-        try:
-            resp = await _get(uri, timeout, headers, client=client)
-        except (httpx.HTTPError, TimeoutError) as exc:
-            logger.warning("Userinfo request failed: %s", type(exc).__name__)
-            raise ServiceUnavailableError(
-                "identity provider unavailable",
-                retry_after_seconds=_ISSUER_RETRY_AFTER,
-            ) from exc
-        if resp.status_code >= httpx.codes.INTERNAL_SERVER_ERROR:
-            logger.warning("Userinfo endpoint answered %s", resp.status_code)
-            raise ServiceUnavailableError(
-                "identity provider unavailable",
-                retry_after_seconds=_ISSUER_RETRY_AFTER,
-            )
-        content_type = resp.headers.get("content-type", "")
-        info: Any = None
-        media_type = content_type.split(";")[0].strip().lower()
-        if resp.status_code == httpx.codes.OK and media_type == "application/json":
-            try:
-                info = resp.json()
-            except ValueError:
-                info = None
-        if not isinstance(info, dict):
-            logger.warning(
-                "Userinfo endpoint answered %s (%s) without a JSON object",
-                resp.status_code,
-                content_type or "no content type",
-            )
-            raise UnauthorizedError("userinfo lookup failed")
-        return info
-
-    async def _refresh_jwks(self) -> None:
-        """Refresh the cached JWKS from the discovered ``jwks_uri``."""
-        if not self._jwks_uri:
-            raise RuntimeError("OIDCValidator used before bootstrap()")
-        resp = await _get(self._jwks_uri, self._settings.timeout, client=self._http())
-        resp.raise_for_status()
-        self._jwks = KeySet.import_key_set(resp.json())
-        self._jwks_fetched_at = time.monotonic()
-
-    async def _jwks_or_refresh(self) -> KeySet:
-        """Return the cached JWKS, refreshing it if past the TTL."""
-        if (
-            self._jwks is None
-            or (time.monotonic() - self._jwks_fetched_at)
-            >= self._settings.jwks_cache_ttl
-        ):
-            await self._refresh_jwks()
-        if self._jwks is None:
-            raise RuntimeError("JWKS refresh did not populate cache")
-        return self._jwks
-
-    async def validate(self, token: str) -> dict[str, Any]:
-        """Validate ``token`` and return its claims.
-
-        Raises :class:`UnauthorizedError` for any cryptographic or
-        claim-shape failure, and :class:`ForbiddenError` when required
-        scopes are missing.
-        """
-        jwks = await self._jwks_or_refresh()
-        try:
-            decoded = jwt.decode(token, key=jwks, algorithms=self._algorithms)
-            claims = decoded.claims
-            registry = JWTClaimsRegistry(
-                iss={
-                    "essential": True,
-                    "value": self._issuer_from_discovery or self._settings.issuer,
-                },
-                aud={"essential": True, "value": self._settings.audience},
-                exp={"essential": True},
-                leeway=self._settings.clock_skew,
-            )
-            registry.validate(claims)
-        except JoseError as exc:
-            logger.warning("JWT validation failed: %s", exc)
-            raise UnauthorizedError("invalid token") from exc
-
-        self._enforce_scopes(claims)
-        return dict(claims)
-
-    def _enforce_scopes(self, claims: dict[str, Any]) -> None:
-        """Reject if any configured ``required_scopes`` is absent."""
-        required = self._settings.required_scopes
-        if not required:
-            return
-        raw = claims.get("scope") or claims.get("scp") or ""
-        present = set(raw) if isinstance(raw, list) else set(str(raw).split())
-        missing = [s for s in required if s not in present]
-        if missing:
-            raise ForbiddenError(
-                "token missing required scope(s): " + ", ".join(missing)
-            )
-
-    def principal_from(
-        self, claims: dict[str, Any], userinfo: dict[str, Any] | None = None
-    ) -> Principal:
-        """Project validated claims into a :class:`Principal`.
-
-        ``principal_claim`` may be a dotted path (e.g. ``ctx.group_id``)
-        to pull an identifier out of a nested claim object. Each segment
-        must resolve to a dict until the final segment, which must
-        resolve to a non-empty string.
-        """
-        path = self._settings.principal_claim
-        value = _walk_claim_path(claims, path)
-        if not isinstance(value, str) or not value:
-            raise UnauthorizedError(f"token missing or non-string claim {path!r}")
-        return Principal(id=value, claims=claims, userinfo=userinfo or {})
+    async def authenticate(self, request: Request) -> Principal | None:
+        """Return the request's principal, or ``None`` if not this kind."""
+        ...
 
 
-async def _get(
-    url: str,
-    timeout: float,
-    headers: dict[str, str] | None = None,
-    *,
-    client: httpx.AsyncClient | None = None,
-) -> httpx.Response:
-    """GET ``url`` from the issuer within ``timeout`` seconds in total.
-
-    httpx's own timeout applies to each connect or read separately, so
-    a slowly trickling answer could take far longer; the overall
-    deadline raises :class:`TimeoutError`. Uses ``client`` when given
-    (the validator's shared client), else a short-lived one.
-    """
-    async with asyncio.timeout(timeout):
-        if client is not None:
-            return await client.get(url, headers=headers)
-        async with httpx.AsyncClient(timeout=timeout) as own:
-            return await own.get(url, headers=headers)
-
-
-def _walk_claim_path(claims: dict[str, Any], path: str) -> Any:
+def walk_claim_path(claims: dict[str, Any], path: str) -> Any:
     """Resolve a dotted ``path`` like ``ctx.group_id`` against ``claims``.
 
     Returns ``None`` if any intermediate segment is missing or not a
@@ -391,32 +130,21 @@ def _walk_claim_path(claims: dict[str, Any], path: str) -> Any:
     return current
 
 
-def _extract_bearer(request: Request) -> str:
-    """Pull the bearer token from the ``Authorization`` header."""
-    header = request.headers.get("authorization") or request.headers.get(
-        "Authorization"
-    )
-    if not header or not header.startswith(_BEARER_PREFIX):
-        raise UnauthorizedError("missing bearer token")
-    return header[len(_BEARER_PREFIX) :].strip()
-
-
 async def get_principal(request: Request) -> Principal:
-    """FastAPI dependency: validate the request's JWT and return the principal.
+    """FastAPI dependency: run the authenticator chain for the request.
 
-    When auth is disabled (``app.state.oidc is None``) every request is
-    served as a fixed anonymous principal so downstream code paths stay
-    uniform — the principal column is still stamped, just with a
-    sentinel value.
+    ``app.state.authenticators`` is ``None`` when auth is disabled: every
+    request is then served as the anonymous principal, so downstream
+    code paths stay uniform. Otherwise the first authenticator that
+    recognises the credential wins; if none does, ``401``.
     """
-    validator: OIDCValidator | None = getattr(request.app.state, "oidc", None)
-    if validator is None:
-        return Principal(id=ANONYMOUS_PRINCIPAL_ID, claims={})
-    token = _extract_bearer(request)
-    claims = await validator.validate(token)
-    # Resolve the owner first so a token without it never reaches userinfo.
-    principal = validator.principal_from(claims)
-    if validator.userinfo_enabled:
-        userinfo = await validator.userinfo(token, claims)
-        principal = dataclasses.replace(principal, userinfo=userinfo)
-    return principal
+    authenticators: Sequence[Authenticator] | None = request.app.state.authenticators
+    if authenticators is None:
+        return ANONYMOUS
+    for authenticator in authenticators:
+        principal = await authenticator.authenticate(request)
+        if principal is not None:
+            return principal
+    if request.headers.get("authorization"):
+        raise UnauthorizedError("invalid token")
+    raise UnauthorizedError("missing bearer token")

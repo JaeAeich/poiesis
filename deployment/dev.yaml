@@ -176,10 +176,10 @@ spec:
 # Clients:
 #   poiesis-cli  public; auth code + PKCE, device flow, password grant (dev only)
 #   poiesis-ci   confidential, client credentials; secret: poiesis-ci-secret
-# User ids are fixed, so `sub` (the task owner) survives Keycloak restarts.
-# Keycloak keeps no data volume: `kubectl -n deps rollout restart
-# deploy/keycloak` re-imports the realm after editing it. Signing keys
-# change on restart, so restart poiesis-api too (it caches keys for 1h).
+# User ids are fixed, so `sub` (and the task owner `<issuer>|<sub>`) survives
+# Keycloak restarts. Keycloak keeps no data volume: `kubectl -n deps rollout
+# restart deploy/keycloak` re-imports the realm after editing it. Its signing
+# keys change on restart; the API refetches them on the first unknown `kid`.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -445,9 +445,9 @@ data:
   POIESIS_POD_SECURITY_ENFORCE: restricted
   LOG_LEVEL: INFO
   POIESIS_AUTH_ENABLED: "true"
-  POIESIS_AUTH_OIDC_ISSUER: "http://keycloak.deps.svc:8080/realms/poiesis"
-  POIESIS_AUTH_OIDC_AUDIENCE: "poiesis"
-  POIESIS_AUTH_OIDC_PRINCIPAL_CLAIM: "sub"
+  POIESIS_AUTH_ISSUERS: >-
+    [{"issuer": "http://keycloak.deps.svc:8080/realms/poiesis",
+      "audience": "poiesis"}]
 ---
 apiVersion: v1
 kind: ServiceAccount

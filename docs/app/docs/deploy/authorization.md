@@ -4,14 +4,15 @@ Poiesis decides who may do what to which task in three layers, each
 optional except the first:
 
 1. **Authentication** ([Authentication](./authentication.md)): a valid
-   OIDC token (issuer, audience, `requiredScopes`), optionally enriched
-   with userinfo. Poiesis stamps the caller's principal on every task it
-   creates.
+   token of a configured issuer (audience, `requiredScopes`), optionally
+   enriched with userinfo. Poiesis stamps the caller's owner id
+   (`issuer|subject`) on every task it creates.
 2. **Claim rule** (`authz.requiredClaim`): an admission gate, "who may
    use this service at all", checked on every TES call.
 3. **Decision** (`authz.decisionService`): "what may this caller do".
    Without a decision service, the built-in owner rule applies: anyone
-   admitted may create tasks and sees and cancels only their own.
+   admitted may create tasks and sees and cancels only their own, and
+   delegated tokens (with an `act` claim) are refused.
 
 When both the rule and the decision service are set, **both must
 allow**. Everything else (entitlements, roles, admin rights, image or
@@ -93,9 +94,10 @@ retries) and allows only on `200` with `{"decision": true}`.
 {
   "subject": {
     "type": "user",
-    "id": "<owner id: the principal stamped on tasks>",
+    "id": "<owner id: issuer|subject, as stamped on tasks>",
     "properties": {
       "iss": "...", "sub": "...", "client_id": "...", "scope": ["..."],
+      "actor": {"iss": "...", "sub": "..."},
       "claims": {"eduperson_entitlement": ["..."]}
     }
   },
@@ -109,15 +111,21 @@ retries) and allows only on `200` with `{"decision": true}`.
 ```
 
 - `subject` comes from the validated token and userinfo only, never
-  from request headers or the body. `client_id` is the token's `azp`
+  from request headers or the body. `iss` is the token's (configured)
+  issuer and `sub` its `sub` claim. `client_id` is the token's `azp`
   or `client_id`. `claims` holds only the claims listed in
   `decisionService.claims`, looked up like the claim rule's. **The
   access token is never sent.**
 - `subject.id` and `resource.properties.owner` are **opaque owner
-  ids**. Compare them with each other, but don't parse them or assume
-  they equal the token's `sub`: their format may change (e.g. to
-  include the issuer when several issuers are supported). Use
+  ids**, today `<issuer>|<subject>` (the subject being the issuer's
+  `principalClaim`, `sub` by default). Compare them with each other,
+  but don't parse them: their format may change. Use
   `subject.properties.iss` and `sub` for identity-based rules.
+- `subject.properties.actor` is present only for a delegated token: the
+  RFC 8693 `act` claim's `sub` and `iss` (default: the token's issuer).
+  The subject is still the owner; your policy decides what the actor
+  may do on the subject's behalf (see
+  [Delegation](./authentication.md#delegation)).
 - `action.name` is the TES `operationId`:
 
   | Action       | Resource                                  | Result of a deny |
@@ -130,8 +138,8 @@ retries) and allows only on `200` with `{"decision": true}`.
   `GetTask` and `ListTasks` carry `action.properties.view`.
 - For a missing task, Poiesis still asks, with empty properties, and
   answers `404` whatever the decision, so missing and foreign tasks
-  can't be told apart. Tasks from before owners were stamped
-  (`__legacy__`) are sent without `owner`.
+  can't be told apart. Tasks from before owners were stamped have the
+  owner `__legacy__`, which is nobody's.
 - `ListTasks` asks for `all` and `own` (in parallel): `all` allowed
   lists every task, else `own` allowed lists the caller's tasks, else
   `403`. The answer is applied in the database query, with the user's
@@ -181,6 +189,7 @@ restart the API pods.
 | ------------------------------------------------ | ---------------------------- |
 | No or invalid token, userinfo failure            | `401`                        |
 | Missing required scope                           | `403`                        |
+| Delegated token, no decision service             | `403`                        |
 | Claim rule fails                                 | `403` on every action        |
 | Decision service denies create or both list sets | `403`                        |
 | Decision service denies get                      | `404`                        |
@@ -191,9 +200,10 @@ restart the API pods.
 Every get or cancel, even of a random ID, costs a call to the
 decision service; a cancel costs two (`CancelTask`, then `GetTask`)
 unless it is allowed for an existing task, so a missing task never
-costs fewer calls than an existing one. Rate-limit at the gateway. Poiesis reads the task from its
-database before asking, which for a missing task takes slightly less
-time than for an existing one; the decision call dominates either way.
+costs fewer calls than an existing one. Rate-limit at the gateway.
+Poiesis reads the task from its database before asking, which for a
+missing task takes slightly less time than for an existing one; the
+decision call dominates either way.
 
 Independent of authorization, Poiesis assigns task IDs, state, creation
 time and logs itself and ignores client-supplied values (the TES API

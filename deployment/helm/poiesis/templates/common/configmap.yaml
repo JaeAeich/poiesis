@@ -74,22 +74,13 @@ data:
   AWS_REGION: {{ . | quote }}
   {{- end }}
 
-  # ---- OIDC auth -------------------------------------------------------------
-  # When auth.enabled is false the API skips OIDC bootstrap and treats every
+  # ---- Auth --------------------------------------------------------------------
+  # When auth.enabled is false the API skips issuer bootstrap and treats every
   # request as anonymous; only the toggle env is emitted so a misconfigured
   # downstream cannot accidentally read a stale issuer.
   POIESIS_AUTH_ENABLED: {{ .Values.auth.enabled | quote }}
   {{- if .Values.auth.enabled }}
-  POIESIS_AUTH_OIDC_ISSUER: {{ .Values.auth.oidc.issuer | quote }}
-  POIESIS_AUTH_OIDC_AUDIENCE: {{ .Values.auth.oidc.audience | quote }}
-  POIESIS_AUTH_OIDC_JWKS_CACHE_TTL: {{ .Values.auth.oidc.jwksCacheTtl | quote }}
-  POIESIS_AUTH_OIDC_CLOCK_SKEW: {{ .Values.auth.oidc.clockSkew | quote }}
-  POIESIS_AUTH_OIDC_TIMEOUT: {{ .Values.auth.oidc.timeout | quote }}
-  POIESIS_AUTH_OIDC_PRINCIPAL_CLAIM: {{ .Values.auth.oidc.principalClaim | quote }}
-  {{- with .Values.auth.oidc.requiredScopes }}
-  POIESIS_AUTH_OIDC_REQUIRED_SCOPES: {{ join "," . | quote }}
-  {{- end }}
-  POIESIS_AUTH_OIDC_USERINFO_ENABLED: {{ .Values.auth.oidc.userinfo.enabled | quote }}
+  POIESIS_AUTH_ISSUERS: {{ .Values.auth.issuers | toJson | quote }}
   {{- end }}
 
   # ---- Authorization -----------------------------------------------------------

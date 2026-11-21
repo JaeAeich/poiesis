@@ -57,43 +57,16 @@
     "auth": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "oidc"],
+      "required": ["enabled", "issuers"],
       "properties": {
         "enabled": { "type": "boolean" },
-        "oidc": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "issuer":         { "type": "string" },
-            "audience":       { "type": "string" },
-            "jwksCacheTtl":   { "type": "integer", "minimum": 1 },
-            "clockSkew":      { "type": "integer", "minimum": 0 },
-            "timeout":        { "type": "number", "exclusiveMinimum": 0 },
-            "principalClaim": { "type": "string", "minLength": 1 },
-            "requiredScopes": {
-              "type": "array",
-              "items": { "type": "string", "minLength": 1 }
-            },
-            "userinfo": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": { "enabled": { "type": "boolean" } }
-            }
-          }
+        "issuers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/issuerSpec" }
         }
       },
       "if": { "properties": { "enabled": { "const": true } } },
-      "then": {
-        "properties": {
-          "oidc": {
-            "required": ["issuer", "audience"],
-            "properties": {
-              "issuer":   { "minLength": 1, "format": "uri" },
-              "audience": { "minLength": 1 }
-            }
-          }
-        }
-      }
+      "then": { "properties": { "issuers": { "minItems": 1 } } }
     },
 
     "authz": {
@@ -250,6 +223,41 @@
   },
 
   "$defs": {
+    "issuerSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuer", "audience"],
+      "properties": {
+        "issuer":         { "type": "string", "minLength": 1, "pattern": "^[^|]+$" },
+        "audience":       { "type": "string", "minLength": 1 },
+        "principalClaim": { "type": "string", "minLength": 1 },
+        "requiredScopes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "userinfo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "enabled": { "type": "boolean" } }
+        },
+        "jwksUri":        { "type": "string", "pattern": "^https?://\\S+$" },
+        "jwksCacheTtl":   { "type": "integer", "minimum": 1 },
+        "clockSkew":      { "type": "integer", "minimum": 0 },
+        "timeout":        { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "if": {
+        "required": ["jwksUri"]
+      },
+      "then": {
+        "properties": {
+          "userinfo": { "properties": { "enabled": { "const": false } } }
+        }
+      },
+      "else": {
+        "properties": { "issuer": { "pattern": "^https?://[^|\\s]+$" } }
+      }
+    },
+
     "imageSpec": {
       "type": "object",
       "additionalProperties": false,
