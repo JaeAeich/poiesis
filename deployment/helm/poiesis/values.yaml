@@ -134,6 +134,17 @@ database:
   # ConfigMap (key: ca.crt) mounted read-only at /etc/ssl/poiesis on api,
   # tctl, and every taskpod's poiesis-owned container. Empty disables.
   caConfigmap: ""
+  # Connection pool of each API replica. Postgres sees up to
+  # api.replicas (or autoscaling.maxReplicas) x maxSize connections from
+  # the API; size it against max_connections (see guides/production).
+  pool:
+    minSize: 1
+    maxSize: 10
+    # Seconds a request waits for a free connection before it gets a 503.
+    acquireTimeoutSeconds: 10
+  # Seconds a database statement of the API or tctl may run before it fails.
+  # Also bounds a hung connection.
+  commandTimeoutSeconds: 30
 
 # Resource-server auth. Poiesis validates incoming JWTs itself, against the
 # keys of the issuers listed here; a token's `iss` picks its issuer (exact

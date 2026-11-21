@@ -34,6 +34,7 @@ from poiesis.api.exceptions import (
     APIError,
     UnauthorizedError,
     handle_api_exception,
+    handle_pool_timeout,
     handle_unexpected_exception,
 )
 from poiesis.api.jwt_auth import JWTAuthenticator
@@ -44,6 +45,7 @@ from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.settings import load_settings
 from poiesis.core.logging_config import setup_logging
 from poiesis.db import create_pool
+from poiesis.db.pool import PoolTimeoutError
 from poiesis.k8s import K8sClient, load_config
 
 logger = logging.getLogger(__name__)
@@ -63,7 +65,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.runtime_config = settings.runtime_config()
 
     logger.info("Connecting to Postgres at %s", _redact_dsn(settings.database_url))
-    app.state.db_pool = await create_pool(settings.database_url)
+    database = settings.database
+    app.state.db_pool = await create_pool(
+        settings.database_url,
+        min_size=database.pool_min_size,
+        max_size=database.pool_max_size,
+        acquire_timeout=database.acquire_timeout_seconds,
+        command_timeout=database.command_timeout_seconds,
+    )
 
     load_config()
     app.state.k8s = K8sClient()
@@ -188,6 +197,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.add_exception_handler(APIError, handle_api_exception)
     app.add_exception_handler(Exception, handle_unexpected_exception)
+    app.add_exception_handler(PoolTimeoutError, handle_pool_timeout)
     # Every 401 says how to authenticate (RFC 6750, RFC 9728).
     app.add_exception_handler(UnauthorizedError, resource_metadata.handle_unauthorized)
     # One line per request; inside the request id middleware, so it has the id.

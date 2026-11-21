@@ -32,6 +32,11 @@ data:
   {{- with .Values.database.caConfigmap }}
   POIESIS_POSTGRES_CA_CONFIGMAP: {{ . | quote }}
   {{- end }}
+  # Database pool (API) and statement timeout (API and tctl).
+  POIESIS_DATABASE_POOL_MIN_SIZE: {{ .Values.database.pool.minSize | int | quote }}
+  POIESIS_DATABASE_POOL_MAX_SIZE: {{ .Values.database.pool.maxSize | int | quote }}
+  POIESIS_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS: {{ .Values.database.pool.acquireTimeoutSeconds | int | quote }}
+  POIESIS_DATABASE_COMMAND_TIMEOUT_SECONDS: {{ .Values.database.commandTimeoutSeconds | int | quote }}
 
   # ---- Per-task PVC contract -------------------------------------------------
   # storageClass: the kubectl "-" sentinel for "no provisioning" maps to the

@@ -58,7 +58,17 @@
       "properties": {
         "existingSecret":    { "type": "string", "minLength": 1 },
         "existingSecretKey": { "type": "string", "minLength": 1 },
-        "caConfigmap":       { "type": "string" }
+        "caConfigmap":       { "type": "string" },
+        "pool": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "minSize":               { "type": "integer", "minimum": 0 },
+            "maxSize":               { "type": "integer", "minimum": 1 },
+            "acquireTimeoutSeconds": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "commandTimeoutSeconds": { "type": "integer", "minimum": 1 }
       }
     },
 

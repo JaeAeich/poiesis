@@ -156,6 +156,7 @@ async def run(
     identity: str | None = None,
     unschedulable_timeout: float | None = None,
     heartbeat: Path | None = None,
+    command_timeout: float = 30,
 ) -> int:
     """Run the TCtl reconciliation loop until SIGTERM/SIGINT.
 
@@ -164,7 +165,9 @@ async def run(
     is how many seconds a task may wait for its Pod to be created and
     scheduled; None waits until the Job's time limit. `heartbeat`, if set,
     is a file touched at startup and after each loop iteration, leader or
-    standby, for a liveness probe to check its age. Holds the Lease while
+    standby, for a liveness probe to check its age. `command_timeout` bounds
+    every database statement, so a hung connection fails the pass instead
+    of hanging it until the liveness probe restarts tctl. Holds the Lease while
     reconciling; gives it up cleanly on signal. Returns 0 on clean shutdown.
     """
     lease_namespace = lease_namespace or namespace
@@ -174,7 +177,9 @@ async def run(
     coord_v1 = CoordinationV1Api()
     core_v1 = CoreV1Api()
     batch_v1 = BatchV1Api()
-    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=4)
+    pool = await asyncpg.create_pool(
+        dsn, min_size=1, max_size=4, command_timeout=command_timeout
+    )
     try:
         while not cancelled.is_set():
             _beat(heartbeat)

@@ -58,9 +58,15 @@ chart references them by name.
 | `database.existingSecret` | `""` | Secret holding the full `DATABASE_URL`. Required. |
 | `database.existingSecretKey` | `DATABASE_URL` | Key in that Secret. |
 | `database.caConfigmap` | `""` | ConfigMap with `ca.crt`, mounted read-only at `/etc/ssl/poiesis` in the API, TCtl and every TaskPod's Poiesis containers. |
+| `database.pool.minSize` | `1` | Connections each API replica keeps open. |
+| `database.pool.maxSize` | `10` | Most connections each API replica opens. |
+| `database.pool.acquireTimeoutSeconds` | `10` | Seconds a request waits for a free connection. Then it gets a 503 with `Retry-After: 1`. |
+| `database.commandTimeoutSeconds` | `30` | Seconds a database statement of the API or TCtl may run before it fails. Also bounds a connection that stopped answering. |
 
 The URL has the form
 `postgresql://USER:PASS@HOST:PORT/DB?sslmode=verify-full&sslrootcert=/etc/ssl/poiesis/ca.crt`.
+To size the pool against Postgres, see
+[Production: database](../guides/production.md#database).
 
 ## S3
 

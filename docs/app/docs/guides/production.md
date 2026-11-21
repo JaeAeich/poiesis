@@ -46,6 +46,19 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 - `sslmode=verify-full` with
   `sslrootcert=/etc/ssl/poiesis/ca.crt`, and the CA in a ConfigMap named by
   `database.caConfigmap` (key `ca.crt`).
+- Size the connection pool against Postgres `max_connections`:
+  - Each API replica opens up to `database.pool.maxSize` connections
+    (default 10). Count the most replicas you run:
+    `autoscaling.maxReplicas` when autoscaling is on, else `api.replicas`.
+  - Each TCtl replica opens up to 4; the standby keeps 1 open.
+  - Keep a few for the migration Job and for your own access.
+  - A request waits at most `database.pool.acquireTimeoutSeconds` for a
+    free connection, then gets a 503 with `Retry-After`. Raise `maxSize`
+    if clients see that under normal load; add replicas if Postgres has
+    room.
+- `database.commandTimeoutSeconds` (default 30) bounds every statement
+  of the API and TCtl, so a connection that stops answering fails the
+  request or the TCtl pass instead of holding it.
 
 ## Storage
 

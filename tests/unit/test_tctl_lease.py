@@ -43,6 +43,7 @@ class Harness:
         self.reconciled: list[str] = []
         self.timeouts: list[float | None] = []
         self.failures: list[Exception] = []
+        self.pool_kwargs: dict[str, Any] = {}
         self.cancelled = asyncio.Event()
         #: Passes before tctl is stopped.
         self.passes = 1
@@ -71,7 +72,8 @@ class Harness:
             if len(self.reconciled) >= self.passes:
                 self.cancelled.set()
 
-        async def create_pool(*_: Any, **__: Any) -> Pool:
+        async def create_pool(*_: Any, **kwargs: Any) -> Pool:
+            self.pool_kwargs = kwargs
             return Pool()
 
         monkeypatch.setattr(tctl, "try_acquire_or_renew", lease)
@@ -261,6 +263,7 @@ def test_cli_passes_both_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "dsn")
     monkeypatch.delenv("POIESIS_POD_NAME", raising=False)
     monkeypatch.delenv("POIESIS_TCTL_HEARTBEAT_FILE", raising=False)
+    monkeypatch.delenv("POIESIS_DATABASE_COMMAND_TIMEOUT_SECONDS", raising=False)
 
     result = CliRunner().invoke(tctl_cli.TctlCommand().create_command(), ["run"])
 
@@ -272,7 +275,15 @@ def test_cli_passes_both_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:
         "identity": None,
         "unschedulable_timeout": None,
         "heartbeat": None,
+        "command_timeout": 30,
     }
+
+
+def test_database_statements_have_a_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hung Postgres connection fails the pass instead of hanging it (#164)."""
+    harness = Harness(monkeypatch)
+    assert harness.run(command_timeout=7) == 0
+    assert harness.pool_kwargs["command_timeout"] == 7  # noqa: PLR2004
 
 
 def test_unschedulable_timeout_reaches_the_pass(
