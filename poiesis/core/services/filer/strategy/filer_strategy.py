@@ -19,7 +19,7 @@ from glob import glob
 from urllib.parse import urlsplit, urlunsplit
 
 from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
-from poiesis.core.constants import FILER_PVC_PATH
+from poiesis.core.constants import FILER_PVC_PATH, OUTPUT_GLOB_FALLBACK_ENV
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,15 @@ def redact_url(url: str | None) -> str | None:
     if not url:
         return url
     return urlunsplit(urlsplit(url)._replace(query="", fragment=""))
+
+
+def output_glob_fallback() -> bool:
+    """True if a glob that matches no file uploads its `path_prefix` instead.
+
+    Off unless the operator turns on ``taskpods.outputGlobFallback``, which
+    makes the API set ``POIESIS_OUTPUT_GLOB_FALLBACK=true`` on the filer.
+    """
+    return os.environ.get(OUTPUT_GLOB_FALLBACK_ENV, "").lower() == "true"
 
 
 class BaseFilerStrategy:
@@ -150,8 +159,9 @@ class OutputFilerStrategy(BaseFilerStrategy, ABC):
         """Dispatch to glob, file, or directory upload.
 
         Glob upload is preferred when the path contains wildcards or the
-        caller supplied a `path_prefix`. Falls back to uploading the
-        parent directory when a glob matches no files.
+        caller supplied a `path_prefix`. A glob that matches no file uploads
+        nothing, or, with `output_glob_fallback()` on, everything under
+        `path_prefix`.
         """
         assert isinstance(self.payload, TesOutput)
         is_glob_like = self._path_contains_glob(self.payload.path)
@@ -183,11 +193,20 @@ class OutputFilerStrategy(BaseFilerStrategy, ABC):
                 await self.upload_glob(globbed)
                 return
 
+            if not output_glob_fallback():
+                logger.warning(
+                    "Output glob '%s' matched no files; nothing uploaded to %s.",
+                    self.payload.path,
+                    redact_url(self.payload.url),
+                )
+                return
+
             logger.warning(
                 "Output glob '%s' matched no files; falling back to "
-                "uploading parent directory '%s'.",
+                "uploading parent directory '%s' (%s is on).",
                 self.payload.path,
                 self.payload.path_prefix,
+                OUTPUT_GLOB_FALLBACK_ENV,
             )
             parent = self._get_container_path(self.payload.path_prefix)
             await self.upload_output_directory(parent)

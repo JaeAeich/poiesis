@@ -30,6 +30,7 @@ from pydantic import (
 from pydantic.alias_generators import to_camel
 
 from poiesis.api.constants import get_poiesis_api_constants
+from poiesis.core.constants import OUTPUT_GLOB_FALLBACK_ENV
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 
 logger = logging.getLogger(__name__)
@@ -1006,6 +1007,12 @@ class Settings(BaseModel):
             "POIESIS_TASKPOD_EXTRA_VOLUME_MOUNTS"
         ),
     )
+    # Strict: a typo must not turn on uploading a whole path_prefix.
+    output_glob_fallback: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            OUTPUT_GLOB_FALLBACK_ENV, default=False
+        ),
+    )
     aws_endpoint_url: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_ENDPOINT_URL") or None,
     )
@@ -1053,6 +1060,7 @@ class Settings(BaseModel):
             taskpod_extra_env=_entries_to_envvars(self.taskpod_extra_env),
             taskpod_extra_volumes=self.taskpod_extra_volumes,
             taskpod_extra_volume_mounts=self.taskpod_extra_volume_mounts,
+            output_glob_fallback=self.output_glob_fallback,
         )
 
 

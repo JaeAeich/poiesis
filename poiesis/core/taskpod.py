@@ -67,7 +67,7 @@ from kubernetes.client import (
 
 from poiesis.api.tes.models import TesFileType
 from poiesis.core import ignore_error
-from poiesis.core.constants import FILER_PVC_PATH
+from poiesis.core.constants import FILER_PVC_PATH, OUTPUT_GLOB_FALLBACK_ENV
 from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
 from poiesis.core.services.filer import filer_strategy_factory as _filer
 
@@ -180,6 +180,10 @@ class RuntimeConfig:
             appended to every container (poiesis-owned AND executors,
             because the reference-data use case requires executors to see
             the mount). Each entry is a dict shaped like V1VolumeMount.
+        output_glob_fallback: When True, an output glob that matches no
+            file makes TOF upload everything under the output's
+            ``path_prefix`` instead of nothing. Sourced from
+            ``taskpods.outputGlobFallback``; off by default.
     """
 
     taskpod_namespace: str
@@ -209,6 +213,7 @@ class RuntimeConfig:
     taskpod_extra_env: list[V1EnvVar] = field(default_factory=list)
     taskpod_extra_volumes: list[dict[str, Any]] = field(default_factory=list)
     taskpod_extra_volume_mounts: list[dict[str, Any]] = field(default_factory=list)
+    output_glob_fallback: bool = False
 
 
 def build_taskpod_job(
@@ -587,8 +592,12 @@ def _filer_env(config: RuntimeConfig) -> list[V1EnvVar]:
     The mount path is *not* an operator knob — filer code reads
     ``poiesis.core.constants.FILER_PVC_PATH`` directly. The chart-internal
     DB DSN + S3 creds, plus operator extras, come through ``_poiesis_env``.
+    The output-glob fallback flag is set only when on.
     """
-    return _poiesis_env(config)
+    env = _poiesis_env(config)
+    if config.output_glob_fallback:
+        env.append(V1EnvVar(name=OUTPUT_GLOB_FALLBACK_ENV, value="true"))
+    return env
 
 
 def _poiesis_env(config: RuntimeConfig) -> list[V1EnvVar]:

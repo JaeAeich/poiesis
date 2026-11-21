@@ -52,6 +52,10 @@ data:
   POIESIS_JOB_TTL_SECONDS: {{ .Values.taskpods.persistence.retainAfterSeconds | quote }}
   {{- end }}
 
+  # ---- Outputs ---------------------------------------------------------------
+  # Whether an output glob that matches no file uploads its path_prefix.
+  POIESIS_OUTPUT_GLOB_FALLBACK: {{ .Values.taskpods.outputGlobFallback | default false | quote }}
+
   # ---- Operator-supplied TaskPod extensions ---------------------------------
   # Serialised as JSON arrays so the API can decode them at startup. Empty
   # lists are omitted entirely; the runtime defaults to [] when unset.
