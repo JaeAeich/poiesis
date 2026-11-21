@@ -80,13 +80,15 @@ class World:
         self.system_logs: dict[str, list[str]] = {}
         self.calls: list[str] = []
         self.deleted: list[str] = []
-        self.delete_error: ApiException | None = None
+        self.delete_error: Exception | None = None
         self.clock = 1000.0
         self.first_seen: dict[str, float] = {}
         #: The operator's unschedulable timeout; None waits (the default).
         self.unschedulable_timeout: float | None = None
         #: Runs when the Pods are listed, i.e. in the middle of a pass.
         self.on_pod_list = lambda: None
+        #: Raised once by the terminal write of a task.
+        self.write_errors: dict[str, Exception] = {}
         #: Objects per list page; None returns each list in one page.
         self.page_size: int | None = None
         #: Raised once by the list of `kind` ("jobs", "pods") at `token`.
@@ -121,6 +123,9 @@ class World:
     async def write(
         self, _conn: Any, task_id: str, proposed: TesState, reason: str | None = None
     ) -> state_db.TerminalWriteResult:
+        error = self.write_errors.pop(task_id, None)
+        if error is not None:
+            raise error
         current = self.states.get(task_id)
         if current is None or current in state_db.TERMINAL_STATES:
             return state_db.TerminalWriteResult.NO_OP
@@ -339,6 +344,34 @@ class TestLists:
         with pytest.raises(ApiException):
             world.tick()
         assert world.writes == {}
+
+
+class TestErrorIsolation:
+    """One task's error doesn't stop the pass for the others (#163)."""
+
+    def test_a_failing_write_is_logged_and_the_pass_goes_on(
+        self, world: World, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        world.states = {T1: TesState.RUNNING, T2: TesState.RUNNING}
+        world.pods = [pod(T1, "Failed"), pod(T2, "Failed")]
+        world.write_errors[T1] = OSError("connection reset")
+        world.tick()
+        assert set(world.writes) == {T2}
+        assert f"applying the actions of task={T1} raised" in caplog.text
+        world.tick()  # decided again on the next pass
+        assert set(world.writes) == {T1, T2}
+
+    def test_a_delete_that_times_out_does_not_stop_the_pass(
+        self, world: World, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Only ApiException is handled in `_delete_job`; a timeout isn't one."""
+        world.states = {T1: TesState.CANCELING, T2: TesState.RUNNING}
+        world.jobs = [job(T1)]
+        world.pods = [pod(T2, "Failed")]
+        world.delete_error = TimeoutError("read timed out")
+        world.tick()
+        assert set(world.writes) == {T2}
+        assert f"applying the actions of task={T1} raised" in caplog.text
 
 
 class TestPodlessJobs:

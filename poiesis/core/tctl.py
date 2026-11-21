@@ -299,7 +299,9 @@ async def _reconcile_once(
     (`reconcile.decide`) and applies them (`_apply`). A cancelled task's Job
     delete goes first, for every task: its Pods are stopped, and with the
     Job and Pod gone a later pass's orphan check finalises the task as
-    CANCELED. The other actions follow, task by task.
+    CANCELED. The other actions follow, task by task. An error while
+    applying one task's actions is logged and the pass goes on with the
+    next task.
     """
     snapshot = await _gather(core_v1, batch_v1, pool, namespace, first_seen)
     timeouts = Timeouts(
@@ -318,12 +320,24 @@ async def _reconcile_once(
         for task in snapshot.tasks()
     }
 
-    for task_id in snapshot.canceling:
-        retried = [a for a in plans[task_id] if isinstance(a, DeleteJob) and a.retry]
-        await _apply(core_v1, batch_v1, pool, namespace, task_id, retried)
-    for task_id, actions in plans.items():
-        rest = [a for a in actions if not (isinstance(a, DeleteJob) and a.retry)]
-        await _apply(core_v1, batch_v1, pool, namespace, task_id, rest)
+    steps = [
+        (task_id, [a for a in plans[task_id] if isinstance(a, DeleteJob) and a.retry])
+        for task_id in snapshot.canceling
+    ] + [
+        (task_id, [a for a in actions if not (isinstance(a, DeleteJob) and a.retry)])
+        for task_id, actions in plans.items()
+    ]
+    for task_id, actions in steps:
+        if not actions:
+            continue
+        try:
+            await _apply(core_v1, batch_v1, pool, namespace, task_id, actions)
+        except Exception:
+            # One task's database or Kubernetes error must not stop the
+            # others; its actions are decided again on the next pass.
+            logger.exception(
+                "tctl: applying the actions of task=%s raised; going on", task_id
+            )
 
 
 async def _gather(

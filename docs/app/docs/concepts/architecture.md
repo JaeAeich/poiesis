@@ -116,6 +116,9 @@ TCtl is on every path: TRec never finalises a task, clean runs included.
   on a page TCtl didn't read is never taken for one without a Pod. A
   list whose continue token has expired (`410 Gone`) starts again from
   the first page, up to 3 times.
+- **One task**: an error while writing one task's state or deleting
+  its Job is logged with the task's id, and the pass goes on with the
+  next task. The next pass decides that task again.
 
 ## Postgres
 
