@@ -88,10 +88,11 @@ def test_expiry_is_ttl_from_now() -> None:
     """A key expires its TTL after it was minted."""
 
     async def test(pool: Any) -> None:
-        before = datetime.now(UTC)
         record = await mint(pool, ttl=timedelta(hours=2))
         assert record is not None
-        lifetime = record.expires_at - before
+        # Both times from the database's clock: comparing with the host's
+        # clock flakes where the two drift (Docker on macOS).
+        lifetime = record.expires_at - record.created_at
         assert timedelta(hours=2) <= lifetime < timedelta(hours=2, minutes=1)
 
     run(test)
