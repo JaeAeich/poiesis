@@ -178,14 +178,14 @@ def test_tctl_backfills_real_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
     async def recorded_executor_ordinals(_conn: Any, _task_id: str) -> set[int]:
         return set()
 
-    async def read_executor_output(*_: Any) -> None:
-        return None
+    async def read_executor_streams(*_: Any) -> tuple[None, None]:
+        return None, None
 
     monkeypatch.setattr(tctl.state_db, "append_executor_log", append_executor_log)
     monkeypatch.setattr(
         tctl.state_db, "recorded_executor_ordinals", recorded_executor_ordinals
     )
-    monkeypatch.setattr(tctl, "read_executor_output", read_executor_output)
+    monkeypatch.setattr(tctl, "read_executor_streams", read_executor_streams)
     pod = {
         "metadata": {"name": "pod-1", "namespace": "tasks"},
         "status": {
@@ -195,7 +195,7 @@ def test_tctl_backfills_real_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
                 ),
                 terminated_status("exec-1", exit_code=0, message=None),
             ]
-        }
+        },
     }
 
     asyncio.run(tctl._backfill_executor_logs(None, None, "t1", pod))

@@ -36,7 +36,8 @@ The in-pod recorder. It watches its own Pod and writes:
 
 - `RUNNING` when it starts, before `tif` and the executors;
 - one `executor_logs` row per executor: start, end, exit code, and the
-  last 64 KiB of the container log as `stdout`;
+  last 64 KiB of the container log as `stdout` (or of the executor's
+  `stdout` and `stderr` files, read from the task volume);
 - `system_logs` lines when `tif` or `tof` exit non-zero.
 
 It never writes the terminal state; TCtl does. It exits when the Pod

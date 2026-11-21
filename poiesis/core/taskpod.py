@@ -7,7 +7,8 @@ The TaskPod's shape:
 
     init containers, in order:
         trec     — recorder native sidecar (restartPolicy: Always)
-        tif      — input filer (only if the task has inputs)
+        tif      — input filer (only if the task has inputs, or
+                    directories to create: `_task_dirs`)
         exec-0   — first executor
         ...
         exec-N   — last executor
@@ -66,8 +67,13 @@ from kubernetes.client import (
 )
 
 from poiesis.api.tes.models import TesFileType
-from poiesis.core import ignore_error
-from poiesis.core.constants import FILER_PVC_PATH, OUTPUT_GLOB_FALLBACK_ENV
+from poiesis.core import executor_shell, ignore_error
+from poiesis.core.constants import (
+    EXECUTOR_STREAMS_ENV,
+    FILER_PVC_PATH,
+    OUTPUT_GLOB_FALLBACK_ENV,
+)
+from poiesis.core.executor_logs import Streams, encode_streams
 from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
 from poiesis.core.services.filer import filer_strategy_factory as _filer
 
@@ -284,6 +290,7 @@ def _reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
     # paths the executor can't be given (raises before anything is created)
     path_mounts = _executor_path_mounts(task)
     _reject_operator_mount_conflicts(path_mounts, config)
+    _reject_relative_stream_paths(task)
 
     _reject_oversized_disk(task, config)
 
@@ -450,12 +457,13 @@ def _build_job(
 
 def _build_init_containers(task: TesTask, config: RuntimeConfig) -> list[V1Container]:
     """Init container order: trec (sidecar) → tif → exec-0..N → tof."""
-    containers: list[V1Container] = [_build_trec(task, config)]
-
-    if task.inputs:
-        containers.append(_build_tif(task, config))
-
     path_mounts = _executor_path_mounts(task)
+    containers: list[V1Container] = [_build_trec(task, config, path_mounts)]
+
+    task_dirs = _task_dirs(task, path_mounts)
+    if task.inputs or task_dirs:
+        containers.append(_build_tif(task, config, task_dirs))
+
     for idx, executor in enumerate(task.executors):
         containers.append(_build_executor(executor, idx, config, path_mounts))
 
@@ -465,7 +473,9 @@ def _build_init_containers(task: TesTask, config: RuntimeConfig) -> list[V1Conta
     return containers
 
 
-def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
+def _build_trec(
+    task: TesTask, config: RuntimeConfig, path_mounts: list[V1VolumeMount]
+) -> V1Container:
     """Recorder native sidecar.
 
     Init container with `restartPolicy: Always` — the K8s 1.29+ native-sidecar
@@ -473,14 +483,20 @@ def _build_trec(task: TesTask, config: RuntimeConfig) -> V1Container:
     init-phase container transitions.
 
     The only container that gets the ServiceAccount token: it watches the
-    Pod and reads executor logs through the API.
+    Pod and reads executor logs through the API. When executors write
+    stdout or stderr to files, ``EXECUTOR_STREAMS_ENV`` says where on the
+    task volume trec reads them (`_executor_streams`).
     """
+    env = _downward_api_env() + _poiesis_env(config)
+    streams = _executor_streams(task, path_mounts)
+    if streams:
+        env.append(V1EnvVar(name=EXECUTOR_STREAMS_ENV, value=encode_streams(streams)))
     container = V1Container(
         name=TREC_NAME,
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
         command=["poiesis", "trec", "run", "--task-id", _require_id(task)],
-        env=_downward_api_env() + _poiesis_env(config),
+        env=env,
         volume_mounts=[*_poiesis_mounts(config), _api_token_mount()],
         resources=config.recorder_resources,
         security_context=_poiesis_security_context(config),
@@ -556,14 +572,19 @@ def _downward_api_env() -> list[V1EnvVar]:
     ]
 
 
-def _build_tif(task: TesTask, config: RuntimeConfig) -> V1Container:
-    """Input filer container."""
+def _build_tif(
+    task: TesTask, config: RuntimeConfig, task_dirs: list[str]
+) -> V1Container:
+    """Input filer container; also creates `task_dirs` (see `_task_dirs`)."""
     task_id = _require_id(task)
+    command = ["poiesis", "tif", "run", "--task-id", task_id]
+    for path in task_dirs:
+        command += ["--mkdir", path]
     return V1Container(
         name=TIF_NAME,
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
-        command=["poiesis", "tif", "run", "--task-id", task_id],
+        command=command,
         env=_filer_env(config),
         volume_mounts=_poiesis_mounts(config),
         resources=config.filer_resources,
@@ -618,24 +639,26 @@ def _build_executor(
 ) -> V1Container:
     """One executor init container.
 
-    Image, command, workdir, env, stdin/stdout/stderr paths come from the
-    TesExecutor. The command runs as submitted, unless the executor sets
-    ``ignore_error``: then it runs under ``/bin/sh``, which records its exit
-    code in the termination message and exits 0 (see ``ignore_error``).
+    Image, command, workdir and env come from the TesExecutor. The command
+    runs as submitted, with no shell, unless the executor sets
+    ``ignore_error``, ``stdin``, ``stdout`` or ``stderr``: then it runs
+    under ``/bin/sh``, which opens the ``stdin``/``stdout``/``stderr``
+    files and, with ``ignore_error``, records the exit code in the
+    termination message and exits 0 (see ``executor_shell``). The
+    container's own stdin stays closed (``stdin: false``).
     """
     env = [V1EnvVar(name=k, value=v) for k, v in (executor.env or {}).items()]
     container = V1Container(
         name=f"exec-{index}",
         image=executor.image,
         image_pull_policy=config.image_pull_policy,
-        command=list(executor.command),
+        command=executor_shell.wrap(executor) or list(executor.command),
         working_dir=executor.workdir,
         env=env or None,
         volume_mounts=_executor_mounts(config, path_mounts),
-        stdin=bool(executor.stdin),
+        stdin=False,
     )
     if executor.ignore_error:
-        container.command = ignore_error.wrap_command(executor.command)
         container.termination_message_path = ignore_error.TERMINATION_MESSAGE_PATH
         container.termination_message_policy = "File"
     return container
@@ -719,8 +742,9 @@ def _executor_path_mounts(task: TesTask) -> list[V1VolumeMount]:
     ``path_prefix`` is, so the mount must cover every match.
 
     A path under another mounted path already shows through that mount, so
-    only the outermost ones are kept. Directories that don't exist yet on
-    the PVC are created by the kubelet, with the mode of the volume root.
+    only the outermost ones are kept. The kubelet creates the mount points
+    that don't exist yet on the PVC, with the mode of the volume root; TIF
+    creates the other directories (`_task_dirs`).
 
     Raises ``ValueError`` (HTTP 400) for a path that isn't absolute, that
     has a ``..`` component, that would mean mounting ``/``, that lies in
@@ -728,16 +752,7 @@ def _executor_path_mounts(task: TesTask) -> list[V1VolumeMount]:
     """
     _reject_parent_components(task)
 
-    candidates: set[str] = set(task.volumes or [])
-    for inp in task.inputs or []:
-        candidates.add(inp.path)
-    for out in task.outputs or []:
-        if _GLOB_CHARS.intersection(out.path):
-            candidates.add(_glob_free_dir(out.path))
-        elif out.type == TesFileType.DIRECTORY:
-            candidates.add(out.path)
-        else:
-            candidates.add(posixpath.dirname(out.path))
+    candidates = {inp.path for inp in task.inputs or []} | _dir_candidates(task)
 
     _reject_paths_below_file_inputs(task)
 
@@ -750,6 +765,77 @@ def _executor_path_mounts(task: TesTask) -> list[V1VolumeMount]:
         V1VolumeMount(name=PVC_VOLUME_NAME, mount_path=path, sub_path=path[1:])
         for path in sorted(mount_paths)
     ]
+
+
+def _dir_candidates(task: TesTask) -> set[str]:
+    """The directories `_executor_path_mounts` mounts, inputs aside, as given."""
+    candidates: set[str] = set(task.volumes or [])
+    for out in task.outputs or []:
+        if _GLOB_CHARS.intersection(out.path):
+            candidates.add(_glob_free_dir(out.path))
+        elif out.type == TesFileType.DIRECTORY:
+            candidates.add(out.path)
+        else:
+            candidates.add(posixpath.dirname(out.path))
+    return candidates
+
+
+def _task_dirs(task: TesTask, path_mounts: list[V1VolumeMount]) -> list[str]:
+    """Directories TIF creates on the PVC before the executors run.
+
+    TES ``volumes`` are empty directories the executors can use, and the
+    other directories `_executor_path_mounts` would mount (``DIRECTORY``
+    outputs, the directory of a ``FILE`` output or before a wildcard)
+    should exist as well. The kubelet creates those that are mount points;
+    one below another mounted path (Sprocket's ``/mnt/task/usage`` volume
+    under ``/mnt/task``) has no mount of its own, so TIF creates it, after
+    staging the inputs, with the mode the kubelet gives mount points.
+    Input paths are left to TIF's staging.
+    """
+    mount_points = {mount.mount_path for mount in path_mounts}
+    inputs = {_normalised(inp.path) for inp in task.inputs or []}
+    dirs = {_normalised(path) for path in _dir_candidates(task)}
+    return sorted(dirs - mount_points - inputs)
+
+
+def _executor_streams(
+    task: TesTask, path_mounts: list[V1VolumeMount]
+) -> dict[int, Streams]:
+    """Which executors write stdout/stderr to files, and where trec reads them.
+
+    trec mounts the PVC at ``FILER_PVC_PATH``; a file under an executor
+    path mount at ``<path>`` is at ``FILER_PVC_PATH/<path>`` there. Files
+    elsewhere stay in the executor's container, out of trec's reach.
+    """
+    mount_paths = [mount.mount_path for mount in path_mounts]
+    streams: dict[int, Streams] = {}
+    for idx, executor in enumerate(task.executors):
+        paths = {
+            s: p
+            for s, p in executor_shell.streams(executor).items()
+            if s in ("stdout", "stderr")
+        }
+        if not paths:
+            continue
+        files = {}
+        for stream, path in paths.items():
+            normalised = _normalised(path)
+            if any(_is_within(normalised, m) for m in mount_paths):
+                files[stream] = posixpath.join(FILER_PVC_PATH, normalised[1:])
+        streams[idx] = Streams(frozenset(paths), files)
+    return streams
+
+
+def _reject_relative_stream_paths(task: TesTask) -> None:
+    """Reject ``stdin``/``stdout``/``stderr`` paths that aren't absolute.
+
+    TES requires them to be absolute.
+    """
+    for idx, executor in enumerate(task.executors):
+        for stream, path in executor_shell.streams(executor).items():
+            if not posixpath.isabs(path):
+                msg = f"executors[{idx}].{stream} must be an absolute path: {path!r}"
+                raise ValueError(msg)
 
 
 def _declared_paths(task: TesTask) -> list[tuple[str, str]]:

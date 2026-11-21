@@ -4,7 +4,9 @@ TRec runs inside the TaskPod and watches its own Pod via the Kubernetes
 API. Each watch event is translated by `pod_status.translate` into a
 list of `TaskEvent`s; the recorder applies them by writing executor and
 filer log rows to Postgres. An executor's row carries the tail of its
-container log as `stdout` (see `poiesis.core.executor_logs`).
+output as `stdout` and `stderr`: from its container log, or from the
+files on the task volume it writes them to (see
+`poiesis.core.executor_logs`).
 
 Trec does NOT write terminal state. The cluster-wide controller (tctl)
 owns terminal transitions exclusively — see `poiesis/core/tctl.py`. Trec's
@@ -16,7 +18,6 @@ during pod teardown.
 from __future__ import annotations
 
 import asyncio
-import functools
 import logging
 import signal
 import uuid
@@ -26,13 +27,13 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 
-    #: Reads executor N's output; None when the log can't be read.
-    ReadOutput = Callable[[int], Awaitable[str | None]]
+    #: Reads executor N's (stdout, stderr); None for what can't be read.
+    ReadOutput = Callable[[int], Awaitable[tuple[str | None, str | None]]]
 
 import asyncpg
 from kubernetes import client
 
-from poiesis.core.executor_logs import read_executor_output
+from poiesis.core.executor_logs import Streams, read_executor_streams
 from poiesis.core.k8s_watch import PodEvent, PodSelector, watch_pods
 from poiesis.core.pod_status import (
     EventKind,
@@ -45,16 +46,25 @@ from poiesis.db import state as state_db
 logger = logging.getLogger(__name__)
 
 
-async def run(task_id: str, pod_name: str, namespace: str, dsn: str) -> int:
+async def run(
+    task_id: str,
+    pod_name: str,
+    namespace: str,
+    dsn: str,
+    streams: Mapping[int, Streams] | None = None,
+) -> int:
     """Record the Pod's lifecycle into Postgres until terminal or signalled.
 
-    Returns 0 on a clean exit (terminal pod or SIGTERM), 1 on an
+    `streams` says which executors write stdout/stderr to files on the task
+    volume. Returns 0 on a clean exit (terminal pod or SIGTERM), 1 on an
     unrecoverable watch error.
     """
     conn = await asyncpg.connect(dsn)
     try:
         await _mark_running(conn, task_id)
-        return await _run_until_terminal(conn, task_id, pod_name, namespace)
+        return await _run_until_terminal(
+            conn, task_id, pod_name, namespace, streams or {}
+        )
     finally:
         await conn.close()
 
@@ -64,13 +74,19 @@ async def _run_until_terminal(
     task_id: str,
     pod_name: str,
     namespace: str,
+    streams: Mapping[int, Streams],
 ) -> int:
     """Drive the Pod watch and apply each event to Postgres."""
     snapshot = TaskStateSnapshot()
     cancelled = _install_signal_handlers()
 
     core_v1 = client.CoreV1Api()
-    read_output = functools.partial(read_executor_output, core_v1, pod_name, namespace)
+
+    async def read_output(ordinal: int) -> tuple[str | None, str | None]:
+        return await read_executor_streams(
+            core_v1, pod_name, namespace, ordinal, streams.get(ordinal)
+        )
+
     selector = PodSelector(
         namespace=namespace, field_selector=f"metadata.name={pod_name}"
     )
@@ -141,14 +157,14 @@ async def _apply_event(
     """Persist a single non-terminal observation.
 
     Executor finishes land as `executor_logs` rows, with the tail of the
-    executor's log as `stdout` (stored as None if it can't be read);
+    executor's output as `stdout` and `stderr` (None if it can't be read);
     filer non-zero exits land as `system_logs` strings. Terminal state is
     tctl's exclusive write — trec touches neither the tasks row nor
     `write_terminal_state`.
     """
     if event.kind is EventKind.EXECUTOR_FINISHED:
         if event.executor_index is not None and event.exit_code is not None:
-            stdout = await read_output(event.executor_index)
+            stdout, stderr = await read_output(event.executor_index)
             await state_db.append_executor_log(
                 conn,
                 task_id,
@@ -157,6 +173,7 @@ async def _apply_event(
                 start_time=_parse_iso(event.started_at),
                 end_time=_parse_iso(event.finished_at),
                 stdout=stdout,
+                stderr=stderr,
             )
         return
 
