@@ -2,9 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "poiesis chart values",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
   "required": ["image", "migrations", "database", "auth", "api", "tctl", "taskpods"],
   "properties": {
+    "global":            { "type": "object" },
     "nameOverride":      { "type": "string" },
     "fullnameOverride":  { "type": "string" },
     "commonLabels":      { "type": "object" },
@@ -168,7 +169,7 @@
       "properties": {
         "replicas":   { "type": "integer", "minimum": 1 },
         "image":      { "$ref": "#/$defs/imageOverride" },
-        "resources":  { "type": "object" },
+        "resources":  { "$ref": "#/$defs/resources" },
         "probes":     { "$ref": "#/$defs/probesSpec" },
         "service":    { "$ref": "#/$defs/serviceSpec" },
         "ingress":    { "$ref": "#/$defs/ingressSpec" },
@@ -197,7 +198,7 @@
         "replicas":  { "type": "integer", "minimum": 1 },
         "unschedulableTimeoutSeconds": { "type": ["integer", "null"], "minimum": 1 },
         "image":     { "$ref": "#/$defs/imageOverride" },
-        "resources": { "type": "object" },
+        "resources": { "$ref": "#/$defs/resources" },
 
         "extraEnv":          { "type": "array" },
         "extraEnvFrom":      { "type": "array" },
@@ -285,7 +286,7 @@
       "required": ["image"],
       "properties": {
         "image":     { "$ref": "#/$defs/imageSpec" },
-        "resources": { "type": "object" }
+        "resources": { "$ref": "#/$defs/resources" }
       }
     }
   },
@@ -417,6 +418,19 @@
         "name":        { "type": "string" },
         "annotations": { "type": "object" }
       }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": { "$ref": "#/$defs/resourceList" },
+        "limits":   { "$ref": "#/$defs/resourceList" },
+        "claims":   { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "resourceList": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number"] }
     },
     "probesSpec": {
       "type": "object",

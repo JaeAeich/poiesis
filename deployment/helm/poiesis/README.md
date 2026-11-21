@@ -42,7 +42,9 @@ Per-task TaskPods are created on-demand by the API in response to TES
 
 ## Values reference
 
-Full schema in `values.schema.json`. The fields most deployments customise:
+Full schema in `values.schema.json`; it refuses unknown keys, so a typo
+such as `taskpod:` fails `helm lint` and `helm install`. The fields most
+deployments customise:
 
 ### Required
 

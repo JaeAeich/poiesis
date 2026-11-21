@@ -6,7 +6,8 @@ description: Every key of the Poiesis Helm chart (deployment/helm/poiesis/values
 
 Every key of the chart at `deployment/helm/poiesis`, with its default.
 The [Deploy](/deploy) page writes a `values.yaml` with only the keys you
-change. `values.schema.json` validates values at `helm install`.
+change. `values.schema.json` validates values at `helm install` and
+`helm lint`: an unknown key (a typo such as `taskpod:`) fails the install.
 
 Defaults are layered: top-level keys apply to every component, and
 `api:` and `tctl:` override only what differs. `taskpods:` shapes what

@@ -95,3 +95,22 @@ def test_database_egress_null_drops_the_rule() -> None:
         "api",
     )
     assert 5432 not in egress_ports(policy)  # noqa: PLR2004
+
+
+@pytest.mark.parametrize(
+    ("override", "error"),
+    [
+        ("taskpod.namespace=x", "additional properties 'taskpod' not allowed"),
+        ("api.resources.request.cpu=1", "additional properties 'request'"),
+    ],
+)
+def test_schema_refuses_unknown_keys(override: str, error: str) -> None:
+    """A typo in a key fails `helm lint` instead of being ignored."""
+    result = helm("lint", str(CHART), "-f", LINT, "--set", override)
+    assert result.returncode != 0
+    assert error in result.stdout + result.stderr
+
+
+def test_schema_accepts_global() -> None:
+    """Helm passes `global` to a chart used as a dependency."""
+    assert render(LINT, sets=("global.imageRegistry=example.org",))
