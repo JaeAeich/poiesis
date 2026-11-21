@@ -6,7 +6,8 @@ run that was started with a token gets `401`s halfway through, even
 though its tasks are fine. Poiesis API keys fix that: an owner logs in
 once, mints a key for the run and gives the key to the engine.
 
-A key is `poi_` followed by 43 random characters. It authenticates as
+A key is `poi_`, 43 random characters (256 bits) and a 6-character
+checksum. It authenticates as
 the owner who minted it: the same owner id (`issuer|subject`), so the
 same tasks. Keys are the second link of the authenticator chain (see
 [Authentication](./authentication.md)); the first link, for JWTs, never
@@ -36,6 +37,30 @@ auth:
 - API keys need `auth.enabled: true`. With `enabled: false`, the key
   routes are not mounted and keys don't authenticate.
 
+Which tokens may **mint** keys is set per issuer, in `auth.issuers[]`:
+
+```yaml
+auth:
+  issuers:
+    - issuer: https://keycloak.example.org/realms/poiesis
+      audience: poiesis
+      keyMinting:
+        clients: [poiesis-cli]  # token azp (else client_id) allowed
+        maxAuthAge: 600         # optional: login at most 10 min ago
+```
+
+- An issuer without `keyMinting` can't mint keys. List the clients
+  people log in with (the Swagger UI's, a CLI's), not service accounts
+  or CI clients: minting turns a short-lived token into a key that
+  lives for weeks, so a token stolen from a pipeline mustn't be able
+  to do that.
+- `maxAuthAge` also requires a recent login: the token's `auth_time`
+  (when the user last authenticated) at most that many seconds ago,
+  like the password prompt before creating a GitHub token. The issuer
+  must put `auth_time` in access tokens; Keycloak does with a "User
+  Session Note" mapper for the note `AUTH_TIME` (the dev realm has
+  one). Tokens without it can't mint.
+
 Keys live in the `api_keys` table (migration `000003`). Only the
 SHA-256 of a key is stored; the key itself is shown once, when it is
 minted, and can't be recovered.
@@ -43,8 +68,10 @@ minted, and can't be recovered.
 ## Minting a key
 
 Minting, listing and revoking need an **OIDC access token** from one of
-the configured issuers. An API key can't mint, list or revoke keys (a
-leaked key can't extend itself), and neither can a delegated token
+the configured issuers; minting also needs a token from a client in its
+issuer's `keyMinting` (and a recent login with `maxAuthAge`). An API
+key can't mint, list or revoke keys (a leaked key can't extend
+itself), and neither can a delegated token
 (one with an `act` claim). The [claim rule](./authorization.md#claim-rule)
 applies as on every TES call.
 
@@ -193,6 +220,39 @@ lifetime. Choose `maxTtl` with that in mind, and revoke keys when
 offboarding users. Removing an issuer from `auth.issuers` disables all
 keys of its owners at once.
 
+## Security model
+
+What protects keys:
+
+| Threat | Protection |
+| --- | --- |
+| Guessing a key | 256 random bits |
+| Database leak | Only SHA-256 hashes are stored; keys are shown once |
+| Leaked key | Revocation applies on the next request (no cache); every key expires (`maxTtl`) |
+| Over-broad key | Scopes (`tasks:read`, `tasks:write`); `maxPerOwner` active keys |
+| Key extends itself | Keys can't mint, list or revoke keys |
+| Stolen token turned into a long-lived key | Only `keyMinting.clients` may mint, optionally only shortly after a login (`maxAuthAge`); delegated tokens can't |
+| Distrusted issuer | Removing it from `auth.issuers` disables its keys |
+| Key committed to a repository | The `poi_` prefix and checksum let secret scanners find keys and confirm them without false positives; revoke what they find |
+| Junk credentials | Malformed keys and wrong checksums get `401` without a database lookup |
+
+What remains, and what to do about it:
+
+- **A key is a bearer credential**: whoever holds it can use it,
+  from anywhere, until it expires or is revoked. Serve Poiesis over
+  TLS only, keep keys in the engine's secret store or environment (see
+  [Workflow engines](../usage/workflow-engines.md)), not in committed
+  configuration, and mint short-lived keys for one-off runs.
+- **Deprovisioning lag**: see below.
+- **Request floods**: a well-formed key with a valid checksum costs one
+  indexed lookup. Rate-limit at the ingress or gateway.
+
+To scan for leaked keys, match `poi_[A-Za-z0-9_-]{43}[0-9A-Za-z]{6}`;
+the last 6 characters are the base62 CRC32 of the 43 before them.
+
+Every mint and revocation is logged at `INFO` with the key id, owner
+and (for mints) client, scopes and expiry; refused mints at `WARNING`.
+
 ## Behaviour the client sees
 
 | Situation | Result |
@@ -202,6 +262,7 @@ keys of its owners at once.
 | Database unreachable while checking a key | `503`, `Retry-After: 5` |
 | Key lacks the operation's scope | `403` |
 | Minting, listing or revoking with a key or a delegated token | `403` |
+| Minting with a token of an issuer without `keyMinting`, a client not listed, or (with `maxAuthAge`) an old or missing `auth_time` | `403` |
 | `ttl` above `maxTtl` | `400` |
 | Malformed body (`name`, `ttl`, unknown scope) | `422` |
 | `maxPerOwner` active keys already | `409`, revoke one first |
