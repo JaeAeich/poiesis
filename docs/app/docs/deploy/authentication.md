@@ -501,6 +501,8 @@ Helm, the `POIESIS_AUTH_OIDC_*` variables with `POIESIS_AUTH_ISSUERS`.
 
 ### Upgrading to issuer hardening
 
+![Issuer hardening: before and after, case by case](/issuer-hardening.gif)
+
 Existing owners keep working: the default `namespace` is the issuer,
 as before, and `clients` and `actors` are off until set. Two changes
 need attention:
