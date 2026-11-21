@@ -62,6 +62,10 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 - `taskpods.activeDeadlineSeconds` set above your longest task. The
   default stops every task after one hour. See
   [Time limit](../concepts/tasks.md#time-limit).
+- `tctl.unschedulableTimeoutSeconds` left `null` if tasks may queue for
+  capacity (a full cluster, a ResourceQuota, an autoscaler adding
+  nodes): they wait in `QUEUED` until the time limit. Set it to fail
+  tasks that wait longer for a node.
 
 ## Identity
 

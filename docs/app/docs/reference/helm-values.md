@@ -174,6 +174,7 @@ starting. See [Service info](../guides/production.md#service-info).
 | Key | Default | What it does |
 | --- | --- | --- |
 | `tctl.replicas` | `1` | Leader election keeps one active; more give faster failover, not throughput. |
+| `tctl.unschedulableTimeoutSeconds` | `null` | Seconds a task may wait for its Pod to be created and scheduled before it ends `SYSTEM_ERROR`, at least 1. `null` waits until the [time limit](../concepts/tasks.md#time-limit). |
 | `tctl.image` | `{}` | Image override. |
 | `tctl.resources` | requests `50m`/`128Mi`, limits `500m`/`256Mi` | Container resources. |
 | `tctl.extraEnv`, `.extraEnvFrom`, `.extraVolumes`, `.extraVolumeMounts`, `.extraContainers` | `[]` | Appended to the chart-wide extras. |
@@ -196,7 +197,7 @@ Baked into TaskPod manifests by the API when a task is created. See
 | `taskpods.persistence.labels` | `{}` | Labels on every task volume. |
 | `taskpods.persistence.annotations` | `{}` | Annotations on every task volume. |
 | `taskpods.persistence.retainAfterSeconds` | `3600` | `ttlSecondsAfterFinished` of the Job; `null` keeps Job and volume. |
-| `taskpods.activeDeadlineSeconds` | `3600` | [Time limit](../concepts/tasks.md#time-limit) of a task in seconds (`activeDeadlineSeconds` of the Job), at least 1; `null` is no limit. |
+| `taskpods.activeDeadlineSeconds` | `3600` | [Time limit](../concepts/tasks.md#time-limit) of a task in seconds (`activeDeadlineSeconds` of the Job), at least 1; `null` is no limit. Also ends the wait of a task that can't be scheduled. |
 | `taskpods.outputGlobFallback` | `false` | Upload everything under `path_prefix` when an output glob matches nothing. |
 | `taskpods.fileUrlRoots` | `[]` | Directories `file://` URLs may point into; empty turns the scheme off. See [Local paths](../concepts/storage.md#local-paths). |
 | `taskpods.extraEnv` | `[]` | Env for `trec`, `tif`, `tof`. Reserved: `DATABASE_URL`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `POIESIS_*`. |

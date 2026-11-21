@@ -48,6 +48,12 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.existingSecret }}
                   key: {{ .Values.database.existingSecretKey }}
+            {{- /* null (the default): tctl waits for a Pod until the time limit. */}}
+            {{- /* int64: a large number from a values file is a float, "1e+07". */}}
+            {{- if not (kindIs "invalid" .Values.tctl.unschedulableTimeoutSeconds) }}
+            - name: POIESIS_TCTL_UNSCHEDULABLE_TIMEOUT_SECONDS
+              value: {{ .Values.tctl.unschedulableTimeoutSeconds | int64 | quote }}
+            {{- end }}
             {{- with include "poiesis.extraEnv" $args }}
             {{- . | nindent 12 }}
             {{- end }}

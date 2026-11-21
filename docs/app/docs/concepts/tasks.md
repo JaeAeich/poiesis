@@ -155,7 +155,7 @@ stops the sidecar last, and TRec exits 0 on `SIGTERM`.
     { f: 'api', t: 'db', label: 'QUEUED', cap: 'CreateTask stores the task as QUEUED, then submits a Job and a volume owned by it.' },
     { f: 'trec', t: 'db', label: 'RUNNING', cap: 'trec writes RUNNING when it starts, before inputs are staged, and executor logs as each one ends.' },
     { f: 'tctl', t: 'db', label: 'COMPLETE', tone: 'ok', cap: 'Polling every 5 s, tctl sees the Pod Succeeded and writes the final state. trec never does.' },
-    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a failed tif or tof, a Pod still Pending after 5 minutes, a Job or Pod that vanished.' }
+    { f: 'tctl', t: 'db', label: 'SYSTEM_ERROR', tone: 'bad', cap: 'Also from tctl: OOMKill, eviction, node loss, a failed tif or tof, a scheduled Pod still Pending after 5 minutes, a Job or Pod that vanished.' }
   ]
 }" />
 
@@ -184,10 +184,22 @@ normally as `SYSTEM_ERROR` with `Job failed: DeadlineExceeded`:
 A new value applies to tasks created after the API restarts with it;
 tasks that already have a Job keep the limit they were created with.
 
-With `null` there is no limit. A task whose Pod can never be scheduled
-(no fitting node, a volume that can't be bound) still fails after 5
+A task whose Pod can't be scheduled yet (no node with room, a full
+ResourceQuota) waits in `QUEUED`; by default this limit is what ends
+the wait. To fail such tasks sooner, set
+`tctl.unschedulableTimeoutSeconds`:
+
+```yaml
+tctl:
+  unschedulableTimeoutSeconds: 1800 # null (default): wait for the limit
+```
+
+With `taskpods.activeDeadlineSeconds: null` there is no limit, and a
+task that can't be scheduled waits for as long as it takes unless
+`tctl.unschedulableTimeoutSeconds` is set. A Pod that was scheduled but
+doesn't start (an image that can't be pulled) still fails after 5
 minutes: TCtl's [pending timeout](./architecture.md#tctl) doesn't depend
-on this limit.
+on either setting.
 
 ## Cancelling
 

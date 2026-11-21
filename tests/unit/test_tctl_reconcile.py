@@ -70,6 +70,8 @@ class World:
         self.delete_error: ApiException | None = None
         self.clock = 1000.0
         self.first_seen: dict[str, float] = {}
+        #: The operator's unschedulable timeout; None waits (the default).
+        self.unschedulable_timeout: float | None = None
         #: Runs when the Pods are listed, i.e. in the middle of a pass.
         self.on_pod_list = lambda: None
 
@@ -144,7 +146,14 @@ class World:
         """Run one reconcile pass, `after` seconds after the last one."""
         self.clock += after
         asyncio.run(
-            tctl._reconcile_once(self, self, self, NS, self.first_seen)  # ty: ignore
+            tctl._reconcile_once(
+                self,  # ty: ignore
+                self,  # ty: ignore
+                self,  # ty: ignore
+                NS,
+                self.first_seen,
+                unschedulable_timeout=self.unschedulable_timeout,
+            )
         )
 
 
@@ -230,43 +239,56 @@ class TestPodlessJobs:
     """Job-level failures end the task with their own reason (#158)."""
 
     def test_failed_job_reports_its_reason(self, world: World) -> None:
-        """The deadline ran out: the Job controller removed the Pod."""
+        """Any other failure keeps the Job's own reason and message."""
         world.states[T1] = TesState.RUNNING
         world.jobs = [
             job(
                 T1,
-                age=3600,
                 conditions=[
                     {
                         "type": "Failed",
                         "status": "True",
-                        "reason": "DeadlineExceeded",
-                        "message": "Job was active longer than specified deadline",
+                        "reason": "BackoffLimitExceeded",
+                        "message": "Job has reached the specified backoff limit",
                     }
                 ],
             )
         ]
         world.tick()
         reason = (
-            "Job failed: DeadlineExceeded: "
-            "Job was active longer than specified deadline"
+            "Job failed: BackoffLimitExceeded: "
+            "Job has reached the specified backoff limit"
         )
         assert world.writes == {T1: (TesState.SYSTEM_ERROR, reason)}
         assert world.system_logs[T1] == [
-            "job failed without a pod: DeadlineExceeded: "
-            "Job was active longer than specified deadline"
+            "job failed without a pod: BackoffLimitExceeded: "
+            "Job has reached the specified backoff limit"
         ]
 
-    def test_job_that_never_makes_a_pod_times_out(self, world: World) -> None:
-        """A ResourceQuota rejects the Pod: 5 minutes, like a Pending Pod."""
+    def test_job_without_a_pod_waits_by_default(self, world: World) -> None:
+        """A ResourceQuota holds the Pod back: the task is queued (#151)."""
         world.states[T1] = TesState.QUEUED
-        world.jobs = [job(T1, age=290)]
+        world.jobs = [job(T1, age=3000)]
+        world.tick()
+        world.tick(after=600)
+        assert world.writes == {}
+        assert world.deleted == []
+
+    def test_job_without_a_pod_hits_the_unschedulable_timeout(
+        self, world: World
+    ) -> None:
+        world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 600
+        world.jobs = [job(T1, age=590)]
         world.tick()
         assert world.writes == {}
-        world.jobs = [job(T1, age=310)]
+        world.jobs = [job(T1, age=610)]
         world.tick()
         assert world.writes == {T1: (TesState.SYSTEM_ERROR, "Job created no Pod")}
-        assert world.system_logs[T1][0].startswith("pending timeout: the Job created")
+        assert world.system_logs[T1] == [
+            "unschedulable timeout: the Job created no Pod "
+            "(see the Job's events: quota, admission)"
+        ]
 
     def test_job_with_a_pod_is_left_to_the_pod(self, world: World) -> None:
         world.states[T1] = TesState.RUNNING
@@ -342,6 +364,7 @@ class TestJobDeletes:
 
     def test_job_without_pod_timeout_deletes_the_job(self, world: World) -> None:
         world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 300
         world.jobs = [job(T1, age=400)]
         world.tick()
         assert world.writes[T1][0] is TesState.SYSTEM_ERROR
@@ -416,17 +439,27 @@ def unscheduled(task_id: str, age: float, **metadata: Any) -> dict[str, Any]:
 
 
 class TestPendingTimeout:
-    """A Pod that is never scheduled hits the pending timeout too (#151)."""
+    """A scheduled Pod times out; an unscheduled one is queued (#151)."""
 
-    def test_unschedulable_pod_times_out(self, world: World) -> None:
-        """No `startTime`: 5 minutes are counted from the Pod's creation."""
+    def test_unschedulable_pod_waits_by_default(self, world: World) -> None:
+        """1,000 tasks on room for 100: 900 Pods wait for a node, not fail."""
         world.states[T1] = TesState.QUEUED
-        world.jobs = [job(T1, age=400)]
-        world.pods = [unscheduled(T1, age=400)]
+        world.jobs = [job(T1, age=3000)]
+        world.pods = [unscheduled(T1, age=3000)]
+        world.tick()
+        assert world.writes == {}
+        assert world.deleted == []
+
+    def test_unschedulable_timeout(self, world: World) -> None:
+        """Set: counted from the Pod's creation, with the scheduler's message."""
+        world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 600
+        world.jobs = [job(T1, age=700)]
+        world.pods = [unscheduled(T1, age=700)]
         world.tick()
         assert world.writes == {T1: (TesState.SYSTEM_ERROR, "Insufficient CPU")}
         assert world.system_logs[T1] == [
-            "pending timeout: Insufficient CPU",
+            "unschedulable timeout: Insufficient CPU",
             "scheduler: 0/3 nodes are available: 3 Insufficient cpu.",
         ]
         assert world.deleted == [f"task-{T1}"]
@@ -434,21 +467,36 @@ class TestPendingTimeout:
     def test_camel_case_timestamp_string(self, world: World) -> None:
         """As in a raw API object, not a client model's `to_dict()`."""
         world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 300
         created = (datetime.now(UTC) - timedelta(seconds=400)).isoformat()
         world.pods = [unscheduled(T1, age=0, creationTimestamp=created)]
         world.tick()
         assert world.writes[T1][0] is TesState.SYSTEM_ERROR
 
-    def test_unschedulable_pod_waits_five_minutes(self, world: World) -> None:
-        """A cluster autoscaler has that long to add a node."""
+    def test_unschedulable_pod_within_the_timeout_waits(self, world: World) -> None:
         world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 300
         world.pods = [unscheduled(T1, age=280)]
         world.tick()
         assert world.writes == {}
 
+    def test_scheduled_pod_times_out_after_five_minutes(self, world: World) -> None:
+        """Bound to a node, not starting (image pull): 5 minutes, as before."""
+        world.states[T1] = TesState.QUEUED
+        waiting = unscheduled(T1, age=400)
+        waiting["status"] = {
+            "phase": "Pending",
+            "start_time": datetime.now(UTC) - timedelta(seconds=310),
+        }
+        world.pods = [waiting]
+        world.tick()
+        assert world.writes == {T1: (TesState.SYSTEM_ERROR, "Pending timeout")}
+        assert world.system_logs[T1] == ["pending timeout: Pending timeout"]
+
     def test_start_time_wins_over_creation(self, world: World) -> None:
         """A scheduled Pod is timed from when it was bound, as before."""
         world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 300
         waiting = unscheduled(T1, age=400)
         waiting["status"] = {
             "phase": "Pending",
@@ -460,6 +508,7 @@ class TestPendingTimeout:
 
     def test_pod_without_any_timestamp_waits(self, world: World) -> None:
         world.states[T1] = TesState.QUEUED
+        world.unschedulable_timeout = 300
         world.pods = [pod(T1, "Pending")]
         world.tick()
         assert world.writes == {}

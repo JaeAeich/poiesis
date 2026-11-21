@@ -33,6 +33,7 @@ class Harness:
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self.lease_namespaces: list[str] = []
         self.reconciled: list[str] = []
+        self.timeouts: list[float | None] = []
         self.failures: list[ApiException] = []
         self.cancelled = asyncio.Event()
 
@@ -43,9 +44,16 @@ class Harness:
             return True
 
         async def reconcile_once(
-            _core: Any, _batch: Any, _pool: Any, namespace: str, _seen: Any
+            _core: Any,
+            _batch: Any,
+            _pool: Any,
+            namespace: str,
+            _seen: Any,
+            *,
+            unschedulable_timeout: float | None,
         ) -> None:
             self.reconciled.append(namespace)
+            self.timeouts.append(unschedulable_timeout)
             self.cancelled.set()
 
         async def create_pool(*_: Any, **__: Any) -> Pool:
@@ -141,4 +149,13 @@ def test_cli_passes_both_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:
         "dsn": "dsn",
         "lease_namespace": RELEASE_NS,
         "identity": None,
+        "unschedulable_timeout": None,
     }
+
+
+def test_unschedulable_timeout_reaches_the_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = Harness(monkeypatch)
+    assert harness.run(unschedulable_timeout=900) == 0
+    assert harness.timeouts == [900]

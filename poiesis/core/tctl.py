@@ -16,14 +16,19 @@ Cases the reconciler covers:
     backfill any executor_logs trec didn't get to before its own
     sidecar SIGTERM (with the tail of each executor's log as stdout),
     append a system_logs entry describing the failure.
-    * Pod stuck in `Pending` past `_PENDING_TIMEOUT_SECONDS` → SYSTEM_ERROR
+    * Pod bound to a node but stuck in `Pending` past
+    `_PENDING_TIMEOUT_SECONDS` (image pull, volume mount) → SYSTEM_ERROR
     with the kubelet's pending reason in system_logs.
+    * Pod the scheduler hasn't placed: the task is queued, not failed. It
+    waits until the Job's time limit, or, when the operator set an
+    unschedulable timeout, until that ends it as SYSTEM_ERROR with the
+    scheduler's message.
     * Task `CANCELING` with a Job → delete the Job. The API deletes it on
     cancel; this covers a delete that failed and a Job created after it.
-    * Job without a Pod: a failed Job (deadline exceeded) → SYSTEM_ERROR
-    with the Job's reason; a Job that made no Pod within
-    `_PENDING_TIMEOUT_SECONDS` (ResourceQuota, admission) → SYSTEM_ERROR.
-    Until then the task waits: its Job is alive.
+    * Job without a Pod: a failed Job → SYSTEM_ERROR with the Job's
+    reason. A live Job that has made no Pod yet (ResourceQuota, admission)
+    is queued like an unscheduled Pod: it waits, or hits the unschedulable
+    timeout when one is set.
     * Task non-terminal in DB with neither a live Job nor a Pod, on every
     pass for `_ORPHAN_GRACE_SECONDS` (so we don't race with brand-new
     tasks whose Job hasn't been created yet) → SYSTEM_ERROR. The writer's
@@ -35,8 +40,8 @@ The writer (`state.write_terminal_state`) is idempotent and
 CANCELING-aware, so re-running the loop against an already-finalised
 task is a no-op.
 
-A terminal write that doesn't come from a finished Pod or Job (pending
-timeout, Job without a Pod, orphan) is followed by a delete of the task's
+A terminal write that doesn't come from a finished Pod or Job (pending or
+unschedulable timeout, orphan) is followed by a delete of the task's
 Job, so a Pod that becomes runnable later can't run a task already reported
 as failed. That delete is the only write tctl makes to Kubernetes.
 
@@ -89,9 +94,11 @@ _LEASE_DURATION_SECONDS = 30
 _LEASE_RENEW_INTERVAL_SECONDS = 10
 #: How often the reconciler walks the world.
 _RECONCILE_INTERVAL_SECONDS = 5
-#: How long a TaskPod may sit in Pending before the controller times it out.
-#: Covers `ImagePullBackOff`, unbindable PVCs, no schedulable node, etc.
-#: Unscheduled Pods are timed from their creation (see `_pending_too_long`).
+#: How long a TaskPod bound to a node may sit in Pending before the
+#: controller times it out, counted from `status.startTime`. Covers
+#: `ImagePullBackOff`, volumes that can't be mounted, etc. A Pod not bound
+#: yet is waiting for capacity; the operator's unschedulable timeout, if
+#: any, applies to it instead (see `_pending_timeout`).
 _PENDING_TIMEOUT_SECONDS = 300
 #: Grace before treating a non-terminal task with no live Job or Pod as
 #: orphaned: how long tctl must have seen it that way, by its own monotonic
@@ -105,11 +112,14 @@ async def run(
     *,
     lease_namespace: str | None = None,
     identity: str | None = None,
+    unschedulable_timeout: float | None = None,
 ) -> int:
     """Run the TCtl reconciliation loop until SIGTERM/SIGINT.
 
     `namespace` is where the TaskPods are; `lease_namespace` is where the
-    leader Lease is kept (default: `namespace`). Holds the Lease while
+    leader Lease is kept (default: `namespace`). `unschedulable_timeout`
+    is how many seconds a task may wait for its Pod to be created and
+    scheduled; None waits until the Job's time limit. Holds the Lease while
     reconciling; gives it up cleanly on signal. Returns 0 on clean shutdown.
     """
     lease_namespace = lease_namespace or namespace
@@ -137,6 +147,7 @@ async def run(
                 lease_namespace,
                 identity,
                 cancelled,
+                unschedulable_timeout,
             )
     finally:
         await pool.close()
@@ -171,7 +182,7 @@ async def _hold_lease(
         return False
 
 
-async def _reconcile_while_leader(
+async def _reconcile_while_leader(  # noqa: PLR0913 (one pass's inputs and the Lease)
     core_v1: CoreV1Api,
     batch_v1: BatchV1Api,
     coord_v1: CoordinationV1Api,
@@ -180,6 +191,7 @@ async def _reconcile_while_leader(
     lease_namespace: str,
     identity: str,
     cancelled: asyncio.Event,
+    unschedulable_timeout: float | None = None,
 ) -> None:
     """Reconcile every `_RECONCILE_INTERVAL_SECONDS` until lease is lost."""
     # Per leadership term: a new leader observes for a full grace period
@@ -191,7 +203,14 @@ async def _reconcile_while_leader(
             logger.warning("tctl: lost lease; standing down")
             return
         try:
-            await _reconcile_once(core_v1, batch_v1, pool, namespace, first_seen)
+            await _reconcile_once(
+                core_v1,
+                batch_v1,
+                pool,
+                namespace,
+                first_seen,
+                unschedulable_timeout=unschedulable_timeout,
+            )
         except Exception:
             logger.exception("tctl: reconcile tick raised; will retry next interval")
         await _wait_or_cancel(cancelled, _RECONCILE_INTERVAL_SECONDS)
@@ -203,6 +222,8 @@ async def _reconcile_once(
     pool: asyncpg.Pool,
     namespace: str,
     first_seen: dict[str, float],
+    *,
+    unschedulable_timeout: float | None = None,
 ) -> None:
     """One pass over all non-terminal task rows, task Jobs and TaskPods.
 
@@ -252,13 +273,27 @@ async def _reconcile_once(
         if task_id is None:
             continue
         seen_task_ids.add(task_id)
-        await _reconcile_pod(core_v1, batch_v1, pool, pod_dict, task_id, now)
+        await _reconcile_pod(
+            core_v1,
+            batch_v1,
+            pool,
+            pod_dict,
+            task_id,
+            now,
+            unschedulable_timeout=unschedulable_timeout,
+        )
 
     for task_id, job_dict in jobs.items():
         if task_id in seen_task_ids:
             continue
         if await _reconcile_podless_job(
-            batch_v1, pool, namespace, job_dict, task_id, now
+            batch_v1,
+            pool,
+            namespace,
+            job_dict,
+            task_id,
+            now,
+            unschedulable_timeout=unschedulable_timeout,
         ):
             seen_task_ids.add(task_id)
 
@@ -293,6 +328,8 @@ async def _reconcile_pod(
     pod: Mapping[str, Any],
     task_id: str,
     now: datetime,
+    *,
+    unschedulable_timeout: float | None = None,
 ) -> None:
     """Apply terminal state for one pod when its phase warrants it."""
     phase = ((pod.get("status") or {}).get("phase") or "").lower()
@@ -313,7 +350,12 @@ async def _reconcile_pod(
         )
         return
 
-    if phase == "pending" and _pending_too_long(pod, now):
+    timeout = (
+        _pending_timeout(pod, now, unschedulable_timeout)
+        if phase == "pending"
+        else None
+    )
+    if timeout is not None:
         pending_reason = extract_pending_failure_reason(pod)
         namespace = (pod.get("metadata") or {}).get("namespace")
         wrote = await _apply_terminal(
@@ -323,8 +365,8 @@ async def _reconcile_pod(
             pod=pod,
             proposed=TesState.SYSTEM_ERROR,
             reason=pending_reason,
-            system_logs=_pending_system_logs(pod, pending_reason),
-            source="pending-timeout",
+            system_logs=_pending_system_logs(pod, timeout, pending_reason),
+            source=timeout.replace(" ", "-"),
         )
         if wrote and namespace:
             await _delete_job(batch_v1, namespace, task_id)
@@ -337,15 +379,18 @@ async def _reconcile_podless_job(
     job: Mapping[str, Any],
     task_id: str,
     now: datetime,
+    *,
+    unschedulable_timeout: float | None = None,
 ) -> bool:
     """Reconcile a task Job that has no Pod; True iff the Job accounts for it.
 
     A Job that is being deleted or has completed stands for nothing any
     more: False leaves its task to the orphan check. A failed Job (its
-    deadline ran out and the Job controller removed the Pod) and a Job
-    that made no Pod within `_PENDING_TIMEOUT_SECONDS` (a ResourceQuota or
-    an admission webhook rejects the Pod) end the task with their own
-    reason. Any other Job is alive, and so is its task.
+    time limit ran out and the Job controller removed the Pod) ends the
+    task with its own reason. Any other Job is alive, and its task waits
+    for a Pod: a ResourceQuota or an admission webhook may hold the Pod
+    back until capacity frees up. Only `unschedulable_timeout`, when set,
+    ends that wait.
     """
     if _being_deleted(job):
         return False
@@ -368,8 +413,9 @@ async def _reconcile_podless_job(
 
     created = created_at(job)
     if (
-        created is not None
-        and (now - created).total_seconds() > _PENDING_TIMEOUT_SECONDS
+        unschedulable_timeout is not None
+        and created is not None
+        and (now - created).total_seconds() > unschedulable_timeout
     ):
         wrote = await _apply_terminal(
             pool,
@@ -379,7 +425,7 @@ async def _reconcile_podless_job(
             proposed=TesState.SYSTEM_ERROR,
             reason="Job created no Pod",
             system_logs=[
-                "pending timeout: the Job created no Pod "
+                "unschedulable timeout: the Job created no Pod "
                 "(see the Job's events: quota, admission)"
             ],
             source="job-no-pod",
@@ -619,13 +665,16 @@ def _terminal_system_logs(
     return lines
 
 
-def _pending_system_logs(pod: Mapping[str, Any], reason: str) -> list[str]:
-    """The system_logs of a pending timeout: the reason, then the scheduler's.
+def _pending_system_logs(
+    pod: Mapping[str, Any], timeout: str, reason: str
+) -> list[str]:
+    """The system_logs of a timeout in Pending: the reason, then the scheduler's.
 
-    `reason` is a stable classification; the scheduler's own message says
-    which nodes it tried and why none fits, so it is kept as a second line.
+    `timeout` names which timeout ran out (`_pending_timeout`); `reason` is
+    a stable classification. The scheduler's own message says which nodes
+    it tried and why none fits, so it is kept as a second line.
     """
-    lines = [f"pending timeout: {reason}"]
+    lines = [f"{timeout}: {reason}"]
     message = extract_unschedulable_message(pod)
     if message:
         lines.append(f"scheduler: {message}")
@@ -644,23 +693,32 @@ def _parse_kubelet_ts(value: Any) -> datetime | None:
         return None
 
 
-def _pending_too_long(pod: Mapping[str, Any], now: datetime) -> bool:
-    """True iff `pod` has been Pending longer than the configured threshold.
+def _pending_timeout(
+    pod: Mapping[str, Any], now: datetime, unschedulable_timeout: float | None
+) -> str | None:
+    """Which timeout a Pending `pod` has run out of, if any.
 
-    Counted from `status.startTime`, which the kubelet sets once the Pod is
-    bound to a node. A Pod the scheduler can't place (unbindable PVC, no
-    node that fits, taints) never gets one, so it is counted from
-    `metadata.creationTimestamp` instead.
+    A Pod bound to a node has a `status.startTime`; after
+    `_PENDING_TIMEOUT_SECONDS` from it, "pending timeout". A Pod the
+    scheduler hasn't placed (no node with room, unbindable PVC, taints) has
+    none: on a busy cluster that is queueing, not a fault. It is timed from
+    `metadata.creationTimestamp` against `unschedulable_timeout`, and
+    never when that is None: "unschedulable timeout".
     """
     status = pod.get("status") or {}
-    since = _parse_kubelet_ts(
-        status.get("startTime") or status.get("start_time")
-    ) or created_at(pod)
-    if since is None:
-        return False
-    if since.tzinfo is None:
-        since = since.replace(tzinfo=UTC)
-    return (now - since).total_seconds() > _PENDING_TIMEOUT_SECONDS
+    started = _parse_kubelet_ts(status.get("startTime") or status.get("start_time"))
+    if started is not None:
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=UTC)
+        if (now - started).total_seconds() > _PENDING_TIMEOUT_SECONDS:
+            return "pending timeout"
+        return None
+    if unschedulable_timeout is None:
+        return None
+    created = created_at(pod)
+    if created is not None and (now - created).total_seconds() > unschedulable_timeout:
+        return "unschedulable timeout"
+    return None
 
 
 def _task_id_from_pod(pod: Mapping[str, Any]) -> str | None:

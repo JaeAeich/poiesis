@@ -504,8 +504,8 @@ def extract_job_failure(job: Mapping[str, Any]) -> tuple[bool, str | None]:
 
     Returns `(finished, failure)`: `finished` is True once the Job carries
     a `Complete` or `Failed` condition; `failure` is the `Failed`
-    condition's `reason: message` (e.g. `DeadlineExceeded: Job was active
-    longer than specified deadline`), None for a Job that didn't fail.
+    condition's `reason: message` (e.g. `BackoffLimitExceeded: Job has
+    reached the specified backoff limit`), None for a Job that didn't fail.
     """
     finished = False
     for cond in (job.get("status") or {}).get("conditions") or []:

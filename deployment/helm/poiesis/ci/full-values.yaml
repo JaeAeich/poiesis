@@ -96,6 +96,7 @@ api:
 
 tctl:
   replicas: 1
+  unschedulableTimeoutSeconds: 900
   resources:
     requests:
       cpu: 50m

@@ -11,6 +11,10 @@ from poiesis.cli.commands.poiesis.base import BaseCommand
 from poiesis.core.tctl import run
 from poiesis.k8s.client import load_config
 
+#: Seconds a task may wait for its Pod to be created and scheduled. Unset:
+#: it waits until the Job's time limit (`taskpods.activeDeadlineSeconds`).
+_UNSCHEDULABLE_TIMEOUT_ENV = "POIESIS_TCTL_UNSCHEDULABLE_TIMEOUT_SECONDS"
+
 
 class TctlCommand(BaseCommand):
     """TCtl CLI command implementation."""
@@ -33,10 +37,12 @@ class TctlCommand(BaseCommand):
             lease_namespace = os.environ.get("POIESIS_NAMESPACE") or namespace
             dsn = _required_env("DATABASE_URL")
             identity = os.environ.get("POIESIS_POD_NAME") or None
+            unschedulable_timeout = _timeout_env(_UNSCHEDULABLE_TIMEOUT_ENV)
             load_config()
             click.echo(
                 f"--- TCtl --- namespace={namespace} "
-                f"lease-namespace={lease_namespace} identity={identity or 'auto'}"
+                f"lease-namespace={lease_namespace} identity={identity or 'auto'} "
+                f"unschedulable-timeout={unschedulable_timeout or 'none'}"
             )
             sys.exit(
                 asyncio.run(
@@ -45,6 +51,7 @@ class TctlCommand(BaseCommand):
                         dsn,
                         lease_namespace=lease_namespace,
                         identity=identity,
+                        unschedulable_timeout=unschedulable_timeout,
                     )
                 )
             )
@@ -65,3 +72,22 @@ def _required_env(name: str) -> str:
         msg = f"environment variable {name} must be set"
         raise click.ClickException(msg)
     return value
+
+
+def _timeout_env(name: str) -> int | None:
+    """Read a timeout in seconds: unset or empty is None, else an integer >= 1.
+
+    Strict: a typo must not decide which queued tasks are failed, so any
+    other value stops tctl at startup.
+    """
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        seconds = int(raw)
+    except ValueError:
+        seconds = 0
+    if seconds < 1:
+        msg = f"environment variable {name} must be an integer >= 1, got {raw!r}"
+        raise click.ClickException(msg)
+    return seconds

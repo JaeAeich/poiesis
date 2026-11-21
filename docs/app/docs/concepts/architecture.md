@@ -56,7 +56,7 @@ release namespace, also when `taskpods.namespace` puts the tasks
 elsewhere; if a Lease call fails, TCtl logs it and tries again 10
 seconds later without reconciling. Every 5 seconds the
 leader reads the non-terminal tasks from Postgres, then lists the Jobs
-and Pods labelled `poiesis.io/task`. It has five jobs:
+and Pods labelled `poiesis.io/task`. It has six jobs:
 
 - **Phase reconciliation**: a `Succeeded` Pod becomes `COMPLETE`; a
   `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, deadline,
@@ -75,22 +75,26 @@ and Pods labelled `poiesis.io/task`. It has five jobs:
 - **Jobs without a Pod**: a failed Job whose Pod is gone (the deadline
   ran out, or the Pod was deleted or lost with its node) becomes
   `SYSTEM_ERROR` with the Job's reason, such as `Job failed:
-  DeadlineExceeded`. A Job that has created no Pod 5 minutes after it
-  was created (a ResourceQuota or an admission webhook rejects the Pod)
-  becomes `SYSTEM_ERROR` with `Job created no Pod`.
-- **Pending timeout**: a Pod still `Pending` after 5 minutes becomes
-  `SYSTEM_ERROR`, with the reason in `system_logs` (an image that can't
-  be pulled, an unbindable PVC, no fitting node). The 5 minutes count
-  from `status.startTime`, which Kubernetes sets when the Pod is bound to
-  a node. A Pod that is never scheduled has no `startTime` and is counted
-  from its creation; the scheduler's message is added to `system_logs`.
-  The timeout isn't configurable: a cluster autoscaler that needs more
-  than 5 minutes to add a node fails the task.
+  DeadlineExceeded`. A live Job that
+  has created no Pod yet (a ResourceQuota is full, an admission webhook
+  rejects the Pod) keeps its task `QUEUED`: see below.
+- **Pending timeout**: a Pod bound to a node but still `Pending` 5
+  minutes after `status.startTime` becomes `SYSTEM_ERROR`, with the
+  reason in `system_logs` (an image that can't be pulled, a volume that
+  can't be mounted). This timeout isn't configurable.
+- **Waiting to be scheduled**: a Pod the scheduler hasn't placed (no
+  node with room, an unbindable PVC, taints) has no `startTime`. On a
+  busy cluster that is queueing, not a fault: by default the task stays
+  `QUEUED` until the Job's [time limit](./tasks.md#time-limit) ends it.
+  Set `tctl.unschedulableTimeoutSeconds` to fail fast: a task waiting
+  longer than that, counted from the Pod's creation (or the Job's, with
+  no Pod yet), becomes `SYSTEM_ERROR` with the scheduler's message, or
+  `Job created no Pod`, in `system_logs`.
 
 - **Job cleanup**: TCtl deletes the Job of every `CANCELING` task that
   still has one, on each pass until it is gone. It also deletes the Job
-  after it ends a task for a missing Pod, a Job without a Pod or a
-  pending timeout, so a Pod that becomes runnable later can't run a task
+  after it ends a task for a missing Pod or a pending or unschedulable
+  timeout, so a Pod that becomes runnable later can't run a task
   already reported as failed. If that delete fails, TCtl logs it and
   doesn't retry; the Job's [time limit](./tasks.md#time-limit), if
   set, still ends it. The Job of a finished Pod is left to its TTL.
