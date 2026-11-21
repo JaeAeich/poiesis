@@ -67,7 +67,7 @@ function heroBg(){
     const r=stage.getBoundingClientRect();if(!r.width)return;dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
     const w=$("#wheel").getBoundingClientRect(),a=$("#hero-actions").getBoundingClientRect();
     fx=w.left-r.left+w.width/2;fy=w.top-r.top+w.height/2;
-    helixY=Math.max(Math.max(a.bottom,W>760?w.bottom-30:0)-r.top+72,H-(W>760?190:150));
+    helixY=Math.max(a.bottom,W>760?w.bottom-30:0)-r.top+72;
     colors();buildLattice();computeSlots();if(reduce)frame(performance.now());
   }
   
