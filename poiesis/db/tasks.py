@@ -283,118 +283,8 @@ async def get_task(
             creation_time=_format_dt(task_row["creation_time"]),
         )
 
-    input_rows = await conn.fetch(
-        "SELECT * FROM task_inputs WHERE task_id = $1 ORDER BY ordinal", task_uuid
-    )
-    output_rows = await conn.fetch(
-        "SELECT * FROM task_outputs WHERE task_id = $1 ORDER BY ordinal", task_uuid
-    )
-    executor_rows = await conn.fetch(
-        "SELECT * FROM task_executors WHERE task_id = $1 ORDER BY ordinal", task_uuid
-    )
-    log_rows = await conn.fetch(
-        "SELECT * FROM task_logs WHERE task_id = $1 ORDER BY ordinal", task_uuid
-    )
-
-    executor_logs_by_log: dict[int, list[asyncpg.Record]] = {}
-    if log_rows:
-        for r in await conn.fetch(
-            """
-            SELECT * FROM executor_logs
-            WHERE task_log_id = ANY($1::int[])
-            ORDER BY task_log_id, ordinal
-            """,
-            [log["id"] for log in log_rows],
-        ):
-            executor_logs_by_log.setdefault(r["task_log_id"], []).append(r)
-
-    basic = view is TaskView.BASIC
-    return TesTask(
-        id=str(task_row["id"]),
-        state=TesState(task_row["state"]),
-        name=task_row["name"],
-        description=task_row["description"],
-        inputs=[
-            TesInput(
-                name=r["name"],
-                description=r["description"],
-                url=r["url"],
-                path=r["path"],
-                type=TesFileType(r["type"]),
-                content=None if basic else r["content"],
-                streamable=r["streamable"],
-            )
-            for r in input_rows
-        ]
-        or None,
-        outputs=[
-            TesOutput(
-                name=r["name"],
-                description=r["description"],
-                url=r["url"],
-                path=r["path"],
-                path_prefix=r["path_prefix"],
-                type=TesFileType(r["type"]),
-            )
-            for r in output_rows
-        ]
-        or None,
-        resources=TesResources(
-            cpu_cores=task_row["cpu_cores"],
-            preemptible=task_row["preemptible"],
-            ram_gb=task_row["ram_gb"],
-            disk_gb=task_row["disk_gb"],
-            zones=list(task_row["zones"]) if task_row["zones"] is not None else None,
-            backend_parameters=_load_jsonb(task_row["backend_parameters"]),
-            backend_parameters_strict=task_row["backend_parameters_strict"],
-        ),
-        executors=[
-            TesExecutor(
-                image=r["image"],
-                command=list(r["command"]),
-                workdir=r["workdir"],
-                stdin=r["stdin"],
-                stdout=r["stdout"],
-                stderr=r["stderr"],
-                env=_load_jsonb(r["env"]),
-                ignore_error=r["ignore_error"],
-            )
-            for r in executor_rows
-        ],
-        volumes=list(task_row["volumes"]) if task_row["volumes"] is not None else None,
-        tags=_load_jsonb(task_row["tags"]),
-        logs=[
-            TesTaskLog(
-                logs=[
-                    TesExecutorLog(
-                        start_time=_format_dt(exr["start_time"]),
-                        end_time=_format_dt(exr["end_time"]),
-                        stdout=None if basic else exr["stdout"],
-                        stderr=None if basic else exr["stderr"],
-                        exit_code=exr["exit_code"],
-                    )
-                    for exr in executor_logs_by_log.get(log_row["id"], [])
-                ],
-                metadata=_load_jsonb(log_row["metadata"]),
-                start_time=_format_dt(log_row["start_time"]),
-                end_time=_format_dt(log_row["end_time"]),
-                outputs=[
-                    TesOutputFileLog(**o)
-                    for o in (_load_jsonb(log_row["outputs"]) or [])
-                ],
-                system_logs=None
-                if basic
-                else (
-                    list(log_row["system_logs"])
-                    if log_row["system_logs"] is not None
-                    else None
-                ),
-            )
-            for log_row in log_rows
-        ]
-        or None,
-        creation_time=_format_dt(task_row["creation_time"]),
-    )
+    children = await _fetch_children(conn, [task_uuid])
+    return _build_task(task_row, children, task_uuid, view)
 
 
 async def get_task_meta(
@@ -432,7 +322,11 @@ async def list_tasks(
     clauses, params = _build_filter_clauses(filters)
     params.append(filters.page_size + 1)
 
-    sql_parts = ["SELECT id, state, name, creation_time FROM tasks"]
+    sql_parts = [
+        "SELECT id, state, name, creation_time FROM tasks"
+        if view is TaskView.MINIMAL
+        else "SELECT * FROM tasks"
+    ]
     if clauses:
         sql_parts.append("WHERE " + " AND ".join(clauses))
     sql_parts.append("ORDER BY creation_time DESC, id DESC")
@@ -451,14 +345,169 @@ async def list_tasks(
             for r in rows
         ], next_token
 
-    tasks: list[TesTask] = []
-    for r in rows:
-        # No owner filter: the rows already passed the visibility clause,
-        # which with a scope admits other owners' tasks too.
-        full = await get_task(conn, str(r["id"]), view=view)
-        if full is not None:
-            tasks.append(full)
-    return tasks, next_token
+    # One query per child table for the whole page, not per task. No
+    # owner filter: the rows already passed the visibility clause, which
+    # with a scope admits other owners' tasks too.
+    children = await _fetch_children(conn, [r["id"] for r in rows])
+    return [_build_task(r, children, r["id"], view) for r in rows], next_token
+
+
+@dataclass(slots=True)
+class _Children:
+    """Child rows of one or more tasks, grouped by parent id, in ordinal order.
+
+    ``inputs``, ``outputs``, ``executors`` and ``logs`` are keyed by task
+    id; ``executor_logs`` by task log id.
+    """
+
+    inputs: dict[uuid.UUID, list[asyncpg.Record]] = field(default_factory=dict)
+    outputs: dict[uuid.UUID, list[asyncpg.Record]] = field(default_factory=dict)
+    executors: dict[uuid.UUID, list[asyncpg.Record]] = field(default_factory=dict)
+    logs: dict[uuid.UUID, list[asyncpg.Record]] = field(default_factory=dict)
+    executor_logs: dict[int, list[asyncpg.Record]] = field(default_factory=dict)
+
+
+async def _fetch_children(
+    conn: asyncpg.Connection, task_ids: Sequence[uuid.UUID]
+) -> _Children:
+    """Fetch the child rows of ``task_ids``: five queries, whatever their count."""
+    children = _Children()
+    if not task_ids:
+        return children
+    ids = list(task_ids)
+    for sql, grouped in (
+        (
+            "SELECT * FROM task_inputs WHERE task_id = ANY($1::uuid[])"
+            " ORDER BY task_id, ordinal",
+            children.inputs,
+        ),
+        (
+            "SELECT * FROM task_outputs WHERE task_id = ANY($1::uuid[])"
+            " ORDER BY task_id, ordinal",
+            children.outputs,
+        ),
+        (
+            "SELECT * FROM task_executors WHERE task_id = ANY($1::uuid[])"
+            " ORDER BY task_id, ordinal",
+            children.executors,
+        ),
+        (
+            "SELECT * FROM task_logs WHERE task_id = ANY($1::uuid[])"
+            " ORDER BY task_id, ordinal",
+            children.logs,
+        ),
+    ):
+        for r in await conn.fetch(sql, ids):
+            grouped.setdefault(r["task_id"], []).append(r)
+
+    log_ids = [log["id"] for rows in children.logs.values() for log in rows]
+    if log_ids:
+        for r in await conn.fetch(
+            """
+            SELECT * FROM executor_logs
+            WHERE task_log_id = ANY($1::int[])
+            ORDER BY task_log_id, ordinal
+            """,
+            log_ids,
+        ):
+            children.executor_logs.setdefault(r["task_log_id"], []).append(r)
+    return children
+
+
+def _build_task(
+    task_row: asyncpg.Record,
+    children: _Children,
+    task_id: uuid.UUID,
+    view: TaskView,
+) -> TesTask:
+    """Map a task row and its child rows to a BASIC or FULL `TesTask`."""
+    basic = view is TaskView.BASIC
+    return TesTask(
+        id=str(task_row["id"]),
+        state=TesState(task_row["state"]),
+        name=task_row["name"],
+        description=task_row["description"],
+        inputs=[
+            TesInput(
+                name=r["name"],
+                description=r["description"],
+                url=r["url"],
+                path=r["path"],
+                type=TesFileType(r["type"]),
+                content=None if basic else r["content"],
+                streamable=r["streamable"],
+            )
+            for r in children.inputs.get(task_id, [])
+        ]
+        or None,
+        outputs=[
+            TesOutput(
+                name=r["name"],
+                description=r["description"],
+                url=r["url"],
+                path=r["path"],
+                path_prefix=r["path_prefix"],
+                type=TesFileType(r["type"]),
+            )
+            for r in children.outputs.get(task_id, [])
+        ]
+        or None,
+        resources=TesResources(
+            cpu_cores=task_row["cpu_cores"],
+            preemptible=task_row["preemptible"],
+            ram_gb=task_row["ram_gb"],
+            disk_gb=task_row["disk_gb"],
+            zones=list(task_row["zones"]) if task_row["zones"] is not None else None,
+            backend_parameters=_load_jsonb(task_row["backend_parameters"]),
+            backend_parameters_strict=task_row["backend_parameters_strict"],
+        ),
+        executors=[
+            TesExecutor(
+                image=r["image"],
+                command=list(r["command"]),
+                workdir=r["workdir"],
+                stdin=r["stdin"],
+                stdout=r["stdout"],
+                stderr=r["stderr"],
+                env=_load_jsonb(r["env"]),
+                ignore_error=r["ignore_error"],
+            )
+            for r in children.executors.get(task_id, [])
+        ],
+        volumes=list(task_row["volumes"]) if task_row["volumes"] is not None else None,
+        tags=_load_jsonb(task_row["tags"]),
+        logs=[
+            TesTaskLog(
+                logs=[
+                    TesExecutorLog(
+                        start_time=_format_dt(exr["start_time"]),
+                        end_time=_format_dt(exr["end_time"]),
+                        stdout=None if basic else exr["stdout"],
+                        stderr=None if basic else exr["stderr"],
+                        exit_code=exr["exit_code"],
+                    )
+                    for exr in children.executor_logs.get(log_row["id"], [])
+                ],
+                metadata=_load_jsonb(log_row["metadata"]),
+                start_time=_format_dt(log_row["start_time"]),
+                end_time=_format_dt(log_row["end_time"]),
+                outputs=[
+                    TesOutputFileLog(**o)
+                    for o in (_load_jsonb(log_row["outputs"]) or [])
+                ],
+                system_logs=None
+                if basic
+                else (
+                    list(log_row["system_logs"])
+                    if log_row["system_logs"] is not None
+                    else None
+                ),
+            )
+            for log_row in children.logs.get(task_id, [])
+        ]
+        or None,
+        creation_time=_format_dt(task_row["creation_time"]),
+    )
 
 
 def _build_filter_clauses(filters: ListFilters) -> tuple[list[str], list[Any]]:
@@ -474,8 +523,8 @@ def _build_filter_clauses(filters: ListFilters) -> tuple[list[str], list[Any]]:
             visible.append("(" + " AND ".join(shared) + ")")
         clauses.append("(" + " OR ".join(visible) + ")")
     if filters.name_prefix is not None:
-        params.append(f"{filters.name_prefix}%")
-        clauses.append(f"name LIKE ${len(params)}")
+        params.append(f"{_escape_like(filters.name_prefix)}%")
+        clauses.append(f"name LIKE ${len(params)} ESCAPE '\\'")
     if filters.state is not None:
         params.append(filters.state.value)
         clauses.append(f"state = ${len(params)}")
@@ -483,8 +532,10 @@ def _build_filter_clauses(filters: ListFilters) -> tuple[list[str], list[Any]]:
         params.append(key)
         value = filters.tag_value[i] if i < len(filters.tag_value) else ""
         if value:
-            params.append(value)
-            clauses.append(f"tags ->> ${len(params) - 1} = ${len(params)}")
+            # `@>` rather than `->> =` so the GIN index on tags serves it;
+            # the same match, since tag values are strings.
+            params[-1] = json.dumps({key: value})
+            clauses.append(f"tags @> ${len(params)}::jsonb")
         else:
             clauses.append(f"tags ? ${len(params)}")
     cursor = _decode_page_token(filters.page_token)
@@ -492,6 +543,15 @@ def _build_filter_clauses(filters: ListFilters) -> tuple[list[str], list[Any]]:
         params.extend([cursor[0], cursor[1]])
         clauses.append(f"(creation_time, id) < (${len(params) - 1}, ${len(params)})")
     return clauses, params
+
+
+def _escape_like(text: str) -> str:
+    """Escape LIKE wildcards in ``text`` so it matches literally.
+
+    Backslash is the escape character, PostgreSQL's default for LIKE,
+    and the query names it explicitly.
+    """
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _scope_clauses(scope: TaskScope | None, params: list[Any]) -> list[str]:
