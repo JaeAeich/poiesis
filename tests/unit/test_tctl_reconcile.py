@@ -106,9 +106,14 @@ class World:
         monkeypatch.setattr(tctl.state_db, "recorded_executor_ordinals", self.recorded)
         #: Tasks whose executor logs were backfilled from their Pod.
         self.backfilled: list[str] = []
-        monkeypatch.setattr(tctl, "_backfill_executor_logs", self.backfill)
+        monkeypatch.setattr(tctl, "_read_executor_logs", self.read_logs)
+        monkeypatch.setattr(tctl, "_write_executor_logs", self.backfill)
 
-    async def backfill(self, _conn: Any, _core: Any, task_id: str, _pod: Any) -> None:
+    async def read_logs(self, _pool: Any, _core: Any, _task_id: str, p: Any) -> Any:
+        """Stands for the rows read from Pod `p`: `p` itself."""
+        return [p]
+
+    async def backfill(self, _conn: Any, task_id: str, _rows: Any) -> None:
         self.backfilled.append(task_id)
 
     async def non_terminal(self, _conn: Any, **_: Any) -> list[str]:
@@ -147,8 +152,8 @@ class World:
         self.system_logs.setdefault(task_id, []).append(message)
 
     @contextlib.asynccontextmanager
-    async def acquire(self) -> AsyncIterator[None]:
-        yield None
+    async def acquire(self) -> AsyncIterator[SimpleNamespace]:
+        yield SimpleNamespace(transaction=contextlib.nullcontext)
 
     def list_namespaced_job(self, **kwargs: Any) -> SimpleNamespace:
         self.calls.append("jobs")
@@ -786,3 +791,144 @@ def test_old_creation_time_does_not_shorten_the_grace() -> None:
         assert ended.state == TesState.SYSTEM_ERROR
 
     run(test)
+
+
+@needs_postgres
+def test_state_and_diagnostics_land_together(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing system log write rolls the state back; the next pass redoes it.
+
+    Before #163 the state committed first: the failed log left the task
+    terminal without its diagnostics, and the next pass was a no-op.
+    """
+    failed = pod(
+        T1,
+        "Failed",
+        init_container_statuses=[
+            {"name": "trec", "state": {"terminated": {"exit_code": 0}}},
+            {"name": "exec-0", "state": {"terminated": {"exit_code": 1}}},
+        ],
+    )
+
+    def no_logs(**_: Any) -> Any:
+        raise ApiException(status=500, reason="no logs")
+
+    kube = SimpleNamespace(
+        list_namespaced_job=lambda **_: SimpleNamespace(items=[]),
+        list_namespaced_pod=lambda **_: SimpleNamespace(items=[failed]),
+        read_namespaced_pod_log=no_logs,
+    )
+    append = state_db.append_system_log
+    failures = [OSError("connection reset")]
+
+    async def flaky_append(conn: Any, task_id: str, message: str) -> None:
+        if failures:
+            raise failures.pop()
+        await append(conn, task_id, message)
+
+    monkeypatch.setattr(tctl.state_db, "append_system_log", flaky_append)
+
+    async def test(pool: Any) -> None:
+        task = TesTask(
+            state=TesState.QUEUED,
+            executors=[TesExecutor(image="alpine", command=["false"])],
+        )
+        async with pool.acquire() as conn:
+            task_id = await tasks_db.create_task(conn, task, "owner")
+        failed["metadata"]["labels"]["poiesis.io/task"] = task_id
+
+        await tctl._reconcile_once(kube, kube, pool, NS, {})  # ty: ignore
+        async with pool.acquire() as conn:
+            after_failure = await tasks_db.get_task(conn, task_id)
+        await tctl._reconcile_once(kube, kube, pool, NS, {})  # ty: ignore
+        async with pool.acquire() as conn:
+            after_retry = await tasks_db.get_task(conn, task_id)
+
+        assert after_failure is not None
+        assert after_failure.state == TesState.QUEUED
+        assert after_retry is not None
+        assert after_retry.state == TesState.EXECUTOR_ERROR
+        (log,) = after_retry.logs or []
+        # The reason (from the write), then the diagnostics: each once.
+        assert log.system_logs == ["Error", "container exec-0 exited with code 1"]
+        assert [(e.exit_code, e.stdout) for e in log.logs] == [(1, None)]
+
+    run(test)
+
+
+def test_no_database_connection_is_held_across_kubernetes_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The executor logs are read before the transaction opens (#163)."""
+    held = 0
+    events: list[str] = []
+
+    class Conn:
+        @contextlib.asynccontextmanager
+        async def transaction(self) -> AsyncIterator[None]:
+            events.append("begin")
+            yield
+            events.append("commit")
+
+    class Pool:
+        @contextlib.asynccontextmanager
+        async def acquire(self) -> AsyncIterator[Conn]:
+            nonlocal held
+            held += 1
+            try:
+                yield Conn()
+            finally:
+                held -= 1
+
+    async def read_streams(*_: Any) -> tuple[str, None]:
+        assert held == 0
+        events.append("read log")
+        return "out\n", None
+
+    async def recorded(_conn: Any, _task_id: str) -> set[int]:
+        return set()
+
+    async def write(*_: Any, **__: Any) -> state_db.TerminalWriteResult:
+        events.append("write")
+        return state_db.TerminalWriteResult.APPLIED
+
+    async def append_executor_log(*_: Any, **row: Any) -> None:
+        events.append(f"executor log {row['stdout']!r}")
+
+    async def append_system_log(*_: Any) -> None:
+        events.append("system log")
+
+    monkeypatch.setattr(tctl, "read_executor_streams", read_streams)
+    monkeypatch.setattr(tctl.state_db, "recorded_executor_ordinals", recorded)
+    monkeypatch.setattr(tctl.state_db, "write_terminal_state", write)
+    monkeypatch.setattr(tctl.state_db, "append_executor_log", append_executor_log)
+    monkeypatch.setattr(tctl.state_db, "append_system_log", append_system_log)
+    failed = pod(
+        T1,
+        "Failed",
+        init_container_statuses=[
+            {"name": "exec-0", "state": {"terminated": {"exit_code": 1}}}
+        ],
+    )
+
+    wrote = asyncio.run(
+        tctl._apply_terminal(
+            Pool(),  # ty: ignore
+            core_v1=object(),  # ty: ignore
+            task_id=T1,
+            pod=failed,
+            proposed=TesState.EXECUTOR_ERROR,
+            reason="Error",
+            system_logs=["container exec-0 exited with code 1"],
+            source="pod-terminal",
+        )
+    )
+
+    assert wrote
+    assert events == [
+        "read log",
+        "begin",
+        "write",
+        "executor log 'out\\n'",
+        "system log",
+        "commit",
+    ]

@@ -155,8 +155,9 @@ class Recorder(World):
         await super().append_log(conn, task_id, message)
         self.effects.append(["system_log", task_id, message])
 
-    async def backfill(self, conn: Any, core: Any, task_id: str, p: Any) -> None:
-        await super().backfill(conn, core, task_id, p)
+    async def backfill(self, conn: Any, task_id: str, rows: Any) -> None:
+        await super().backfill(conn, task_id, rows)
+        (p,) = rows  # `World.read_logs` stands for the rows with the Pod
         self.effects.append(["backfill", task_id, p["metadata"]["name"]])
 
     def delete_namespaced_job(self, **kwargs: Any) -> None:

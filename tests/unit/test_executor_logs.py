@@ -9,7 +9,9 @@ fails the task or stops the recorder.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -188,7 +190,7 @@ def backfill(
         return recorded
 
     monkeypatch.setattr(state_db, "recorded_executor_ordinals", ordinals)
-    asyncio.run(tctl._backfill_executor_logs(None, core_v1, "t1", POD))
+    _tctl_backfill(core_v1, POD)
 
 
 def test_tctl_backfills_output_of_unrecorded_executors(
@@ -212,3 +214,14 @@ def test_tctl_backfills_rows_when_logs_cannot_be_read(
     """A failed log read still backfills the rows, without output."""
     backfill(FakeCoreV1({}, fail=True), monkeypatch, recorded=set())
     assert [(r["ordinal"], r["stdout"]) for r in appended] == [(0, None), (1, None)]
+
+
+def _tctl_backfill(core_v1: Any, pod: dict[str, Any]) -> None:
+    """Run tctl's executor log backfill of `pod`: read, then write the rows."""
+
+    async def backfill() -> None:
+        pool = SimpleNamespace(acquire=contextlib.nullcontext)
+        rows = await tctl._read_executor_logs(pool, core_v1, "t1", pod)  # ty: ignore
+        await tctl._write_executor_logs(None, "t1", rows)  # ty: ignore
+
+    asyncio.run(backfill())

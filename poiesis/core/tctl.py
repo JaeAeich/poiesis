@@ -571,29 +571,42 @@ async def _apply_terminal(
     terminal state but missing per-executor rows) and append the
     system_logs strings describing the failure mode.
 
+    The state, the executor_logs rows and the system_logs lines are
+    written in one transaction: if any of it fails, none of it lands and
+    the next pass tries again, instead of finding the task terminal and
+    its diagnostics lost. The executor logs are read from Kubernetes
+    before the transaction, so no database connection is held across a
+    Kubernetes call.
+
     Returns True iff this call finalised the task. A write that doesn't
     come from a finished Pod or Job is then followed by a delete of the
     task's Job (`DeleteJob(retry=False)`), so that nothing of the task
     keeps running.
     """
+    backfill = (
+        await _read_executor_logs(pool, core_v1, task_id, pod)
+        if pod is not None and core_v1 is not None
+        else None
+    )
     async with pool.acquire() as conn:
         c = cast("asyncpg.Connection", conn)
-        result = await state_db.write_terminal_state(
-            c, task_id, proposed, reason=reason
-        )
-        if result is state_db.TerminalWriteResult.NO_OP:
-            return False
+        async with c.transaction():
+            result = await state_db.write_terminal_state(
+                c, task_id, proposed, reason=reason
+            )
+            if result is state_db.TerminalWriteResult.NO_OP:
+                return False
 
-        if pod is not None and core_v1 is not None:
-            await _backfill_executor_logs(c, core_v1, task_id, pod)
+            if backfill is not None:
+                await _write_executor_logs(c, task_id, backfill)
 
-        # On the CANCELING precedence path, the proposed terminal was
-        # rewritten to CANCELED. Make the system log honest about that.
-        if result is state_db.TerminalWriteResult.CANCELED_INSTEAD:
-            await state_db.append_system_log(c, task_id, "task cancelled by client")
-        else:
-            for line in system_logs:
-                await state_db.append_system_log(c, task_id, line)
+            # On the CANCELING precedence path, the proposed terminal was
+            # rewritten to CANCELED. Make the system log honest about that.
+            if result is state_db.TerminalWriteResult.CANCELED_INSTEAD:
+                await state_db.append_system_log(c, task_id, "task cancelled by client")
+            else:
+                for line in system_logs:
+                    await state_db.append_system_log(c, task_id, line)
 
     logger.info(
         "tctl: %s reconciled task=%s as %s (write=%s, reason=%s)",
@@ -636,32 +649,48 @@ async def _delete_job(batch_v1: BatchV1Api, namespace: str, task_id: str) -> Non
     logger.info("tctl: deleted the Job of task=%s", task_id)
 
 
-async def _backfill_executor_logs(
-    conn: asyncpg.Connection,
+@dataclass(frozen=True)
+class _ExecutorLog:
+    """One `executor_logs` row tctl backfills."""
+
+    ordinal: int
+    exit_code: int
+    start_time: datetime | None
+    end_time: datetime | None
+    stdout: str | None
+    stderr: str | None
+
+
+async def _read_executor_logs(
+    pool: asyncpg.Pool,
     core_v1: CoreV1Api,
     task_id: str,
     pod: Mapping[str, Any],
-) -> None:
-    """Write any executor_logs rows trec didn't get to.
+) -> list[_ExecutorLog]:
+    """The executor_logs rows trec didn't get to, read from the Pod.
 
-    Idempotent: `append_executor_log` is INSERT ON CONFLICT DO NOTHING
-    keyed on `(task_log_id, ordinal)`. Walks `initContainerStatuses` for
-    containers named `exec-N`; ignores trec/tif/tof. Executors trec
-    already recorded are skipped, so their logs aren't read again; for
-    the others the tail of the container log is stored as `stdout`, or as
-    `stderr` when the executor writes its stdout to a file. tctl doesn't
-    mount task volumes, so such files aren't read.
+    Walks `initContainerStatuses` for containers named `exec-N`; ignores
+    trec/tif/tof. Executors trec already recorded are skipped, so their
+    logs aren't read again; for the others the tail of the container log
+    is the `stdout`, or the `stderr` when the executor writes its stdout
+    to a file. tctl doesn't mount task volumes, so such files aren't read.
+    The database connection that reads the recorded ordinals is given back
+    before the logs are read.
     """
     metadata = pod.get("metadata") or {}
     pod_name = metadata.get("name") or ""
     namespace = metadata.get("namespace") or ""
     streams = streams_from_pod(pod)
-    recorded = await state_db.recorded_executor_ordinals(conn, task_id)
+    async with pool.acquire() as conn:
+        recorded = await state_db.recorded_executor_ordinals(
+            cast("asyncpg.Connection", conn), task_id
+        )
     statuses = (
         (pod.get("status") or {}).get("init_container_statuses")
         or (pod.get("status") or {}).get("initContainerStatuses")
         or []
     )
+    rows: list[_ExecutorLog] = []
     for status in statuses:
         name = status.get("name") or ""
         if not name.startswith("exec-"):
@@ -686,19 +715,41 @@ async def _backfill_executor_logs(
             ordinal,
             executor_streams.without_files() if executor_streams else None,
         )
+        rows.append(
+            _ExecutorLog(
+                ordinal=ordinal,
+                exit_code=int(exit_code),
+                start_time=_parse_kubelet_ts(
+                    terminated.get("started_at") or terminated.get("startedAt")
+                ),
+                end_time=_parse_kubelet_ts(
+                    terminated.get("finished_at") or terminated.get("finishedAt")
+                ),
+                stdout=stdout,
+                stderr=stderr,
+            )
+        )
+    return rows
+
+
+async def _write_executor_logs(
+    conn: asyncpg.Connection, task_id: str, rows: Sequence[_ExecutorLog]
+) -> None:
+    """Write the rows `_read_executor_logs` read.
+
+    Idempotent: `append_executor_log` is INSERT ON CONFLICT DO NOTHING
+    keyed on `(task_log_id, ordinal)`, so a row trec wrote meanwhile wins.
+    """
+    for row in rows:
         await state_db.append_executor_log(
             conn,
             task_id,
-            ordinal=ordinal,
-            exit_code=int(exit_code),
-            start_time=_parse_kubelet_ts(
-                terminated.get("started_at") or terminated.get("startedAt")
-            ),
-            end_time=_parse_kubelet_ts(
-                terminated.get("finished_at") or terminated.get("finishedAt")
-            ),
-            stdout=stdout,
-            stderr=stderr,
+            ordinal=row.ordinal,
+            exit_code=row.exit_code,
+            start_time=row.start_time,
+            end_time=row.end_time,
+            stdout=row.stdout,
+            stderr=row.stderr,
         )
 
 

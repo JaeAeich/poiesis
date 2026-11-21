@@ -119,6 +119,13 @@ TCtl is on every path: TRec never finalises a task, clean runs included.
 - **One task**: an error while writing one task's state or deleting
   its Job is logged with the task's id, and the pass goes on with the
   next task. The next pass decides that task again.
+- **The database**: a task's terminal state, the `executor_logs` rows
+  TCtl backfills and its `system_logs` lines are written in one
+  transaction. If any of it fails, none of it lands and the next pass
+  tries again, so a task never ends without its diagnostics. Executor
+  output is read from Kubernetes before the transaction opens, so no
+  database connection waits on the API server. While Postgres is down,
+  every pass fails when it reads the task rows, and does nothing.
 - **The Lease**: the leader renews it every 10 seconds on its own
   timer, also while a pass runs, so a long pass doesn't lose it. If a
   renewal fails, or none has succeeded for 20 seconds (the Lease's 30
