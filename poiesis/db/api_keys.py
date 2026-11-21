@@ -69,8 +69,10 @@ async def create_api_key(  # noqa: PLR0913 (one column per argument)
     a key that has expired meanwhile nor shortens the new key's life.
     """
     async with conn.transaction():
-        # SET LOCAL takes no parameters; the value is an int we format.
-        await conn.execute(f"SET LOCAL lock_timeout = {int(lock_timeout_ms)}")
+        # Like SET LOCAL (ends with the transaction), but with a parameter.
+        await conn.execute(
+            "SELECT set_config('lock_timeout', $1, true)", f"{int(lock_timeout_ms)}ms"
+        )
         await conn.execute(
             "SELECT pg_advisory_xact_lock(hashtext('poiesis.api_keys'), hashtext($1))",
             owner,
