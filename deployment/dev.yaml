@@ -463,6 +463,9 @@ data:
       "clients": ["poiesis-cli", "poiesis-ci"],
       "keyMinting": {"clients": ["poiesis-cli"]},
       "admin": {"name": "groups", "values": ["poiesis-admins"]}}]
+  # The URL the docs reach the API at (port-forward); clients discover
+  # the issuer from <it>/.well-known/oauth-protected-resource or a 401.
+  POIESIS_AUTH_RESOURCE: http://localhost:8000
   POIESIS_AUTH_API_KEYS_ENABLED: "true"
   POIESIS_AUTH_API_KEYS_DEFAULT_TTL: 7d
   POIESIS_AUTH_API_KEYS_MAX_TTL: 90d

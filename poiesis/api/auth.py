@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from fastapi import Request
 
-from poiesis.api.exceptions import UnauthorizedError
+from poiesis.api.exceptions import MissingCredentialError, UnauthorizedError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -194,4 +194,4 @@ async def get_principal(request: Request) -> Principal:
             return principal
     if request.headers.get("authorization"):
         raise UnauthorizedError("invalid token")
-    raise UnauthorizedError("missing bearer token")
+    raise MissingCredentialError("missing bearer token")

@@ -13,6 +13,7 @@ import os
 import re
 from datetime import timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from kubernetes.client import V1EnvVar
@@ -607,6 +608,36 @@ class AuthSettings(BaseModel):
     issuers: tuple[IssuerSettings, ...] = Field(default_factory=_parse_issuers_env)
     api_keys: ApiKeySettings = Field(default_factory=ApiKeySettings)
     swagger_ui: SwaggerUiSettings | None = Field(default_factory=_parse_swagger_ui_env)
+    # Public URL of this Poiesis (RFC 9728 resource identifier), e.g.
+    # https://poiesis.example.org; unset serves no resource metadata.
+    resource: str | None = Field(
+        default_factory=lambda: os.environ.get("POIESIS_AUTH_RESOURCE") or None,
+        validate_default=True,
+    )
+
+    @field_validator("resource")
+    @classmethod
+    def _check_resource(cls, value: str | None) -> str | None:
+        """Take an http(s) URL without query, fragment or credentials.
+
+        A trailing ``/`` is dropped: clients compare the identifier
+        exactly, and ``https://host`` is the usual spelling.
+        """
+        if value is None:
+            return None
+        if (
+            not _is_http_url(value)
+            or any(c in value for c in "?#")
+            or "@" in urlsplit(value).netloc
+            # Quoted in WWW-Authenticate (no quotes, backslashes, spaces)
+            # and a route path (no braces).
+            or re.search(r'[\s"\\{}]', value)
+        ):
+            raise ValueError(
+                "POIESIS_AUTH_RESOURCE must be an http(s) URL without query, "
+                "fragment or credentials, e.g. https://poiesis.example.org"
+            )
+        return value.rstrip("/")
 
     @model_validator(mode="after")
     def _check_issuers(self) -> AuthSettings:

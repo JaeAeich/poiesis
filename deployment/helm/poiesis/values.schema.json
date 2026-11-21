@@ -64,6 +64,10 @@
           "type": "array",
           "items": { "$ref": "#/$defs/issuerSpec" }
         },
+        "resource": {
+          "type": "string",
+          "pattern": "^$|^https?://[^/\\s\"\\\\?#@{}]+(/[^\\s\"\\\\?#{}]*)?$"
+        },
         "apiKeys": {
           "type": "object",
           "additionalProperties": false,

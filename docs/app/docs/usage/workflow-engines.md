@@ -147,3 +147,8 @@ Anything that can set a header works: send
 key as password. A `401` with `invalid token` means the key is unknown,
 revoked or expired; mint a new one. A `403` on create or cancel with
 `API key lacks scope tasks:write` means a read-only key.
+
+A client that logs in by itself (to mint a key, say) needn't be told
+where: the `WWW-Authenticate` header of any `401` points to the
+deployment's metadata, which lists its issuers; see
+[Discovery](../deploy/authentication.md#discovery).

@@ -25,12 +25,13 @@ if TYPE_CHECKING:
     from poiesis.api.auth import Authenticator
     from poiesis.api.settings import AuthSettings, Settings
 
-from poiesis.api import audit
+from poiesis.api import audit, resource_metadata
 from poiesis.api.apikey_auth import ApiKeyAuthenticator
 from poiesis.api.authz import Authz
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.api.exceptions import (
     APIError,
+    UnauthorizedError,
     handle_api_exception,
     handle_unexpected_exception,
 )
@@ -183,6 +184,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.add_exception_handler(APIError, handle_api_exception)
     app.add_exception_handler(Exception, handle_unexpected_exception)
+    # Every 401 says how to authenticate (RFC 6750, RFC 9728).
+    app.add_exception_handler(UnauthorizedError, resource_metadata.handle_unauthorized)
     # The request id of audit lines, echoed in every response.
     app.add_middleware(audit.RequestIdMiddleware)
 
@@ -197,6 +200,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.include_router(
             api_keys_routes.router, prefix="/poiesis/v1", dependencies=security
         )
+    if settings.auth.enabled and settings.auth.resource is not None:
+        app.include_router(resource_metadata.router(settings.auth))
     # Probes are unprefixed so kubelet hits /healthz, /readyz, /startupz directly.
     app.include_router(health_routes.router)
 

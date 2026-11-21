@@ -81,6 +81,9 @@ data:
   POIESIS_AUTH_ENABLED: {{ .Values.auth.enabled | quote }}
   {{- if .Values.auth.enabled }}
   POIESIS_AUTH_ISSUERS: {{ .Values.auth.issuers | toJson | quote }}
+  {{- with .Values.auth.resource }}
+  POIESIS_AUTH_RESOURCE: {{ . | quote }}
+  {{- end }}
   {{- with .Values.auth.apiKeys }}
   {{- if hasKey . "enabled" }}
   POIESIS_AUTH_API_KEYS_ENABLED: {{ .enabled | quote }}
