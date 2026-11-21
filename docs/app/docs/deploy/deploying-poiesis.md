@@ -136,6 +136,31 @@ make the pinned hostname resolve to the port-forward:
 echo "127.0.0.1 keycloak.deps.svc" | sudo tee -a /etc/hosts
 ```
 
+### 5. Mint an API key
+
+Workflow engines need a credential that outlives a five-minute token:
+an [API key](./api-keys.md). Mint one with the token from step 4:
+
+```bash
+KEY=$(curl -s -X POST http://localhost:8000/poiesis/v1/api-keys \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"name": "dev", "ttl": "7d"}' | jq -r .key)
+curl http://localhost:8000/ga4gh/tes/v1/tasks -H "Authorization: Bearer $KEY"
+```
+
+Or from the browser: the dev manifest sets up the Swagger UI login
+with `poiesis-cli`. With the hosts entry above and both port-forwards
+running, open <http://localhost:8000/docs>, click **Authorize**, log in
+under `oidc` (authorization code) as `alice`, and run
+`POST /poiesis/v1/api-keys`. The browser fetches Keycloak's discovery
+document and login page from `keycloak.deps.svc:8080` itself, which is
+why it needs the hosts entry. The realm accepts the Swagger UI on
+`localhost:8000` and `localhost:18000` (for a port-forward to
+`18000:8000` when 8000 is taken).
+
+Use the key in your engine; see
+[Workflow engines](../usage/workflow-engines.md).
+
 ## Submit a task
 
 A no-IO echo task:
@@ -234,6 +259,7 @@ templates the same shape. Values cover:
 - Ingress for the API
 - TCtl HA replica count
 - OIDC authentication ([dedicated page](./authentication.md))
+- API keys and the Swagger UI login ([dedicated page](./api-keys.md))
 
 `Chart.yaml` pins `kubeVersion: ">=1.29.0"` so installs fail fast on
 incompatible clusters.

@@ -21,6 +21,15 @@ tes.endpoint = 'http://localhost:8000/ga4gh/tes'
 The plugin appends `/v1` to the endpoint, so point it at
 `/ga4gh/tes` rather than `/ga4gh/tes/v1`.
 
+With auth on (the default), add an [API key](../deploy/api-keys.md):
+
+```groovy
+tes.oauthToken = 'poi_k7H2pQ…'
+```
+
+An access token would expire during the run; see
+[Workflow engines](./workflow-engines.md#nextflow).
+
 ## With S3 staging
 
 Workflows that pass files between processes need an object store, since
@@ -89,7 +98,7 @@ nextflow run main.nf
 
 Expected output:
 
-```
+```text
 executor >  tes [http://localhost:8000/ga4gh/tes] (3)
 [xx/xxxxxx] SAY_HI (Greeting Bob) | 3 of 3 ✔
 Received: Hello Alice from the TES executor!
