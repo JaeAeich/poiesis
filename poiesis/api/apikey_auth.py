@@ -226,6 +226,11 @@ class ApiKeyAuthenticator:
         try:
             async with self._pool.acquire() as conn:
                 await api_keys_db.touch_api_keys(conn, batch)
+        except asyncio.CancelledError:
+            # Shutdown cancelled the background flush mid-write: keep the
+            # batch for the final flush in `aclose`.
+            self._used = batch | self._used
+            raise
         except DB_ERRORS as exc:
             logger.warning(
                 "Recording API key use failed (%s); retrying with the next batch",

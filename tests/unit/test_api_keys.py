@@ -412,9 +412,7 @@ def test_key_sees_owner_tasks(
 
 def test_snapshot(client: TestClient, issuer: Issuer, table: KeyTable) -> None:
     """The snapshot keeps the owner's claims without the token's own lifetime."""
-    token = issuer.token(
-        jti="t-1", iat=1, nbf=1, auth_time=1, groups=["lab-alpha"]
-    )
+    token = issuer.token(jti="t-1", iat=1, nbf=1, auth_time=1, groups=["lab-alpha"])
     created = mint(client, token).json()
     snapshot = table.rows[uuid.UUID(created["id"])]["claims_snapshot"]
     assert snapshot == {
@@ -550,6 +548,8 @@ def _minting(**minting: Any) -> IssuerSettings:
         (1000 - 60, None),
         (1000 - 600, None),
         (1000 - 601, "too old"),
+        (1000 + 30, None),
+        (1000 + 31, "in the future"),
         (None, "no auth_time"),
         ("900", "no auth_time"),
         (True, "no auth_time"),
@@ -589,7 +589,7 @@ def test_mint_without_issuer_settings() -> None:
 )
 def test_key_minting_settings_invalid(minting: dict[str, Any]) -> None:
     """`keyMinting` needs at least one client id and a positive age."""
-    with pytest.raises(ValueError, match="keyMinting|clients|maxAuthAge|other"):
+    with pytest.raises(ValueError, match=r"keyMinting|clients|maxAuthAge|other"):
         _minting(**minting)
 
 
@@ -697,7 +697,8 @@ def test_unknown_key_is_401(client: TestClient, headers: dict[str, str]) -> None
 def test_malformed_key_skips_database(client: TestClient, table: KeyTable) -> None:
     """A credential that can't be a key is refused without a lookup."""
     client.get(TASKS, headers=bearer("poi_short"))
-    client.get(TASKS, headers=bearer(new_key()[:-1] + "0"))
+    key = new_key()
+    client.get(TASKS, headers=bearer(key[:-1] + ("1" if key[-1] == "0" else "0")))
     assert table.lookups == 0
 
 
@@ -754,6 +755,61 @@ def test_database_down_is_503(client: TestClient, table: KeyTable) -> None:
     response = client.get(TASKS, headers=bearer(key))
     assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert response.headers["retry-after"] == "5"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("POST", KEYS, {"name": "run"}),
+        ("GET", KEYS, None),
+        ("DELETE", f"{KEYS}/{TASK_ID}", None),
+    ],
+    ids=["mint", "list", "revoke"],
+)
+def test_key_management_database_down_is_503(
+    client: TestClient,
+    issuer: Issuer,
+    table: KeyTable,
+    method: str,
+    path: str,
+    body: Any,
+) -> None:
+    """Managing keys while the database is down is a retryable 503, not 500."""
+    table.down = True
+    response = client.request(method, path, json=body, headers=bearer(issuer.token()))
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert response.headers["retry-after"] == "5"
+
+
+def test_flush_cancelled_keeps_batch(
+    table: KeyTable, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A flush cancelled mid-write keeps its batch for the final flush."""
+    key = new_key()
+    key_id = table.insert(key)
+
+    async def main() -> None:
+        started = asyncio.Event()
+
+        async def slow(conn: Any, used: dict[uuid.UUID, datetime]) -> None:
+            started.set()
+            await asyncio.sleep(10)
+
+        authenticator = ApiKeyAuthenticator(Pool(), (ISSUER,))
+        request: Any = SimpleNamespace(headers={"authorization": f"Bearer {key}"})
+        await authenticator.authenticate(request)
+        with monkeypatch.context() as patch:
+            patch.setattr(api_keys_db, "touch_api_keys", slow)
+            flushing = asyncio.create_task(authenticator.flush())
+            async with asyncio.timeout(5):
+                await started.wait()
+            flushing.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await flushing
+        await authenticator.aclose()
+
+    asyncio.run(main())
+    assert [batch.keys() for batch in table.touched] == [{key_id}]
 
 
 def principal_for(table: KeyTable, key: str, issuers: tuple[str, ...]) -> Any:
@@ -893,15 +949,19 @@ def test_last_used_flushed_in_background(table: KeyTable) -> None:
         authenticator = ApiKeyAuthenticator(Pool(), (ISSUER,), flush_interval=0.01)
         await authenticator.start()
         request: Any = SimpleNamespace(headers={"authorization": f"Bearer {key}"})
-        await authenticator.authenticate(request)
-        for _ in range(200):
-            if table.touched:
-                break
-            await asyncio.sleep(0.01)
-        await authenticator.aclose()
+        try:
+            await authenticator.authenticate(request)
+            for _ in range(200):
+                if table.touched:
+                    break
+                await asyncio.sleep(0.01)
+            # Before `aclose`, whose final flush would hide a dead loop.
+            assert table.touched
+            assert table.touched[0].keys() == {key_id}
+        finally:
+            await authenticator.aclose()
 
     asyncio.run(main())
-    assert table.touched[0].keys() == {key_id}
 
 
 # -- decision service ------------------------------------------------------------

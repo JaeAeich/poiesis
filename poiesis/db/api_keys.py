@@ -54,6 +54,7 @@ async def create_api_key(  # noqa: PLR0913 (one column per argument)
     claims_snapshot: Mapping[str, Any],
     ttl: timedelta,
     max_active: int,
+    lock_timeout_ms: int = 5000,
 ) -> ApiKeyRecord | None:
     """Insert a key that expires ``ttl`` from now; ``None`` if over the cap.
 
@@ -61,8 +62,15 @@ async def create_api_key(  # noqa: PLR0913 (one column per argument)
     A transaction-scoped advisory lock per owner serialises concurrent
     mints of one owner, so two requests can't both see room for the
     last key; other owners don't wait (unless their hashes collide).
+    Waiting for it is bounded by ``lock_timeout_ms``: past that,
+    ``asyncpg.LockNotAvailableError`` (a retryable ``503`` upstream).
+    "Now" is the wall clock (``clock_timestamp()``), not the start of
+    the transaction, so time spent waiting for the lock neither counts
+    a key that has expired meanwhile nor shortens the new key's life.
     """
     async with conn.transaction():
+        # SET LOCAL takes no parameters; the value is an int we format.
+        await conn.execute(f"SET LOCAL lock_timeout = {int(lock_timeout_ms)}")
         await conn.execute(
             "SELECT pg_advisory_xact_lock(hashtext('poiesis.api_keys'), hashtext($1))",
             owner,
@@ -70,7 +78,8 @@ async def create_api_key(  # noqa: PLR0913 (one column per argument)
         active = await conn.fetchval(
             """
             SELECT count(*) FROM api_keys
-            WHERE owner = $1 AND revoked_at IS NULL AND expires_at > now()
+            WHERE owner = $1 AND revoked_at IS NULL
+              AND expires_at > clock_timestamp()
             """,
             owner,
         )
@@ -81,7 +90,9 @@ async def create_api_key(  # noqa: PLR0913 (one column per argument)
             INSERT INTO api_keys (
                 id, name, key_hash, owner, scopes, claims_snapshot, expires_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6::jsonb, now() + $7::interval)
+            VALUES (
+                $1, $2, $3, $4, $5, $6::jsonb, clock_timestamp() + $7::interval
+            )
             RETURNING created_at, expires_at
             """,
             key_id,

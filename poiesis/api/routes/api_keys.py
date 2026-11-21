@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from poiesis.api.apikey_auth import SCOPES, hash_key, new_key
+from poiesis.api.apikey_auth import DB_ERRORS, SCOPES, hash_key, new_key
 from poiesis.api.auth import Principal, get_principal
 from poiesis.api.authz import Authz, get_authz
 from poiesis.api.deps import get_db_pool
@@ -30,6 +30,7 @@ from poiesis.api.exceptions import (
     ConflictError,
     ForbiddenError,
     NotFoundError,
+    ServiceUnavailableError,
 )
 from poiesis.api.settings import (
     TTL_PATTERN,
@@ -50,6 +51,16 @@ router = APIRouter(tags=["ApiKeys"])
 _TOKEN_ONLY_CLAIMS = frozenset({"exp", "iat", "nbf", "jti", "auth_time"})
 
 Scope = Literal["tasks:read", "tasks:write"]
+#: ``Retry-After`` seconds while the database can't be reached.
+_DB_RETRY_AFTER = 5
+
+
+def _store_unavailable(exc: BaseException) -> ServiceUnavailableError:
+    """The retryable ``503`` for a database error while managing keys."""
+    logger.warning("API key store unavailable: %s", type(exc).__name__)
+    return ServiceUnavailableError(
+        "credential store unavailable", retry_after_seconds=_DB_RETRY_AFTER
+    )
 
 
 class _Camel(BaseModel):
@@ -137,9 +148,9 @@ def mint_refusal(
     the listed clients, and, with ``maxAuthAge``, the user must have
     logged in recently (``auth_time``).
     """
-    minting = issuer.key_minting if issuer is not None else None
-    if minting is None:
+    if issuer is None or issuer.key_minting is None:
         return "tokens of this issuer can't mint API keys"
+    minting = issuer.key_minting
     client = principal.claims.get("azp") or principal.claims.get("client_id")
     if client not in minting.clients:
         return f"tokens of client {str(client)[:100]!r} can't mint API keys"
@@ -147,6 +158,8 @@ def mint_refusal(
         auth_time = principal.claims.get("auth_time")
         if not isinstance(auth_time, int | float) or isinstance(auth_time, bool):
             return "the token has no auth_time; log in again to mint a key"
+        if auth_time > now + issuer.clock_skew:
+            return "the token's auth_time is in the future"
         if now - auth_time > minting.max_auth_age:
             return "the last login is too old to mint a key; log in again"
     return None
@@ -194,18 +207,21 @@ async def create_api_key(
         },
         "userinfo": principal.userinfo,
     }
-    async with pool.acquire() as conn:
-        record = await api_keys_db.create_api_key(
-            conn,
-            key_id=uuid.uuid4(),
-            name=body.name,
-            key_hash=hash_key(key),
-            owner=principal.owner,
-            scopes=scopes,
-            claims_snapshot=snapshot,
-            ttl=ttl,
-            max_active=settings.max_per_owner,
-        )
+    try:
+        async with pool.acquire() as conn:
+            record = await api_keys_db.create_api_key(
+                conn,
+                key_id=uuid.uuid4(),
+                name=body.name,
+                key_hash=hash_key(key),
+                owner=principal.owner,
+                scopes=scopes,
+                claims_snapshot=snapshot,
+                ttl=ttl,
+                max_active=settings.max_per_owner,
+            )
+    except DB_ERRORS as exc:
+        raise _store_unavailable(exc) from exc
     if record is None:
         raise ConflictError(
             f"at most {settings.max_per_owner} active API keys per owner; "
@@ -240,8 +256,11 @@ async def list_api_keys(
     pool: Annotated[Any, Depends(get_db_pool)],
 ) -> list[ApiKeyInfo]:
     """List the caller's keys, revoked and expired ones included, newest first."""
-    async with pool.acquire() as conn:
-        records = await api_keys_db.list_api_keys(conn, principal.owner)
+    try:
+        async with pool.acquire() as conn:
+            records = await api_keys_db.list_api_keys(conn, principal.owner)
+    except DB_ERRORS as exc:
+        raise _store_unavailable(exc) from exc
     return [
         ApiKeyInfo(
             id=record.id,
@@ -272,8 +291,11 @@ async def revoke_api_key(
         key_id = uuid.UUID(id)
     except ValueError as exc:
         raise BadRequestError(f"invalid key id: {id}") from exc
-    async with pool.acquire() as conn:
-        revoked = await api_keys_db.revoke_api_key(conn, key_id, principal.owner)
+    try:
+        async with pool.acquire() as conn:
+            revoked = await api_keys_db.revoke_api_key(conn, key_id, principal.owner)
+    except DB_ERRORS as exc:
+        raise _store_unavailable(exc) from exc
     if not revoked:
         raise NotFoundError(f"API key {id} not found")
     logger.info("API key %s revoked by %s", key_id, principal.owner)
