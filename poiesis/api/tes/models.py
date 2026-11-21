@@ -1,9 +1,11 @@
 """Models for TES API."""
 
+import logging
 import os
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 from pydantic import (
     AnyUrl,
@@ -12,6 +14,8 @@ from pydantic import (
     field_serializer,
     field_validator,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TesCancelTaskResponse(BaseModel):
@@ -598,6 +602,23 @@ class TesTask(BaseModel):
     def serialize_state(self, v: TesState) -> str:
         """Serialize the state to a string."""
         return v.value
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def drop_null_tags(cls, tags: Any) -> Any:
+        """Drop tags whose value is null; other values are validated as strings.
+
+        TES tags are strings, but Cromwell sends ``"parent_workflow_id": null``
+        for a root workflow (issue #71). A dropped key is absent, as if never
+        sent; only the dropped keys are logged, never tag values.
+        """
+        if not isinstance(tags, dict):
+            return tags
+        dropped = [key for key, value in tags.items() if value is None]
+        if not dropped:
+            return tags
+        logger.debug("Dropped task tags with null values: %s", dropped)
+        return {key: value for key, value in tags.items() if value is not None}
 
 
 class TesListTasksResponse(BaseModel):
