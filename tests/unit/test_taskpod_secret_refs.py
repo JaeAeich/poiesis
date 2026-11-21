@@ -46,10 +46,10 @@ def _api_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AWS_REGION", "eu-central-1")
 
 
-def containers() -> dict[str, V1Container]:
+def containers(task: TesTask = TASK) -> dict[str, V1Container]:
     """Every container of the Job built from the current environment."""
     config = Settings(auth=AuthSettings(enabled=False)).runtime_config()
-    _, job = build_taskpod_job(TASK, config)
+    _, job = build_taskpod_job(task, config)
     spec = job.spec.template.spec
     return {c.name: c for c in [*(spec.init_containers or []), *spec.containers]}
 
@@ -126,7 +126,14 @@ def test_no_s3_secret_and_no_keys_adds_no_s3_credentials(monkeypatch):
     monkeypatch.setenv("POIESIS_TASKPOD_DATABASE_SECRET", "task-db")
     for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
         monkeypatch.delenv(name)
-    for container in owned(containers()):
+    # Without S3 credentials an s3:// URL is refused at submit (#166).
+    http_task = TASK.model_copy(
+        update={
+            "inputs": [TesInput(path="/data/in", url="https://example.org/in")],
+            "outputs": [TesOutput(path="/data/out", url="https://example.org/out")],
+        }
+    )
+    for container in owned(containers(http_task)):
         assert not {
             "AWS_ACCESS_KEY_ID",
             "AWS_SECRET_ACCESS_KEY",

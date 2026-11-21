@@ -111,6 +111,9 @@ class RuntimeConfig:
         file_url_roots: Directories `file://` URLs may point into, passed
             to TIF/TOF. Sourced from ``taskpods.fileUrlRoots``; empty turns
             the scheme off.
+        s3_configured: Whether TIF/TOF get S3 credentials. False makes
+            submit refuse `s3://` inputs and outputs, which would fail in
+            the Pod. Derived by the API from its S3 settings.
     """
 
     taskpod_namespace: str
@@ -142,3 +145,4 @@ class RuntimeConfig:
     taskpod_extra_volume_mounts: list[dict[str, Any]] = field(default_factory=list)
     output_glob_fallback: bool = False
     file_url_roots: tuple[str, ...] = ()
+    s3_configured: bool = True

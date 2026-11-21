@@ -9,6 +9,7 @@ import math
 import posixpath
 from typing import TYPE_CHECKING
 
+from poiesis.api.tes.models import TesFileType
 from poiesis.core import executor_shell
 from poiesis.core.services.filer import filer_strategy_factory as _filer
 from poiesis.core.taskpod.paths import is_within, normalised
@@ -34,12 +35,18 @@ def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
     Raises ``ValueError``; the API translates this into HTTP 400.
     """
     for idx, inp in enumerate(task.inputs or []):
+        if not inp.url and inp.content is None:
+            raise ValueError(f"inputs[{idx}] must set url or content")
         # Inline `content` wins over `url`; the empty-scheme entry in the
         # filer registry handles it, so `can_input(None)` is True.
-        if not _filer.can_input(_filer.input_url(inp)):
+        url = _filer.input_url(inp)
+        if not _filer.can_input(url):
             raise ValueError(
                 f"inputs[{idx}].url scheme is not supported as a TES input: {inp.url!r}"
             )
+        if inp.type == TesFileType.DIRECTORY:
+            reject_unstageable_directory(f"inputs[{idx}]", url)
+        reject_unconfigured_s3(f"inputs[{idx}].url", url, config)
 
     for idx, out in enumerate(task.outputs or []):
         if not _filer.can_output(out.url):
@@ -47,6 +54,7 @@ def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
                 f"outputs[{idx}].url scheme is not supported as a TES output: "
                 f"{out.url!r}"
             )
+        reject_unconfigured_s3(f"outputs[{idx}].url", out.url, config)
 
     # paths the executor can't be given (raises before anything is created)
     path_mounts = executor_path_mounts(task)
@@ -70,6 +78,29 @@ def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
                 f"under backend_parameters_strict=true: {unknown}"
             )
             raise ValueError(msg)
+
+
+def reject_unstageable_directory(where: str, url: str | None) -> None:
+    """Reject a DIRECTORY input TIF can't stage: inline content or HTTP(S).
+
+    HTTP has no standard directory listing, and content is one file.
+    """
+    if url is None:
+        raise ValueError(f"{where} has inline content, which can't be a DIRECTORY")
+    if _filer.scheme(url) in {"http", "https"}:
+        raise ValueError(
+            f"{where} is a DIRECTORY with an HTTP(S) url; directories can't be "
+            "downloaded over HTTP(S), list each file as a FILE input"
+        )
+
+
+def reject_unconfigured_s3(where: str, url: str | None, config: RuntimeConfig) -> None:
+    """Reject an ``s3://`` URL when TIF and TOF get no S3 credentials."""
+    if not config.s3_configured and _filer.scheme(url) == "s3":
+        raise ValueError(
+            f"{where} is an s3:// URL, but this deployment has no S3 credentials; "
+            "ask your administrator to configure S3 storage"
+        )
 
 
 def reject_oversized_disk(task: TesTask, config: RuntimeConfig) -> None:

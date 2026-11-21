@@ -1198,6 +1198,7 @@ class Settings(BaseModel):
     def runtime_config(self) -> RuntimeConfig:
         """Materialise the TaskPod RuntimeConfig used by the spec builder."""
         env = self._credential_env()
+        taskpod_extra_env = _entries_to_envvars(self.taskpod_extra_env)
         # Not secret, so literal values.
         for name, value in (
             ("AWS_ENDPOINT_URL", self.aws_endpoint_url),
@@ -1221,7 +1222,7 @@ class Settings(BaseModel):
             image_pull_secrets=self.image_pull_secrets,
             postgres_ca_configmap=self.postgres_ca_configmap,
             extra_env=env,
-            taskpod_extra_env=_entries_to_envvars(self.taskpod_extra_env),
+            taskpod_extra_env=taskpod_extra_env,
             taskpod_extra_volumes=self.taskpod_extra_volumes,
             taskpod_extra_volume_mounts=self.taskpod_extra_volume_mounts,
             output_glob_fallback=self.output_glob_fallback,
@@ -1229,6 +1230,11 @@ class Settings(BaseModel):
             recorder_resources=_resources(self.recorder_resources),
             filer_resources=_resources(self.filer_resources),
             ack_resources=_resources(self.ack_resources),
+            # TIF/TOF's S3 client needs an access key: from the S3 Secret,
+            # the API's own values, or the operator's extraEnv.
+            s3_configured=any(
+                e.name == "AWS_ACCESS_KEY_ID" for e in (*env, *taskpod_extra_env)
+            ),
         )
 
     def _credential_env(self) -> list[V1EnvVar]:

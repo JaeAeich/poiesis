@@ -416,6 +416,35 @@ REJECTED: dict[str, tuple[TesTask, RuntimeConfig]] = {
 }
 
 
+NO_S3 = RuntimeConfig(
+    taskpod_namespace="poiesis", poiesis_image="poiesis:golden", s3_configured=False
+)
+
+#: Tasks that used to be accepted and fail only in the Pod (#166); kept
+#: apart from REJECTED so its golden file stays as it was.
+REJECTED_AT_SUBMIT: dict[str, tuple[TesTask, RuntimeConfig]] = {
+    "input-without-url-or-content": (_task(inputs=[TesInput(path="/data/x")]), BASE),
+    "input-http-directory": (
+        _task(
+            inputs=[
+                _inp(
+                    "/data/d", url="https://example.org/d/", type=TesFileType.DIRECTORY
+                )
+            ]
+        ),
+        BASE,
+    ),
+    "input-content-directory": (
+        _task(
+            inputs=[TesInput(path="/data/d", content="x", type=TesFileType.DIRECTORY)]
+        ),
+        BASE,
+    ),
+    "input-s3-unconfigured": (_task(inputs=[_inp("/data/x")]), NO_S3),
+    "output-s3-unconfigured": (_task(outputs=[_out("/data/x")]), NO_S3),
+}
+
+
 @pytest.fixture(autouse=True)
 def _file_roots(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fix the `file://` roots the input/output checks read from the env."""
@@ -464,3 +493,22 @@ def test_rejections_match_golden() -> None:
             build_taskpod_job(task, config)
         messages[case] = str(caught.value)
     _check("rejected.json", _dump(messages))
+
+
+def test_rejections_at_submit_match_golden() -> None:
+    """Tasks that would fail only in the Pod are refused, with the exact message."""
+    messages: dict[str, str] = {}
+    for case, (task, config) in REJECTED_AT_SUBMIT.items():
+        with pytest.raises(ValueError) as caught:  # noqa: PT011 - message is checked
+            build_taskpod_job(task, config)
+        messages[case] = str(caught.value)
+    _check("rejected-at-submit.json", _dump(messages))
+
+
+def test_s3_with_no_credentials_still_takes_other_schemes() -> None:
+    """Without S3 credentials, HTTP(S) and content inputs are accepted."""
+    task, _ = CASES["inputs-only"]
+    http_only = task.model_copy(
+        update={"inputs": [i for i in task.inputs or [] if i.url != "s3://bucket/in"]}
+    )
+    build_taskpod_job(http_only, NO_S3)

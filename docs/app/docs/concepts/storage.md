@@ -35,6 +35,10 @@ after they finish.
   (see [Local paths](#local-paths)).
 - Inline content as an output, or an unknown scheme, is refused with
   `400`. `GET /service-info` lists the supported schemes.
+- Also refused with `400` at submit, since they would only fail in the
+  Pod: an input with neither `url` nor `content`, a `DIRECTORY` input
+  over `http(s)://` or as inline `content`, and an `s3://` input or
+  output when the deployment gives `tif` and `tof` no S3 credentials.
 
 ## Common patterns
 
@@ -88,8 +92,12 @@ taskpods:
 If the Secret is missing in the task namespace, no TaskPod can start, not
 only the ones that use `s3://`.
 
-On EKS, leave `existingSecret` empty and give the service accounts an IAM
-role through IRSA instead:
+`tif` and `tof` need an access key: from `existingSecret`, from
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in the API's environment,
+or from `taskpods.extraEnv`. Without one, a task with an `s3://` input or
+output is refused with `400`.
+
+On EKS, the service accounts can carry an IAM role through IRSA:
 
 ```yaml
 serviceAccount:
@@ -100,6 +108,9 @@ serviceAccount:
     annotations:
       eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/poiesis
 ```
+
+An IRSA role alone isn't enough yet: `tif` and `tof` still require an
+access key, so without one `s3://` URLs are refused at submit.
 
 <Callout type="info">
 
