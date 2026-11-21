@@ -29,8 +29,10 @@ after they finish.
   ]
 }" />
 
-- Inputs: `s3://`, `http://`, `https://`, `file://` and inline `content`.
-- Outputs: `s3://`, `http://`, `https://` and `file://`.
+- Inputs: `s3://`, `http://`, `https://` and inline `content`.
+- Outputs: `s3://`, `http://` and `https://`.
+- `file://` for both, only where the operator turns it on
+  (see [Local paths](#local-paths)).
 - Inline content as an output, or an unknown scheme, is refused with
   `400`. `GET /service-info` lists the supported schemes.
 
@@ -106,6 +108,35 @@ they mean. That can export far more than the client asked for. It is off
 by default.
 
 </Callout>
+
+An output that is a symlink pointing outside the task volume, or a
+directory holding one, fails the task: `tof` would otherwise follow the
+link into its own container. Links that stay inside the volume are fine.
+
+## Local paths
+
+`file://` URLs are off by default; a task that uses one gets a `400`.
+A `file://` path is read or written inside `tif` and `tof`, not on the
+client's machine, so it is only useful for data the operator mounts into
+TaskPods, such as a shared reference volume.
+
+```yaml
+taskpods:
+  extraVolumes:
+    - name: reference
+      persistentVolumeClaim: { claimName: reference-data }
+  extraVolumeMounts:
+    - name: reference
+      mountPath: /mnt/reference
+      readOnly: true
+  fileUrlRoots: ["/mnt/reference"]
+```
+
+- A URL must name a path under one of `fileUrlRoots`; anything else is
+  refused with `400`.
+- `tif` and `tof` resolve symlinks before they read or write, and stop
+  if the real path leaves those directories.
+- `GET /service-info` lists `file://` only when it is on.
 
 ## HTTP(S) outputs
 

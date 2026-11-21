@@ -36,8 +36,9 @@ See [Tasks and TaskPods](../concepts/tasks.md) and
 
 ## Storage protocols
 
-Inputs: `s3://`, `http://`, `https://`, `file://` and inline `content`.
-Outputs: `s3://`, `http://`, `https://` and `file://`. See
+Inputs: `s3://`, `http://`, `https://` and inline `content`.
+Outputs: `s3://`, `http://` and `https://`. `file://` works for both when
+the operator allows it. See
 [Storage and staging](../concepts/storage.md).
 
 ## What's yours and what's ours

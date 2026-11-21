@@ -219,6 +219,10 @@
       "properties": {
         "namespace":         { "type": "string" },
         "outputGlobFallback": { "type": "boolean" },
+        "fileUrlRoots": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^/[^,]+$" }
+        },
         "extraEnv":          { "type": "array", "items": { "type": "object" } },
         "extraVolumes":      { "type": "array", "items": { "type": "object" } },
         "extraVolumeMounts": { "type": "array", "items": { "type": "object" } },

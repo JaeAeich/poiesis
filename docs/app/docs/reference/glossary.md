@@ -17,12 +17,14 @@ that records progress to PostgreSQL. See [Tasks and TaskPods](../concepts/tasks.
 ### Task Input Filer (TIF)
 
 Init container that stages `inputs` onto the [task volume](#task-volume).
-Supports `s3://`, `http(s)://`, `file://` and inline `content`.
+Supports `s3://`, `http(s)://`, inline `content` and, where the operator
+allows it, `file://`.
 
 ### Task Output Filer (TOF)
 
 Init container that uploads `outputs` from the volume after the last
-executor finishes. Supports `s3://`, `http(s)://` and `file://`.
+executor finishes. Supports `s3://`, `http(s)://` and, where the operator
+allows it, `file://`.
 
 ### Executor
 

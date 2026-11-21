@@ -13,7 +13,7 @@ import pytest
 
 from poiesis.api.settings import AuthSettings, Settings
 from poiesis.api.tes.models import TesExecutor, TesOutput, TesTask
-from poiesis.core.constants import OUTPUT_GLOB_FALLBACK_ENV
+from poiesis.core.constants import FILE_URL_ROOTS_ENV, OUTPUT_GLOB_FALLBACK_ENV
 from poiesis.core.services.filer.strategy import filer_strategy
 from poiesis.core.services.filer.tof import Tof
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
@@ -38,12 +38,17 @@ def dest(tmp_path: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _logs(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+def _logs(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
     """Let caplog see filer logs, and start with the fallback unset."""
     # poiesis.core doesn't propagate to the root logger, where caplog listens.
     monkeypatch.setattr(logging.getLogger("poiesis.core"), "propagate", True)
     caplog.set_level(logging.INFO)
     monkeypatch.delenv(OUTPUT_GLOB_FALLBACK_ENV, raising=False)
+    monkeypatch.setenv(FILE_URL_ROOTS_ENV, str(tmp_path))
 
 
 def run_tof(dest: Path, path: str = GLOB) -> None:

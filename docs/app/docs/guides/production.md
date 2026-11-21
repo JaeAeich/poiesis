@@ -54,6 +54,8 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
   `retainAfterSeconds` chosen for how long you keep finished tasks for
   debugging.
 - Leave `taskpods.outputGlobFallback` off unless clients need it.
+- Leave `taskpods.fileUrlRoots` empty unless tasks read shared data you
+  mount into TaskPods; list only those mounts.
 
 ## Identity
 

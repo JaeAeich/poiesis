@@ -69,6 +69,12 @@ Full schema in `values.schema.json`. The fields most deployments customise:
 |---|---|---|---|
 | `taskpods.outputGlobFallback` | boolean | `false` | When an output glob matches no file, TOF uploads nothing and logs a warning. `true` uploads every file under the output's `path_prefix` instead. |
 
+### Local paths (`taskpods.fileUrlRoots`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `taskpods.fileUrlRoots` | list of strings | `[]` | Directories `file://` URLs may point into. Empty turns the scheme off. List only directories mounted into TaskPods through `extraVolumes` / `extraVolumeMounts`. |
+
 ### TaskPod extension points (`taskpods.extraEnv`, `taskpods.extraVolumes`, `taskpods.extraVolumeMounts`)
 
 Operator-supplied env vars and volumes injected into every TaskPod. The
