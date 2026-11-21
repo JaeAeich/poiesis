@@ -66,6 +66,7 @@ from kubernetes.client import (
 )
 
 from poiesis.api.tes.models import TesFileType
+from poiesis.core import ignore_error
 from poiesis.core.constants import FILER_PVC_PATH
 from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
 from poiesis.core.services.filer import filer_strategy_factory as _filer
@@ -260,15 +261,6 @@ def _reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
 
     Raises ``ValueError``; the API translates this into HTTP 400.
     """
-    for idx, ex in enumerate(task.executors):
-        if ex.ignore_error:
-            msg = (
-                f"executor[{idx}].ignore_error=True is not supported: "
-                "Kubernetes init containers abort on first failure with no "
-                "per-container override"
-            )
-            raise ValueError(msg)
-
     for idx, inp in enumerate(task.inputs or []):
         # Inline `content` inputs carry no URL; the empty-scheme entry
         # in the filer registry handles them, so `can_input(None)` is True.
@@ -618,10 +610,12 @@ def _build_executor(
     """One executor init container.
 
     Image, command, workdir, env, stdin/stdout/stderr paths come from the
-    TesExecutor; Poiesis does not wrap the user's command.
+    TesExecutor. The command runs as submitted, unless the executor sets
+    ``ignore_error``: then it runs under ``/bin/sh``, which records its exit
+    code in the termination message and exits 0 (see ``ignore_error``).
     """
     env = [V1EnvVar(name=k, value=v) for k, v in (executor.env or {}).items()]
-    return V1Container(
+    container = V1Container(
         name=f"exec-{index}",
         image=executor.image,
         image_pull_policy=config.image_pull_policy,
@@ -631,6 +625,11 @@ def _build_executor(
         volume_mounts=_executor_mounts(config, path_mounts),
         stdin=bool(executor.stdin),
     )
+    if executor.ignore_error:
+        container.command = ignore_error.wrap_command(executor.command)
+        container.termination_message_path = ignore_error.TERMINATION_MESSAGE_PATH
+        container.termination_message_policy = "File"
+    return container
 
 
 def _build_ack_container(task: TesTask, config: RuntimeConfig) -> V1Container:

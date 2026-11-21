@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 from poiesis.api.tes.models import TesState
+from poiesis.core import ignore_error
 from poiesis.core.executor_logs import read_executor_output
 from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.pod_status import (
@@ -315,9 +316,7 @@ async def _backfill_executor_logs(
         ).get("terminated")
         if not terminated:
             continue
-        exit_code = terminated.get("exit_code")
-        if exit_code is None:
-            exit_code = terminated.get("exitCode")
+        exit_code = ignore_error.recorded_exit_code(terminated)
         if exit_code is None or ordinal in recorded:
             continue
         stdout = await read_executor_output(core_v1, pod_name, namespace, ordinal)
@@ -351,6 +350,7 @@ def _terminal_system_logs(
         return []
 
     lines: list[str] = []
+    wrapped = ignore_error.wrapped_executor_names(pod)
     status = pod.get("status") or {}
     for key in (
         "init_container_statuses",
@@ -365,8 +365,15 @@ def _terminal_system_logs(
                 continue
             reason = terminated.get("reason")
             exit_code = terminated.get("exit_code") or terminated.get("exitCode")
+            shell_failure = (
+                ignore_error.start_failure_log(name, terminated)
+                if name in wrapped
+                else None
+            )
             if reason == "OOMKilled":
                 lines.append(f"container {name} OOMKilled")
+            elif shell_failure is not None:
+                lines.append(shell_failure)
             elif exit_code not in (None, 0):
                 lines.append(f"container {name} exited with code {exit_code}")
     if not lines:

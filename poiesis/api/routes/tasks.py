@@ -77,8 +77,8 @@ async def create_task(
     )
     groups = await authz.check_create(principal, task)
 
-    # Build the K8s manifests first so spec-builder errors (e.g.
-    # ignore_error=True) surface as 400s before we write anything.
+    # Build the K8s manifests first so spec-builder errors (e.g. an
+    # unsupported input URL scheme) surface as 400s before we write anything.
     try:
         pvc, job = build_taskpod_job(task, runtime_config)
     except ValueError as exc:

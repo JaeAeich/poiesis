@@ -19,6 +19,11 @@ The Pod doesn't automount its ServiceAccount token. Only `trec` mounts
 one, at `/var/run/secrets/kubernetes.io/serviceaccount`, so executors,
 which run user images, can't call the Kubernetes API.
 
+An executor with `ignore_error` runs under `/bin/sh`, which writes the
+command's exit code to the termination message and exits 0, so the next
+init container runs. TRec and TCtl take that executor's exit code from
+`state.terminated.message`.
+
 ## API
 
 FastAPI under `/ga4gh/tes/v1`:

@@ -28,6 +28,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from poiesis.api.tes.models import TesState
+from poiesis.core import ignore_error
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -249,6 +250,10 @@ def _container_finished_event(
         exit_code = terminated.get("exitCode")
         if exit_code is None:
             exit_code = terminated.get("exit_code")
+        if executor_index is not None:
+            # An ignore_error executor exits 0 and reports the command's
+            # exit code in its termination message.
+            exit_code = ignore_error.recorded_exit_code(terminated)
         reason = terminated.get("reason")
         started_at = terminated.get("startedAt") or terminated.get("started_at")
         finished_at = terminated.get("finishedAt") or terminated.get("finished_at")

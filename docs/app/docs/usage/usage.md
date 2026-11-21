@@ -71,6 +71,41 @@ A task is refused with `400 Bad Request` if a path:
 
 The `BASIC` view leaves `stdout` and `stderr` out; `MINIMAL` has no logs.
 
+## Executors that may fail
+
+By default the first executor that exits non-zero stops the task, which
+ends in `EXECUTOR_ERROR`. An executor with `"ignore_error": true` doesn't:
+its exit code is recorded in the task logs and the next executor runs.
+If the rest succeed, the task ends in `COMPLETE`.
+
+```json
+"executors": [
+  {
+    "image": "alpine:3.20",
+    "command": ["sh", "-c", "exit 3"],
+    "ignore_error": true
+  },
+  {"image": "alpine:3.20", "command": ["echo", "hello"]}
+]
+```
+
+This task ends in `COMPLETE`, and `logs[0].logs[0].exit_code` is `3`.
+
+Executors run as init containers, and Kubernetes stops the Pod when one
+fails, so Poiesis runs an `ignore_error` executor under `/bin/sh`:
+
+- The shell runs the command as submitted, as positional arguments, so
+  nothing is re-quoted or expanded. It writes the exit code to the
+  container's termination message (`/dev/termination-log`) and exits 0.
+- The image must have `/bin/sh`. Without it the container can't start
+  and the task ends in `EXECUTOR_ERROR`; its system log says the executor
+  sets `ignore_error` and needs `/bin/sh`.
+- `kubectl get pod` shows the container exited 0; the real exit code is
+  in its `state.terminated.message` and in the task logs.
+
+Executors without `ignore_error` run with no shell, exactly as
+submitted.
+
 ## HTTP(S) outputs
 
 An `outputs[].url` can be an `http://` or `https://` URL that grants
@@ -114,7 +149,9 @@ carries a `Content-Length` header, as presigned upload URLs require.
 ## What Poiesis doesn't do
 
 - **Schedule across clusters.** One TaskPod, one cluster.
-- **Mutate your executor image.** Commands run exactly as submitted.
+- **Mutate your executor image.** Commands run exactly as submitted
+  (an executor with `ignore_error` runs under `/bin/sh`, see
+  [Executors that may fail](#executors-that-may-fail)).
 - **Cache anything.** Each submission is independent.
 - **Run its own login flow.** Poiesis is a resource server, not an
   OAuth client. It validates OIDC bearer tokens minted by an external
