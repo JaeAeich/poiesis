@@ -30,6 +30,9 @@ auth:
       timeout: 2.5
       userinfo:
         enabled: true
+      keyMinting:
+        clients: [poiesis-cli]
+        maxAuthAge: 600
     # A gateway signing its own JWTs: keys only, no discovery.
     - issuer: https://gateway.example.org
       audience: poiesis

@@ -328,6 +328,18 @@ data:
                 "id.token.claim": "true",
                 "userinfo.token.claim": "true"
               }
+            },
+            {
+              "name": "auth-time",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usersessionmodel-note-mapper",
+              "config": {
+                "user.session.note": "AUTH_TIME",
+                "claim.name": "auth_time",
+                "jsonType.label": "long",
+                "access.token.claim": "true",
+                "id.token.claim": "true"
+              }
             }
           ]
         },
@@ -448,9 +460,12 @@ data:
   POIESIS_POD_SECURITY_ENFORCE: restricted
   LOG_LEVEL: INFO
   POIESIS_AUTH_ENABLED: "true"
+  # Only poiesis-cli logins (Swagger UI, password grant) may mint API keys,
+  # within 10 minutes of logging in; the poiesis-ci service account may not.
   POIESIS_AUTH_ISSUERS: >-
     [{"issuer": "http://keycloak.deps.svc:8080/realms/poiesis",
-      "audience": "poiesis"}]
+      "audience": "poiesis",
+      "keyMinting": {"clients": ["poiesis-cli"], "maxAuthAge": 600}}]
   POIESIS_AUTH_API_KEYS_ENABLED: "true"
   POIESIS_AUTH_API_KEYS_DEFAULT_TTL: 30d
   POIESIS_AUTH_API_KEYS_MAX_TTL: 90d

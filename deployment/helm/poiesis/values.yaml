@@ -159,10 +159,17 @@ auth:
   #                   `kid`s refetch them anyway, at most every 30 s.
   #   clockSkew       Seconds of leeway on exp/nbf/iat (default 30).
   #   timeout         Seconds per call to the issuer (default 10).
+  #   keyMinting      Which of its tokens may mint API keys; without it,
+  #                   none may. {clients: [...]} lists the OAuth clients
+  #                   (token `azp`, else `client_id`) allowed, normally
+  #                   the interactive login client, not service accounts.
+  #                   maxAuthAge (seconds) also requires a recent login
+  #                   (`auth_time` in the access token).
   # Example:
   #   issuers:
   #     - issuer: https://keycloak.example.org/realms/poiesis
   #       audience: poiesis
+  #       keyMinting: {clients: [poiesis-cli], maxAuthAge: 600}
   #     - issuer: https://gateway.example.org
   #       audience: poiesis
   #       jwksUri: http://gateway.mesh.svc/.well-known/jwks.json
