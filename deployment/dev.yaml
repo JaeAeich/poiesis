@@ -1,4 +1,4 @@
-# Dev-only manifest: stands up Postgres + MinIO + Keycloak + Poiesis
+# Dev-only manifest: stands up Postgres + S3 (SeaweedFS) + Keycloak + Poiesis
 # (API + TCtl) on a local cluster (OrbStack). Not for production — the
 # real chart lives in deployment/helm. This file is deliberately
 # one-shot: hardcoded creds, imagePullPolicy=IfNotPresent against
@@ -9,7 +9,7 @@
 #   kubectl apply -f deployment/dev.yaml
 #   kubectl -n po wait --for=condition=Available deploy/poiesis-api --timeout=240s
 #   kubectl -n po port-forward svc/poiesis-api 8000:8000 &
-#   kubectl -n deps port-forward svc/minio 9000:9000 &
+#   kubectl -n deps port-forward svc/s3 9000:9000 &
 #   kubectl -n deps port-forward svc/keycloak 8080:8080 &
 ---
 apiVersion: v1
@@ -98,50 +98,96 @@ spec:
       targetPort: 5432
 ---
 ################################################################################
-# MINIO
+# S3 (SeaweedFS)
 ################################################################################
+# S3-compatible object store for TIF/TOF inputs/outputs and Nextflow's
+# workDir. MinIO no longer publishes free images, so this is SeaweedFS
+# (Apache-2.0): master, volume server, filer and S3 gateway in one process.
+# S3 on port 9000, one identity: access key `admin`, secret `password`.
+# Buckets aren't created on demand; make them with `weed shell` (see the
+# deployment guide).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3
+  namespace: deps
+type: Opaque
+stringData:
+  s3.json: |
+    {
+      "identities": [
+        {
+          "name": "admin",
+          "credentials": [{"accessKey": "admin", "secretKey": "password"}],
+          "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+        }
+      ]
+    }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: minio
+  name: s3
   namespace: deps
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
-      app: minio
+      app: s3
   template:
     metadata:
       labels:
-        app: minio
+        app: s3
     spec:
       containers:
-        - name: minio
-          image: minio/minio:RELEASE.2025-04-22T22-12-26Z
-          command: ["/bin/bash", "-c"]
-          args: ["minio server /data --console-address :9001"]
+        - name: seaweedfs
+          image: chrislusf/seaweedfs:4.52
+          command: ["weed"]
+          # Each bucket is a collection with volumes of its own. Small
+          # volumes, grown one at a time, and as many as the disk holds
+          # (max 0), so a 1Gi volume fits more than a couple of buckets.
+          args:
+            - server
+            - -dir=/data
+            - -ip=127.0.0.1
+            - -ip.bind=0.0.0.0
+            - -master.volumeSizeLimitMB=64
+            - -volume.max=0
+            - -s3
+            - -s3.port=9000
+            - -s3.config=/etc/seaweedfs/s3.json
           env:
-            - name: MINIO_ROOT_USER
-              value: admin
-            - name: MINIO_ROOT_PASSWORD
-              value: password
+            - name: WEED_MASTER_VOLUME_GROWTH_COPY_1
+              value: "1"
           ports:
             - containerPort: 9000
-              name: api
-            - containerPort: 9001
-              name: console
+              name: s3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9000
+            initialDelaySeconds: 3
+            periodSeconds: 3
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: config
+              mountPath: /etc/seaweedfs
+              readOnly: true
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: minio
+            claimName: s3
+        - name: config
+          secret:
+            secretName: s3
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: minio
+  name: s3
   namespace: deps
 spec:
   accessModes: [ReadWriteOnce]
@@ -152,19 +198,16 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: minio
+  name: s3
   namespace: deps
 spec:
   type: ClusterIP
   selector:
-    app: minio
+    app: s3
   ports:
-    - name: api
+    - name: s3
       port: 9000
       targetPort: 9000
-    - name: console
-      port: 9001
-      targetPort: 9001
 ---
 ################################################################################
 # KEYCLOAK (dev IdP)
@@ -430,7 +473,7 @@ metadata:
 type: Opaque
 stringData:
   DATABASE_URL: postgresql://poiesis:poiesis@postgres.deps.svc.cluster.local:5432/poiesis?sslmode=disable
-  AWS_ENDPOINT_URL: http://minio.deps.svc.cluster.local:9000
+  AWS_ENDPOINT_URL: http://s3.deps.svc.cluster.local:9000
   AWS_ACCESS_KEY_ID: admin
   AWS_SECRET_ACCESS_KEY: password
   AWS_REGION: us-east-1
