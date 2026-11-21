@@ -277,8 +277,8 @@ function worldBg(){
   const colors=()=>{col={dot:css("--line-strong"),blue:css("--blue"),coral:css("--coral"),muted:css("--muted")}};
   const proj=(lon,lat)=>[ox+(lon+180)/360*sc,oy+(LAND.lat0-lat)/(LAND.lat0-LAND.lat1)*sc*(LAND.lat0-LAND.lat1)/360];
   function size(){const r=sec.getBoundingClientRect();if(!r.width)return;dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
-    sc=W*(W>760?1.02:1.6);const mh=sc*(LAND.lat0-LAND.lat1)/360;ox=(W-sc)/2;oy=Math.max(0,(H-mh)/2);
-    dots=[];const cw=sc/LAND.cols;for(let r=0;r<LAND.rows;r++)for(let c=0;c<LAND.cols;c++)if(bit(r*LAND.cols+c)){const x=ox+(c+.5)*cw,y=oy+(r+.5)*cw,d=Math.hypot((x-W/2)/(W*.42),(y-H*.42)/(H*.5));dots.push([x,y,.12+.3*clamp((d-.3)/.55)])}
+    const ph=W<=760;sc=W*(ph?2.6:1.02);const mh=sc*(LAND.lat0-LAND.lat1)/360;ox=ph?W/2-(12+180)/360*sc:(W-sc)/2;oy=ph?8:Math.max(0,(H-mh)/2);
+    dots=[];const cw=sc/LAND.cols;for(let r=0;r<LAND.rows;r++)for(let c=0;c<LAND.cols;c++)if(bit(r*LAND.cols+c)){const x=ox+(c+.5)*cw,y=oy+(r+.5)*cw;if(x<-4||x>W+4||y<-4||y>H+4)continue;const d=Math.hypot((x-W/2)/(W*.42),(y-H*.42)/(H*.5));dots.push([x,y,W<=760?.28:.12+.3*clamp((d-.3)/.55)])}
     sites=SITES.map(([lon,lat])=>({xy:proj(lon,lat),pulse:0}));colors()}
   const near=(x,y)=>sites.reduce((b,s)=>Math.hypot(s.xy[0]-x,s.xy[1]-y)<Math.hypot(b.xy[0]-x,b.xy[1]-y)?s:b);
   const arc=(a,b,u)=>{const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2-Math.hypot(b[0]-a[0],b[1]-a[1])*.22,q=1-u;return[q*q*a[0]+2*q*u*mx+u*u*b[0],q*q*a[1]+2*q*u*my+u*u*b[1]]};
@@ -319,15 +319,17 @@ function stack(){
 /* ---------- engine logos: drag, throw, bounce off each other and the table ---------- */
 function enginePlay(){
   const sec=$("#s-eng"),field=$("#eng-field"),ob=$("#eng-center"),els=$$(".pl",field),rows=$$(".eng li"),E=.7;
-  let W=0,H=0,obs={x:0,y:0,w:0,h:0},B=[],drag=null,tPrev=0,lastMoved=0,clock=0,on=false;
+  let W=0,H=0,obs={x:0,y:0,w:0,h:0},B=[],drag=null,tPrev=0,lastMoved=0,clock=0,on=false,phone=false,floor=36;
+  const live=()=>els.filter(el=>el.offsetWidth>0);
   const draw=()=>{for(const b of B)b.el.style.transform=`translate(${(b.x-b.r).toFixed(1)}px,${(b.y-b.r).toFixed(1)}px)`};
   // slots: two staggered columns either side of the table
+  function phoneSlots(){const v=live(),n=v.length,per=Math.ceil(n/2),out=[];v.forEach((el,i)=>{const row=i<per?0:1,k=row?i-per:i,cnt=row?n-per:per,gap=W/cnt;out.push({x:gap*(k+.5)+(row?gap*.25:-gap*.15),y:H*(row?.7:.3)})});return out}
   function slots(){const n=els.length,out=[],left=obs.x,right=W-(obs.x+obs.w),cols=[{cx:left/2,w:left},{cx:obs.x+obs.w+right/2,w:right}],per=[Math.ceil(n/2),Math.floor(n/2)],top=Math.max(90,obs.y+30),bot=Math.min(H-110,obs.y+obs.h-30);
     let idx=0;cols.forEach((c,ci)=>{for(let j=0;j<per[ci];j++){const t=per[ci]===1?.5:j/(per[ci]-1),zig=(j%2?1:-1)*Math.min(46,c.w*.16)*(ci?-1:1);out[idx++]={x:c.cx+zig,y:lerp(top,bot,t)}}});return out}
-  function size(){const r=sec.getBoundingClientRect();if(!r.width)return;W=r.width;H=r.height;on=W>760;
-    if(!on){els.forEach(el=>el.style.transform="");return}
-    const o=ob.getBoundingClientRect();obs={x:o.left-r.left-14,y:o.top-r.top-14,w:o.width+28,h:o.height+28};const S=slots();
-    els.forEach((el,i)=>{const r0=+el.dataset.s/2;if(!B[i])B[i]={el,x:S[i].x,y:S[i].y,vx:0,vy:0,r:r0,m:r0*r0,held:false,ph:i*1.7};const b=B[i];b.ax=S[i].x;b.ay=S[i].y});
+  function size(){const r=field.getBoundingClientRect();if(!r.width)return;W=r.width;H=r.height;phone=innerWidth<=760;on=true;floor=phone?0:36;
+    if(phone){obs={x:-1e4,y:-1e4,w:0,h:0}}else{const o=ob.getBoundingClientRect();obs={x:o.left-r.left-14,y:o.top-r.top-14,w:o.width+28,h:o.height+28}}
+    const v=live(),S=phone?phoneSlots():slots();B=B.filter(b=>v.includes(b.el));
+    v.forEach((el,i)=>{const r0=el.offsetWidth/2,sl=phone?S[i]:S[els.indexOf(el)];let b=B.find(x=>x.el===el);if(!b){b={el,x:sl.x,y:sl.y,vx:0,vy:0,held:false,ph:i*1.7};B.push(b)}b.r=r0;b.m=r0*r0;b.ax=sl.x;b.ay=sl.y});
     draw()}
   function step(dt){const k=dt/16.7;clock+=dt/1000;
     for(const b of B){if(b.held)continue;
@@ -336,17 +338,17 @@ function enginePlay(){
       const sp=Math.hypot(b.vx,b.vy);if(sp>40){b.vx*=40/sp;b.vy*=40/sp}
       b.x+=b.vx*k;b.y+=b.vy*k;
       if(b.x<b.r){b.x=b.r;b.vx=Math.abs(b.vx)*E}if(b.x>W-b.r){b.x=W-b.r;b.vx=-Math.abs(b.vx)*E}
-      if(b.y<b.r){b.y=b.r;b.vy=Math.abs(b.vy)*E}if(b.y>H-36-b.r){b.y=H-36-b.r;b.vy=-Math.abs(b.vy)*E}
+      if(b.y<b.r){b.y=b.r;b.vy=Math.abs(b.vy)*E}if(b.y>H-floor-b.r){b.y=H-floor-b.r;b.vy=-Math.abs(b.vy)*E}
       const cx=clamp(b.x,obs.x,obs.x+obs.w),cy=clamp(b.y,obs.y,obs.y+obs.h);let dx=b.x-cx,dy=b.y-cy;const d=Math.hypot(dx,dy);
       if(d<b.r&&d>0){dx/=d;dy/=d;b.x=cx+dx*b.r;b.y=cy+dy*b.r;const vn=b.vx*dx+b.vy*dy;if(vn<0){b.vx-=(1+E)*vn*dx;b.vy-=(1+E)*vn*dy}}}
     for(let i=0;i<B.length;i++)for(let j=i+1;j<B.length;j++){const a=B[i],c=B[j],dx=c.x-a.x,dy=c.y-a.y,d=Math.hypot(dx,dy),min=a.r+c.r+4;
       if(d>0&&d<min){const nx=dx/d,ny=dy/d,ia=a.held?0:1/a.m,ic=c.held?0:1/c.m,sum=ia+ic;if(!sum)continue;const ov=min-d;
         a.x-=nx*ov*ia/sum;a.y-=ny*ov*ia/sum;c.x+=nx*ov*ic/sum;c.y+=ny*ov*ic/sum;
         const rv=(c.vx-a.vx)*nx+(c.vy-a.vy)*ny;if(rv<0){const jj=-(1+E)*rv/sum;a.vx-=jj*ia*nx;a.vy-=jj*ia*ny;c.vx+=jj*ic*nx;c.vy+=jj*ic*ny}}}}
-  field.addEventListener("pointerdown",e=>{if(!on)return;const el=e.target.closest(".pl");if(!el)return;e.preventDefault();const b=B.find(x=>x.el===el),r=sec.getBoundingClientRect();
+  field.addEventListener("pointerdown",e=>{if(!on)return;const el=e.target.closest(".pl");if(!el)return;e.preventDefault();const b=B.find(x=>x.el===el);if(!b)return;const r=field.getBoundingClientRect();
     drag={b,ox:e.clientX-r.left-b.x,oy:e.clientY-r.top-b.y,sx:e.clientX,sy:e.clientY,hist:[[performance.now(),e.clientX,e.clientY]],moved:0};b.held=true;b.vx=b.vy=0;el.classList.add("held");el.setPointerCapture(e.pointerId)});
-  field.addEventListener("pointermove",e=>{if(!drag)return;const r=sec.getBoundingClientRect(),b=drag.b;
-    b.x=clamp(e.clientX-r.left-drag.ox,b.r,W-b.r);b.y=clamp(e.clientY-r.top-drag.oy,b.r,H-36-b.r);
+  field.addEventListener("pointermove",e=>{if(!drag)return;const r=field.getBoundingClientRect(),b=drag.b;
+    b.x=clamp(e.clientX-r.left-drag.ox,b.r,W-b.r);b.y=clamp(e.clientY-r.top-drag.oy,b.r,H-floor-b.r);
     drag.moved=Math.max(drag.moved,Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy));drag.hist.push([performance.now(),e.clientX,e.clientY]);if(drag.hist.length>8)drag.hist.shift();if(reduce)draw()});
   const release=()=>{if(!drag)return;const b=drag.b,now=performance.now(),h=drag.hist.filter(p=>now-p[0]<120),a=h[0]||[now,0,0],z=h[h.length-1]||a,dt=Math.max(16,z[0]-a[0]);
     b.vx=(z[1]-a[1])/dt*16.7;b.vy=(z[2]-a[2])/dt*16.7;b.held=false;b.el.classList.remove("held");lastMoved=drag.moved;drag=null;if(reduce){b.x=b.ax;b.y=b.ay;draw()}};
@@ -355,7 +357,7 @@ function enginePlay(){
   const link=(i,v)=>{const pl=els.find(x=>x.dataset.i==i),li=rows.find(x=>x.dataset.i==i);if(pl)pl.classList.toggle("hl",v);if(li)li.classList.toggle("hl",v)};
   els.forEach(el=>{el.addEventListener("pointerenter",()=>link(el.dataset.i,true));el.addEventListener("pointerleave",()=>link(el.dataset.i,false))});
   rows.forEach(li=>{li.addEventListener("pointerenter",()=>link(li.dataset.i,true));li.addEventListener("pointerleave",()=>link(li.dataset.i,false))});
-  B_.on(window,"resize",size);
+  const ro2=new ResizeObserver(size);ro2.observe(field);B_.add(()=>ro2.disconnect());
   B_.add(whileVisible(sec,t=>{const dt=Math.min(40,t-(tPrev||t))||16;tPrev=t;if(!on||!W||+(sec.dataset.cover||0)>.98)return;if(!reduce||drag)step(dt);draw()}));
 }
 

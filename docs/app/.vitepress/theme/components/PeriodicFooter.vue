@@ -148,7 +148,8 @@ html.dark .poi-footer .el.es b{color:var(--coral)}
   .poi-footer .el:is(:hover,.on) b{transform:translate(-26%,-34%) scale(.5)}
   .poi-footer .el:is(:hover,.on) .z{opacity:0}
   .poi-footer .el::after{display:none}
-  .poi-footer .tap-fact{display:block}
+  .poi-footer .tap-fact{display:block;margin-top:46px}
+  .poi-footer .fbase{margin-top:20px}
 }
 @media (prefers-reduced-motion:reduce){.poi-footer .el,.poi-footer .el *{animation:none!important;transition:none!important}}
 </style>

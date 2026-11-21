@@ -427,11 +427,9 @@ html.dark .poi .eng .ic{background:#d6dee8;border-color:transparent;color:#0d203
 .poi .hero p{margin:18px auto 28px}
 .poi .hero .actions{justify-content:center}
 .poi .wheel-wrap{width:190px;grid-row:1}
-.poi .field{position:static;display:flex;flex-wrap:wrap;justify-content:center;gap:10px 8px;padding:28px 12px 0;pointer-events:none}
+.poi .field{position:relative;height:190px;margin:20px 0 0;pointer-events:auto}
 .poi .pl.ask{display:none}
-.poi .pl{position:relative;width:calc(var(--s)*.58);height:calc(var(--s)*.58);transform:none!important;animation:float 6s ease-in-out infinite;pointer-events:none}
-.poi .pl:nth-child(2n){animation-delay:-2s}
-.poi .pl:nth-child(3n){animation-delay:-4s}
+.poi .pl{width:calc(var(--s)*.62);height:calc(var(--s)*.62)}
 .poi .agent{grid-template-columns:1fr;gap:28px}
 .poi .term .tb{height:340px}
 .poi .tcap{height:calc(4.5em + 16px)}
