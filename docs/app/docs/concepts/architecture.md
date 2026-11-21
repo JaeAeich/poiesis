@@ -78,13 +78,14 @@ and Pods labelled `poiesis.io/task`. It has five jobs:
   DeadlineExceeded`. A Job that has created no Pod 5 minutes after it
   was created (a ResourceQuota or an admission webhook rejects the Pod)
   becomes `SYSTEM_ERROR` with `Job created no Pod`.
-- **Pending timeout**: a Pod still `Pending` with a `status.startTime`
-  older than 5 minutes becomes `SYSTEM_ERROR` (an image that can't be
-  pulled). A Pod that is never scheduled (unbindable PVC, no fitting
-  node) has no `startTime`; it ends when the Job's
-  `activeDeadlineSeconds` runs out (`taskpods.activeDeadlineSeconds`,
-  one hour by default; never, if that is `null`). See
-  [Time limit](./tasks.md#time-limit).
+- **Pending timeout**: a Pod still `Pending` after 5 minutes becomes
+  `SYSTEM_ERROR`, with the reason in `system_logs` (an image that can't
+  be pulled, an unbindable PVC, no fitting node). The 5 minutes count
+  from `status.startTime`, which Kubernetes sets when the Pod is bound to
+  a node. A Pod that is never scheduled has no `startTime` and is counted
+  from its creation; the scheduler's message is added to `system_logs`.
+  The timeout isn't configurable: a cluster autoscaler that needs more
+  than 5 minutes to add a node fails the task.
 
 - **Job cleanup**: TCtl deletes the Job of every `CANCELING` task that
   still has one, on each pass until it is gone. It also deletes the Job

@@ -91,7 +91,7 @@ kubectl -n poiesis-tasks create secret generic poiesis-s3 \
 
 | Path | Type | Default | Description |
 |---|---|---|---|
-| `taskpods.activeDeadlineSeconds` | integer / null | `3600` | `activeDeadlineSeconds` on the per-task Job: how long a task may take, counted from the Job's creation. Kubernetes stops a task that runs longer and the task fails. Integer ≥ 1. `null` → no limit; a task whose Pod can never be scheduled then stays `QUEUED` until cancelled. |
+| `taskpods.activeDeadlineSeconds` | integer / null | `3600` | `activeDeadlineSeconds` on the per-task Job: how long a task may take, counted from the Job's creation. Kubernetes stops a task that runs longer and the task fails. Integer ≥ 1. `null` → no limit; a task whose Pod can never be scheduled still fails after tctl's pending timeout (5 minutes). |
 
 ### Outputs (`taskpods.outputGlobFallback`)
 

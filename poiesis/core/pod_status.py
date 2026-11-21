@@ -552,6 +552,19 @@ def extract_pending_failure_reason(pod: Mapping[str, Any]) -> str:
     return "Pending timeout"
 
 
+def extract_unschedulable_message(pod: Mapping[str, Any]) -> str | None:
+    """The scheduler's message for a Pod it couldn't place, if any.
+
+    That is the ``PodScheduled``/``False`` condition's message, e.g.
+    ``0/3 nodes are available: 3 Insufficient cpu.``
+    """
+    for cond in (pod.get("status") or {}).get("conditions") or []:
+        if cond.get("type") == "PodScheduled" and cond.get("status") == "False":
+            message = cond.get("message")
+            return str(message) if message else None
+    return None
+
+
 #: Storage-failure classifiers.
 #:
 #: Each entry is ``(needle, classification)``. Needles are substrings of the

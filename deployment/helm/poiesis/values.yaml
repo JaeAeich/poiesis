@@ -499,8 +499,8 @@ taskpods:
   # Job, counted from the Job's creation, so time spent waiting for a node
   # or pulling images counts. Kubernetes stops a task that runs longer and
   # the task fails. Integer >= 1.
-  # null → no limit. A task whose Pod can never be scheduled then stays
-  # QUEUED until it is cancelled.
+  # null → no limit. A task whose Pod can never be scheduled still fails
+  # after tctl's pending timeout (5 minutes).
   activeDeadlineSeconds: 3600
 
   # What TOF does when an output glob (e.g. /outputs/*.vcf) matches no file.

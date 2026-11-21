@@ -73,6 +73,7 @@ from poiesis.core.pod_status import (
     extract_job_failure,
     extract_pending_failure_reason,
     extract_terminal_reason,
+    extract_unschedulable_message,
     filer_failure_log,
     is_lifecycle_stop,
     pod_terminated_terminal,
@@ -90,6 +91,7 @@ _LEASE_RENEW_INTERVAL_SECONDS = 10
 _RECONCILE_INTERVAL_SECONDS = 5
 #: How long a TaskPod may sit in Pending before the controller times it out.
 #: Covers `ImagePullBackOff`, unbindable PVCs, no schedulable node, etc.
+#: Unscheduled Pods are timed from their creation (see `_pending_too_long`).
 _PENDING_TIMEOUT_SECONDS = 300
 #: Grace before treating a non-terminal task with no live Job or Pod as
 #: orphaned: how long tctl must have seen it that way, by its own monotonic
@@ -321,7 +323,7 @@ async def _reconcile_pod(
             pod=pod,
             proposed=TesState.SYSTEM_ERROR,
             reason=pending_reason,
-            system_logs=[f"pending timeout: {pending_reason}"],
+            system_logs=_pending_system_logs(pod, pending_reason),
             source="pending-timeout",
         )
         if wrote and namespace:
@@ -617,6 +619,19 @@ def _terminal_system_logs(
     return lines
 
 
+def _pending_system_logs(pod: Mapping[str, Any], reason: str) -> list[str]:
+    """The system_logs of a pending timeout: the reason, then the scheduler's.
+
+    `reason` is a stable classification; the scheduler's own message says
+    which nodes it tried and why none fits, so it is kept as a second line.
+    """
+    lines = [f"pending timeout: {reason}"]
+    message = extract_unschedulable_message(pod)
+    if message:
+        lines.append(f"scheduler: {message}")
+    return lines
+
+
 def _parse_kubelet_ts(value: Any) -> datetime | None:
     """Best-effort parse of a kubelet ISO-8601 timestamp."""
     if value is None:
@@ -630,21 +645,22 @@ def _parse_kubelet_ts(value: Any) -> datetime | None:
 
 
 def _pending_too_long(pod: Mapping[str, Any], now: datetime) -> bool:
-    """True iff `pod` has been Pending longer than the configured threshold."""
+    """True iff `pod` has been Pending longer than the configured threshold.
+
+    Counted from `status.startTime`, which the kubelet sets once the Pod is
+    bound to a node. A Pod the scheduler can't place (unbindable PVC, no
+    node that fits, taints) never gets one, so it is counted from
+    `metadata.creationTimestamp` instead.
+    """
     status = pod.get("status") or {}
-    start_time = status.get("startTime") or status.get("start_time")
-    if start_time is None:
+    since = _parse_kubelet_ts(
+        status.get("startTime") or status.get("start_time")
+    ) or created_at(pod)
+    if since is None:
         return False
-    if isinstance(start_time, datetime):
-        start = start_time
-    else:
-        try:
-            start = datetime.fromisoformat(str(start_time))
-        except ValueError:
-            return False
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=UTC)
-    return (now - start).total_seconds() > _PENDING_TIMEOUT_SECONDS
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=UTC)
+    return (now - since).total_seconds() > _PENDING_TIMEOUT_SECONDS
 
 
 def _task_id_from_pod(pod: Mapping[str, Any]) -> str | None:

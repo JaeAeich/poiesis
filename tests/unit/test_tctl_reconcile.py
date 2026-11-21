@@ -395,6 +395,76 @@ class TestJobDeletes:
         assert world.deleted == []
 
 
+def unscheduled(task_id: str, age: float, **metadata: Any) -> dict[str, Any]:
+    """A Pod the scheduler couldn't place: Pending, no `start_time`."""
+    pending = pod(
+        task_id,
+        "Pending",
+        conditions=[
+            {
+                "type": "PodScheduled",
+                "status": "False",
+                "reason": "Unschedulable",
+                "message": "0/3 nodes are available: 3 Insufficient cpu.",
+            }
+        ],
+    )
+    pending["metadata"] |= metadata or {
+        "creation_timestamp": datetime.now(UTC) - timedelta(seconds=age)
+    }
+    return pending
+
+
+class TestPendingTimeout:
+    """A Pod that is never scheduled hits the pending timeout too (#151)."""
+
+    def test_unschedulable_pod_times_out(self, world: World) -> None:
+        """No `startTime`: 5 minutes are counted from the Pod's creation."""
+        world.states[T1] = TesState.QUEUED
+        world.jobs = [job(T1, age=400)]
+        world.pods = [unscheduled(T1, age=400)]
+        world.tick()
+        assert world.writes == {T1: (TesState.SYSTEM_ERROR, "Insufficient CPU")}
+        assert world.system_logs[T1] == [
+            "pending timeout: Insufficient CPU",
+            "scheduler: 0/3 nodes are available: 3 Insufficient cpu.",
+        ]
+        assert world.deleted == [f"task-{T1}"]
+
+    def test_camel_case_timestamp_string(self, world: World) -> None:
+        """As in a raw API object, not a client model's `to_dict()`."""
+        world.states[T1] = TesState.QUEUED
+        created = (datetime.now(UTC) - timedelta(seconds=400)).isoformat()
+        world.pods = [unscheduled(T1, age=0, creationTimestamp=created)]
+        world.tick()
+        assert world.writes[T1][0] is TesState.SYSTEM_ERROR
+
+    def test_unschedulable_pod_waits_five_minutes(self, world: World) -> None:
+        """A cluster autoscaler has that long to add a node."""
+        world.states[T1] = TesState.QUEUED
+        world.pods = [unscheduled(T1, age=280)]
+        world.tick()
+        assert world.writes == {}
+
+    def test_start_time_wins_over_creation(self, world: World) -> None:
+        """A scheduled Pod is timed from when it was bound, as before."""
+        world.states[T1] = TesState.QUEUED
+        waiting = unscheduled(T1, age=400)
+        waiting["status"] = {
+            "phase": "Pending",
+            "start_time": datetime.now(UTC) - timedelta(seconds=100),
+        }
+        world.pods = [waiting]
+        world.tick()
+        assert world.writes == {}
+
+    def test_pod_without_any_timestamp_waits(self, world: World) -> None:
+        world.states[T1] = TesState.QUEUED
+        world.pods = [pod(T1, "Pending")]
+        world.tick()
+        assert world.writes == {}
+
+
 @needs_postgres
 def test_canceling_tasks_are_listed() -> None:
     """`list_canceling_task_ids` returns the CANCELING tasks only (#155)."""
