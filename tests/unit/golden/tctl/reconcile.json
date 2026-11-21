@@ -5,8 +5,7 @@
     ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=Error)"],
-    ["write", "00000000-0000-4000-8000-000000000002", "EXECUTOR_ERROR", "Error", "no_op"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=Error)"]
   ],
   "scenario=deletes-fail": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
@@ -2467,454 +2466,196 @@
   ],
   "task=canceling-past-grace job=none pod=terminating unschedulable=600": [],
   "task=canceling-past-grace job=none pod=terminating unschedulable=unset": [],
-  "task=complete job=being-deleted pod=failed-evicted unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=being-deleted pod=failed-evicted unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=being-deleted pod=failed-executor unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=being-deleted pod=failed-executor unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=being-deleted pod=failed-filer unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=being-deleted pod=failed-filer unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=being-deleted pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
-  "task=complete job=being-deleted pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
+  "task=complete job=being-deleted pod=failed-evicted unschedulable=600": [],
+  "task=complete job=being-deleted pod=failed-evicted unschedulable=unset": [],
+  "task=complete job=being-deleted pod=failed-executor unschedulable=600": [],
+  "task=complete job=being-deleted pod=failed-executor unschedulable=unset": [],
+  "task=complete job=being-deleted pod=failed-filer unschedulable=600": [],
+  "task=complete job=being-deleted pod=failed-filer unschedulable=unset": [],
+  "task=complete job=being-deleted pod=failed-oom unschedulable=600": [],
+  "task=complete job=being-deleted pod=failed-oom unschedulable=unset": [],
   "task=complete job=being-deleted pod=none unschedulable=600": [],
   "task=complete job=being-deleted pod=none unschedulable=unset": [],
-  "task=complete job=being-deleted pod=pending-scheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
-  "task=complete job=being-deleted pod=pending-scheduled-old unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
+  "task=complete job=being-deleted pod=pending-scheduled-old unschedulable=600": [],
+  "task=complete job=being-deleted pod=pending-scheduled-old unschedulable=unset": [],
   "task=complete job=being-deleted pod=pending-scheduled-young unschedulable=600": [],
   "task=complete job=being-deleted pod=pending-scheduled-young unschedulable=unset": [],
-  "task=complete job=being-deleted pod=pending-unscheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Insufficient CPU", "no_op"]
-  ],
+  "task=complete job=being-deleted pod=pending-unscheduled-old unschedulable=600": [],
   "task=complete job=being-deleted pod=pending-unscheduled-old unschedulable=unset": [],
   "task=complete job=being-deleted pod=pending-unscheduled-young unschedulable=600": [],
   "task=complete job=being-deleted pod=pending-unscheduled-young unschedulable=unset": [],
   "task=complete job=being-deleted pod=running unschedulable=600": [],
   "task=complete job=being-deleted pod=running unschedulable=unset": [],
-  "task=complete job=being-deleted pod=succeeded unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
-  "task=complete job=being-deleted pod=succeeded unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
+  "task=complete job=being-deleted pod=succeeded unschedulable=600": [],
+  "task=complete job=being-deleted pod=succeeded unschedulable=unset": [],
   "task=complete job=being-deleted pod=terminating unschedulable=600": [],
   "task=complete job=being-deleted pod=terminating unschedulable=unset": [],
-  "task=complete job=complete pod=failed-evicted unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=complete pod=failed-evicted unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=complete pod=failed-executor unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=complete pod=failed-executor unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=complete pod=failed-filer unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=complete pod=failed-filer unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=complete pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
-  "task=complete job=complete pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
+  "task=complete job=complete pod=failed-evicted unschedulable=600": [],
+  "task=complete job=complete pod=failed-evicted unschedulable=unset": [],
+  "task=complete job=complete pod=failed-executor unschedulable=600": [],
+  "task=complete job=complete pod=failed-executor unschedulable=unset": [],
+  "task=complete job=complete pod=failed-filer unschedulable=600": [],
+  "task=complete job=complete pod=failed-filer unschedulable=unset": [],
+  "task=complete job=complete pod=failed-oom unschedulable=600": [],
+  "task=complete job=complete pod=failed-oom unschedulable=unset": [],
   "task=complete job=complete pod=none unschedulable=600": [],
   "task=complete job=complete pod=none unschedulable=unset": [],
-  "task=complete job=complete pod=pending-scheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
-  "task=complete job=complete pod=pending-scheduled-old unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
+  "task=complete job=complete pod=pending-scheduled-old unschedulable=600": [],
+  "task=complete job=complete pod=pending-scheduled-old unschedulable=unset": [],
   "task=complete job=complete pod=pending-scheduled-young unschedulable=600": [],
   "task=complete job=complete pod=pending-scheduled-young unschedulable=unset": [],
-  "task=complete job=complete pod=pending-unscheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Insufficient CPU", "no_op"]
-  ],
+  "task=complete job=complete pod=pending-unscheduled-old unschedulable=600": [],
   "task=complete job=complete pod=pending-unscheduled-old unschedulable=unset": [],
   "task=complete job=complete pod=pending-unscheduled-young unschedulable=600": [],
   "task=complete job=complete pod=pending-unscheduled-young unschedulable=unset": [],
   "task=complete job=complete pod=running unschedulable=600": [],
   "task=complete job=complete pod=running unschedulable=unset": [],
-  "task=complete job=complete pod=succeeded unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
-  "task=complete job=complete pod=succeeded unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
+  "task=complete job=complete pod=succeeded unschedulable=600": [],
+  "task=complete job=complete pod=succeeded unschedulable=unset": [],
   "task=complete job=complete pod=terminating unschedulable=600": [],
   "task=complete job=complete pod=terminating unschedulable=unset": [],
-  "task=complete job=deadline-failed pod=failed-evicted unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=failed-evicted unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=failed-executor unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=failed-executor unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=failed-filer unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=failed-filer unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=none unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=none unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=pending-scheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=pending-scheduled-old unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=pending-scheduled-young unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=pending-scheduled-young unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=pending-unscheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=pending-unscheduled-old unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=pending-unscheduled-young unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=pending-unscheduled-young unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=running unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=running unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=succeeded unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=succeeded unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=terminating unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failed pod=terminating unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=failed-evicted unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=failed-evicted unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=failed-executor unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=failed-executor unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=failed-filer unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=failed-filer unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=none unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=none unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=pending-scheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=pending-scheduled-old unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=pending-scheduled-young unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=pending-scheduled-young unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=pending-unscheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=pending-unscheduled-old unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=pending-unscheduled-young unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=pending-unscheduled-young unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=running unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=running unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=succeeded unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=succeeded unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=terminating unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=deadline-failure-target pod=terminating unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "DeadlineExceeded", "no_op"]
-  ],
-  "task=complete job=failed-other pod=failed-evicted unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=failed-other pod=failed-evicted unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=failed-other pod=failed-executor unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=failed-other pod=failed-executor unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=failed-other pod=failed-filer unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=failed-other pod=failed-filer unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=failed-other pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
-  "task=complete job=failed-other pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
-  "task=complete job=failed-other pod=none unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Job failed: BackoffLimitExceeded: Job has reached the specified backoff limit", "no_op"]
-  ],
-  "task=complete job=failed-other pod=none unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Job failed: BackoffLimitExceeded: Job has reached the specified backoff limit", "no_op"]
-  ],
-  "task=complete job=failed-other pod=pending-scheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
-  "task=complete job=failed-other pod=pending-scheduled-old unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
+  "task=complete job=deadline-failed pod=failed-evicted unschedulable=600": [],
+  "task=complete job=deadline-failed pod=failed-evicted unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=failed-executor unschedulable=600": [],
+  "task=complete job=deadline-failed pod=failed-executor unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=failed-filer unschedulable=600": [],
+  "task=complete job=deadline-failed pod=failed-filer unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=failed-oom unschedulable=600": [],
+  "task=complete job=deadline-failed pod=failed-oom unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=none unschedulable=600": [],
+  "task=complete job=deadline-failed pod=none unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=pending-scheduled-old unschedulable=600": [],
+  "task=complete job=deadline-failed pod=pending-scheduled-old unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=pending-scheduled-young unschedulable=600": [],
+  "task=complete job=deadline-failed pod=pending-scheduled-young unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=pending-unscheduled-old unschedulable=600": [],
+  "task=complete job=deadline-failed pod=pending-unscheduled-old unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=pending-unscheduled-young unschedulable=600": [],
+  "task=complete job=deadline-failed pod=pending-unscheduled-young unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=running unschedulable=600": [],
+  "task=complete job=deadline-failed pod=running unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=succeeded unschedulable=600": [],
+  "task=complete job=deadline-failed pod=succeeded unschedulable=unset": [],
+  "task=complete job=deadline-failed pod=terminating unschedulable=600": [],
+  "task=complete job=deadline-failed pod=terminating unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=failed-evicted unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=failed-evicted unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=failed-executor unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=failed-executor unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=failed-filer unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=failed-filer unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=failed-oom unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=failed-oom unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=none unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=none unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=pending-scheduled-old unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=pending-scheduled-old unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=pending-scheduled-young unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=pending-scheduled-young unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=pending-unscheduled-old unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=pending-unscheduled-old unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=pending-unscheduled-young unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=pending-unscheduled-young unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=running unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=running unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=succeeded unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=succeeded unschedulable=unset": [],
+  "task=complete job=deadline-failure-target pod=terminating unschedulable=600": [],
+  "task=complete job=deadline-failure-target pod=terminating unschedulable=unset": [],
+  "task=complete job=failed-other pod=failed-evicted unschedulable=600": [],
+  "task=complete job=failed-other pod=failed-evicted unschedulable=unset": [],
+  "task=complete job=failed-other pod=failed-executor unschedulable=600": [],
+  "task=complete job=failed-other pod=failed-executor unschedulable=unset": [],
+  "task=complete job=failed-other pod=failed-filer unschedulable=600": [],
+  "task=complete job=failed-other pod=failed-filer unschedulable=unset": [],
+  "task=complete job=failed-other pod=failed-oom unschedulable=600": [],
+  "task=complete job=failed-other pod=failed-oom unschedulable=unset": [],
+  "task=complete job=failed-other pod=none unschedulable=600": [],
+  "task=complete job=failed-other pod=none unschedulable=unset": [],
+  "task=complete job=failed-other pod=pending-scheduled-old unschedulable=600": [],
+  "task=complete job=failed-other pod=pending-scheduled-old unschedulable=unset": [],
   "task=complete job=failed-other pod=pending-scheduled-young unschedulable=600": [],
   "task=complete job=failed-other pod=pending-scheduled-young unschedulable=unset": [],
-  "task=complete job=failed-other pod=pending-unscheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Insufficient CPU", "no_op"]
-  ],
+  "task=complete job=failed-other pod=pending-unscheduled-old unschedulable=600": [],
   "task=complete job=failed-other pod=pending-unscheduled-old unschedulable=unset": [],
   "task=complete job=failed-other pod=pending-unscheduled-young unschedulable=600": [],
   "task=complete job=failed-other pod=pending-unscheduled-young unschedulable=unset": [],
   "task=complete job=failed-other pod=running unschedulable=600": [],
   "task=complete job=failed-other pod=running unschedulable=unset": [],
-  "task=complete job=failed-other pod=succeeded unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
-  "task=complete job=failed-other pod=succeeded unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
+  "task=complete job=failed-other pod=succeeded unschedulable=600": [],
+  "task=complete job=failed-other pod=succeeded unschedulable=unset": [],
   "task=complete job=failed-other pod=terminating unschedulable=600": [],
   "task=complete job=failed-other pod=terminating unschedulable=unset": [],
-  "task=complete job=live-old pod=failed-evicted unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=live-old pod=failed-evicted unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=live-old pod=failed-executor unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=live-old pod=failed-executor unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=live-old pod=failed-filer unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=live-old pod=failed-filer unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=live-old pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
-  "task=complete job=live-old pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
-  "task=complete job=live-old pod=none unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Job created no Pod", "no_op"]
-  ],
+  "task=complete job=live-old pod=failed-evicted unschedulable=600": [],
+  "task=complete job=live-old pod=failed-evicted unschedulable=unset": [],
+  "task=complete job=live-old pod=failed-executor unschedulable=600": [],
+  "task=complete job=live-old pod=failed-executor unschedulable=unset": [],
+  "task=complete job=live-old pod=failed-filer unschedulable=600": [],
+  "task=complete job=live-old pod=failed-filer unschedulable=unset": [],
+  "task=complete job=live-old pod=failed-oom unschedulable=600": [],
+  "task=complete job=live-old pod=failed-oom unschedulable=unset": [],
+  "task=complete job=live-old pod=none unschedulable=600": [],
   "task=complete job=live-old pod=none unschedulable=unset": [],
-  "task=complete job=live-old pod=pending-scheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
-  "task=complete job=live-old pod=pending-scheduled-old unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
+  "task=complete job=live-old pod=pending-scheduled-old unschedulable=600": [],
+  "task=complete job=live-old pod=pending-scheduled-old unschedulable=unset": [],
   "task=complete job=live-old pod=pending-scheduled-young unschedulable=600": [],
   "task=complete job=live-old pod=pending-scheduled-young unschedulable=unset": [],
-  "task=complete job=live-old pod=pending-unscheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Insufficient CPU", "no_op"]
-  ],
+  "task=complete job=live-old pod=pending-unscheduled-old unschedulable=600": [],
   "task=complete job=live-old pod=pending-unscheduled-old unschedulable=unset": [],
   "task=complete job=live-old pod=pending-unscheduled-young unschedulable=600": [],
   "task=complete job=live-old pod=pending-unscheduled-young unschedulable=unset": [],
   "task=complete job=live-old pod=running unschedulable=600": [],
   "task=complete job=live-old pod=running unschedulable=unset": [],
-  "task=complete job=live-old pod=succeeded unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
-  "task=complete job=live-old pod=succeeded unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
+  "task=complete job=live-old pod=succeeded unschedulable=600": [],
+  "task=complete job=live-old pod=succeeded unschedulable=unset": [],
   "task=complete job=live-old pod=terminating unschedulable=600": [],
   "task=complete job=live-old pod=terminating unschedulable=unset": [],
-  "task=complete job=live-young pod=failed-evicted unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=live-young pod=failed-evicted unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=live-young pod=failed-executor unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=live-young pod=failed-executor unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=live-young pod=failed-filer unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=live-young pod=failed-filer unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=live-young pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
-  "task=complete job=live-young pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
+  "task=complete job=live-young pod=failed-evicted unschedulable=600": [],
+  "task=complete job=live-young pod=failed-evicted unschedulable=unset": [],
+  "task=complete job=live-young pod=failed-executor unschedulable=600": [],
+  "task=complete job=live-young pod=failed-executor unschedulable=unset": [],
+  "task=complete job=live-young pod=failed-filer unschedulable=600": [],
+  "task=complete job=live-young pod=failed-filer unschedulable=unset": [],
+  "task=complete job=live-young pod=failed-oom unschedulable=600": [],
+  "task=complete job=live-young pod=failed-oom unschedulable=unset": [],
   "task=complete job=live-young pod=none unschedulable=600": [],
   "task=complete job=live-young pod=none unschedulable=unset": [],
-  "task=complete job=live-young pod=pending-scheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
-  "task=complete job=live-young pod=pending-scheduled-old unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
+  "task=complete job=live-young pod=pending-scheduled-old unschedulable=600": [],
+  "task=complete job=live-young pod=pending-scheduled-old unschedulable=unset": [],
   "task=complete job=live-young pod=pending-scheduled-young unschedulable=600": [],
   "task=complete job=live-young pod=pending-scheduled-young unschedulable=unset": [],
-  "task=complete job=live-young pod=pending-unscheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Insufficient CPU", "no_op"]
-  ],
+  "task=complete job=live-young pod=pending-unscheduled-old unschedulable=600": [],
   "task=complete job=live-young pod=pending-unscheduled-old unschedulable=unset": [],
   "task=complete job=live-young pod=pending-unscheduled-young unschedulable=600": [],
   "task=complete job=live-young pod=pending-unscheduled-young unschedulable=unset": [],
   "task=complete job=live-young pod=running unschedulable=600": [],
   "task=complete job=live-young pod=running unschedulable=unset": [],
-  "task=complete job=live-young pod=succeeded unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
-  "task=complete job=live-young pod=succeeded unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
+  "task=complete job=live-young pod=succeeded unschedulable=600": [],
+  "task=complete job=live-young pod=succeeded unschedulable=unset": [],
   "task=complete job=live-young pod=terminating unschedulable=600": [],
   "task=complete job=live-young pod=terminating unschedulable=unset": [],
-  "task=complete job=none pod=failed-evicted unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=none pod=failed-evicted unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Evicted", "no_op"]
-  ],
-  "task=complete job=none pod=failed-executor unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=none pod=failed-executor unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "Error", "no_op"]
-  ],
-  "task=complete job=none pod=failed-filer unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=none pod=failed-filer unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "FilerError", "no_op"]
-  ],
-  "task=complete job=none pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
-  "task=complete job=none pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "no_op"]
-  ],
+  "task=complete job=none pod=failed-evicted unschedulable=600": [],
+  "task=complete job=none pod=failed-evicted unschedulable=unset": [],
+  "task=complete job=none pod=failed-executor unschedulable=600": [],
+  "task=complete job=none pod=failed-executor unschedulable=unset": [],
+  "task=complete job=none pod=failed-filer unschedulable=600": [],
+  "task=complete job=none pod=failed-filer unschedulable=unset": [],
+  "task=complete job=none pod=failed-oom unschedulable=600": [],
+  "task=complete job=none pod=failed-oom unschedulable=unset": [],
   "task=complete job=none pod=none unschedulable=600": [],
   "task=complete job=none pod=none unschedulable=unset": [],
-  "task=complete job=none pod=pending-scheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
-  "task=complete job=none pod=pending-scheduled-old unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "ErrImagePull", "no_op"]
-  ],
+  "task=complete job=none pod=pending-scheduled-old unschedulable=600": [],
+  "task=complete job=none pod=pending-scheduled-old unschedulable=unset": [],
   "task=complete job=none pod=pending-scheduled-young unschedulable=600": [],
   "task=complete job=none pod=pending-scheduled-young unschedulable=unset": [],
-  "task=complete job=none pod=pending-unscheduled-old unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Insufficient CPU", "no_op"]
-  ],
+  "task=complete job=none pod=pending-unscheduled-old unschedulable=600": [],
   "task=complete job=none pod=pending-unscheduled-old unschedulable=unset": [],
   "task=complete job=none pod=pending-unscheduled-young unschedulable=600": [],
   "task=complete job=none pod=pending-unscheduled-young unschedulable=unset": [],
   "task=complete job=none pod=running unschedulable=600": [],
   "task=complete job=none pod=running unschedulable=unset": [],
-  "task=complete job=none pod=succeeded unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
-  "task=complete job=none pod=succeeded unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "no_op"]
-  ],
+  "task=complete job=none pod=succeeded unschedulable=600": [],
+  "task=complete job=none pod=succeeded unschedulable=unset": [],
   "task=complete job=none pod=terminating unschedulable=600": [],
   "task=complete job=none pod=terminating unschedulable=unset": [],
   "task=queued-just-seen job=being-deleted pod=failed-evicted unschedulable=600": [

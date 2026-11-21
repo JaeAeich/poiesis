@@ -56,7 +56,10 @@ release namespace, also when `taskpods.namespace` puts the tasks
 elsewhere; if a Lease call fails, TCtl logs it and tries again 10
 seconds later without reconciling. Every 5 seconds the
 leader reads the non-terminal tasks from Postgres, then lists the Jobs
-and Pods labelled `poiesis.io/task`. It has seven jobs:
+and Pods labelled `poiesis.io/task`. Jobs and Pods of tasks that aren't
+non-terminal in Postgres (already finished, or another installation's)
+are skipped, except that a `CANCELING` task's Job is still deleted. It
+has seven jobs:
 
 - **Phase reconciliation**: a `Succeeded` Pod becomes `COMPLETE`; a
   `Failed` one `SYSTEM_ERROR` (OOMKill, eviction, node loss, a failed

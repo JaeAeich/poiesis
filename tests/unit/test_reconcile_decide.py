@@ -313,10 +313,27 @@ CASES = [
         pods=[FAILED],
     ),
     Case(
-        "finished Pod of a task not non-terminal in the DB: proposed anyway",
-        [write(TesState.COMPLETE, None, source="pod-terminal", pod=SUCCEEDED)],
+        "finished Pod of a task not non-terminal in the DB: skipped",
+        [],
         job=job(),
         pods=[SUCCEEDED],
+        seen_for=None,
+    ),
+    Case(
+        "Job past its time limit, task not non-terminal in the DB: skipped",
+        [],
+        job=job(3600, DEADLINE),
+        seen_for=None,
+    ),
+    Case(
+        "CANCELING only in the second read, finished Pod: still decided",
+        [
+            DeleteJob(retry=True),
+            write(TesState.COMPLETE, None, source="pod-terminal", pod=SUCCEEDED),
+        ],
+        job=job(),
+        pods=[SUCCEEDED],
+        canceling=True,
         seen_for=None,
     ),
     # The Job's time limit.
@@ -600,7 +617,7 @@ def test_naive_start_time_is_utc() -> None:
     stuck = scheduled(400)
     stuck["status"]["start_time"] = ago(400).replace(tzinfo=None).isoformat()
     timeouts = Timeouts(pending=300, unschedulable=None, orphan_grace=30)
-    actions = decide(TaskView(TASK), None, [stuck], NOW, timeouts)
+    actions = decide(TaskView(TASK, seen_for=0), None, [stuck], NOW, timeouts)
     assert [type(a) for a in actions] == [WriteTerminal, DeleteJob]
 
 

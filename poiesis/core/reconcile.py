@@ -8,7 +8,9 @@ the inputs and applies the actions.
 
 The order of the checks, for a task:
 
-    1. `CANCELING` with a Job not being deleted → delete the Job.
+    1. `CANCELING` with a Job not being deleted → delete the Job. A task
+    the pass didn't read as non-terminal (already terminal, or unknown)
+    gets nothing more.
     2. With Pods, each Pod in turn: the Job past its time limit, else a
     finished Pod, else a Pending Pod past its pending or unschedulable
     timeout. Nothing more is checked.
@@ -138,6 +140,11 @@ def decide(
     actions: list[Action] = []
     if task.canceling and job is not None and not being_deleted(job):
         actions.append(DeleteJob(retry=True))
+    if not task.canceling and task.seen_for is None:
+        # Terminal in the DB, or not a task of this installation: its
+        # finished Pod would only make a no-op write on every pass until
+        # the Job's TTL removes it.
+        return actions
 
     if pods:
         for pod in pods:
