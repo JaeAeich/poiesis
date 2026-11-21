@@ -36,8 +36,14 @@ html.dark .VPDoc .content-container::before { background-image: url("data:image/
 .vp-doc h1 + p { font-size: 18px; line-height: 1.55; margin: 14px 0 28px; color: var(--body); }
 .vp-doc h2 { border-top: 0; padding-top: 0; margin: 48px 0 12px; font-size: 24px; letter-spacing: -.025em; font-weight: 600; color: var(--fg); }
 .vp-doc h3 { font-size: 18px; letter-spacing: -.015em; font-weight: 600; color: var(--fg); }
+.vp-doc :is(h1, h2, h3, h4) { text-wrap: balance; }
+.vp-doc p { text-wrap: pretty; }
+/* the "#" anchor sits on the heading's first line, to its left (our heading sizes differ from VitePress's) */
+.vp-doc :is(h1, h2, h3, h4) .header-anchor { top: 0; line-height: inherit; }
+/* prose links: a quiet underline, full colour on hover */
 .vp-doc a { color: var(--blue-ink); text-decoration: none; text-underline-offset: 3px; }
-.vp-doc a:hover { text-decoration: underline; }
+.vp-doc a:not(.header-anchor, .poi a, .swagger-ui a) { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); }
+.vp-doc a:not(.header-anchor, .poi a, .swagger-ui a):hover { text-decoration-color: currentColor; }
 .vp-doc ul > li::marker { color: var(--coral); }
 .vp-doc :not(pre) > code { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: .05em .35em; color: var(--fg); font-size: .875em; }
 .vp-doc a > code { color: var(--blue-ink); }
@@ -51,7 +57,7 @@ html.dark .VPDoc .content-container::before { background-image: url("data:image/
 .vp-doc tr { background: none !important; border-top: 0; }
 .vp-doc th { background: none; border: 0; border-bottom: 1px solid var(--line-strong); text-align: left; font: 500 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 10px 12px 10px 0; }
 .vp-doc td { border: 0; border-bottom: 1px solid var(--line); padding: 11px 12px 11px 0; vertical-align: top; }
-.vp-doc td code { font-size: 12.5px; overflow-wrap: anywhere; word-break: break-word; }
+.vp-doc td code { font-size: 12.5px; overflow-wrap: break-word; word-break: normal; }
 /* tables never spill past the content column: long values wrap, very wide tables scroll */
 .vp-doc table { table-layout: auto; max-width: 100%; }
 .vp-doc table:has(td code) { display: block; overflow-x: auto; }
@@ -78,6 +84,9 @@ html.dark .VPDoc .content-container::before { background-image: url("data:image/
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='45.03' height='78' viewBox='0 0 45.03 78'%3E%3Cpath d='M22.52 0 45.03 13v26L22.52 52 0 39V13zM22.52 52v26M0 13 0 0M45.03 13V0' fill='none' stroke='%23c3ced9' stroke-width='1'/%3E%3C/svg%3E") 0 0/45.03px 78px repeat;
   -webkit-mask-image: linear-gradient(transparent 0%, #000 30%, #000 45%, transparent 100%); mask-image: linear-gradient(transparent 0%, #000 30%, #000 45%, transparent 100%); opacity: .7; }
 html.dark .poi-deploy::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='45.03' height='78' viewBox='0 0 45.03 78'%3E%3Cpath d='M22.52 0 45.03 13v26L22.52 52 0 39V13zM22.52 52v26M0 13 0 0M45.03 13V0' fill='none' stroke='%2330475f' stroke-width='1'/%3E%3C/svg%3E"); }
+/* home and deploy: no "Return to top" bar; anchors land below the fixed nav */
+.poi-page .VPLocalNav { display: none; }
+html { scroll-padding-top: var(--vp-nav-height); }
 /* our pages bring their own spacing and line-heights over VitePress's resets */
 .poi h1, .poi h2, .poi h3 { line-height: 1.15; }
 .poi { color: var(--body); font-family: var(--sans); }

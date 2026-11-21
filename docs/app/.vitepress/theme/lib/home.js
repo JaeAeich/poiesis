@@ -6,7 +6,7 @@ export function mountHome(root){
   const reduce=reducedMotion(), B_=bag();
 const wheelState={om:0};
 function wheel(){
-  const el=$("#wheel"),p=logoParts(),MAX=30;
+  const el=$("#wheel"),p=logoParts(),MAX=18;
   el.innerHTML=`<svg viewBox="0 0 512 512" aria-hidden="true">
     <g id="w-rot">
       <g class="in h">${p.handles}</g>
@@ -17,25 +17,26 @@ function wheel(){
     <g id="w-sp">${p.spiral}</g></svg>`;
   const sp=$(".sp",el);sp.style.setProperty("--len",sp.getTotalLength());
   const rot=$("#w-rot",el),spg=$("#w-sp",el),nodes=$$(".hn",el),R0=nodes.map(n=>+n.getAttribute("r"));
-  let th=0,spA=0,drag=false,last=0,lastT=0,touched=false,prev=0;
-  if(!reduce)B_.timeout(()=>{if(!touched)wheelState.om=9},1700);
+  let th=0,spA=0,drag=false,last=0,lastT=0,touched=false,prev=0,gPrev=0,degPrev=-1;
+  // a gentle nudge on load; it doesn't count as spinning, so no burst of rings
+  if(!reduce)B_.timeout(()=>{if(!touched){wheelState.om=4;wheelState.calm=true}},2400);
   const ang=e=>{const r=el.getBoundingClientRect();return Math.atan2(e.clientY-(r.top+r.height/2),e.clientX-(r.left+r.width/2))*180/Math.PI};
-  el.addEventListener("pointerdown",e=>{drag=true;touched=true;last=ang(e);lastT=performance.now();el.setPointerCapture(e.pointerId);el.classList.add("grab");wheelState.om=0});
+  el.addEventListener("pointerdown",e=>{drag=true;touched=true;last=ang(e);lastT=performance.now();el.setPointerCapture(e.pointerId);el.classList.add("grab");wheelState.om=0;wheelState.calm=false});
   el.addEventListener("pointermove",e=>{if(!drag)return;const a=ang(e),now=performance.now();let d=a-last;if(d>180)d-=360;if(d<-180)d+=360;
     th+=d;const dt=Math.max(8,now-lastT);wheelState.om=clamp(lerp(wheelState.om,d/dt*16.7,.5),-MAX,MAX);last=a;lastT=now});
   // let go after holding still: it stays still
   const up=()=>{if(drag&&performance.now()-lastT>60)wheelState.om=0;drag=false;el.classList.remove("grab")};
   el.addEventListener("pointerup",up);el.addEventListener("pointercancel",up);
-  el.addEventListener("keydown",e=>{const d=e.key==="ArrowRight"||e.key==="ArrowUp"?4:e.key==="ArrowLeft"||e.key==="ArrowDown"?-4:0;if(d){touched=true;wheelState.om=clamp(wheelState.om+d,-MAX,MAX);e.preventDefault()}});
+  el.addEventListener("keydown",e=>{const d=e.key==="ArrowRight"||e.key==="ArrowUp"?4:e.key==="ArrowLeft"||e.key==="ArrowDown"?-4:0;if(d){touched=true;wheelState.calm=false;wheelState.om=clamp(wheelState.om+d,-MAX,MAX);e.preventDefault()}});
   B_.add(whileVisible(el,t=>{
     const k=Math.min(3,(t-(prev||t))/16.7)||1;prev=t;
     if(+($("#stage").dataset.cover||0)>.98)return;
-    if(!drag){th+=wheelState.om*k;wheelState.om*=Math.pow(.968,k);if(Math.abs(wheelState.om)<.01)wheelState.om=0}
+    if(!drag){th+=wheelState.om*k;wheelState.om*=Math.pow(.968,k);if(Math.abs(wheelState.om)<.01){wheelState.om=0;wheelState.calm=false}}
     spA+=reduce?0:(-wheelState.om*.55-.12)*k;
     rot.setAttribute("transform",`rotate(${th.toFixed(2)} 256 256)`);
     spg.setAttribute("transform",`rotate(${spA.toFixed(2)} 256 256)`);
-    const g=clamp(Math.abs(wheelState.om)/10);nodes.forEach((n,i)=>n.setAttribute("r",(R0[i]*(1+g*.35*(.6+.4*Math.sin(th/20+i)))).toFixed(2)));
-    el.setAttribute("aria-valuenow",String(Math.round(((th%360)+360)%360)));
+    const g=clamp(Math.abs(wheelState.om)/10);if(g||gPrev)nodes.forEach((n,i)=>n.setAttribute("r",(R0[i]*(1+g*.35*(.6+.4*Math.sin(th/20+i)))).toFixed(2)));gPrev=g;
+    const deg=Math.round(((th%360)+360)%360)%360;if(deg!==degPrev){degPrev=deg;el.setAttribute("aria-valuenow",String(deg));el.setAttribute("aria-valuetext",deg+" degrees")}
   }));
 }
 
@@ -64,7 +65,7 @@ function heroBg(){
     g.addColorStop(0,"rgba(0,0,0,1)");g.addColorStop(.5,"rgba(0,0,0,.4)");g.addColorStop(1,"rgba(0,0,0,0)");c.fillStyle=g;c.fillRect(0,0,W,H);
   }
   function size(){
-    const r=stage.getBoundingClientRect();if(!r.width)return;dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+    const r=stage.getBoundingClientRect();if(!r.width||(r.width===W&&r.height===H))return;dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
     const w=$("#wheel").getBoundingClientRect(),a=$("#hero-actions").getBoundingClientRect();
     fx=w.left-r.left+w.width/2;fy=w.top-r.top+w.height/2;
     helixY=Math.max(a.bottom,W>760?w.bottom-30:0)-r.top+72;
@@ -72,7 +73,7 @@ function heroBg(){
   }
   
   // a ring is a task landing on a node: pending (dashed), running (electrons), done (blue). One you click just runs.
-  const ring=(x,y,strong,delay=0,sp)=>{if(strong){const st=rings.filter(r=>r.strong);if(st.length>=3)rings.splice(rings.indexOf(st[0]),1)}
+  const ring=(x,y,strong,delay=0,sp)=>{if(rings.length>=12||rings.some(r=>r.x===x&&r.y===y))return;if(strong){const st=rings.filter(r=>r.strong);if(st.length>=3)rings.splice(rings.indexOf(st[0]),1)}
     rings.push({x,y,strong,sp:sp||(strong?.45:.2),t0:tNow+delay,dur:strong?6200:5600})};
   function drawRing(p,now){
     const k=(now-p.t0)/p.dur;if(k<0)return;
@@ -99,13 +100,14 @@ function heroBg(){
   ];
   const flowHexes=()=>flows.flatMap(f=>f.nodes.map(n=>n.r+":"+n.c));
   // every place each workflow shape fits, recomputed on resize; spawning picks from these
-  let slots=[];
+  let slots=[],cbx=[0,0,0,0];
+  const inCopy=(x,y)=>x>cbx[0]&&x<cbx[1]&&y>cbx[2]&&y<cbx[3];
   function computeSlots(){
     slots=[];if(!W)return;
     const sr=stage.getBoundingClientRect(),pad=10,cb=$('#copy').getBoundingClientRect(),wb=$('#wheel').getBoundingClientRect();
-    const c0=cb.left-sr.left-pad,c1=cb.right-sr.left+pad,r0=cb.top-sr.top-pad,r1=cb.bottom-sr.top+pad;
+    const c0=cb.left-sr.left-pad,c1=cb.right-sr.left+pad,r0=cb.top-sr.top-pad,r1=cb.bottom-sr.top+pad;cbx=[c0-S*.6,c1+S*.6,r0-S*.6,r1+S*.6];
     const wx=wb.left-sr.left+wb.width/2,wy=wb.top-sr.top+wb.height/2,wr=wb.width*.47+S*.6;
-    const g=amGeom();const blocked=(x,y)=>Math.hypot(x-g.cx,y-g.cy)<g.R*1.2+S||Math.hypot(x-wx,y-wy)<wr||(x>c0-S*.6&&x<c1+S*.6&&y>r0-S*.6&&y<r1+S*.6);
+    const g=amGeom();const blocked=(x,y)=>Math.hypot(x-g.cx,y-g.cy)<g.R*1.2+S||Math.hypot(x-wx,y-wy)<wr||inCopy(x,y);
     const rows=Math.ceil(helixY/RH),cols=Math.ceil(W/HW)+1;
     for(const T of FLOWS)for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
       const nodes=T.nodes.map(([dr,dc])=>{const rr=r+dr,cc=c+dc+(dr%2&&r%2?1:0);const[x,y]=center(rr,cc);return{r:rr,c:cc,x,y}});
@@ -212,16 +214,18 @@ function heroBg(){
 
   function frame(now){
     tNow=now;if(!W)return;
+    // idle: draw at ~30 fps; dt scaling keeps speeds the same
+    const om=wheelState.om,spin=Math.abs(om),busy=spin>.5&&!wheelState.calm;
+    if(!reduce&&!busy&&!hover&&!am.on&&!helixHot&&hotA<.02&&!rings.some(r=>r.strong)&&now-lastF<33)return;
     const k=Math.min(3,(now-(lastF||now))/16.7)||1;lastF=now;
     if(+(stage.dataset.cover||0)>.98)return;
     ctx.clearRect(0,0,W,H);ctx.globalAlpha=1;ctx.drawImage(lat,0,0,W,H);
     drawAmoeba(now);
     if(hover){ctx.globalAlpha=.55;ctx.strokeStyle=col.blue;ctx.lineWidth=1.2;hexPath(ctx,hover.x,hover.y);ctx.stroke()}
     // turning the wheel throws tasks from the hub onto nodes, the way it turns; at rest only the odd one
-    const om=wheelState.om,spin=Math.abs(om),busy=spin>.5;
     if(!reduce&&(busy||!flows.length)&&now-lastRing>(busy?Math.max(320,2600/spin):6000)&&rings.length<(busy?9:1)){lastRing=now;
       const ang=Math.random()*Math.PI*2,rad=(.22+Math.random()*(busy?Math.min(1,.45+spin/14):.6))*Math.min(W,H)*.62,h=nearest(fx+Math.cos(ang)*rad,fy+Math.sin(ang)*rad);
-      if(h&&!rings.some(r=>r.x===h.x&&r.y===h.y)){const fly=busy?520:0;if(busy)fliers.push({x:h.x,y:h.y,t0:now,dur:fly});ring(h.x,h.y,false,fly,(busy?.22+Math.min(spin,20)*.012:.2)*(om<0?-1:1))}}
+      if(h&&!inCopy(h.x,h.y)&&!rings.some(r=>r.x===h.x&&r.y===h.y)){const fly=busy?520:0;if(busy)fliers.push({x:h.x,y:h.y,t0:now,dur:fly});ring(h.x,h.y,false,fly,(busy?.22+Math.min(spin,20)*.012:.2)*(om<0?-1:1))}}
     rings=rings.filter(p=>now-p.t0<p.dur);for(const p of rings)drawRing(p,now);
     if(!reduce&&now-lastFlow>7000&&flows.length<2){lastFlow=now;spawnFlow(now)}
     drawFlows(now);
@@ -271,20 +275,25 @@ function heroBg(){
 const LAND={cols:144,rows:52,lat0:76,lat1:-56,b64:"AAAAEB8Af/8AAAADAB/4ARAAAAADfY/AP/wAAAAECf//8PAAAf4Yf6N4L/4AAPAAn/////8OP////////////ADgBAAAAAAAJv////p8HwHAD7z/////////A////+JgDgAAPn////////++AfD//8BwAAAAPh////////yAACAf/+B+AAACBj///////wGAAgAP//7/gAAHEP///////AOAAAAH//7/wAALv////////4AAAAAH///6QAAA/////////0AAAAAD///8IAAB/////////wAAAAAD///6AAAB+/Xn/////gAAAAAD///wAAAPlOBn////8IAAAAAD///AAAAPEp/3////IIAAAAAB//+AAAAOBB/z////kQAAAAAA//+AAAAH8AP/////BwAAAAAAf/8AAAAP/IP/////iAAAAAAAH/EAAAAP///v////gAAAAAAAL4EAAAAf//v3////AAAAAAAAF4AAAAA///36H///gAAAAAAAA4OAAAB///7/D/f4AAAAAAAAA4gQAAB///7+B8fAAAAAAAAAAPgAAAB///98B4PggAAAAAAAAB4AAAB///9wAwHwgAAAAAAAAAYAAAB///+AAwFwgAAAAAAAAAIuAAA////wAQEhAAAAAAAAAAB/gAAf///wAIAAIAAAAAAAAAB/4AAIP//gAAKCAAAAAAAAAAB/8AAAD//AAAFGAAAAAAAAAAD/+AAAD/+AAACOAAAAAAAAAAD//gAAD/8AAABOh4gAAAAAAAD//8AAB/8AAAAAAcgAAAAAAAD//8AAB/8AAAAMAeEAAAAAAAB//8AAB/8AAAAAQBAAAAAAAAB//4AAB/8AAAAADgAAAAAAAAA//wAAB/8QAAAAPEAAAAAAAAAf/wAAB/4wAAAAf8AAAAAAAAAP/wAAB/wgAAAA/+AAAAAAAAAP/gAAA/xgAAAD//AAAAAAAAAP+AAAA/gAAAAD//gAAAAAAAAP+AAAA/gAAAAD//gAAAAAAAAf8AAAAfAAAAAD//gAAAAAAAAf4AAAAeAAAAADw/gAAAAAAAAfgAAAAAAAAAAAAfAEAAAAAAAfgAAAAAAAAAAAAPACAAAAAAAeAAAAAAAAAAAAAAACAAAAAAA8AAAAAAAAAAAAACAIAAAAAAA4AAAAAAAAAAAAAAAQAAAAAAA8AAAAAAAAAAAAAAAAAAAAAAA4AAAAAAAAAAAAAAAAAAAAAAA4AAAAAAAAAAAAAAAA"};
 function worldBg(){
   const sec=$("#s-task"),cv=$("#world");if(!cv)return;const ctx=cv.getContext("2d");
-  let W=0,H=0,dpr=1,col={},dots=[],sites=[],flights=[],last=0,ox=0,oy=0,sc=1;
+  let W=0,H=0,CH=0,dpr=1,col={},dots=[],land=null,sites=[],flights=[],last=0,lastF=0,ox=0,oy=0,sc=1;
   const bin=atob(LAND.b64),bit=i=>(bin.charCodeAt(i>>3)>>(7-(i&7)))&1;
   const SITES=[[8.7,50.1],[-77,39],[-122,45.5],[72.9,19],[103.8,1.3],[-46.6,-23.5],[151,-33.9]];
   const colors=()=>{col={dot:css("--line-strong"),blue:css("--blue"),coral:css("--coral"),muted:css("--muted")}};
   const proj=(lon,lat)=>[ox+(lon+180)/360*sc,oy+(LAND.lat0-lat)/(LAND.lat0-LAND.lat1)*sc*(LAND.lat0-LAND.lat1)/360];
-  function size(){const r=sec.getBoundingClientRect();if(!r.width)return;dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+  // land dots drawn once, off screen; frames only copy them
+  function buildLand(){land=document.createElement("canvas");land.width=Math.max(1,W*dpr);land.height=Math.max(1,CH*dpr);const c=land.getContext("2d"),rr=Math.max(.8,sc/LAND.cols*.16);c.scale(dpr,dpr);
+    c.fillStyle=col.dot;for(const[x,y,a]of dots){c.globalAlpha=a;c.beginPath();c.arc(x,y,rr,0,7);c.fill()}}
+  function size(){const r=sec.getBoundingClientRect();if(!r.width||(r.width===W&&r.height===H))return;dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;
     const ph=W<=760;sc=W*(ph?2.6:1.02);const mh=sc*(LAND.lat0-LAND.lat1)/360;ox=ph?W/2-(12+180)/360*sc:(W-sc)/2;oy=ph?8:Math.max(0,(H-mh)/2);
-    dots=[];const cw=sc/LAND.cols;for(let r=0;r<LAND.rows;r++)for(let c=0;c<LAND.cols;c++)if(bit(r*LAND.cols+c)){const x=ox+(c+.5)*cw,y=oy+(r+.5)*cw;if(x<-4||x>W+4||y<-4||y>H+4)continue;const d=Math.hypot((x-W/2)/(W*.42),(y-H*.42)/(H*.5));dots.push([x,y,W<=760?.28:.12+.3*clamp((d-.3)/.55)])}
-    sites=SITES.map(([lon,lat])=>({xy:proj(lon,lat),pulse:0}));colors()}
+    // phones: only the map band, not the whole section
+    CH=ph?Math.min(H,oy+mh+40):H;cv.style.height=ph?CH+"px":"";cv.width=W*dpr;cv.height=CH*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+    dots=[];const cw=sc/LAND.cols;for(let r=0;r<LAND.rows;r++)for(let c=0;c<LAND.cols;c++)if(bit(r*LAND.cols+c)){const x=ox+(c+.5)*cw,y=oy+(r+.5)*cw;if(x<-4||x>W+4||y<-4||y>CH+4)continue;const d=Math.hypot((x-W/2)/(W*.42),(y-H*.42)/(H*.5));dots.push([x,y,W<=760?.28:.12+.3*clamp((d-.3)/.55)])}
+    sites=SITES.map(([lon,lat])=>({xy:proj(lon,lat),pulse:0}));colors();buildLand()}
   const near=(x,y)=>sites.reduce((b,s)=>Math.hypot(s.xy[0]-x,s.xy[1]-y)<Math.hypot(b.xy[0]-x,b.xy[1]-y)?s:b);
   const arc=(a,b,u)=>{const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2-Math.hypot(b[0]-a[0],b[1]-a[1])*.22,q=1-u;return[q*q*a[0]+2*q*u*mx+u*u*b[0],q*q*a[1]+2*q*u*my+u*u*b[1]]};
   function frame(now){
-    if(!W)return;ctx.clearRect(0,0,W,H);const rr=Math.max(.8,sc/LAND.cols*.16),cxm=W/2,cym=H*.45,fr=Math.hypot(W,H)*.5;
-    ctx.fillStyle=col.dot;for(const[x,y,a]of dots){ctx.globalAlpha=a;ctx.beginPath();ctx.arc(x,y,rr,0,7);ctx.fill()}
+    if(!W)return;if(!reduce&&now-lastF<33)return;lastF=now;
+    ctx.clearRect(0,0,W,CH);ctx.globalAlpha=1;ctx.drawImage(land,0,0,W,CH);
     if(!reduce&&now-last>1400&&flights.length<4){last=now;const a=dots[Math.floor(Math.random()*dots.length)],s=near(a[0],a[1]);
       if(Math.hypot(s.xy[0]-a[0],s.xy[1]-a[1])>sc*.04)flights.push({a,s,t0:now,dur:2600+Math.random()*1200})}
     flights=flights.filter(f=>{const u=(now-f.t0)/f.dur;if(u>1.5)return false;const e=ease(clamp(u)),fade=1-clamp((u-1)/.5);
@@ -297,22 +306,28 @@ function worldBg(){
       ctx.globalAlpha=.16;ctx.fillStyle=col.blue;ctx.beginPath();ctx.arc(x,y,8,0,7);ctx.fill();ctx.globalAlpha=.9;ctx.beginPath();ctx.arc(x,y,2.8,0,7);ctx.fill()}
     ctx.globalAlpha=1}
   const ro=new ResizeObserver(()=>{size();if(reduce)frame(performance.now())});ro.observe(sec);B_.add(()=>ro.disconnect());
-  B_.add(onThemeChange(()=>{colors();if(reduce)frame(performance.now())}));
+  B_.add(onThemeChange(()=>{colors();if(W)buildLand();if(reduce)frame(performance.now())}));
   size();if(reduce)frame(performance.now());else B_.add(whileVisible(sec,frame));
 }
 
 function stack(){
-  const layers=["#stage","#s-eng","#s-task"].map(q=>$(q)),on=()=>true,NAV=()=>innerWidth>=960?64:0,T=[],T0=[];
-  const tops=()=>{let acc=64;layers.forEach((el,i)=>{T[i]=on()?Math.min(NAV(),innerHeight-el.offsetHeight):0;el.style.top=on()?T[i]+"px":"";T0[i]=acc;acc+=el.offsetHeight-24})};
+  const layers=["#stage","#s-eng","#s-task"].map(q=>$(q)),LI=layers.map(el=>$$(".li",el)),on=()=>true,NAV=()=>innerWidth>=960?64:0,T=[],T0=[];
+  let vw=0,vh=0;
+  const tops=()=>{vw=innerWidth;vh=innerHeight;let acc=64;layers.forEach((el,i)=>{T[i]=on()?Math.min(NAV(),innerHeight-el.offsetHeight):0;el.style.top=on()?T[i]+"px":"";T0[i]=acc;acc+=el.offsetHeight-24})};
   let ticking=false;
-  const update=()=>{ticking=false;layers.forEach((el,i)=>{let c=0;const nx=layers[i+1];
-    if(nx&&on()){const t=nx.getBoundingClientRect().top,A=Math.min(innerHeight,T0[i+1]-(window.scrollY>0?0:0));if(A>T[i+1])c=clamp((A-t)/(A-T[i+1]))}
+  // read every top first, then write
+  const update=()=>{ticking=false;const tp=layers.map(el=>el.getBoundingClientRect().top);layers.forEach((el,i)=>{let c=0;
+    if(i+1<layers.length&&on()){const t=tp[i+1],A=Math.min(innerHeight,T0[i+1]);if(A>T[i+1])c=clamp((A-t)/(A-T[i+1]))}
     el.dataset.cover=c.toFixed(3);
     if(reduce)return;
-    $$(".li",el).forEach(li=>{if(li.tagName==="CANVAS"){li.style.opacity=c?(1-c*.5).toFixed(3):"";return}
+    LI[i].forEach(li=>{li.style.willChange=c>0&&c<1?"transform,opacity":"";if(li.tagName==="CANVAS"){li.style.opacity=c?(1-c*.5).toFixed(3):"";return}
       li.style.opacity=c?(1-c*.55).toFixed(3):"";li.style.transform=c?`translateY(${(c*24).toFixed(1)}px) scale(${(1-c*.04).toFixed(4)})`:""})})};
   B_.on(window,"scroll",()=>{if(!ticking){ticking=true;requestAnimationFrame(update)}},{passive:true});
-  B_.on(window,"resize",()=>{tops();update()});
+  // the Android URL bar changes the height a little while scrolling; only a real resize moves the layers
+  B_.on(window,"resize",()=>{if(innerWidth!==vw||Math.abs(innerHeight-vh)>120)tops();update()});
+  // keyboard focus inside a covered layer: scroll back until that layer is uncovered
+  B_.on(root,"focusin",e=>{const i=layers.findIndex(el=>el.contains(e.target));if(i<0||i+1>=layers.length||!(+layers[i].dataset.cover>0))return;
+    requestAnimationFrame(()=>{const t=layers[i+1].getBoundingClientRect().top,A=Math.min(innerHeight,T0[i+1]);if(t<A)scrollBy({top:t-A,behavior:reduce?"auto":"smooth"})})});
   return()=>{tops();update()};
 }
 

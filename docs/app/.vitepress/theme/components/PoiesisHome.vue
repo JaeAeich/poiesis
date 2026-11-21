@@ -26,7 +26,7 @@ onUnmounted(() => stop());
 </script>
 
 <template>
-  <div ref="root" class="poi poi-home">
+  <main ref="root" class="poi poi-home">
     <div class="stage layer" id="stage">
       <canvas id="bg" class="li" aria-hidden="true"></canvas>
       <div class="wrap hero li" id="hero">
@@ -34,7 +34,7 @@ onUnmounted(() => stop());
           <h1>Science at <em>cluster scale.</em></h1>
           <p>Poiesis is a GA4GH Task Execution Service for Kubernetes. Point your workflow engine at it, and every task runs in its own Pod.</p>
           <div class="actions" id="hero-actions">
-            <a class="btn primary" :href="withBase('/deploy')">Deploy <svg class="arr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            <a class="btn primary" :href="withBase('/deploy')">Deploy <svg class="arr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
             <a class="btn" :href="withBase('/docs/start/what-is-poiesis')">Docs</a>
           </div>
         </div>
@@ -80,5 +80,5 @@ onUnmounted(() => stop());
         </div>
       </div>
     </div>
-  </div>
+  </main>
 </template>

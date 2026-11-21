@@ -6,7 +6,7 @@ import { flow } from "../lib/figures.js";
 const props = defineProps({ spec: { type: Object, required: true } });
 const host = ref(null);
 let stop = () => {};
-onMounted(() => { stop = flow(host.value, props.spec, { wide: true }) || (() => {}); });
+onMounted(() => { stop = flow(host.value, props.spec, { wide: host.value.clientWidth >= 600 }) || (() => {}); });
 onUnmounted(() => stop());
 </script>
 

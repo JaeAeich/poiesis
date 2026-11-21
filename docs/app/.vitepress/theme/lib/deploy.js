@@ -5,7 +5,12 @@ export function mountDeploy(root,BASE="/"){
   const $=(s,r=root)=>r.querySelector(s), $$=(s,r=root)=>[...r.querySelectorAll(s)];
   const reduce=reducedMotion(), B_=bag();let dead=false;B_.add(()=>{dead=true;termRun++;stopFlow()});
   function toast(t){const el=$("#toast");el.textContent=t;el.classList.add("on");clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove("on"),1600)}
-  function copy(text){(navigator.clipboard?navigator.clipboard.writeText(text):Promise.reject()).then(()=>toast("Copied"),()=>toast("Copy failed"))}
+  // the button itself says Copied (a check, plus the word on text buttons) for 1.6 s; same box, so nothing moves
+  const OKI='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',BADI='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+  function flash(b,ok){if(!b.__c){b.__c={html:b.innerHTML,label:b.getAttribute("aria-label"),icon:!b.textContent.trim()};b.style.minWidth=b.offsetWidth+"px"}const c=b.__c,t=ok?"Copied":"Copy failed";
+    b.innerHTML=(ok?OKI:BADI)+(c.icon?"":t);b.setAttribute("aria-label",t);b.classList.toggle("copied",ok);b.classList.toggle("copy-fail",!ok);clearTimeout(b.__t);
+    b.__t=setTimeout(()=>{b.innerHTML=c.html;if(c.label==null)b.removeAttribute("aria-label");else b.setAttribute("aria-label",c.label);b.classList.remove("copied","copy-fail");b.style.minWidth="";b.__c=null},1600)}
+  function copy(text,b){const done=ok=>{toast(ok?"Copied":"Copy failed");if(b&&b.isConnected)flash(b,ok)};(navigator.clipboard?navigator.clipboard.writeText(text):Promise.reject()).then(()=>done(true),()=>done(false))}
 /* ---------- configurator state ---------- */
 const EX={url:"https://poiesis.example.org",dbSecret:"poiesis-db",s3Endpoint:"https://s3.eu-central-1.amazonaws.com",s3Region:"eu-central-1",s3Secret:"poiesis-s3",issuer:"https://keycloak.example.org/realms/poiesis",pdp:"http://opa.policy.svc:8181/access/v1/evaluation"};
 const S={step:0,done:new Set(),ex:new Set(),manual:null,editing:false,openGroup:null,
@@ -57,7 +62,7 @@ const STEPDEF=[
   {id:"review",t:"Review",sum:()=>""},
 ];
 const LAST=STEPDEF.length-1,ADVI=LAST-1;
-const ICON={up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg>',down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>',x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>',thumb:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v11H3V10zM7 10l4-8a3 3 0 0 1 3 3v4h6a2 2 0 0 1 2 2.3l-1.4 8A2 2 0 0 1 18.6 21H7"/></svg>',play:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.5-3.5z" fill="currentColor"/></svg>',copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h9"/></svg>',file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg>'};
+const ICON={up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>',down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',thumb:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l4-8a3 3 0 0 1 3 3v4h6a2 2 0 0 1 2 2.3l-1.4 8A2 2 0 0 1 18.6 21H7"/></svg>',play:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.5-3.5z" fill="currentColor"/></svg>',copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h9"/></svg>',file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg>'};
 
 const INFO={
   cmIssuer:"The cert-manager ClusterIssuer that signs the certificate, such as letsencrypt.",
@@ -87,8 +92,8 @@ const acts=i=>i<LAST?`<div class="acts"><button class="btn primary sm" data-next
 
 function body(id,i){
   if(id==="basics")return why("Where Poiesis runs, and the URL people use to reach it.")+
-    `<div class="tiles"><button class="tile sel"><span class="lg logo">${LOGO.k8s}</span><span><b>Any Kubernetes</b><small>EKS, GKE, AKS, k3s, bare metal</small></span></button>
-    ${[[LOGO.aws,"AWS preset"],[LOGO.gc,"Google Cloud preset"],[LOGO.az,"Azure preset"]].map(([l,n])=>`<div class="tile soon"><span class="lg logo">${l}</span><span><b>${n}</b><small>Planned, with its storage</small></span></div>`).join("")}</div>`+
+    `<div class="tiles"><div class="tile sel"><span class="lg logo">${LOGO.k8s}</span><span><b>Any Kubernetes</b><small>EKS, GKE, AKS, k3s, bare metal</small></span></div>
+    ${[[LOGO.aws,"AWS preset"],[LOGO.gc,"Google Cloud preset"],[LOGO.az,"Azure preset"]].map(([l,n])=>`<div class="tile soon preset"><span class="lg logo">${l}</span><span><b>${n}</b><small>Planned, with its storage</small></span></div>`).join("")}<p class="soon-line">AWS, Google Cloud and Azure presets are planned</p></div>`+
     field("url","Public URL","auth.resource",{req:1,ph:"https://poiesis.example.org",hint:"Also the ingress host."})+
     `<div class="sublab">TLS</div><div class="seg2" role="group" aria-label="TLS">${[["cm","cert-manager"],["secret","Existing Secret"],["none","Terminated upstream"]].map(([k,n])=>`<button data-tls="${k}" class="${S.tls===k?"on":""}" aria-pressed="${S.tls===k}">${n}</button>`).join("")}</div>`+
     (S.tls==="cm"?field("cmIssuer","ClusterIssuer","cert-manager.io/cluster-issuer",{req:1,ph:"letsencrypt"}):S.tls==="secret"?field("tlsSecret","TLS Secret","api.ingress.tls[].secretName",{req:1,ph:"poiesis-tls"}):"")+`<div class="row2">${field("ns","Namespace","",{req:1})}${field("ingress","Ingress class","api.ingress.className",{ph:"cluster default"})}</div>`+acts(i);
@@ -105,12 +110,12 @@ function body(id,i){
     `<div class="row2">${field("defSize","Default size (Gi)","taskpods.persistence.defaultSizeGi",{type:"number"})}${field("maxSize","Largest allowed (Gi)","taskpods.persistence.maxSizeGi",{type:"number"})}</div><div class="row2">${field("sc","StorageClass","taskpods.persistence.storageClass",{ph:"cluster default"})}${field("retain","Keep finished tasks (s)","taskpods.persistence.retainAfterSeconds",{type:"number"})}</div>`+acts(i);
   if(id==="authn")return why("Who may call the API. Each token is checked by the issuer that signed it.")+`<div class="sublab">Trusted issuers</div>`+
     `<ol class="chain">${S.chain.map((l,j)=>`<li class="link ${S.trial&&S.trial.hit===j?"hit":""}"><div class="lh"><span class="tag ${l.type==="gw"?"gw":""}">${l.type==="oidc"?"OIDC":"Gateway"}</span><span class="nm">${esc(l.issuer||"issuer not set")}</span>
-      <button class="mini" data-rm="${j}" aria-label="Remove" ${S.chain.length>1?"":"disabled"}>${ICON.x}</button></div><div class="lb">${chainFields(l,j)}</div></li>`).join("")}
+      <button class="mini" data-rm="${j}" aria-label="Remove ${esc(l.issuer||"issuer "+(j+1))}" ${S.chain.length>1?"":"disabled"}>${ICON.x}</button></div><div class="lb">${chainFields(l,j)}</div></li>`).join("")}
       ${S.keys?`<li class="link ${S.trial&&S.trial.hit==="key"?"hit":""}"><div class="lh"><span class="tag key">API keys</span><span class="nm">poi_… for engines, minted by OIDC users</span><button class="mini" data-keys aria-label="Turn API keys off">${ICON.x}</button></div></li>`:""}</ol>
     <div class="adds"><button class="btn sm" data-add="oidc">+ OIDC issuer</button><button class="btn sm" data-add="gw">+ Gateway JWT</button>${S.keys?"":`<button class="btn sm" data-keys>+ API keys</button>`}<span class="soonchip">GA4GH Passports · planned</span></div>
     <div class="tryit"><div class="eyebrow">Try a request</div><div class="opts">${[["kc","Keycloak token"],["gw","Gateway token"],["key","API key"],["none","No credential"]].map(([k,n])=>`<button data-try="${k}" class="${S.trial&&S.trial.k===k?"on":""}">${n}</button>`).join("")}</div><ol class="trace">${S.trial?S.trial.html:'<li style="opacity:1;animation:none" class="muted"><span class="s">›</span>Pick one to see how the chain handles it.</li>'}</ol></div>`+acts(i);
   if(id==="authz")return why("What a caller may do once authenticated. By default, everyone sees only their own tasks.")+
-    `<div class="seg2" role="group"><button data-authz="owner" aria-pressed="${S.authz==="owner"}" class="${S.authz==="owner"?"on":""}">Owner only</button><button data-authz="pdp" aria-pressed="${S.authz==="pdp"}" class="${S.authz==="pdp"?"on":""}">Decision service</button></div>`+
+    `<div class="seg2" role="group" aria-label="Authorization"><button data-authz="owner" aria-pressed="${S.authz==="owner"}" class="${S.authz==="owner"?"on":""}">Owner only</button><button data-authz="pdp" aria-pressed="${S.authz==="pdp"}" class="${S.authz==="pdp"?"on":""}">Decision service</button></div>`+
     (S.authz==="pdp"?field("pdp","AuthZEN evaluation URL","authz.decisionService.url",{req:1,ph:"http://opa.policy.svc:8181/access/v1/evaluation",hint:"Asked once per decision. Errors and timeouts deny."})+`<label class="check"><input type="checkbox" data-bool="sharing" ${S.sharing?"checked":""}><span>Let the policy share tasks<small>With groups, teams or everyone.</small></span></label>`:"")+
     `<div class="row2">${field("userGroup","Only admit group","auth.issuers[].requiredClaim",{ph:"/poiesis-users",hint:"Optional. Others get 403."})}${S.authz==="owner"?field("adminGroup","Admin group","auth.issuers[].admin",{ph:"/poiesis-admins",hint:"Can revoke anyone's keys."}):""}</div>`+acts(i);
   if(id==="adv"){const groups=ADV.filter(g=>!g.when||g.when());
@@ -135,7 +140,7 @@ function review(){
   const m=missing(),ex=[...S.ex].map(k=>EXLABEL[k]?[...EXLABEL[k],S[k]]:k.startsWith("chain")?["Issuer URL",4,null,(S.chain[+k[5]]||{}).issuer]:null).filter(Boolean),defs=advDefaults(),chg=advChanged();
   const row=(l,s,f,btn,v)=>`<li><span class="d" style="color:var(--fg)">${l}</span>${v?`<span class="v rv-ex">${esc(v)}</span>`:""}<button class="btn ghost sm go" data-go="${s}" ${f?`data-focus="${f}"`:""}>${btn}</button></li>`;
   return`<div class="rv">
-    ${m.length?`<div><h3>Still required <span class="cnt">${m.length}</span></h3><ul class="miss">${m.map(([l,s,f])=>row(l,s,f,"Set")).join("")}</ul></div>`:(ex.length?`<div class="ok neutral">Ready once you replace ${ex.length} example value${ex.length>1?"s":""}.</div>`:`<div class="ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5 9-10"/></svg>Every required value is set.</div>`)}
+    ${m.length?`<div><h3>Still required <span class="cnt">${m.length}</span></h3><ul class="miss">${m.map(([l,s,f])=>row(l,s,f,"Set")).join("")}</ul></div>`:(ex.length?`<div class="ok neutral">Ready once you replace ${ex.length} example value${ex.length>1?"s":""}.</div>`:`<div class="ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Every required value is set.</div>`)}
     ${ex.length?`<div><h3>Example values to replace <span class="cnt">${ex.length}</span></h3><ul>${ex.map(([l,s,f,v])=>row(l,s,f,"Change",v)).join("")}</ul></div>`:""}
     ${chg.length?`<div><h3>Changed from the defaults <span class="cnt">${chg.length}</span></h3><ul>${chg.map(it=>`<li><code>${it.show||it.k}</code><span class="d"></span><span class="v">${esc(fmt(advVal(it)))}</span><button class="btn ghost sm go" data-adv-go="${esc(it.k)}" data-group="${esc(it.g)}">Edit</button></li>`).join("")}</ul></div>`:""}
     <div><h3>Left at the chart defaults <span class="cnt">${defs.length}</span></h3>${[...new Set(defs.map(d=>d.g))].map(g=>{const its=defs.filter(d=>d.g===g);return`<details><summary>${g}<small>${its.map(i=>i.lab).join(", ").slice(0,48)}${its.map(i=>i.lab).join(", ").length>48?"…":""}</small></summary><ul>${its.map(it=>`<li><span class="d"><b style="font-weight:500;color:var(--fg)">${it.lab}</b><br>${it.why}</span><span class="v">${esc(fmt(it.def))}</span><button class="btn ghost sm go" data-adv-go="${esc(it.k)}" data-group="${esc(it.g)}">Change</button></li>`).join("")}</ul></details>`}).join("")}</div>
@@ -146,8 +151,8 @@ function review(){
 }
 function renderSteps(){
   $("#steps").innerHTML=STEPDEF.map((d,i)=>`<li class="step ${i===S.step?"cur":""} ${S.done.has(i)&&i!==S.step?"done":""}" data-i="${i}">
-    <button class="hd" data-go="${i}" aria-expanded="${i===S.step}"><span class="n">${S.done.has(i)&&i!==S.step?"✓":i+1}</span><span class="ttl">${d.t}</span>${d.opt?'<span class="opt">optional</span>':""}<span class="sum">${i===S.step?"":esc(d.sum())}</span></button>
-    <div class="bd">${i===S.step?body(d.id,i):""}</div></li>`).join("");
+    <h2 class="hd-h"><button class="hd" data-go="${i}" aria-expanded="${i===S.step}" aria-controls="bd-${i}"><span class="n">${S.done.has(i)&&i!==S.step?"✓":i+1}</span><span class="ttl">${d.t}</span>${d.opt?'<span class="opt">optional</span>':""}<span class="sum">${i===S.step?"":esc(d.sum())}</span></button></h2>
+    <div class="bd" id="bd-${i}">${i===S.step?body(d.id,i):""}</div></li>`).join("");
 }
 
 /* YAML: only what differs from the chart defaults; each line remembers which step wrote it */
@@ -207,7 +212,7 @@ function renderCode(scroll=true){
   const L=currentLines(),cur=S.step,ed=$("#ed"),ta=$("#ta"),editing=S.editing&&tab==="values";
   $("#code").innerHTML=L.map(l=>`<span class="ln ${l.step===cur?"hl":""}">${(tab==="values"?hl:hlSh)(l.txt)||" "}</span>`).join("");
   $("#file-meta").textContent=`${L.length} lines`;
-  $$(".file .tab").forEach(b=>b.classList.toggle("on",b.dataset.tab===tab));
+  $$(".file .tab").forEach(b=>{const on=b.dataset.tab===tab;b.classList.toggle("on",on);b.setAttribute("aria-pressed",String(on))});
   $("#banner").classList.toggle("on",S.manual!==null&&tab==="values");
   ed.classList.toggle("editing",editing);
   const eb=$("#edit-btn");eb.classList.toggle("on",editing);eb.textContent=editing?"Done":"Edit";eb.setAttribute("aria-pressed",String(editing));eb.disabled=tab!=="values";
@@ -289,7 +294,7 @@ function openPanel(){
   $("#panel-step").textContent=`Step ${S.step+1}`;$("#panel-title").textContent=sp.title;
   $("#panel-body").innerHTML=`<div id="pfig"></div><ul class="pts">${sp.pts.map(p=>`<li><span>${p}</span></li>`).join("")}</ul>
     <div class="pnav"><a class="btn ghost sm" href="${BASE}docs/start/what-is-poiesis">Read the docs</a></div>`;
-  if(sp.fig)taskFigure($("#pfig"),{compact:true});else if(sp.nodes)stopFlow=flow($("#pfig"),sp);else $("#pfig").remove();
+  if(sp.fig)stopFlow=taskFigure($("#pfig"),{compact:true});else if(sp.nodes)stopFlow=flow($("#pfig"),sp);else $("#pfig").remove();
   $("#panel").classList.add("on");$("#scrim").classList.add("on");setTimeout(()=>$("#panel-x").focus({preventScroll:true}),50);
 }
 function closePanel(){if(!panelOpen)return;panelOpen=false;stopFlow();$("#panel").classList.remove("on");$("#scrim").classList.remove("on");if(lastFocus&&lastFocus.focus)lastFocus.focus({preventScroll:true})}
@@ -326,7 +331,7 @@ $("#steps").addEventListener("click",e=>{const b=e.target.closest("button");if(!
   else if(b.dataset.try)runTrial(b.dataset.try);
   else if(b.dataset.tabGo){tab=b.dataset.tabGo;S.editing=false;renderCode();$(".file").scrollIntoView({behavior:reduce?"auto":"smooth",block:"nearest"})}
   else if(b.dataset.advGo){S.openGroup=b.dataset.group;go(ADVI,"a-"+b.dataset.advGo.replace(/\./g,"-"))}
-  else if("copyCmd"in b.dataset)copy(`helm install poiesis ./deployment/helm/poiesis -n ${S.ns||"poiesis"} -f values.yaml`);
+  else if("copyCmd"in b.dataset)copy(`helm install poiesis ./deployment/helm/poiesis -n ${S.ns||"poiesis"} -f values.yaml`,b);
   else if("editNow"in b.dataset){tab="values";S.editing=true;renderCode(false);$(".file").scrollIntoView({behavior:reduce?"auto":"smooth",block:"start"});$("#ta").focus({preventScroll:true})}
   else if(b.id==="dl2"){tab="values";renderCode(false);download()}
 });
@@ -334,9 +339,9 @@ $$(".file .tab").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;if(tab!=="values")S
 $("#edit-btn").onclick=()=>{S.editing=!S.editing;renderCode(false);if(S.editing)$("#ta").focus()};
 $("#ta").addEventListener("input",e=>{S.manual=e.target.value;renderCode(false)});
 let tabOut=false;$("#ta").addEventListener("keydown",e=>{if(e.key==="Escape"){tabOut=true;return}if(e.key==="Tab"&&!tabOut){e.preventDefault();document.execCommand("insertText",false,"  ")}});$("#ta").addEventListener("blur",()=>{tabOut=false});
-$("#regen").onclick=()=>{S.manual=null;S.editing=false;renderCode()};
+$("#regen").onclick=()=>{if(!confirm("Discard your edits and rebuild values.yaml from the form?"))return;S.manual=null;S.editing=false;renderCode()};
 function download(){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([fileText()],{type:"text/yaml"}));a.download=tab==="values"?"values.yaml":"install.sh";a.click();toast("Downloaded "+a.download)}
-$("#copy-file").onclick=()=>copy(fileText());$("#dl-file").onclick=download;
+$("#copy-file").onclick=e=>copy(fileText(),e.currentTarget);$("#dl-file").onclick=download;
 function fillAll(){for(let i=0;i<LAST;i++){fillExample(i);S.done.add(i)}go(LAST)}
 $("#fill-all").onclick=fillAll;
 let mode="human",termOn=false;
@@ -349,11 +354,11 @@ let termRun=0;function startTerm(){if(termOn)return;termOn=true;const tb=$("#ter
     if(c==="u"){let j=0;const ty=()=>{if(run!==termRun)return;el.textContent=t.slice(0,++j);tb.scrollTop=tb.scrollHeight;if(j<t.length)setTimeout(ty,16);else setTimeout(next,600)};ty()}
     else{el.textContent=t;setTimeout(next,c==="r"?650:c==="q"?900:500)}};
   next()}
-function setMode(m){mode=m;$$("[data-mode]").forEach(b=>{const on=b.dataset.mode===m;b.classList.toggle("on",on);b.setAttribute("aria-selected",String(on))});
+function setMode(m){mode=m;$$("[data-mode]").forEach(b=>{const on=b.dataset.mode===m;b.classList.toggle("on",on);b.setAttribute("aria-pressed",String(on))});
   $("#mode-human").hidden=m!=="human";$("#mode-agent").hidden=m!=="agent";$("#fill-all").hidden=m!=="human";
   if(m==="human")renderCode(false);else{closePanel();startTerm()}}
 $$("[data-mode]").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
-$$("[data-copy]").forEach(b=>b.onclick=()=>copy($("#"+b.dataset.copy).firstChild.textContent));
+$$("[data-copy]").forEach(b=>b.onclick=()=>copy($("#"+b.dataset.copy).firstChild.textContent,b));
 
   render();setMode(mode);
   if(location.hash==="#example"){fillAll()}

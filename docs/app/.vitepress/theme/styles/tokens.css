@@ -1,7 +1,7 @@
 /* Poiesis tokens: logo palette (wheel blue #1f6aae, spiral coral #f0684c), mapped onto VitePress variables. */
 :root {
   --blue:#1f6aae; --blue-ink:#174f83; --blue-wash:#eef4fa;
-  --coral:#f0684c; --coral-ink:#c4462c; --coral-wash:#fdf0ec;
+  --coral:#f0684c; --coral-ink:#b5412a; --coral-wash:#fdf0ec;
   --bg:#ffffff; --surface:#f6f8fb; --line:#e4e9ef; --line-strong:#c3ced9;
   --fg:#0d2033; --body:#3b4b5d; --muted:#5f6e7f; --halo:#ffffff;
   --code-bg:#f8fafc; --code-fg:#24364a; --code-key:#174f83; --code-str:#22704f; --code-com:#66737f; --field:#8e9aa8;
