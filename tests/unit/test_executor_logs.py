@@ -15,7 +15,11 @@ from typing import Any
 import pytest
 
 from poiesis.core import executor_logs, tctl, trec
-from poiesis.core.executor_logs import MAX_OUTPUT_BYTES, read_executor_output
+from poiesis.core.executor_logs import (
+    MAX_OUTPUT_BYTES,
+    read_executor_output,
+    read_executor_streams,
+)
 from poiesis.core.pod_status import EventKind, TaskEvent
 from poiesis.db import state as state_db
 
@@ -121,9 +125,9 @@ def test_trec_stores_executor_output(appended: list[dict[str, Any]]) -> None:
     """trec reads the finished executor's output and stores it as stdout."""
     read_for: list[int] = []
 
-    async def read_output(index: int) -> str | None:
+    async def read_output(index: int) -> tuple[str | None, str | None]:
         read_for.append(index)
-        return "boom\n"
+        return "boom\n", None
 
     asyncio.run(trec._apply_event(None, "t1", finished(1, 3), read_output))
     assert read_for == [1]
@@ -131,7 +135,7 @@ def test_trec_stores_executor_output(appended: list[dict[str, Any]]) -> None:
     assert row["ordinal"] == 1
     assert row["exit_code"] == 3  # noqa: PLR2004
     assert row["stdout"] == "boom\n"
-    assert "stderr" not in row
+    assert row["stderr"] is None
 
 
 def test_trec_records_the_row_when_the_log_cannot_be_read(
@@ -140,8 +144,8 @@ def test_trec_records_the_row_when_the_log_cannot_be_read(
     """With the real reader failing, the row is still stored, without output."""
     core_v1 = FakeCoreV1({}, fail=True)
 
-    async def read_output(index: int) -> str | None:
-        return await read_executor_output(core_v1, "pod-1", "tasks", index)
+    async def read_output(index: int) -> tuple[str | None, str | None]:
+        return await read_executor_streams(core_v1, "pod-1", "tasks", index)
 
     asyncio.run(trec._apply_event(None, "t1", finished(0, 1), read_output))
     (row,) = appended

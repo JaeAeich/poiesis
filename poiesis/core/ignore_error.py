@@ -15,7 +15,8 @@ wrapped: their command runs as submitted, with no shell.
 
 The image must have ``/bin/sh``; without it the container fails to start and
 the task ends in ``EXECUTOR_ERROR``, with a system log saying so
-(`start_failure_log`).
+(`executor_shell.start_failure_log`). An executor that also sets ``stdin``,
+``stdout`` or ``stderr`` gets one wrapper for both (see `executor_shell`).
 """
 
 from __future__ import annotations
@@ -34,11 +35,14 @@ TERMINATION_MESSAGE_PATH = "/dev/termination-log"
 
 _EXIT_CODE_PREFIX = "poiesis-exit-code="
 
-SCRIPT = (
-    '"$@"; rc=$?; '
+#: Records the exit code of the command just run, then exits 0.
+RECORD_EXIT_CODE = (
+    "rc=$?; "
     f"printf '{_EXIT_CODE_PREFIX}%d\\n' \"$rc\" > {TERMINATION_MESSAGE_PATH}; "
     "exit 0"
 )
+
+SCRIPT = f'"$@"; {RECORD_EXIT_CODE}'
 
 _EXIT_CODE_RE = re.compile(rf"\A{_EXIT_CODE_PREFIX}(\d+)\s*\Z")
 
@@ -60,7 +64,7 @@ def recorded_exit_code(terminated: Mapping[str, Any]) -> int | None:
     termination message; any other container's exit code is its own. Takes
     camelCase (watch events) or snake_case (``to_dict()``) keys.
     """
-    exit_code = _exit_code(terminated)
+    exit_code = terminated_exit_code(terminated)
     if exit_code == 0:
         match = _EXIT_CODE_RE.match(str(terminated.get("message") or ""))
         if match:
@@ -68,50 +72,8 @@ def recorded_exit_code(terminated: Mapping[str, Any]) -> int | None:
     return exit_code
 
 
-def wrapped_executor_names(pod: Mapping[str, Any]) -> frozenset[str]:
-    """Names of the init containers in `pod`'s spec that `wrap_command` built."""
-    spec = pod.get("spec") or {}
-    containers = spec.get("initContainers") or spec.get("init_containers") or []
-    return frozenset(
-        c.get("name") or "" for c in containers if is_wrapped(c.get("command"))
-    )
-
-
-#: How container runtimes report a container whose entrypoint can't be run:
-#: containerd says ``StartError`` (exit 128), Docker ``ContainerCannotRun``.
-_START_FAILURE_REASONS = frozenset(
-    {"StartError", "ContainerCannotRun", "RunContainerError"}
-)
-_START_FAILURE_EXIT_CODES = frozenset({126, 127, 128})
-
-
-def start_failure_log(name: str, terminated: Mapping[str, Any]) -> str | None:
-    """System log line for a wrapped executor whose shell didn't start.
-
-    Returns None unless the container failed to start (see
-    ``_START_FAILURE_REASONS``): once the shell runs, the wrapper exits 0, or
-    128 + N when a signal kills it (deadline, OOM), which is not a shell
-    problem.
-    """
-    exit_code = _exit_code(terminated)
-    reason = terminated.get("reason")
-    if (
-        reason not in _START_FAILURE_REASONS
-        and exit_code not in _START_FAILURE_EXIT_CODES
-    ):
-        return None
-    line = (
-        f"container {name} failed to start (exit code {exit_code}, {reason}); "
-        f"it sets ignore_error, which runs its command under {SHELL}, so the "
-        f"image must have {SHELL}"
-    )
-    message = str(terminated.get("message") or "").strip()
-    if message:
-        line += f": {message[:500]}"
-    return line
-
-
-def _exit_code(terminated: Mapping[str, Any]) -> int | None:
+def terminated_exit_code(terminated: Mapping[str, Any]) -> int | None:
+    """``exitCode`` of a ``state.terminated`` status, in either key style."""
     exit_code = terminated.get("exitCode")
     if exit_code is None:
         exit_code = terminated.get("exit_code")

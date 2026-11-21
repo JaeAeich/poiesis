@@ -1,5 +1,5 @@
 ---
-description: How a TES task becomes one Kubernetes Pod - the containers in a TaskPod, executor order, ignore_error, task logs and cancelling.
+description: How a TES task becomes one Kubernetes Pod - the containers in a TaskPod, executor order, ignore_error, stdin/stdout/stderr files, task logs and cancelling.
 ---
 
 # Tasks and TaskPods
@@ -22,7 +22,7 @@ happens.
 | Container | Kind | Does |
 | --- | --- | --- |
 | `trec` | Native sidecar | Watches its own Pod, marks the task `RUNNING` and writes executor logs to Postgres. |
-| `tif` | Init | Stages `inputs` onto the volume: `s3://`, `http(s)://`, `file://`, inline `content`. Only if the task has inputs. |
+| `tif` | Init | Stages `inputs` onto the volume: `s3://`, `http(s)://`, `file://`, inline `content`, then creates the task's [directories](./task-volumes.md#task-paths) that have no mount of their own. Only if the task has inputs or such directories. |
 | `exec-0` … `exec-N` | Init | Your executors, in order, in your images. |
 | `tof` | Init | Uploads `outputs` from the volume: `s3://`, `http(s)://`, `file://`. Only if the task has outputs. |
 | `ack` | Main | Exits 0 so the Pod reaches `Succeeded`. Reuses the Poiesis image, so no second image pull. |
@@ -42,7 +42,10 @@ in `EXECUTOR_ERROR`. Data passes between executors only through the
 paths the task declares; see [Task paths](./task-volumes.md#task-paths).
 
 Executors run with no shell, exactly as submitted: image, command,
-working directory and environment come from the task.
+working directory and environment come from the task. Only an executor
+that sets [`ignore_error`](#executors-that-may-fail) or
+[`stdin`, `stdout` or `stderr`](#stdin-stdout-and-stderr) runs under
+`/bin/sh`, which its image must then have.
 
 <Callout type="info">
 
@@ -85,24 +88,55 @@ Kubernetes stops the Pod when an init container fails, so Poiesis runs an
   in its `state.terminated.message`, where TRec and TCtl read it, and in
   the task logs.
 
+## stdin, stdout and stderr
+
+An executor's `stdin` is a file in its container to read standard input
+from; `stdout` and `stderr` are files to write standard output and error
+to. Kubernetes can't connect a container's streams to files, so an
+executor that sets any of them runs under `/bin/sh`, which opens the
+files and then `exec`s the command:
+
+- The command is passed as positional arguments, so nothing is re-quoted
+  or expanded, and `exec` keeps its PID, signals and exit code. With
+  `ignore_error` too, one wrapper does both.
+- The directory of `stdout` and `stderr` is created if missing. The same
+  path for both gets both streams, in order.
+- The paths must be absolute (`400` otherwise). Put them under a path
+  the task declares (an input, output or volume) to keep the files: like
+  anything else an executor writes, a file elsewhere is lost with its
+  container.
+- The image must have `/bin/sh`. Without it the container can't start
+  and the task ends in `EXECUTOR_ERROR`; its system log says the executor
+  sets `stdout` (or `stdin`, `stderr`), which needs `/bin/sh` in its
+  image.
+- The container's own stdin stays closed: `stdin` comes from the file
+  only.
+
 ## Task logs
 
 `GET /tasks/{id}?view=FULL` returns one entry per finished executor in
 `logs[].logs[]`, with its start and end time, exit code and output:
 
 - `stdout` holds the last 64 KiB of the executor's container log. The
-  log mixes the executor's stdout and stderr, so both end up here.
-- `stderr` stays empty. Poiesis doesn't write the executor's output to
-  its `stdout` and `stderr` paths (some engines rely on that, see
-  [Sprocket](../guides/workflow-engines.md#sprocket)).
+  log mixes the executor's stdout and stderr, so both end up here, and
+  `stderr` stays empty.
+- An executor that writes its stdout or stderr to a
+  [file](#stdin-stdout-and-stderr) on the task volume gets the last
+  64 KiB of that file instead, as `stdout` or `stderr`; TRec reads it
+  from the volume, without following symlinks. The container log then
+  goes to the other field. A file elsewhere in the container can't be
+  read, so that stream is missing from the task logs.
 - If the log can't be read (for example, the ServiceAccount lacks
   `pods/log: get`), `stdout` stays empty and TRec or TCtl logs a
-  warning. The task itself is unaffected.
+  warning. The task itself is unaffected. TCtl, which backfills logs
+  TRec missed, has no access to task volumes and stores only the
+  container log.
 
 The `BASIC` view leaves `stdout`, `stderr` and `system_logs` out;
 `MINIMAL` has no logs.
 `system_logs` holds lines from Poiesis itself, such as a non-zero exit of
-`tif` or `tof`.
+`tif` or `tof`. TRec stopping when the Pod ends isn't one: Kubernetes
+stops the sidecar last, and TRec exits 0 on `SIGTERM`.
 
 ## Who records what
 

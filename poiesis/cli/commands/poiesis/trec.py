@@ -8,6 +8,8 @@ from typing import Any
 import click
 
 from poiesis.cli.commands.poiesis.base import BaseCommand
+from poiesis.core.constants import EXECUTOR_STREAMS_ENV
+from poiesis.core.executor_logs import decode_streams
 from poiesis.core.trec import run
 from poiesis.k8s.client import load_config
 
@@ -35,9 +37,10 @@ class TrecCommand(BaseCommand):
             pod_name = _required_env("POIESIS_POD_NAME")
             namespace = _required_env("POIESIS_POD_NAMESPACE")
             dsn = _required_env("DATABASE_URL")
+            streams = decode_streams(os.environ.get(EXECUTOR_STREAMS_ENV))
             load_config()
             click.echo(f"--- TRec --- task={task_id} pod={pod_name}/{namespace}")
-            exit_code = asyncio.run(run(task_id, pod_name, namespace, dsn))
+            exit_code = asyncio.run(run(task_id, pod_name, namespace, dsn, streams))
             sys.exit(exit_code)
 
     def get_info(self) -> dict[str, Any]:

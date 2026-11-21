@@ -4,19 +4,24 @@ TRec runs inside the TaskPod and watches its own Pod via the Kubernetes
 API. Each watch event is translated by `pod_status.translate` into a
 list of `TaskEvent`s; the recorder applies them by writing executor and
 filer log rows to Postgres. An executor's row carries the tail of its
-container log as `stdout` (see `poiesis.core.executor_logs`).
+output as `stdout` and `stderr`: from its container log, or from the
+files on the task volume it writes them to (see
+`poiesis.core.executor_logs`).
 
 Trec does NOT write terminal state. The cluster-wide controller (tctl)
 owns terminal transitions exclusively — see `poiesis/core/tctl.py`. Trec's
 job ends when either the Pod reaches a terminal phase (it returns 0 and
 lets the sidecar wind down naturally) or it receives SIGTERM from kubelet
-during pod teardown.
+during pod teardown. The kubelet stops the sidecar once the other
+containers have ended, so on SIGTERM trec reads the Pod once more, records
+what the watch hadn't delivered yet, and exits 0 at once: the Pod, and so
+the task, ends when trec does.
 """
 
 from __future__ import annotations
 
 import asyncio
-import functools
+import contextlib
 import logging
 import signal
 import uuid
@@ -26,13 +31,13 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 
-    #: Reads executor N's output; None when the log can't be read.
-    ReadOutput = Callable[[int], Awaitable[str | None]]
+    #: Reads executor N's (stdout, stderr); None for what can't be read.
+    ReadOutput = Callable[[int], Awaitable[tuple[str | None, str | None]]]
 
 import asyncpg
 from kubernetes import client
 
-from poiesis.core.executor_logs import read_executor_output
+from poiesis.core.executor_logs import Streams, read_executor_streams
 from poiesis.core.k8s_watch import PodEvent, PodSelector, watch_pods
 from poiesis.core.pod_status import (
     EventKind,
@@ -44,17 +49,31 @@ from poiesis.db import state as state_db
 
 logger = logging.getLogger(__name__)
 
+#: Budget for the last read of the Pod on SIGTERM, well inside the Pod's
+#: termination grace period.
+_LAST_STATE_TIMEOUT_SECONDS = 10
+_LAST_STATE_REQUEST_TIMEOUT = (5, 5)
 
-async def run(task_id: str, pod_name: str, namespace: str, dsn: str) -> int:
+
+async def run(
+    task_id: str,
+    pod_name: str,
+    namespace: str,
+    dsn: str,
+    streams: Mapping[int, Streams] | None = None,
+) -> int:
     """Record the Pod's lifecycle into Postgres until terminal or signalled.
 
-    Returns 0 on a clean exit (terminal pod or SIGTERM), 1 on an
+    `streams` says which executors write stdout/stderr to files on the task
+    volume. Returns 0 on a clean exit (terminal pod or SIGTERM), 1 on an
     unrecoverable watch error.
     """
     conn = await asyncpg.connect(dsn)
     try:
         await _mark_running(conn, task_id)
-        return await _run_until_terminal(conn, task_id, pod_name, namespace)
+        return await _run_until_terminal(
+            conn, task_id, pod_name, namespace, streams or {}
+        )
     finally:
         await conn.close()
 
@@ -64,13 +83,19 @@ async def _run_until_terminal(
     task_id: str,
     pod_name: str,
     namespace: str,
+    streams: Mapping[int, Streams],
 ) -> int:
     """Drive the Pod watch and apply each event to Postgres."""
     snapshot = TaskStateSnapshot()
     cancelled = _install_signal_handlers()
 
     core_v1 = client.CoreV1Api()
-    read_output = functools.partial(read_executor_output, core_v1, pod_name, namespace)
+
+    async def read_output(ordinal: int) -> tuple[str | None, str | None]:
+        return await read_executor_streams(
+            core_v1, pod_name, namespace, ordinal, streams.get(ordinal)
+        )
+
     selector = PodSelector(
         namespace=namespace, field_selector=f"metadata.name={pod_name}"
     )
@@ -85,8 +110,15 @@ async def _run_until_terminal(
             )
             if wait_for_signal in done:
                 wait_for_event.cancel()
-                logger.info("trec: SIGTERM received; exiting")
+                with contextlib.suppress(asyncio.CancelledError):
+                    await wait_for_event
+                logger.info("trec: SIGTERM received; recording the last state")
+                await _record_last_state(
+                    conn, task_id, core_v1, pod_name, namespace, snapshot, read_output
+                )
+                logger.info("trec: exiting")
                 return 0
+            wait_for_signal.cancel()
             event = wait_for_event.result()
             if event is None:
                 logger.warning("trec: watch stream ended unexpectedly")
@@ -100,6 +132,38 @@ async def _run_until_terminal(
                 return 0
     finally:
         await events.aclose()
+
+
+async def _record_last_state(
+    conn: asyncpg.Connection,
+    task_id: str,
+    core_v1: client.CoreV1Api,
+    pod_name: str,
+    namespace: str,
+    snapshot: TaskStateSnapshot,
+    read_output: ReadOutput,
+) -> None:
+    """Apply the Pod's current status once more, within a time budget.
+
+    The watch may lag behind the executors' last transitions, and only
+    trec can read output files on the task volume, so this is the last
+    chance to record them; tctl backfills whatever is still missing.
+    Never raises.
+    """
+    # The stubs don't list the client's `_request_timeout`.
+    api: Any = core_v1
+    try:
+        async with asyncio.timeout(_LAST_STATE_TIMEOUT_SECONDS):
+            pod = await asyncio.to_thread(
+                api.read_namespaced_pod,
+                name=pod_name,
+                namespace=namespace,
+                _request_timeout=_LAST_STATE_REQUEST_TIMEOUT,
+            )
+            status = pod.to_dict().get("status") or {}
+            await _apply_pod_snapshot(conn, task_id, status, snapshot, read_output)
+    except Exception as exc:  # noqa: BLE001 - exiting promptly matters more
+        logger.warning("trec: could not record the Pod's last state: %s", exc)
 
 
 async def _next(events: AsyncGenerator[PodEvent]) -> PodEvent | None:
@@ -141,14 +205,14 @@ async def _apply_event(
     """Persist a single non-terminal observation.
 
     Executor finishes land as `executor_logs` rows, with the tail of the
-    executor's log as `stdout` (stored as None if it can't be read);
+    executor's output as `stdout` and `stderr` (None if it can't be read);
     filer non-zero exits land as `system_logs` strings. Terminal state is
     tctl's exclusive write — trec touches neither the tasks row nor
     `write_terminal_state`.
     """
     if event.kind is EventKind.EXECUTOR_FINISHED:
         if event.executor_index is not None and event.exit_code is not None:
-            stdout = await read_output(event.executor_index)
+            stdout, stderr = await read_output(event.executor_index)
             await state_db.append_executor_log(
                 conn,
                 task_id,
@@ -157,6 +221,7 @@ async def _apply_event(
                 start_time=_parse_iso(event.started_at),
                 end_time=_parse_iso(event.finished_at),
                 stdout=stdout,
+                stderr=stderr,
             )
         return
 

@@ -86,15 +86,12 @@ A path below another mounted path is covered by that mount. Only data
 under these paths persists between executors and reaches TOF; anything
 else an executor writes stays in its own container and is lost.
 
-<Callout type="warn">
-
-Poiesis doesn't create the directories of task `volumes`. A volume path
-with a mount of its own appears (the kubelet creates mount points), but
-one below another mounted path doesn't exist until an executor makes it.
-An engine that expects an empty directory there (Sprocket does) may
-fail; see [Sprocket](../guides/workflow-engines.md#sprocket).
-
-</Callout>
+Each of these directories exists, empty, before the first executor runs:
+the kubelet creates the mount points, and TIF creates the ones below
+another mounted path (a volume `/mnt/task/usage` when `/mnt/task` is
+mounted), after staging inputs. Both get the mode of the volume root, so
+an executor running as another user than TIF can write there. Paths
+that already exist, such as staged inputs, are left as they are.
 
 A task is refused with `400 Bad Request` if a path:
 

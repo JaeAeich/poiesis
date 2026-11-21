@@ -49,12 +49,13 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 from poiesis.api.tes.models import TesState
-from poiesis.core import ignore_error
-from poiesis.core.executor_logs import read_executor_output
+from poiesis.core import executor_shell, ignore_error
+from poiesis.core.executor_logs import read_executor_streams, streams_from_pod
 from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.pod_status import (
     extract_pending_failure_reason,
     extract_terminal_reason,
+    is_lifecycle_stop,
     pod_terminated_terminal,
 )
 from poiesis.db import state as state_db
@@ -292,11 +293,14 @@ async def _backfill_executor_logs(
     keyed on `(task_log_id, ordinal)`. Walks `initContainerStatuses` for
     containers named `exec-N`; ignores trec/tif/tof. Executors trec
     already recorded are skipped, so their logs aren't read again; for
-    the others the tail of the container log is stored as `stdout`.
+    the others the tail of the container log is stored as `stdout`, or as
+    `stderr` when the executor writes its stdout to a file. tctl doesn't
+    mount task volumes, so such files aren't read.
     """
     metadata = pod.get("metadata") or {}
     pod_name = metadata.get("name") or ""
     namespace = metadata.get("namespace") or ""
+    streams = streams_from_pod(pod)
     recorded = await state_db.recorded_executor_ordinals(conn, task_id)
     statuses = (
         (pod.get("status") or {}).get("init_container_statuses")
@@ -319,7 +323,14 @@ async def _backfill_executor_logs(
         exit_code = ignore_error.recorded_exit_code(terminated)
         if exit_code is None or ordinal in recorded:
             continue
-        stdout = await read_executor_output(core_v1, pod_name, namespace, ordinal)
+        executor_streams = streams.get(ordinal)
+        stdout, stderr = await read_executor_streams(
+            core_v1,
+            pod_name,
+            namespace,
+            ordinal,
+            executor_streams.without_files() if executor_streams else None,
+        )
         await state_db.append_executor_log(
             conn,
             task_id,
@@ -332,6 +343,7 @@ async def _backfill_executor_logs(
                 terminated.get("finished_at") or terminated.get("finishedAt")
             ),
             stdout=stdout,
+            stderr=stderr,
         )
 
 
@@ -343,14 +355,15 @@ def _terminal_system_logs(
 
     Walks every container status and surfaces termination reasons that
     operators care about: OOMKill, non-zero exit, specific waiting
-    reasons. Returns an empty list for COMPLETE (happy path needs no
-    system_logs noise).
+    reasons. trec and `ack` stopped as the Pod ends are left out
+    (`is_lifecycle_stop`). Returns an empty list for COMPLETE (happy path
+    needs no system_logs noise).
     """
     if proposed is TesState.COMPLETE:
         return []
 
     lines: list[str] = []
-    wrapped = ignore_error.wrapped_executor_names(pod)
+    wrapped = executor_shell.wrapped_executors(pod)
     status = pod.get("status") or {}
     for key in (
         "init_container_statuses",
@@ -361,12 +374,12 @@ def _terminal_system_logs(
         for entry in status.get(key) or []:
             name = entry.get("name") or "?"
             terminated = (entry.get("state") or {}).get("terminated")
-            if not terminated:
+            if not terminated or is_lifecycle_stop(status, name, terminated):
                 continue
             reason = terminated.get("reason")
             exit_code = terminated.get("exit_code") or terminated.get("exitCode")
             shell_failure = (
-                ignore_error.start_failure_log(name, terminated)
+                executor_shell.start_failure_log(name, terminated, wrapped[name])
                 if name in wrapped
                 else None
             )

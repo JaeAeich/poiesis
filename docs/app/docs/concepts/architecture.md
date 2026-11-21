@@ -36,11 +36,15 @@ The in-pod recorder. It watches its own Pod and writes:
 
 - `RUNNING` when it starts, before `tif` and the executors;
 - one `executor_logs` row per executor: start, end, exit code, and the
-  last 64 KiB of the container log as `stdout`;
+  last 64 KiB of the container log as `stdout` (or of the executor's
+  `stdout` and `stderr` files, read from the task volume);
 - `system_logs` lines when `tif` or `tof` exit non-zero.
 
 It never writes the terminal state; TCtl does. It exits when the Pod
-reaches a terminal phase or on `SIGTERM`.
+reaches a terminal phase or on `SIGTERM`, which the kubelet sends once
+the other containers have ended: it reads the Pod once more, records what
+the watch hadn't delivered, and exits 0, so the Pod ends without waiting
+out its grace period.
 
 ## TCtl
 

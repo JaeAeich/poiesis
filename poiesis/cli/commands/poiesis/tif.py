@@ -32,10 +32,16 @@ class TifCommand(BaseCommand):
             required=True,
             help="UUID of the task whose inputs should be staged.",
         )
-        def run_cmd(task_id: str) -> None:
+        @click.option(
+            "--mkdir",
+            "dirs",
+            multiple=True,
+            help="Executor path of a directory to create after staging; repeatable.",
+        )
+        def run_cmd(task_id: str, dirs: tuple[str, ...]) -> None:
             dsn = _required_env("DATABASE_URL")
             click.echo(f"--- TIF --- task={task_id}")
-            sys.exit(asyncio.run(_run(task_id, dsn)))
+            sys.exit(asyncio.run(_run(task_id, dsn, dirs)))
 
     def get_info(self) -> dict[str, Any]:
         """Service information for `poiesis tif info`."""
@@ -51,8 +57,8 @@ class TifCommand(BaseCommand):
         )
 
 
-async def _run(task_id: str, dsn: str) -> int:
-    """Fetch the task from Postgres and stage its inputs."""
+async def _run(task_id: str, dsn: str, dirs: tuple[str, ...] = ()) -> int:
+    """Fetch the task from Postgres, stage its inputs and create `dirs`."""
     conn = await asyncpg.connect(dsn)
     try:
         task = await tasks_db.get_task(conn, task_id, view=tasks_db.TaskView.FULL)
@@ -64,11 +70,11 @@ async def _run(task_id: str, dsn: str) -> int:
         return 1
 
     inputs = task.inputs or []
-    if not inputs:
+    if not inputs and not dirs:
         click.echo("no inputs declared; nothing to stage")
         return 0
 
-    await Tif(task_id, inputs).execute()
+    await Tif(task_id, inputs, dirs).execute()
     return 0
 
 

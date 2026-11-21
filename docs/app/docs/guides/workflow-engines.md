@@ -9,7 +9,7 @@ description: Point Nextflow, Snakemake, Sprocket, cwl-tes, py-tes or Cromwell at
 | Nextflow (`nf-ga4gh`) | Tested | Nextflow 25.10.4, `nf-ga4gh` 1.5.0 |
 | Snakemake (TES executor) | Tested | Snakemake 9.27.2, plugin 0.1.3 |
 | py-tes | Tested | 1.1.4 |
-| Sprocket | Partly tested: two workarounds | 0.34.1 |
+| Sprocket | Tested | Sprocket 0.34.1 |
 | cwl-tes | Partly tested: API key as Basic password only | main branch |
 | Cromwell | Not tested yet | |
 | Toil | Not tested yet | |
@@ -176,7 +176,6 @@ url = "http://localhost:8000/ga4gh/tes/v1"
 insecure = true          # needed for an http:// URL
 inputs = "s3://poiesis-test/sprocket/inputs/"
 outputs = "s3://poiesis-test/sprocket/outputs/"
-cgroup_usage = false     # see below
 
 [run.backends.poiesis.auth]
 type = "bearer"
@@ -203,26 +202,22 @@ it uploads local `File` inputs under `inputs` and reads each task's
 `stdout`, `stderr` and output files from under `outputs`. `s3://`
 `File` inputs are passed to Poiesis as they are.
 
-Things that trip runs up:
+Sprocket sets each executor's `stdout` and `stderr` to
+`/mnt/task/stdout` and `/mnt/task/stderr` and uploads both as outputs;
+Poiesis writes them there (see
+[stdin, stdout and stderr](../concepts/tasks.md#stdin-stdout-and-stderr)),
+and the task logs show their tails. With `cgroup_usage` on (the
+default), Sprocket also records each task's CPU and memory use in a task
+volume, `/mnt/task/usage`, which TIF creates.
 
-- Sprocket declares `/mnt/task/stdout` and `/mnt/task/stderr` as the
-  executor's `stdout` and `stderr` and as `FILE` outputs. Poiesis
-  doesn't write the executor's output to those paths yet, so TOF
-  fails and the task ends in `EXECUTOR_ERROR`. Until it does, start
-  each `command` with
-  `exec > /mnt/task/stdout 2> /mnt/task/stderr`.
-- With `cgroup_usage` on (the default), Sprocket adds a task volume
-  `/mnt/task/usage` and also lists it as a `DIRECTORY` output.
-  Poiesis doesn't create volume directories, so the directory is
-  missing and TOF fails. Set `cgroup_usage = false`.
-- Sprocket runs commands with `bash` by default; for images without it
-  (`alpine`), set `shell = "sh"` under `[run.task]`.
+Sprocket runs commands with `bash` by default; for images without it
+(`alpine`), set `shell = "sh"` under `[run.task]`.
 
 Sprocket sends `ignore_error: true` and reads the exit code from the
 task log, so a task with a non-zero exit is `COMPLETE` in Poiesis and
 failed in Sprocket.
 
-Checked with Sprocket 0.34.1, bearer and Basic.
+Checked with Sprocket 0.34.1, bearer and Basic, `cgroup_usage` on.
 
 ## Cromwell
 

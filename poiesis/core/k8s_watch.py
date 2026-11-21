@@ -20,6 +20,12 @@ The watcher reconnects on stream timeout (the kubernetes client returns
 when its `timeout_seconds` window expires). It only surrenders when the
 caller cancels its task or the underlying API raises a non-recoverable
 exception.
+
+The blocking watch can't be interrupted, so it runs on a daemon thread of
+its own, not on the event loop's default executor: `asyncio.run` waits
+for the executor's threads on its way out, so a consumer that stops early
+(trec on SIGTERM) would hang until the stream timed out, and the kubelet
+would SIGKILL it after the grace period.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -80,26 +87,25 @@ async def watch_pods(
 ) -> AsyncGenerator[PodEvent]:
     """Yield Pod events matching `selector` until cancelled.
 
-    Internally runs the blocking kubernetes watch on a worker thread and
+    Internally runs the blocking kubernetes watch on a daemon thread and
     forwards events through an asyncio queue. Stream-timeout reconnects
     are transparent. A fatal stream error logs and ends the iterator.
+    Once the consumer stops, the thread's events are dropped; it ends with
+    the process, or when it next finds the loop closed.
     """
     queue: asyncio.Queue[PodEvent | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
-    producer = loop.run_in_executor(
-        None, _run_watch_thread, core_v1, selector, queue, loop
-    )
-    try:
-        while True:
-            event = await queue.get()
-            if event is None:
-                return
-            yield event
-    finally:
-        # We can't actually stop the blocking watch from outside, but
-        # cancelling the future lets the executor reclaim the slot once
-        # the next stream-timeout completes.
-        producer.cancel()
+    threading.Thread(
+        target=_run_watch_thread,
+        args=(core_v1, selector, queue, loop),
+        name="pod-watch",
+        daemon=True,
+    ).start()
+    while True:
+        event = await queue.get()
+        if event is None:
+            return
+        yield event
 
 
 def _run_watch_thread(
@@ -111,7 +117,8 @@ def _run_watch_thread(
     """Thread body: stream watch events onto the asyncio queue.
 
     Reconnects on stream timeout. Pushes a `None` sentinel on
-    unrecoverable errors so the consumer terminates cleanly.
+    unrecoverable errors so the consumer terminates cleanly. Returns once
+    the event loop is closed: nobody is left to consume.
     """
     try:
         while True:
@@ -131,11 +138,15 @@ def _run_watch_thread(
                 pod = raw["object"]
                 event_type = raw.get("type", "MODIFIED")
                 pod_dict = pod.to_dict() if hasattr(pod, "to_dict") else dict(pod)
-                with contextlib.suppress(RuntimeError):
+                try:
                     loop.call_soon_threadsafe(
                         queue.put_nowait, PodEvent(type=event_type, pod=pod_dict)
                     )
+                except RuntimeError:  # the loop is closed
+                    return
             # Stream timed out; loop and reconnect.
+            if loop.is_closed():
+                return
     except Exception:
         logger.exception("pod watch stream failed")
         with contextlib.suppress(RuntimeError):

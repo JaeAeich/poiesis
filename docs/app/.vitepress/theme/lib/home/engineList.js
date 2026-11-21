@@ -60,9 +60,9 @@ export const ENGINES = [
   {
     name: "Sprocket",
     doc: "sprocket",
-    detail: "WDL · 0.34.1, two workarounds for now",
-    status: "part",
-    label: "Partly tested",
+    detail: "WDL",
+    status: "",
+    label: "Tested · 0.34.1",
     logo: { file: "sprocket.png", crop: true },
     size: 80,
   },
