@@ -9,7 +9,10 @@ from typing import TYPE_CHECKING
 
 from poiesis.core.constants import FILER_PVC_PATH
 from poiesis.core.services.filer.filer import Filer
-from poiesis.core.services.filer.filer_strategy_factory import create_input_strategy
+from poiesis.core.services.filer.filer_strategy_factory import (
+    create_input_strategy,
+    input_url,
+)
 from poiesis.core.services.filer.strategy.filer_strategy import redact_url
 
 if TYPE_CHECKING:
@@ -47,15 +50,14 @@ class Tif(Filer):
     async def file(self) -> None:
         """Filing logic — download inputs, then create the task's directories."""
         for tes_input in self.inputs:
-            logger.info(
-                "Downloading %s to %s", redact_url(tes_input.url), tes_input.path
-            )
-            strategy = create_input_strategy(tes_input.url, tes_input)
+            url = input_url(tes_input)
+            logger.info("Downloading %s to %s", redact_url(url), tes_input.path)
+            strategy = create_input_strategy(url, tes_input)
             logger.debug("Filer strategy: %s", strategy.__class__.__name__)
             try:
                 await strategy.download()
             except Exception as e:
-                logger.exception("Error downloading %s", redact_url(tes_input.url))
+                logger.exception("Error downloading %s", redact_url(url))
                 # Names the input in the cause the filer reports.
                 e.add_note(f"input {tes_input.path}")
                 raise

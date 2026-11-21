@@ -42,7 +42,8 @@ after they finish.
   scheduling.
 - **S3 in, S3 out**: `inputs[]` and `outputs[]` point at object storage.
 - **Inline content**: `inputs[].content` carries the file body; no
-  external storage needed.
+  external storage needed. An input with non-empty `content` ignores its
+  `url`, as TES requires.
 - **Multi-executor**: executors run in order; data persists between them
   only under the task's [paths](./task-volumes.md#task-paths).
 

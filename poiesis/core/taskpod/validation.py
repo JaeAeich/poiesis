@@ -34,9 +34,9 @@ def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
     Raises ``ValueError``; the API translates this into HTTP 400.
     """
     for idx, inp in enumerate(task.inputs or []):
-        # Inline `content` inputs carry no URL; the empty-scheme entry
-        # in the filer registry handles them, so `can_input(None)` is True.
-        if not _filer.can_input(inp.url):
+        # Inline `content` wins over `url`; the empty-scheme entry in the
+        # filer registry handles it, so `can_input(None)` is True.
+        if not _filer.can_input(_filer.input_url(inp)):
             raise ValueError(
                 f"inputs[{idx}].url scheme is not supported as a TES input: {inp.url!r}"
             )

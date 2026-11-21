@@ -93,6 +93,14 @@ def can_output(uri: str | None) -> bool:
     return entry is not None and entry.output is not None
 
 
+def input_url(tes_input: TesInput) -> str | None:
+    """The URL `tes_input` is staged from; None stages its inline content.
+
+    TES: "If content is not empty, "url" must be ignored."
+    """
+    return None if tes_input.content else tes_input.url
+
+
 def create_input_strategy(uri: str | None, payload: TesInput) -> InputFilerStrategy:
     """Construct an input strategy for `uri`, or raise `ValueError`."""
     entry = _lookup(uri)
