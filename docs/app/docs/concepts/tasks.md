@@ -165,9 +165,27 @@ lands once and a racing cancel wins, without application locks. See
 
 ## Time limit
 
-Each task's Job sets `activeDeadlineSeconds: 3600`, which the chart
-doesn't expose. A task still running after an hour is stopped by
-Kubernetes and fails.
+Each task's Job sets `activeDeadlineSeconds` from the chart value
+`taskpods.activeDeadlineSeconds`: 3600 seconds (one hour) by default.
+The limit is the same for every task; a TES request can't change it.
+
+```yaml
+taskpods:
+  activeDeadlineSeconds: 86400 # one day; null for no limit
+```
+
+The clock starts when the Job is created, so time spent waiting for a
+node, pulling images and staging inputs counts. When it runs out,
+Kubernetes deletes the Pod and the task fails, normally as
+`SYSTEM_ERROR`: [TCtl](./architecture.md#tctl) finds the task without
+a Pod.
+
+A new value applies to tasks created after the API restarts with it;
+tasks that already have a Job keep the limit they were created with.
+
+With `null` there is no limit. A task whose Pod can never be scheduled
+(no fitting node, a volume that can't be bound) then stays `QUEUED`
+until it is cancelled.
 
 ## Cancelling
 

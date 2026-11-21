@@ -56,6 +56,9 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 - Leave `taskpods.outputGlobFallback` off unless clients need it.
 - Leave `taskpods.fileUrlRoots` empty unless tasks read shared data you
   mount into TaskPods; list only those mounts.
+- `taskpods.activeDeadlineSeconds` set above your longest task. The
+  default stops every task after one hour. See
+  [Time limit](../concepts/tasks.md#time-limit).
 
 ## Identity
 

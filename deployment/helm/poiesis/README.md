@@ -63,6 +63,12 @@ Full schema in `values.schema.json`. The fields most deployments customise:
 | `annotations`        | dict           | `{}`            | Merged onto every per-task PVC. Use for Velero/Kasten backup selectors. |
 | `retainAfterSeconds` | integer / null | `3600`          | `ttlSecondsAfterFinished` on the per-task Job. `null` → retained until manually deleted (audit). |
 
+### Time limit (`taskpods.activeDeadlineSeconds`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `taskpods.activeDeadlineSeconds` | integer / null | `3600` | `activeDeadlineSeconds` on the per-task Job: how long a task may take, counted from the Job's creation. Kubernetes stops a task that runs longer and the task fails. Integer ≥ 1. `null` → no limit; a task whose Pod can never be scheduled then stays `QUEUED` until cancelled. |
+
 ### Outputs (`taskpods.outputGlobFallback`)
 
 | Path | Type | Default | Description |

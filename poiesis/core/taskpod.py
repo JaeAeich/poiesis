@@ -155,8 +155,10 @@ class RuntimeConfig:
         job_ttl_seconds: ttlSecondsAfterFinished on the Job. None omits
             the field entirely → Job (and PVC via owner ref) is retained
             until manually deleted. Use for audit-retention deployments.
-        active_deadline_seconds: activeDeadlineSeconds on the Job
-            (covers stuck-Pending).
+        active_deadline_seconds: activeDeadlineSeconds on the Job: the
+            task's time limit, counted from the Job's start (so it also
+            ends a Pod that is never scheduled). None omits the field →
+            no limit. Sourced from ``taskpods.activeDeadlineSeconds``.
         grace_period_seconds: terminationGracePeriodSeconds on the Pod.
         pod_security_enforce: `restricted` | `baseline` | `off`. Applies to
             poiesis-owned containers only; executor containers run user
@@ -207,7 +209,7 @@ class RuntimeConfig:
     image_pull_policy: str = "IfNotPresent"
     taskpod_service_account: str | None = None
     job_ttl_seconds: int | None = 3600
-    active_deadline_seconds: int = 3600
+    active_deadline_seconds: int | None = 3600
     grace_period_seconds: int = 30
     pod_security_enforce: PodSecurityEnforce = PodSecurityEnforce.RESTRICTED
     image_pull_secrets: tuple[str, ...] = ()

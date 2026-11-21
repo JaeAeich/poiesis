@@ -78,6 +78,27 @@ def _parse_optional_int_env(name: str) -> int | None:
         raise ValueError(f"{name} must be an integer or unset, got {raw!r}") from exc
 
 
+def _parse_time_limit_env(name: str, default: int) -> int | None:
+    """Parse a task time limit: whole seconds >= 1, or 'null' for no limit.
+
+    Unset/empty is default. Anything else raises, so a typo stops the API
+    at startup instead of silently changing how long tasks may run.
+    """
+    raw = os.environ.get(name, "")
+    if raw == "":
+        return default
+    if raw.lower() in {"null", "none"}:
+        return None
+    message = f"{name} must be an integer >= 1 or null, got {raw!r}"
+    try:
+        seconds = int(raw)
+    except ValueError as exc:
+        raise ValueError(message) from exc
+    if seconds < 1:
+        raise ValueError(message)
+    return seconds
+
+
 def _parse_csv_env(name: str, default: tuple[str, ...] = ()) -> tuple[str, ...]:
     """Comma-separated env value → tuple. Empty/unset returns default."""
     raw = os.environ.get(name, "")
@@ -971,6 +992,13 @@ class Settings(BaseModel):
             else 3600
         ),
     )
+    # Task time limit: activeDeadlineSeconds on the Job. None → no limit.
+    # Strict: a typo must not change how long tasks may run.
+    active_deadline_seconds: int | None = Field(
+        default_factory=lambda: _parse_time_limit_env(
+            "POIESIS_ACTIVE_DEADLINE_SECONDS", 3600
+        ),
+    )
     taskpod_service_account: str | None = Field(
         default_factory=lambda: (
             os.environ.get("POIESIS_TASKPOD_SERVICE_ACCOUNT") or None
@@ -1060,6 +1088,7 @@ class Settings(BaseModel):
             pvc_annotations=self.pvc_annotations,
             taskpod_service_account=self.taskpod_service_account,
             job_ttl_seconds=self.job_ttl_seconds,
+            active_deadline_seconds=self.active_deadline_seconds,
             pod_security_enforce=self.pod_security_enforce,
             image_pull_secrets=self.image_pull_secrets,
             postgres_ca_configmap=self.postgres_ca_configmap,
