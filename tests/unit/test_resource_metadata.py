@@ -157,6 +157,7 @@ def test_valid_token_gets_no_challenge(
         'https://poiesis.example.org/"x',
         "https://poiesis.example.org/a b",
         "https://poiesis.example.org/\\",
+        "https://poiesis.example.org/{x}",
     ],
 )
 def test_invalid_resource_refused(value: str) -> None:

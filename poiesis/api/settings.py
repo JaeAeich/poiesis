@@ -629,8 +629,9 @@ class AuthSettings(BaseModel):
             not _is_http_url(value)
             or any(c in value for c in "?#")
             or "@" in urlsplit(value).netloc
-            # Quoted in WWW-Authenticate: no quotes, backslashes, spaces.
-            or re.search(r'[\s"\\]', value)
+            # Quoted in WWW-Authenticate (no quotes, backslashes, spaces)
+            # and a route path (no braces).
+            or re.search(r'[\s"\\{}]', value)
         ):
             raise ValueError(
                 "POIESIS_AUTH_RESOURCE must be an http(s) URL without query, "
