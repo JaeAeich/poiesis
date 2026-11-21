@@ -13,11 +13,17 @@ import math
 import os
 import re
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 import httpx
-from kubernetes.client import V1EnvVar, V1EnvVarSource, V1SecretKeySelector
+from kubernetes.client import (
+    V1EnvVar,
+    V1EnvVarSource,
+    V1ResourceRequirements,
+    V1SecretKeySelector,
+)
+from kubernetes.utils import parse_quantity  # ty: ignore[unresolved-import]
 from pydantic import (
     AnyUrl,
     BaseModel,
@@ -34,7 +40,15 @@ from poiesis.core.constants import FILE_URL_ROOTS_ENV, OUTPUT_GLOB_FALLBACK_ENV
 from poiesis.core.services.filer.file_urls import parse_file_url_roots
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 
+if TYPE_CHECKING:
+    from decimal import Decimal
+
 logger = logging.getLogger(__name__)
+
+#: Resources of trec, of tif and tof, and of ack, as JSON resources blocks.
+RECORDER_RESOURCES_ENV = "POIESIS_TASKPOD_RECORDER_RESOURCES"
+FILER_RESOURCES_ENV = "POIESIS_TASKPOD_FILER_RESOURCES"
+ACK_RESOURCES_ENV = "POIESIS_TASKPOD_ACK_RESOURCES"
 
 
 def _parse_int_env(name: str, default: int | None = None) -> int | None:
@@ -168,6 +182,78 @@ def _parse_json_array_env(name: str) -> list[dict[str, Any]]:
             raise TypeError(f"{name}[{idx}] must be a JSON object")
         items.append({str(k): v for k, v in entry.items()})
     return items
+
+
+def _parse_quantity(where: str, quantity: object) -> Decimal:
+    """A non-negative Kubernetes quantity (``100m``, ``256Mi``, ``2``)."""
+    if isinstance(quantity, bool) or not isinstance(quantity, (str, int, float)):
+        raise TypeError(f"{where} must be a quantity, got {quantity!r}")
+    try:
+        amount = parse_quantity(quantity)
+    except ValueError as exc:
+        raise ValueError(f"{where} is not a quantity: {quantity!r}") from exc
+    if amount < 0:
+        raise ValueError(f"{where} must not be negative, got {quantity!r}")
+    return amount
+
+
+def _parse_resources_env(name: str) -> dict[str, dict[str, str]] | None:
+    """JSON Kubernetes resources block env value → {requests, limits}.
+
+    Empty/unset returns None: the container gets no requests or limits.
+    Anything else must be an object with only ``requests`` and ``limits``,
+    each mapping resource names to non-negative quantities (``100m``,
+    ``256Mi``), with no request above its limit. A bad value raises, so
+    the API stops at startup rather than every TaskPod being rejected.
+    """
+    raw = os.environ.get(name, "")
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{name} is not valid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise TypeError(f"{name} must encode a JSON object")
+    unknown = set(parsed) - {"requests", "limits"}
+    if unknown:
+        raise ValueError(f"{name}: unknown keys {sorted(unknown)}")
+    block: dict[str, dict[str, str]] = {}
+    amounts: dict[str, dict[str, Decimal]] = {"requests": {}, "limits": {}}
+    for kind in ("requests", "limits"):
+        entries = parsed.get(kind)
+        if entries is None:
+            continue
+        if not isinstance(entries, dict):
+            raise TypeError(f"{name}.{kind} must be a JSON object")
+        block[kind] = {}
+        for resource, quantity in entries.items():
+            where = f"{name}.{kind}.{resource}"
+            amounts[kind][resource] = _parse_quantity(where, quantity)
+            block[kind][resource] = str(quantity)
+    _check_requests_within_limits(name, amounts)
+    return block or None
+
+
+def _check_requests_within_limits(
+    name: str, amounts: dict[str, dict[str, Decimal]]
+) -> None:
+    """Refuse a request above its limit: Kubernetes rejects such a Pod."""
+    for resource, request in amounts["requests"].items():
+        limit = amounts["limits"].get(resource)
+        if limit is not None and request > limit:
+            raise ValueError(f"{name}: requests.{resource} is above limits.{resource}")
+
+
+def _resources(
+    block: dict[str, dict[str, str]] | None,
+) -> V1ResourceRequirements | None:
+    """Parsed resources block → the container's V1ResourceRequirements."""
+    if block is None:
+        return None
+    return V1ResourceRequirements(
+        requests=block.get("requests"), limits=block.get("limits")
+    )
 
 
 #: Env-var names operators cannot redefine via ``taskpods.extraEnv``.
@@ -1063,6 +1149,17 @@ class Settings(BaseModel):
             os.environ.get(FILE_URL_ROOTS_ENV)
         ),
     )
+    # Resources of the poiesis-owned TaskPod containers (JSON resources
+    # blocks); unset leaves them without requests or limits.
+    recorder_resources: dict[str, dict[str, str]] | None = Field(
+        default_factory=lambda: _parse_resources_env(RECORDER_RESOURCES_ENV),
+    )
+    filer_resources: dict[str, dict[str, str]] | None = Field(
+        default_factory=lambda: _parse_resources_env(FILER_RESOURCES_ENV),
+    )
+    ack_resources: dict[str, dict[str, str]] | None = Field(
+        default_factory=lambda: _parse_resources_env(ACK_RESOURCES_ENV),
+    )
     aws_endpoint_url: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_ENDPOINT_URL") or None,
     )
@@ -1129,6 +1226,9 @@ class Settings(BaseModel):
             taskpod_extra_volume_mounts=self.taskpod_extra_volume_mounts,
             output_glob_fallback=self.output_glob_fallback,
             file_url_roots=self.file_url_roots,
+            recorder_resources=_resources(self.recorder_resources),
+            filer_resources=_resources(self.filer_resources),
+            ack_resources=_resources(self.ack_resources),
         )
 
     def _credential_env(self) -> list[V1EnvVar]:

@@ -6,7 +6,8 @@ description: Every key of the Poiesis Helm chart (deployment/helm/poiesis/values
 
 Every key of the chart at `deployment/helm/poiesis`, with its default.
 The [Deploy](/deploy) page writes a `values.yaml` with only the keys you
-change. `values.schema.json` validates values at `helm install`.
+change. `values.schema.json` validates values at `helm install` and
+`helm lint`: an unknown key (a typo such as `taskpod:`) fails the install.
 
 Defaults are layered: top-level keys apply to every component, and
 `api:` and `tctl:` override only what differs. `taskpods:` shapes what
@@ -156,8 +157,11 @@ starting. See [Service info](../guides/production.md#service-info).
 | `api.image` | `{}` | Image override (registry, repository, tag, pullPolicy), e.g. for canaries; TaskPods use the same image. |
 | `api.resources` | requests `100m`/`256Mi`, limits `1000m`/`512Mi` | Container resources. |
 | `api.probes.startup` | enabled, every 2 s, 30 failures | Startup probe. |
-| `api.probes.readiness` | enabled, every 5 s, timeout 2 s | Readiness probe. |
-| `api.probes.liveness` | enabled, every 10 s, timeout 2 s | Liveness probe. |
+| `api.probes.readiness` | enabled, every 5 s, timeout 2 s, 3 failures | Readiness probe. |
+| `api.probes.liveness` | enabled, every 10 s, timeout 2 s, 3 failures | Liveness probe. |
+| `api.preStopSleepSeconds` | `5` | Seconds the Pod sleeps in a preStop hook before SIGTERM, so Services and ingresses stop sending it requests first. `0` is no hook. |
+| `api.terminationGracePeriodSeconds` | `40` | Grace period. Gunicorn lets running requests finish for up to 30 s after SIGTERM; keep it at least `preStopSleepSeconds` + 30. |
+| `api.topologySpreadConstraints` | `[]` | Pod topology spread, e.g. across zones. An entry without `labelSelector` gets the API Pods' labels. |
 | `api.service.type`, `.port`, `.annotations` | `ClusterIP`, `8000`, `{}` | The API Service. |
 | `api.ingress.enabled` | `false` | Create an Ingress. |
 | `api.ingress.className` | `""` | Ingress class; empty for the cluster default. |
@@ -173,7 +177,7 @@ starting. See [Service info](../guides/production.md#service-info).
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `tctl.replicas` | `1` | Leader election keeps one active; more give faster failover, not throughput. |
+| `tctl.replicas` | `1` | Leader election keeps one active; more give faster failover, not throughput. The chart renders no PodDisruptionBudget for TCtl: with one replica it would block node drains, and an evicted TCtl only delays task state updates. |
 | `tctl.unschedulableTimeoutSeconds` | `null` | Seconds a task may wait for its Pod to be created and scheduled before it ends `SYSTEM_ERROR`, at least 1. `null` waits until the [time limit](../concepts/tasks.md#time-limit). |
 | `tctl.image` | `{}` | Image override. |
 | `tctl.resources` | requests `50m`/`128Mi`, limits `500m`/`256Mi` | Container resources. |
@@ -200,9 +204,18 @@ Baked into TaskPod manifests by the API when a task is created. See
 | `taskpods.activeDeadlineSeconds` | `3600` | [Time limit](../concepts/tasks.md#time-limit) of a task in seconds (`activeDeadlineSeconds` of the Job), at least 1; `null` is no limit. Also ends the wait of a task that can't be scheduled. |
 | `taskpods.outputGlobFallback` | `false` | Upload everything under `path_prefix` when an output glob matches nothing. |
 | `taskpods.fileUrlRoots` | `[]` | Directories `file://` URLs may point into; empty turns the scheme off. See [Local paths](../concepts/storage.md#local-paths). |
+| `taskpods.systemResources.recorder` | requests `10m`/`128Mi`, limits `200m`/`256Mi` | Resources of `trec`, the sidecar that records the task. |
+| `taskpods.systemResources.filer` | requests `100m`/`256Mi`, limits `1000m`/`1Gi` | Resources of `tif` and `tof`. Transfers are streamed, so memory doesn't grow with file size. |
+| `taskpods.systemResources.ack` | requests `10m`/`128Mi`, limits `100m`/`256Mi` | Resources of `ack`, the last container. |
 | `taskpods.extraEnv` | `[]` | Env for `trec`, `tif`, `tof`. Reserved: `DATABASE_URL`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `POIESIS_*`. |
 | `taskpods.extraVolumes` | `[]` | Volumes added to every TaskPod. Reserved names: `task-data`, `postgres-ca`, `tmp`. |
 | `taskpods.extraVolumeMounts` | `[]` | Mounts for Poiesis containers and executors (reference data). |
+
+`taskpods.systemResources` entries are Kubernetes resources blocks
+(`requests`, `limits`). Your values merge with the defaults key by key;
+`null` (e.g. `ack: null`) leaves that container without requests or
+limits. A malformed block, or a request above its limit, stops the API
+at startup. Executors get their resources from the task.
 
 The serialised TaskPod extras are capped at about 32 KiB (the
 Kubernetes env-var limit); use a mounted ConfigMap for very large sets.
@@ -211,9 +224,12 @@ Kubernetes env-var limit); use a mounted ConfigMap for very large sets.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `networkPolicy.enabled` | `false` | Render NetworkPolicies for the API and TCtl. |
-| `networkPolicy.ingressFromPodSelector` | `{}` | Further pods (besides the release's own) allowed to reach the API. |
-| `networkPolicy.extraEgress` | `[]` | Extra egress rules for the API and TCtl. |
+| `networkPolicy.enabled` | `false` | Render NetworkPolicies for the API and TCtl. They may reach DNS, any address on TCP 443 and 6443, and Postgres; the API accepts traffic on 8000 from the release's own Pods and the peers below. |
+| `networkPolicy.databaseEgress.port` | `5432` | Postgres port. |
+| `networkPolicy.databaseEgress.to` | `[]` | NetworkPolicy peers where Postgres is (`ipBlock`, `namespaceSelector`, `podSelector`); empty is any address. `databaseEgress: null` drops the rule. |
+| `networkPolicy.ingressFrom` | `[]` | Peers allowed to reach the API, e.g. the ingress controller's namespace. |
+| `networkPolicy.ingressFromPodSelector` | `{}` | Labels of further Pods in the release namespace allowed to reach the API. |
+| `networkPolicy.extraEgress` | `[]` | Extra egress rules for the API and TCtl, e.g. an issuer or S3 endpoint on another port. |
 
 ## migrations
 

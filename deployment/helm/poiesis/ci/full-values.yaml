@@ -85,7 +85,24 @@ audit:
   enabled: true
 
 api:
-  replicas: 1
+  replicas: 2
+  probes:
+    readiness:
+      failureThreshold: 2
+    liveness:
+      failureThreshold: 6
+  preStopSleepSeconds: 10
+  terminationGracePeriodSeconds: 45
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: api
   resources:
     requests:
       cpu: 100m
@@ -111,6 +128,41 @@ taskpods:
     accessModes:
       - ReadWriteOnce
   activeDeadlineSeconds: 86400
+  systemResources:
+    recorder:
+      requests:
+        cpu: 20m
+        memory: 128Mi
+    filer:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 2
+        memory: 2Gi
+    # null: no requests or limits for ack.
+    ack: null
   extraEnv: []
   extraVolumes: []
   extraVolumeMounts: []
+
+networkPolicy:
+  enabled: true
+  databaseEgress:
+    port: 6432
+    to:
+      - ipBlock:
+          cidr: 10.0.12.0/24
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+  ingressFromPodSelector:
+    app: monitoring
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.10/32
+      ports:
+        - protocol: TCP
+          port: 9000

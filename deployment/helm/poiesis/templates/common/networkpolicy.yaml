@@ -1,3 +1,29 @@
+{{- /* Egress shared by the API and tctl: DNS, HTTPS / the Kubernetes API, Postgres. */}}
+{{- define "poiesis.networkPolicy.egress" -}}
+- to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  ports:
+    - { protocol: UDP, port: 53 }
+    - { protocol: TCP, port: 53 }
+{{- /* No `to`: `namespaceSelector: {}` matches Pods only, and the Kubernetes
+  API server, S3 and issuers are usually not Pods. */}}
+- ports:
+    - { protocol: TCP, port: 443 }
+    - { protocol: TCP, port: 6443 }
+{{- with .Values.networkPolicy.databaseEgress }}
+- ports:
+    - { protocol: TCP, port: {{ .port | int }} }
+  {{- with .to }}
+  to: {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- with .Values.networkPolicy.extraEgress }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}
 {{- if .Values.networkPolicy.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -21,26 +47,14 @@ spec:
         - podSelector:
             matchLabels: {{- toYaml . | nindent 14 }}
         {{- end }}
+        {{- with .Values.networkPolicy.ingressFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       ports:
         - protocol: TCP
           port: 8000
   egress:
-    - to:
-        - namespaceSelector: {}
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - { protocol: UDP, port: 53 }
-        - { protocol: TCP, port: 53 }
-    - to:
-        - namespaceSelector: {}
-      ports:
-        - { protocol: TCP, port: 443 }
-        - { protocol: TCP, port: 6443 }
-    {{- with .Values.networkPolicy.extraEgress }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
+    {{- include "poiesis.networkPolicy.egress" . | nindent 4 }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -55,20 +69,5 @@ spec:
       {{- include "poiesis.componentSelectorLabels" (dict "component" "tctl" "root" .) | nindent 6 }}
   policyTypes: [Egress]
   egress:
-    - to:
-        - namespaceSelector: {}
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - { protocol: UDP, port: 53 }
-        - { protocol: TCP, port: 53 }
-    - to:
-        - namespaceSelector: {}
-      ports:
-        - { protocol: TCP, port: 443 }
-        - { protocol: TCP, port: 6443 }
-    {{- with .Values.networkPolicy.extraEgress }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
+    {{- include "poiesis.networkPolicy.egress" . | nindent 4 }}
 {{- end }}

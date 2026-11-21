@@ -28,3 +28,7 @@ authz:
 # Off, so that an explicit false is rendered as false.
 audit:
   enabled: false
+
+# Defaults: Postgres egress to any address on 5432.
+networkPolicy:
+  enabled: true

@@ -337,6 +337,26 @@ CASES: dict[str, tuple[TesTask, RuntimeConfig]] = {
             taskpod_extra_volume_mounts=[{"name": "ref"}],
         ),
     ),
+    # the chart's default taskpods.systemResources on trec, tif, tof and ack
+    "system-resources": (
+        _task(inputs=[_inp("/data/in.txt")], outputs=[_out("/data/out.txt")]),
+        RuntimeConfig(
+            taskpod_namespace="poiesis",
+            poiesis_image="poiesis:golden",
+            recorder_resources=V1ResourceRequirements(
+                requests={"cpu": "10m", "memory": "128Mi"},
+                limits={"cpu": "200m", "memory": "256Mi"},
+            ),
+            filer_resources=V1ResourceRequirements(
+                requests={"cpu": "100m", "memory": "256Mi"},
+                limits={"cpu": "1000m", "memory": "1Gi"},
+            ),
+            ack_resources=V1ResourceRequirements(
+                requests={"cpu": "10m", "memory": "128Mi"},
+                limits={"cpu": "100m", "memory": "256Mi"},
+            ),
+        ),
+    ),
 }
 
 #: case name → (task, config) the builder must refuse; the golden file holds

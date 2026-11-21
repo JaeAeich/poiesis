@@ -2,9 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "poiesis chart values",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
   "required": ["image", "migrations", "database", "auth", "api", "tctl", "taskpods"],
   "properties": {
+    "global":            { "type": "object" },
     "nameOverride":      { "type": "string" },
     "fullnameOverride":  { "type": "string" },
     "commonLabels":      { "type": "object" },
@@ -168,11 +169,20 @@
       "properties": {
         "replicas":   { "type": "integer", "minimum": 1 },
         "image":      { "$ref": "#/$defs/imageOverride" },
-        "resources":  { "type": "object" },
+        "resources":  { "$ref": "#/$defs/resources" },
         "probes":     { "$ref": "#/$defs/probesSpec" },
         "service":    { "$ref": "#/$defs/serviceSpec" },
         "ingress":    { "$ref": "#/$defs/ingressSpec" },
         "pdb":        { "$ref": "#/$defs/pdbSpec" },
+        "preStopSleepSeconds":           { "type": "integer", "minimum": 0 },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+        "topologySpreadConstraints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["maxSkew", "topologyKey", "whenUnsatisfiable"]
+          }
+        },
         "autoscaling":{ "$ref": "#/$defs/hpaSpec" },
 
         "extraEnv":          { "type": "array" },
@@ -197,7 +207,7 @@
         "replicas":  { "type": "integer", "minimum": 1 },
         "unschedulableTimeoutSeconds": { "type": ["integer", "null"], "minimum": 1 },
         "image":     { "$ref": "#/$defs/imageOverride" },
-        "resources": { "type": "object" },
+        "resources": { "$ref": "#/$defs/resources" },
 
         "extraEnv":          { "type": "array" },
         "extraEnvFrom":      { "type": "array" },
@@ -227,6 +237,15 @@
           "items": { "type": "string", "pattern": "^/[^,]+$" }
         },
         "activeDeadlineSeconds": { "type": ["integer", "null"], "minimum": 1 },
+        "systemResources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "recorder": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/resources" }] },
+            "filer":    { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/resources" }] },
+            "ack":      { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/resources" }] }
+          }
+        },
         "extraEnv":          { "type": "array", "items": { "type": "object" } },
         "extraVolumes":      { "type": "array", "items": { "type": "object" } },
         "extraVolumeMounts": { "type": "array", "items": { "type": "object" } },
@@ -264,8 +283,18 @@
       "additionalProperties": false,
       "properties": {
         "enabled":                { "type": "boolean" },
+        "databaseEgress": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["port"],
+          "properties": {
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "to":   { "type": "array", "items": { "type": "object" } }
+          }
+        },
+        "ingressFrom":            { "type": "array", "items": { "type": "object" } },
         "ingressFromPodSelector": { "type": "object" },
-        "extraEgress":            { "type": "array" }
+        "extraEgress":            { "type": "array", "items": { "type": "object" } }
       }
     },
 
@@ -275,7 +304,7 @@
       "required": ["image"],
       "properties": {
         "image":     { "$ref": "#/$defs/imageSpec" },
-        "resources": { "type": "object" }
+        "resources": { "$ref": "#/$defs/resources" }
       }
     }
   },
@@ -407,6 +436,19 @@
         "name":        { "type": "string" },
         "annotations": { "type": "object" }
       }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": { "$ref": "#/$defs/resourceList" },
+        "limits":   { "$ref": "#/$defs/resourceList" },
+        "claims":   { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "resourceList": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number"] }
     },
     "probesSpec": {
       "type": "object",

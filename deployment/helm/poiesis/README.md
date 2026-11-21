@@ -42,7 +42,9 @@ Per-task TaskPods are created on-demand by the API in response to TES
 
 ## Values reference
 
-Full schema in `values.schema.json`. The fields most deployments customise:
+Full schema in `values.schema.json`; it refuses unknown keys, so a typo
+such as `taskpod:` fails `helm lint` and `helm install`. The fields most
+deployments customise:
 
 ### Required
 
@@ -104,6 +106,19 @@ kubectl -n poiesis-tasks create secret generic poiesis-s3 \
 | Path | Type | Default | Description |
 |---|---|---|---|
 | `taskpods.fileUrlRoots` | list of strings | `[]` | Directories `file://` URLs may point into. Empty turns the scheme off. List only directories mounted into TaskPods through `extraVolumes` / `extraVolumeMounts`. |
+
+### System-container resources (`taskpods.systemResources`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `taskpods.systemResources.recorder` | resources | requests `10m`/`128Mi`, limits `200m`/`256Mi` | `trec` sidecar: watches the Pod, writes state and logs. |
+| `taskpods.systemResources.filer` | resources | requests `100m`/`256Mi`, limits `1000m`/`1Gi` | `tif` and `tof`. Transfers stream (HTTP 8 KiB chunks, boto3 multipart), so memory doesn't grow with file size. |
+| `taskpods.systemResources.ack` | resources | requests `10m`/`128Mi`, limits `100m`/`256Mi` | `ack`, the last container. |
+
+Needed when the TaskPod namespace has a `ResourceQuota` on cpu or memory
+and no `LimitRange`. Values merge with the defaults; `null` removes a
+block. Rendered as JSON in `POIESIS_TASKPOD_{RECORDER,FILER,ACK}_RESOURCES`;
+a malformed block or a request above its limit stops the API at startup.
 
 ### TaskPod extension points (`taskpods.extraEnv`, `taskpods.extraVolumes`, `taskpods.extraVolumeMounts`)
 
@@ -167,11 +182,40 @@ built-in value; invalid values stop the API from starting.
 | `imagePullSecrets`   | list   | `[]`         | Propagated to every chart component and every TaskPod. |
 | `database.caConfigmap` | string | `""`       | ConfigMap (key `ca.crt`) mounted at `/etc/ssl/poiesis` for Postgres TLS. |
 
+### NetworkPolicy (`networkPolicy`)
+
+With `networkPolicy.enabled`, the API and tctl Pods may reach DNS, any
+address on TCP 443 and 6443 (Kubernetes API, S3, issuers) and Postgres.
+The API accepts traffic on 8000 from this release's Pods and the peers
+below only. The migration hook and TaskPods are not selected.
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `networkPolicy.enabled` | bool | `false` | Render the API and tctl NetworkPolicies. |
+| `networkPolicy.databaseEgress.port` | integer | `5432` | Postgres port the API and tctl may reach. |
+| `networkPolicy.databaseEgress.to` | list | `[]` | NetworkPolicy peers (`ipBlock`, `namespaceSelector`, `podSelector`) where Postgres is. Empty: any address. `databaseEgress: null` drops the rule. |
+| `networkPolicy.ingressFrom` | list | `[]` | Peers allowed to reach the API, e.g. a `namespaceSelector` for the ingress controller's namespace. |
+| `networkPolicy.ingressFromPodSelector` | object | `{}` | Labels of further Pods in the release namespace allowed to reach the API. |
+| `networkPolicy.extraEgress` | list | `[]` | Extra egress rules, e.g. an issuer or S3 endpoint on another port. |
+
 ### Unschedulable timeout (`tctl.unschedulableTimeoutSeconds`)
 
 | Path | Type | Default | Description |
 |---|---|---|---|
 | `tctl.unschedulableTimeoutSeconds` | integer / null | `null` | How long a task may wait for its Pod to be created and scheduled (ResourceQuota full, no node with room), counted from the Pod's (or, with no Pod yet, the Job's) creation. Past it, tctl ends the task as `SYSTEM_ERROR` with the scheduler's message and deletes its Job. `null` → the task stays `QUEUED` until `taskpods.activeDeadlineSeconds` ends it. Integer ≥ 1. A Pod already bound to a node that doesn't start (image pull, volume mount) always fails after 5 minutes. |
+
+### Rollout (`api.preStopSleepSeconds`, `api.terminationGracePeriodSeconds`, `api.topologySpreadConstraints`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `api.preStopSleepSeconds` | integer | `5` | preStop sleep before SIGTERM, so endpoints drop the Pod first. `0` → no hook. |
+| `api.terminationGracePeriodSeconds` | integer | `40` | Gunicorn drains running requests for up to 30 s after SIGTERM; keep this ≥ `preStopSleepSeconds` + 30. |
+| `api.topologySpreadConstraints` | list | `[]` | Pod topology spread. An entry without `labelSelector` gets the API Pods' selector labels. |
+| `api.probes.{readiness,liveness}.failureThreshold` | integer | `3` | Probe failures before the Pod is marked unready / restarted. |
+
+tctl has no PodDisruptionBudget: with the default one replica it would
+block node drains, and an evicted tctl only delays task state updates
+until a replica holds the lease again.
 
 ### Component overrides (`api:`, `tctl:`)
 
