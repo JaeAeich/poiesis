@@ -486,6 +486,13 @@ taskpods:
     # Job and PVC until manually deleted (audit-retention deployments).
     retainAfterSeconds: 3600
 
+  # What TOF does when an output glob (e.g. /outputs/*.vcf) matches no file.
+  #   false → uploads nothing for that output and logs a warning.
+  #   true  → uploads every file under the output's path_prefix instead, for
+  #           clients whose patterns don't match the files they mean. This can
+  #           export far more data than the client asked for.
+  outputGlobFallback: false
+
   # Operator-supplied TaskPod extensions. Append to every per-task pod.
   #
   # env / volumes inject into poiesis-owned containers (trec / tif / tof).

@@ -106,6 +106,20 @@ fails, so Poiesis runs an `ignore_error` executor under `/bin/sh`:
 Executors without `ignore_error` run with no shell, exactly as
 submitted.
 
+## Glob outputs
+
+An output whose `path` has wildcards, such as `/outputs/*.vcf`, uploads
+every file and directory that matches, each under its path relative to
+`path_prefix` (inferred from the path when unset). Patterns follow
+Python's `glob`: `*`, `?` and `[...]`; `**` matches one level only, and
+`{a,b}` is not expanded.
+
+If the glob matches no file, TOF uploads nothing for that output and
+logs a warning naming it; the task still succeeds. An operator can set
+`taskpods.outputGlobFallback: true` to upload every file under
+`path_prefix` instead, for clients whose patterns don't match the files
+they mean. That can export far more than the client asked for.
+
 ## HTTP(S) outputs
 
 An `outputs[].url` can be an `http://` or `https://` URL that grants
@@ -121,9 +135,10 @@ carries a `Content-Length` header, as presigned upload URLs require.
   output URL, keeping its query string. Those URLs carry no valid
   signature, so point the output URL at a server that signs each upload
   as it arrives and redirects it to the storage provider.
-- If a glob matches no file, TOF uploads every file under `path_prefix`
-  instead, as it does for every scheme. Behind a signing server, all of
-  those files are signed and stored.
+- If a glob matches no file, TOF uploads nothing (see
+  [Glob outputs](#glob-outputs)). With `taskpods.outputGlobFallback` on,
+  it uploads every file under `path_prefix` instead, and behind a
+  signing server all of those files are signed and stored.
 - An upload follows a 307 or 308 redirect and sends the file again to
   the new URL, unless the output URL is `https://` and the new URL
   isn't. The first request carries the file too, so up to the whole

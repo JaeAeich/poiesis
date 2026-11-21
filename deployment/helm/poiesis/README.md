@@ -63,6 +63,12 @@ Full schema in `values.schema.json`. The fields most deployments customise:
 | `annotations`        | dict           | `{}`            | Merged onto every per-task PVC. Use for Velero/Kasten backup selectors. |
 | `retainAfterSeconds` | integer / null | `3600`          | `ttlSecondsAfterFinished` on the per-task Job. `null` → retained until manually deleted (audit). |
 
+### Outputs (`taskpods.outputGlobFallback`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `taskpods.outputGlobFallback` | boolean | `false` | When an output glob matches no file, TOF uploads nothing and logs a warning. `true` uploads every file under the output's `path_prefix` instead. |
+
 ### TaskPod extension points (`taskpods.extraEnv`, `taskpods.extraVolumes`, `taskpods.extraVolumeMounts`)
 
 Operator-supplied env vars and volumes injected into every TaskPod. The

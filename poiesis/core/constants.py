@@ -7,3 +7,8 @@ nothing observable, so it's a plain constant rather than a config knob.
 """
 
 FILER_PVC_PATH: str = "/transfer"
+
+#: Env var the API sets on TIF/TOF when the operator turns on
+#: ``taskpods.outputGlobFallback``: an output glob that matches no file then
+#: uploads everything under the output's ``path_prefix`` instead of nothing.
+OUTPUT_GLOB_FALLBACK_ENV: str = "POIESIS_OUTPUT_GLOB_FALLBACK"
