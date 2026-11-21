@@ -22,9 +22,9 @@ happens.
 | Container | Kind | Does |
 | --- | --- | --- |
 | `trec` | Native sidecar | Watches its own Pod, marks the task `RUNNING` and writes executor logs to Postgres. |
-| `tif` | Init | Stages `inputs` onto the volume: `s3://`, `http(s)://`, `file://`, inline `content`, then creates the task's [directories](./task-volumes.md#task-paths) that have no mount of their own. Only if the task has inputs or such directories. |
+| `tif` | Init | Stages `inputs` onto the volume: `s3://`, `http(s)://`, inline `content`, then creates the task's [directories](./task-volumes.md#task-paths) that have no mount of their own. Only if the task has inputs or such directories. |
 | `exec-0` … `exec-N` | Init | Your executors, in order, in your images. |
-| `tof` | Init | Uploads `outputs` from the volume: `s3://`, `http(s)://`, `file://`. Only if the task has outputs. |
+| `tof` | Init | Uploads `outputs` from the volume: `s3://`, `http(s)://`. Only if the task has outputs. |
 | `ack` | Main | Exits 0 so the Pod reaches `Succeeded`. Reuses the Poiesis image, so no second image pull. |
 
 `trec` is a native sidecar: an init container with

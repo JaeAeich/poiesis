@@ -55,6 +55,8 @@ data:
   # ---- Outputs ---------------------------------------------------------------
   # Whether an output glob that matches no file uploads its path_prefix.
   POIESIS_OUTPUT_GLOB_FALLBACK: {{ .Values.taskpods.outputGlobFallback | default false | quote }}
+  # Directories file:// URLs may point into; empty turns the scheme off.
+  POIESIS_FILE_URL_ROOTS: {{ join "," (.Values.taskpods.fileUrlRoots | default list) | quote }}
 
   # ---- Operator-supplied TaskPod extensions ---------------------------------
   # Serialised as JSON arrays so the API can decode them at startup. Empty

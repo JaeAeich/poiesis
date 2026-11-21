@@ -493,6 +493,13 @@ taskpods:
   #           export far more data than the client asked for.
   outputGlobFallback: false
 
+  # Directories that file:// input and output URLs may point into. Empty
+  # (the default) turns the file:// scheme off: tasks using it get a 400.
+  # A file:// URL is resolved inside the TIF/TOF containers, so list only
+  # directories you mount there through extraVolumes / extraVolumeMounts,
+  # e.g. ["/mnt/reference"]. Never list a path that holds credentials.
+  fileUrlRoots: []
+
   # Operator-supplied TaskPod extensions. Append to every per-task pod.
   #
   # env / volumes inject into poiesis-owned containers (trec / tif / tof).

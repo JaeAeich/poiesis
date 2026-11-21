@@ -3,9 +3,9 @@
 import logging
 import os
 import shutil
-from urllib.parse import urlparse
 
 from poiesis.api.tes.models import TesInput, TesOutput
+from poiesis.core.services.filer.file_urls import resolve_file_url
 from poiesis.core.services.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     OutputFilerStrategy,
@@ -32,7 +32,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         logger.info(f"Starting local file download to {container_path}")
         assert self.input
         assert self.input.url
-        source_path = urlparse(self.input.url).path
+        source_path = resolve_file_url(self.input.url)
         self._copy_file(source_path, container_path)
 
     async def download_input_directory(self, container_path: str):
@@ -40,7 +40,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         logger.info(f"Starting local directory download to {container_path}")
         assert self.input
         assert self.input.url
-        source_path = urlparse(self.input.url).path
+        source_path = resolve_file_url(self.input.url)
         self._copy_directory(source_path, container_path)
 
     async def upload_output_file(self, container_path: str):
@@ -48,7 +48,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         logger.info(f"Starting local file upload from {container_path}")
         assert self.output
         assert self.output.url
-        destination_path = urlparse(self.output.url).path
+        destination_path = resolve_file_url(self.output.url)
         self._copy_file(container_path, destination_path)
 
     async def upload_output_directory(self, container_path: str):
@@ -56,7 +56,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         logger.info(f"Starting local directory upload from {container_path}")
         assert self.output
         assert self.output.url
-        destination_path = urlparse(self.output.url).path
+        destination_path = resolve_file_url(self.output.url)
         self._copy_directory(container_path, destination_path)
 
     async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
@@ -71,7 +71,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         for file_path, relative_path, is_directory in glob_files:
             assert self.output
             assert self.output.url
-            destination_base = urlparse(self.output.url).path
+            destination_base = resolve_file_url(self.output.url)
             destination_path = os.path.join(destination_base, relative_path)
 
             if is_directory:

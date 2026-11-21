@@ -70,6 +70,7 @@ from poiesis.api.tes.models import TesFileType
 from poiesis.core import executor_shell, ignore_error
 from poiesis.core.constants import (
     EXECUTOR_STREAMS_ENV,
+    FILE_URL_ROOTS_ENV,
     FILER_PVC_PATH,
     OUTPUT_GLOB_FALLBACK_ENV,
 )
@@ -190,6 +191,9 @@ class RuntimeConfig:
             file makes TOF upload everything under the output's
             ``path_prefix`` instead of nothing. Sourced from
             ``taskpods.outputGlobFallback``; off by default.
+        file_url_roots: Directories `file://` URLs may point into, passed
+            to TIF/TOF. Sourced from ``taskpods.fileUrlRoots``; empty turns
+            the scheme off.
     """
 
     taskpod_namespace: str
@@ -220,6 +224,7 @@ class RuntimeConfig:
     taskpod_extra_volumes: list[dict[str, Any]] = field(default_factory=list)
     taskpod_extra_volume_mounts: list[dict[str, Any]] = field(default_factory=list)
     output_glob_fallback: bool = False
+    file_url_roots: tuple[str, ...] = ()
 
 
 def build_taskpod_job(
@@ -613,11 +618,15 @@ def _filer_env(config: RuntimeConfig) -> list[V1EnvVar]:
     The mount path is *not* an operator knob — filer code reads
     ``poiesis.core.constants.FILER_PVC_PATH`` directly. The chart-internal
     DB DSN + S3 creds, plus operator extras, come through ``_poiesis_env``.
-    The output-glob fallback flag is set only when on.
+    The output-glob fallback flag and the `file://` roots are set only when on.
     """
     env = _poiesis_env(config)
     if config.output_glob_fallback:
         env.append(V1EnvVar(name=OUTPUT_GLOB_FALLBACK_ENV, value="true"))
+    if config.file_url_roots:
+        env.append(
+            V1EnvVar(name=FILE_URL_ROOTS_ENV, value=",".join(config.file_url_roots))
+        )
     return env
 
 

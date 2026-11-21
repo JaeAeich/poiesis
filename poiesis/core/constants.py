@@ -17,3 +17,9 @@ OUTPUT_GLOB_FALLBACK_ENV: str = "POIESIS_OUTPUT_GLOB_FALLBACK"
 #: ``stderr``: which streams go to files and where trec finds them on the
 #: task volume (see ``poiesis.core.executor_logs.Streams``).
 EXECUTOR_STREAMS_ENV: str = "POIESIS_EXECUTOR_STREAMS"
+
+#: Env var listing the directories `file://` URLs may point into, comma
+#: separated. Sourced from ``taskpods.fileUrlRoots``; the API reads it to
+#: accept or refuse a task, TIF/TOF read it again before touching a path.
+#: Unset or empty turns the `file://` scheme off.
+FILE_URL_ROOTS_ENV: str = "POIESIS_FILE_URL_ROOTS"

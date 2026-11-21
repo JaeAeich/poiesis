@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from poiesis.core.services.filer.file_urls import file_url_allowed, file_url_roots
 from poiesis.core.services.filer.strategy.content_filer import ContentFilerStrategy
 from poiesis.core.services.filer.strategy.http_filer import HttpFilerStrategy
 from poiesis.core.services.filer.strategy.local_filer import LocalFilerStrategy
@@ -53,31 +54,50 @@ _SCHEMES: dict[str, _SchemeEntry] = {
 
 def supported_input_schemes() -> list[str]:
     """Return the URI scheme names that can stage TES inputs."""
-    return [e.name for e in _SCHEMES.values() if e.input is not None]
+    return [e.name for e in _enabled() if e.input is not None]
 
 
 def supported_output_schemes() -> list[str]:
     """Return the URI scheme names that can upload TES outputs."""
-    return [e.name for e in _SCHEMES.values() if e.output is not None]
+    return [e.name for e in _enabled() if e.output is not None]
+
+
+def _enabled() -> list[_SchemeEntry]:
+    """Registry entries usable in this deployment.
+
+    `file` counts only when the operator configured roots for it.
+    """
+    file_on = bool(file_url_roots())
+    return [e for e in _SCHEMES.values() if e.name != "file" or file_on]
+
+
+def _lookup(uri: str | None) -> _SchemeEntry | None:
+    """Registry entry for `uri`, or None if its scheme or path is refused."""
+    entry = _SCHEMES.get(_scheme(uri))
+    if entry is not None and entry.name == "file":
+        assert uri is not None
+        if not file_url_allowed(uri):
+            return None
+    return entry
 
 
 def can_input(uri: str | None) -> bool:
-    """True if `uri`'s scheme can be used as a TES input."""
-    entry = _SCHEMES.get(_scheme(uri))
+    """True if `uri` can be used as a TES input."""
+    entry = _lookup(uri)
     return entry is not None and entry.input is not None
 
 
 def can_output(uri: str | None) -> bool:
-    """True if `uri`'s scheme can be used as a TES output."""
-    entry = _SCHEMES.get(_scheme(uri))
+    """True if `uri` can be used as a TES output."""
+    entry = _lookup(uri)
     return entry is not None and entry.output is not None
 
 
 def create_input_strategy(uri: str | None, payload: TesInput) -> InputFilerStrategy:
     """Construct an input strategy for `uri`, or raise `ValueError`."""
-    entry = _SCHEMES.get(_scheme(uri))
+    entry = _lookup(uri)
     if entry is None:
-        raise ValueError(f"Unsupported URI scheme: {uri!r}")
+        raise ValueError(f"Unsupported URI: {uri!r}")
     if entry.input is None:
         raise ValueError(f"Scheme '{entry.name}' is not supported for TES inputs")
     return entry.input(payload)
@@ -85,9 +105,9 @@ def create_input_strategy(uri: str | None, payload: TesInput) -> InputFilerStrat
 
 def create_output_strategy(uri: str, payload: TesOutput) -> OutputFilerStrategy:
     """Construct an output strategy for `uri`, or raise `ValueError`."""
-    entry = _SCHEMES.get(_scheme(uri))
+    entry = _lookup(uri)
     if entry is None:
-        raise ValueError(f"Unsupported URI scheme: {uri!r}")
+        raise ValueError(f"Unsupported URI: {uri!r}")
     if entry.output is None:
         raise ValueError(f"Scheme '{entry.name}' is not supported for TES outputs")
     return entry.output(payload)

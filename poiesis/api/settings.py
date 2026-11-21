@@ -30,7 +30,8 @@ from pydantic import (
 from pydantic.alias_generators import to_camel
 
 from poiesis.api.constants import get_poiesis_api_constants
-from poiesis.core.constants import OUTPUT_GLOB_FALLBACK_ENV
+from poiesis.core.constants import FILE_URL_ROOTS_ENV, OUTPUT_GLOB_FALLBACK_ENV
+from poiesis.core.services.filer.file_urls import parse_file_url_roots
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 
 logger = logging.getLogger(__name__)
@@ -1013,6 +1014,12 @@ class Settings(BaseModel):
             OUTPUT_GLOB_FALLBACK_ENV, default=False
         ),
     )
+    # Directories `file://` URLs may point into; empty turns the scheme off.
+    file_url_roots: tuple[str, ...] = Field(
+        default_factory=lambda: parse_file_url_roots(
+            os.environ.get(FILE_URL_ROOTS_ENV)
+        ),
+    )
     aws_endpoint_url: str | None = Field(
         default_factory=lambda: os.environ.get("AWS_ENDPOINT_URL") or None,
     )
@@ -1061,6 +1068,7 @@ class Settings(BaseModel):
             taskpod_extra_volumes=self.taskpod_extra_volumes,
             taskpod_extra_volume_mounts=self.taskpod_extra_volume_mounts,
             output_glob_fallback=self.output_glob_fallback,
+            file_url_roots=self.file_url_roots,
         )
 
 

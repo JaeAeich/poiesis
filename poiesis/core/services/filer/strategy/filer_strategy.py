@@ -117,6 +117,32 @@ class BaseFilerStrategy:
         return results
 
 
+def assert_within_volume(path: str) -> None:
+    """Raise if `path`, or anything under it, resolves outside the task volume.
+
+    TOF reads outputs with its own credentials in reach. An executor can
+    leave a symlink on the volume that points at a file in TOF's container;
+    following it would upload that file to the output URL.
+    """
+    volume = os.path.realpath(FILER_PVC_PATH)
+
+    def check(entry: str) -> None:
+        real = os.path.realpath(entry)
+        if real != volume and not real.startswith(volume + os.sep):
+            shown = entry.removeprefix(FILER_PVC_PATH) or "/"
+            raise PermissionError(
+                f"output {shown} is a symlink that points outside the task volume"
+            )
+
+    check(path)
+    if os.path.isdir(path):
+        for root, dirs, files in os.walk(path, followlinks=False):
+            for name in (*dirs, *files):
+                entry = os.path.join(root, name)
+                if os.path.islink(entry):
+                    check(entry)
+
+
 class InputFilerStrategy(BaseFilerStrategy, ABC):
     """Strategy that can stage TES inputs onto the shared task volume."""
 
@@ -183,6 +209,8 @@ class OutputFilerStrategy(BaseFilerStrategy, ABC):
             )
 
             globbed = self._get_glob_files(container_path)
+            for item, _relative, _is_dir in globbed:
+                assert_within_volume(item)
             if globbed:
                 logger.info(
                     "Found %d file(s) matching glob '%s'",
@@ -202,6 +230,7 @@ class OutputFilerStrategy(BaseFilerStrategy, ABC):
                     OUTPUT_GLOB_FALLBACK_ENV,
                 )
                 parent = self._get_container_path(self.payload.path_prefix)
+                assert_within_volume(parent)
                 await self.upload_output_directory(parent)
                 return
             if is_glob_like:
@@ -214,6 +243,7 @@ class OutputFilerStrategy(BaseFilerStrategy, ABC):
             # A plain path that doesn't exist: handled below like one
             # without `path_prefix`, which fails the task.
 
+        assert_within_volume(container_path)
         if (
             self.payload.type == TesFileType.FILE
             and os.path.exists(container_path)

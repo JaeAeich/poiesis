@@ -195,6 +195,7 @@ Baked into TaskPod manifests by the API when a task is created. See
 | `taskpods.persistence.annotations` | `{}` | Annotations on every task volume. |
 | `taskpods.persistence.retainAfterSeconds` | `3600` | `ttlSecondsAfterFinished` of the Job; `null` keeps Job and volume. |
 | `taskpods.outputGlobFallback` | `false` | Upload everything under `path_prefix` when an output glob matches nothing. |
+| `taskpods.fileUrlRoots` | `[]` | Directories `file://` URLs may point into; empty turns the scheme off. See [Local paths](../concepts/storage.md#local-paths). |
 | `taskpods.extraEnv` | `[]` | Env for `trec`, `tif`, `tof`. Reserved: `DATABASE_URL`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `POIESIS_*`. |
 | `taskpods.extraVolumes` | `[]` | Volumes added to every TaskPod. Reserved names: `task-data`, `postgres-ca`, `tmp`. |
 | `taskpods.extraVolumeMounts` | `[]` | Mounts for Poiesis containers and executors (reference data). |
