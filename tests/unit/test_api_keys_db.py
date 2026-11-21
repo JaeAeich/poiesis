@@ -190,3 +190,43 @@ def test_touch_never_moves_back() -> None:
         assert listed[0].last_used_at == newer
 
     run(test)
+
+
+def test_revoke_owner_keys() -> None:
+    """Revoking an owner's keys revokes the active ones only, and no one else's.
+
+    Already revoked keys keep their first time and expired ones stay
+    unrevoked; neither is counted. A second call revokes nothing.
+    """
+
+    async def test(pool: Any) -> None:
+        active = [await mint(pool) for _ in range(2)]
+        revoked, expired, other = (
+            await mint(pool),
+            await mint(pool),
+            await mint(pool, BOB),
+        )
+        assert None not in (*active, revoked, expired, other)
+        async with pool.acquire() as conn:
+            assert revoked is not None
+            assert expired is not None
+            await api_keys_db.revoke_api_key(conn, revoked.id, ALICE)
+            first = await conn.fetchval(
+                "SELECT revoked_at FROM api_keys WHERE id = $1", revoked.id
+            )
+            await conn.execute(
+                "UPDATE api_keys SET expires_at = clock_timestamp() - interval '1 s' "
+                "WHERE id = $1",
+                expired.id,
+            )
+            revoked_now = await api_keys_db.revoke_owner_api_keys(conn, ALICE)
+            assert revoked_now == 2  # noqa: PLR2004
+            assert await api_keys_db.revoke_owner_api_keys(conn, ALICE) == 0
+            listed = {k.id: k for k in await api_keys_db.list_api_keys(conn, ALICE)}
+            bob = await api_keys_db.list_api_keys(conn, BOB)
+        assert all(listed[k.id].revoked_at is not None for k in active if k)
+        assert listed[revoked.id].revoked_at == first
+        assert listed[expired.id].revoked_at is None
+        assert [k.revoked_at for k in bob] == [None]
+
+    run(test)
