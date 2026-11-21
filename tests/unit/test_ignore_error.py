@@ -175,8 +175,19 @@ def test_tctl_backfills_real_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
     async def append_executor_log(_conn: Any, _task_id: str, **row: Any) -> None:
         written[row["ordinal"]] = row["exit_code"]
 
+    async def recorded_executor_ordinals(_conn: Any, _task_id: str) -> set[int]:
+        return set()
+
+    async def read_executor_output(*_: Any) -> None:
+        return None
+
     monkeypatch.setattr(tctl.state_db, "append_executor_log", append_executor_log)
+    monkeypatch.setattr(
+        tctl.state_db, "recorded_executor_ordinals", recorded_executor_ordinals
+    )
+    monkeypatch.setattr(tctl, "read_executor_output", read_executor_output)
     pod = {
+        "metadata": {"name": "pod-1", "namespace": "tasks"},
         "status": {
             "init_container_statuses": [
                 terminated_status(
@@ -187,7 +198,7 @@ def test_tctl_backfills_real_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
         }
     }
 
-    asyncio.run(tctl._backfill_executor_logs(None, "t1", pod))
+    asyncio.run(tctl._backfill_executor_logs(None, None, "t1", pod))
 
     assert written == {0: 3, 1: 0}
 
