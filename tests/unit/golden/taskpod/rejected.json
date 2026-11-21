@@ -1,0 +1,16 @@
+{
+  "backend-params-strict": "resources.backend_parameters contains unsupported keys under backend_parameters_strict=true: ['Accel', 'VmSize']",
+  "below-file-input": "outputs[0].path '/data/in.txt/x' is below inputs[0].path '/data/in.txt', a file",
+  "disk-over-max": "resources.disk_gb=10.2 GiB exceeds the operator-configured maximum of 10 GiB. Ask your administrator to raise taskpods.persistence.maxSizeGi or reduce the request.",
+  "input-file-outside-roots": "inputs[0].url scheme is not supported as a TES input: 'file:///etc/passwd'",
+  "input-scheme": "inputs[0].url scheme is not supported as a TES input: 'ftp://host/x'",
+  "missing-id": "TesTask.id must be set before manifest construction",
+  "operator-mount-conflict": "TES path '/ref/sub' is at or below '/ref', where the operator mounts a volume; use another directory",
+  "output-scheme": "outputs[0].url scheme is not supported as a TES output: 'ftp://host/x'",
+  "parent-component": "volumes[0] '/data/../etc' has a `..` component; give the path without it",
+  "parent-component-prefix": "outputs[0].path_prefix '/data/../x' has a `..` component; give the path without it",
+  "relative-path": "TES paths must be absolute: 'data'",
+  "relative-stream": "executors[0].stdout must be an absolute path: 'o'",
+  "root-mount": "TES path '/' would need the task volume mounted at `/`; put inputs, outputs and volumes in a directory, e.g. `/data`",
+  "staging-dir": "TES path '/transfer/x' is in /transfer, where Poiesis stages task files; use another directory"
+}

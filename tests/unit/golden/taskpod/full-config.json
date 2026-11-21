@@ -1,0 +1,461 @@
+{
+  "job": {
+    "apiVersion": "batch/v1",
+    "kind": "Job",
+    "metadata": {
+      "labels": {
+        "app.kubernetes.io/component": "taskpod",
+        "app.kubernetes.io/name": "poiesis",
+        "poiesis.io/task": "golden"
+      },
+      "name": "task-golden",
+      "namespace": "tasks"
+    },
+    "spec": {
+      "activeDeadlineSeconds": 7200,
+      "backoffLimit": 0,
+      "template": {
+        "metadata": {
+          "labels": {
+            "app.kubernetes.io/component": "taskpod",
+            "app.kubernetes.io/name": "poiesis",
+            "poiesis.io/task": "golden"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "command": [
+                "poiesis",
+                "ack",
+                "run",
+                "--task-id",
+                "golden"
+              ],
+              "image": "registry.example.org/poiesis:1.2.3",
+              "imagePullPolicy": "Always",
+              "name": "ack",
+              "resources": {
+                "limits": {
+                  "cpu": "10m"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true,
+                "runAsNonRoot": true,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              }
+            }
+          ],
+          "imagePullSecrets": [
+            {
+              "name": "regcred"
+            },
+            {
+              "name": "mirror"
+            }
+          ],
+          "initContainers": [
+            {
+              "command": [
+                "poiesis",
+                "trec",
+                "run",
+                "--task-id",
+                "golden"
+              ],
+              "env": [
+                {
+                  "name": "POIESIS_POD_NAME",
+                  "valueFrom": {
+                    "fieldRef": {
+                      "fieldPath": "metadata.name"
+                    }
+                  }
+                },
+                {
+                  "name": "POIESIS_POD_NAMESPACE",
+                  "valueFrom": {
+                    "fieldRef": {
+                      "fieldPath": "metadata.namespace"
+                    }
+                  }
+                },
+                {
+                  "name": "DATABASE_URL",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "key": "url",
+                      "name": "poiesis-db"
+                    }
+                  }
+                },
+                {
+                  "name": "AWS_REGION",
+                  "value": "eu-central-1"
+                },
+                {
+                  "name": "HTTPS_PROXY",
+                  "value": "http://proxy:3128"
+                },
+                {
+                  "name": "POIESIS_EXECUTOR_STREAMS",
+                  "value": "{\"0\":{\"stdout\":\"/transfer/work/out.log\"}}"
+                }
+              ],
+              "image": "registry.example.org/poiesis:1.2.3",
+              "imagePullPolicy": "Always",
+              "name": "trec",
+              "resources": {
+                "requests": {
+                  "cpu": "50m"
+                }
+              },
+              "restartPolicy": "Always",
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true,
+                "runAsNonRoot": true,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "volumeMounts": [
+                {
+                  "mountPath": "/transfer",
+                  "name": "task-data"
+                },
+                {
+                  "mountPath": "/etc/ssl/poiesis",
+                  "name": "postgres-ca",
+                  "readOnly": true
+                },
+                {
+                  "mountPath": "/ref",
+                  "name": "ref",
+                  "readOnly": true
+                },
+                {
+                  "mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+                  "name": "kube-api-token",
+                  "readOnly": true
+                }
+              ]
+            },
+            {
+              "command": [
+                "poiesis",
+                "tif",
+                "run",
+                "--task-id",
+                "golden"
+              ],
+              "env": [
+                {
+                  "name": "DATABASE_URL",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "key": "url",
+                      "name": "poiesis-db"
+                    }
+                  }
+                },
+                {
+                  "name": "AWS_REGION",
+                  "value": "eu-central-1"
+                },
+                {
+                  "name": "HTTPS_PROXY",
+                  "value": "http://proxy:3128"
+                },
+                {
+                  "name": "POIESIS_OUTPUT_GLOB_FALLBACK",
+                  "value": "true"
+                },
+                {
+                  "name": "POIESIS_FILE_URL_ROOTS",
+                  "value": "/srv/shared,/scratch"
+                }
+              ],
+              "image": "registry.example.org/poiesis:1.2.3",
+              "imagePullPolicy": "Always",
+              "name": "tif",
+              "resources": {
+                "limits": {
+                  "memory": "256Mi"
+                },
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "128Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true,
+                "runAsNonRoot": true,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "volumeMounts": [
+                {
+                  "mountPath": "/transfer",
+                  "name": "task-data"
+                },
+                {
+                  "mountPath": "/etc/ssl/poiesis",
+                  "name": "postgres-ca",
+                  "readOnly": true
+                },
+                {
+                  "mountPath": "/ref",
+                  "name": "ref",
+                  "readOnly": true
+                }
+              ]
+            },
+            {
+              "command": [
+                "/bin/sh",
+                "-c",
+                "# poiesis: stdout ignore_error\n[ -d \"$2\" ] || mkdir -p -- \"$2\"\no=$1\nshift 2\n\"$@\" >\"$o\"; rc=$?; printf 'poiesis-exit-code=%d\\n' \"$rc\" > /dev/termination-log; exit 0",
+                "sh",
+                "/work/out.log",
+                "/work",
+                "sh",
+                "-c",
+                "ls"
+              ],
+              "env": [
+                {
+                  "name": "X",
+                  "value": "y"
+                }
+              ],
+              "image": "busybox",
+              "imagePullPolicy": "Always",
+              "name": "exec-0",
+              "stdin": false,
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/transfer",
+                  "name": "task-data"
+                },
+                {
+                  "mountPath": "/data/in.txt",
+                  "name": "task-data",
+                  "subPath": "data/in.txt"
+                },
+                {
+                  "mountPath": "/data/out",
+                  "name": "task-data",
+                  "subPath": "data/out"
+                },
+                {
+                  "mountPath": "/work",
+                  "name": "task-data",
+                  "subPath": "work"
+                },
+                {
+                  "mountPath": "/ref",
+                  "name": "ref",
+                  "readOnly": true
+                }
+              ],
+              "workingDir": "/work"
+            },
+            {
+              "command": [
+                "poiesis",
+                "tof",
+                "run",
+                "--task-id",
+                "golden"
+              ],
+              "env": [
+                {
+                  "name": "DATABASE_URL",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "key": "url",
+                      "name": "poiesis-db"
+                    }
+                  }
+                },
+                {
+                  "name": "AWS_REGION",
+                  "value": "eu-central-1"
+                },
+                {
+                  "name": "HTTPS_PROXY",
+                  "value": "http://proxy:3128"
+                },
+                {
+                  "name": "POIESIS_OUTPUT_GLOB_FALLBACK",
+                  "value": "true"
+                },
+                {
+                  "name": "POIESIS_FILE_URL_ROOTS",
+                  "value": "/srv/shared,/scratch"
+                }
+              ],
+              "image": "registry.example.org/poiesis:1.2.3",
+              "imagePullPolicy": "Always",
+              "name": "tof",
+              "resources": {
+                "limits": {
+                  "memory": "256Mi"
+                },
+                "requests": {
+                  "cpu": "100m",
+                  "memory": "128Mi"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true,
+                "runAsNonRoot": true,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "volumeMounts": [
+                {
+                  "mountPath": "/transfer",
+                  "name": "task-data"
+                },
+                {
+                  "mountPath": "/etc/ssl/poiesis",
+                  "name": "postgres-ca",
+                  "readOnly": true
+                },
+                {
+                  "mountPath": "/ref",
+                  "name": "ref",
+                  "readOnly": true
+                }
+              ]
+            }
+          ],
+          "restartPolicy": "Never",
+          "serviceAccountName": "poiesis-taskpod",
+          "terminationGracePeriodSeconds": 45,
+          "volumes": [
+            {
+              "name": "task-data",
+              "persistentVolumeClaim": {
+                "claimName": "task-golden-data"
+              }
+            },
+            {
+              "name": "kube-api-token",
+              "projected": {
+                "defaultMode": 420,
+                "sources": [
+                  {
+                    "serviceAccountToken": {
+                      "expirationSeconds": 3600,
+                      "path": "token"
+                    }
+                  },
+                  {
+                    "configMap": {
+                      "items": [
+                        {
+                          "key": "ca.crt",
+                          "path": "ca.crt"
+                        }
+                      ],
+                      "name": "kube-root-ca.crt"
+                    }
+                  },
+                  {
+                    "downwardAPI": {
+                      "items": [
+                        {
+                          "fieldRef": {
+                            "apiVersion": "v1",
+                            "fieldPath": "metadata.namespace"
+                          },
+                          "path": "namespace"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "configMap": {
+                "defaultMode": 292,
+                "name": "pg-ca"
+              },
+              "name": "postgres-ca"
+            },
+            {
+              "name": "ref",
+              "persistentVolumeClaim": {
+                "claimName": "r"
+              }
+            }
+          ]
+        }
+      },
+      "ttlSecondsAfterFinished": 600
+    }
+  },
+  "pvc": {
+    "apiVersion": "v1",
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
+      "annotations": {
+        "backup.velero.io/backup-volumes": "task-data"
+      },
+      "labels": {
+        "app.kubernetes.io/component": "taskpod",
+        "app.kubernetes.io/name": "poiesis",
+        "cost-center": "lab-a",
+        "poiesis.io/task": "golden"
+      },
+      "name": "task-golden-data",
+      "namespace": "tasks"
+    },
+    "spec": {
+      "accessModes": [
+        "ReadWriteMany"
+      ],
+      "resources": {
+        "requests": {
+          "storage": "20Gi"
+        }
+      },
+      "storageClassName": "fast-ssd"
+    }
+  }
+}
