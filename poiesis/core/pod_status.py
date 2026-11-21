@@ -334,9 +334,9 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
 
     Reads the Pod-level `status.reason` first (NodeLost, Evicted,
     DeadlineExceeded all surface here), falls back to scanning container
-    terminated states for a more specific reason. Skips the `ack`
-    container so an `ack: exit 0` after a real failure doesn't shadow
-    the underlying error.
+    terminated states for a more specific reason. Skips containers that
+    completed (exit 0: trec, a filer, an earlier executor, `ack`) so they
+    don't shadow the underlying error of a failed Pod.
     """
     status = pod.get("status") or {}
     raw_reason = status.get("reason")
@@ -353,7 +353,10 @@ def extract_terminal_reason(pod: Mapping[str, Any]) -> str | None:
         if cs.get("name") == ACK_NAME:
             continue
         terminated = (cs.get("state") or {}).get("terminated") or {}
+        exit_code = terminated.get("exitCode", terminated.get("exit_code"))
         cs_reason = terminated.get("reason")
+        if exit_code == 0 or cs_reason == PodTerminationReason.COMPLETED.value:
+            continue
         if cs_reason:
             return str(cs_reason)
     return PodTerminationReason.ERROR.value
