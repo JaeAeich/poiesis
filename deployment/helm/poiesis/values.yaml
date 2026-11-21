@@ -251,6 +251,14 @@ authz:
     # for the service; mount it from a Secret via extraVolumes and
     # extraVolumeMounts.
     credentialFile: ""
+  # Let the decision service show tasks to others than their owner: list
+  # `all`, a list `scope` (owners, groups, tags), others' tasks on get and
+  # cancel, and `groups` set on create. Off: every task is visible to its
+  # owner only, whatever the service answers. Needs decisionService.url.
+  sharing: false
+  # Most owners one list scope may name; a scope with more is denied (403)
+  # and logged, so a runaway policy can't build an unbounded query.
+  maxOwners: 1000
 
 # S3-compatible storage. Optional: required only when task inputs/outputs
 # reference s3:// URLs.

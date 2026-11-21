@@ -22,8 +22,9 @@ credential no link recognises, or none at all, is a `401`.
 By default, authorization is an **owner-only rule**: every task row
 carries an `owner` column, and callers see and cancel only the rows
 whose `owner` is their own. An optional claim rule per issuer and an
-external decision service change that; see
-[Authorization](./authorization.md).
+external decision service can restrict that further; only with
+sharing turned on can a decision service show a task to anyone but
+its owner. See [Authorization](./authorization.md).
 
 ![Authenticator chain: before and after, use case by use case](/auth-chain.gif)
 

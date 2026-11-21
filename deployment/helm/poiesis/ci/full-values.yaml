@@ -71,6 +71,8 @@ authz:
     timeout: 2
     claims: [eduperson_entitlement]
     credentialFile: /var/run/secrets/authz/token
+  sharing: true
+  maxOwners: 2000000
 
 api:
   replicas: 1

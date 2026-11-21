@@ -1,6 +1,6 @@
 {
   "case": "11",
-  "description": "Poiesis GetTask on a missing task: tes_task with empty properties",
+  "description": "Poiesis GetTask on a missing task: tes_task with empty properties (asked only with sharing on)",
   "expect": {
     "reference_policy": {
       "decision": false
@@ -16,7 +16,7 @@
     },
     "context": {
       "tes": {
-        "profile": "tes-authzen/1",
+        "profile": "tes-authzen/2",
         "service_id": "org.ga4gh.poiesis"
       }
     },

@@ -106,7 +106,9 @@
             "claims":         { "type": "array", "items": { "type": "string", "minLength": 1 } },
             "credentialFile": { "type": "string" }
           }
-        }
+        },
+        "sharing":   { "type": "boolean" },
+        "maxOwners": { "type": "integer", "minimum": 1 }
       }
     },
 

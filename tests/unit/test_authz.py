@@ -24,14 +24,14 @@ from fastapi.testclient import TestClient
 
 from poiesis.api import app as app_module
 from poiesis.api.auth import Principal
-from poiesis.api.authz import Authz, strip_url
+from poiesis.api.authz import Authz, parse_decision, strip_url
 from poiesis.api.deps import get_db_pool, get_k8s, get_runtime_config
 from poiesis.api.exceptions import APIError, handle_api_exception
 from poiesis.api.jwt_auth import JWTAuthenticator
 from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.settings import AuthzSettings, IssuerSettings
 from poiesis.api.tes.models import TesState, TesTask
-from poiesis.db.tasks import ListFilters
+from poiesis.db.tasks import ListFilters, TaskScope
 
 GOLDEN = Path(__file__).parent / "golden" / "authz"
 PDP = "https://pdp.example.org/access/v1/evaluation"
@@ -61,26 +61,56 @@ class Store:
     def __init__(self) -> None:
         """Start empty."""
         self.tasks: dict[str, tuple[str, TesTask]] = {}
+        self.groups: dict[str, list[str]] = {}
 
-    def add(self, owner: str, task_id: str, **fields: Any) -> str:
-        """Store a task of `owner` directly."""
+    def add(
+        self, owner: str, task_id: str, groups: list[str] | None = None, **fields: Any
+    ) -> str:
+        """Store a task of `owner` directly, shared with `groups`."""
         task = TesTask(id=task_id, state=TesState.RUNNING, executors=[], **fields)
         self.tasks[task_id] = (owner, task)
+        self.groups[task_id] = groups or []
         return task_id
 
-    async def create_task(self, _: Any, task: TesTask, owner: str) -> str:
+    async def create_task(
+        self, _: Any, task: TesTask, owner: str, groups: Any = ()
+    ) -> str:
         """Store a new task."""
         assert task.id is not None
         self.tasks[task.id] = (owner, task)
+        self.groups[task.id] = list(groups)
         return task.id
 
     async def get_task_meta(self, _: Any, task_id: str) -> dict[str, Any] | None:
-        """Return owner, state and tags."""
+        """Return owner, state, tags and groups."""
         if task_id not in self.tasks:
             return None
         owner, task = self.tasks[task_id]
         assert task.state is not None
-        return {"owner": owner, "state": task.state.value, "tags": task.tags or {}}
+        return {
+            "owner": owner,
+            "state": task.state.value,
+            "tags": task.tags or {},
+            "groups": self.groups[task_id],
+        }
+
+    def visible(self, filters: ListFilters, task_id: str) -> bool:
+        """Mirror the visibility clause of `poiesis.db.tasks.list_tasks`."""
+        owner, task = self.tasks[task_id]
+        if filters.owner in {None, owner}:
+            return True
+        scope = filters.scope
+        if scope is None:
+            return False
+        tags = task.tags or {}
+        return (
+            (scope.owners is None or owner in scope.owners)
+            and (
+                scope.groups is None
+                or bool(set(scope.groups) & set(self.groups[task_id]))
+            )
+            and (scope.tags is None or any(tags.get(k) == v for k, v in scope.tags))
+        )
 
     async def get_task(self, _: Any, task_id: str, **kwargs: Any) -> TesTask | None:
         """Return the task, unfiltered."""
@@ -90,11 +120,11 @@ class Store:
     async def list_tasks(
         self, _: Any, filters: ListFilters, **__: Any
     ) -> tuple[list[TesTask], str | None]:
-        """Page through tasks in insertion order, filtered by owner."""
+        """Page through tasks in insertion order, filtered by visibility."""
         rows = [
             task
-            for owner, task in self.tasks.values()
-            if filters.owner in {None, owner}
+            for task_id, (_, task) in self.tasks.items()
+            if self.visible(filters, task_id)
         ]
         start = int(filters.page_token or 0)
         page = rows[start : start + filters.page_size]
@@ -145,13 +175,21 @@ class Pdp:
         return httpx.Response(200, json=answer)
 
 
-def per_action(**decisions: bool) -> Decide:
-    """Decide by `<action>` or `<action>_<resource id>`, default deny."""
+def per_action(tes: dict[str, Any] | None = None, **decisions: bool) -> Decide:
+    """Decide by `<action>` or `<action>_<resource id>`, default deny.
+
+    `tes` is added to every answer as `context.tes`.
+    """
 
     def decide(body: dict[str, Any]) -> Any:
         action, resource = body["action"]["name"], body["resource"]["id"]
         key = f"{action}_{resource}"
-        return {"decision": decisions.get(key, decisions.get(action, False))}
+        answer: dict[str, Any] = {
+            "decision": decisions.get(key, decisions.get(action, False))
+        }
+        if tes is not None:
+            answer["context"] = {"tes": tes}
+        return answer
 
     return decide
 
@@ -694,7 +732,7 @@ def test_no_connection_held_during_decision(
     env: Env, network: Network, method: str, path: str
 ) -> None:
     """No pooled connection is held while the decision service is asked."""
-    client = env.pdp_on()
+    client = env.pdp_on(sharing=True)
     stub = network.hosts["pdp.example.org"]
     held: list[int] = []
 
@@ -770,9 +808,10 @@ def test_credential_file(env: Env, tmp_path: Path) -> None:
 
 
 def test_get_foreign_allowed(env: Env) -> None:
-    """The decision service may grant access to others' tasks."""
-    env.store.add(GOLDEN_BOB, BOB_TASK, tags={"project": "x"})
-    response = env.pdp_on().get(f"{TASKS}/{BOB_TASK}", params={"view": "BASIC"})
+    """With sharing on, the decision service may grant access to others' tasks."""
+    env.store.add(GOLDEN_BOB, BOB_TASK, ["lab-alpha"], tags={"project": "x"})
+    client = env.pdp_on(sharing=True)
+    response = client.get(f"{TASKS}/{BOB_TASK}", params={"view": "BASIC"})
     assert response.status_code == 200  # noqa: PLR2004
     golden("get-other", env.pdp.bodies[0])
 
@@ -781,7 +820,7 @@ def test_get_and_cancel_denied(env: Env) -> None:
     """Denied get and cancel are 404 and leave the task alone."""
     env.pdp.decide = per_action()
     env.store.add(GOLDEN_BOB, BOB_TASK)
-    client = env.pdp_on()
+    client = env.pdp_on(sharing=True)
     assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
     assert client.post(f"{TASKS}/{BOB_TASK}:cancel").status_code == 404  # noqa: PLR2004
     assert env.store.tasks[BOB_TASK][1].state == TesState.RUNNING
@@ -793,7 +832,7 @@ def test_cancel_denied_but_readable(env: Env) -> None:
     """Readable but not cancellable: 403."""
     env.pdp.decide = per_action(GetTask=True)
     env.store.add(BOB, BOB_TASK)
-    response = env.pdp_on().post(f"{TASKS}/{BOB_TASK}:cancel")
+    response = env.pdp_on(sharing=True).post(f"{TASKS}/{BOB_TASK}:cancel")
     assert response.status_code == 403  # noqa: PLR2004
 
 
@@ -808,13 +847,13 @@ def test_cancel_allowed(env: Env) -> None:
 
 @pytest.mark.parametrize("allowed", [True, False])
 def test_missing_task(env: Env, *, allowed: bool) -> None:
-    """A missing task is 404 whatever the decision; the PDP is still asked.
+    """With sharing on, a missing task is 404 whatever the decision, but asked.
 
     Cancel always asks GetTask as well (case 11c): an allowed cancel of a
     missing task must not cost fewer calls than a denied one.
     """
     env.pdp.decide = per_action(GetTask=allowed, CancelTask=allowed)
-    client = env.pdp_on()
+    client = env.pdp_on(sharing=True)
     assert client.get(f"{TASKS}/{MISSING}").status_code == 404  # noqa: PLR2004
     assert client.post(f"{TASKS}/{MISSING}:cancel").status_code == 404  # noqa: PLR2004
     golden("get-missing", env.pdp.bodies[0])
@@ -831,7 +870,7 @@ def test_legacy_task_matches_nobody(env: Env) -> None:
     """Tasks from before owners were stamped are nobody's; sent as they are."""
     env.store.add("__legacy__", BOB_TASK)
     assert env.start().get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
-    env.pdp_on().get(f"{TASKS}/{BOB_TASK}")
+    env.pdp_on(sharing=True).get(f"{TASKS}/{BOB_TASK}")
     assert env.pdp.bodies[0]["resource"]["properties"]["owner"] == "__legacy__"
 
 
@@ -938,8 +977,20 @@ def test_actor_sent_to_decision_service(
         {"decision": "true"},
         {"allow": True},
         ["decision", True],
+        {"decision": True, "context": {"tes": {"scope": {"state": ["RUNNING"]}}}},
+        {"decision": True, "context": {"tes": {"obligations": "audit"}}},
     ],
-    ids=["timeout", "down", "500", "not-json", "string", "missing", "not-object"],
+    ids=[
+        "timeout",
+        "down",
+        "500",
+        "not-json",
+        "string",
+        "missing",
+        "not-object",
+        "unknown-scope-dimension",
+        "obligations-not-list",
+    ],
 )
 @pytest.mark.parametrize(
     ("method", "path"),
@@ -958,7 +1009,7 @@ def test_decision_service_failure(
     """Any failure is a 503 with Retry-After, logged; nothing is executed."""
     env.pdp.decide = lambda _: answer
     env.store.add(BOB, BOB_TASK)
-    response = env.pdp_on().request(method, path, json=TASK)
+    response = env.pdp_on(sharing=True).request(method, path, json=TASK)
     assert response.status_code == 503  # noqa: PLR2004
     assert response.headers["retry-after"] == "1"
     assert "Decision service failed" in caplog.text
@@ -981,7 +1032,7 @@ def test_failure_on_second_cancel_call(env: Env, task_id: str, *, cancel: bool) 
         else httpx.Response(500)
     )
     env.store.add(BOB, BOB_TASK)
-    response = env.pdp_on().post(f"{TASKS}/{task_id}:cancel")
+    response = env.pdp_on(sharing=True).post(f"{TASKS}/{task_id}:cancel")
     assert response.status_code == 503  # noqa: PLR2004
 
 
@@ -1021,20 +1072,21 @@ def fill(store: Store) -> tuple[list[str], list[str]]:
 
 
 def test_list_all(env: Env) -> None:
-    """`all` allowed: every task, complete, no duplicates."""
+    """Sharing on, `all` allowed: every task, complete, no duplicates."""
     alice, bob = fill(env.store)
     env.pdp.decide = per_action(ListTasks_all=True)
-    pages = page_through(env.pdp_on(), page_size=2)
+    pages = page_through(env.pdp_on(sharing=True), page_size=2)
     assert len(pages) == 3  # noqa: PLR2004
     assert sorted(i for page in pages for i in page) == sorted(alice + bob)
     golden("list-all", env.pdp.bodies[0])
 
 
-def test_list_own(env: Env) -> None:
+@pytest.mark.parametrize("sharing", [False, True])
+def test_list_own(env: Env, *, sharing: bool) -> None:
     """Only `own` allowed: own tasks, complete, pages of at most 2."""
     alice, _ = fill(env.store)
     env.pdp.decide = per_action(ListTasks_own=True)
-    pages = page_through(env.pdp_on(), page_size=2)
+    pages = page_through(env.pdp_on(sharing=sharing), page_size=2)
     assert all(len(page) <= 2 for page in pages)  # noqa: PLR2004
     assert sorted(i for page in pages for i in page) == sorted(alice)
     golden("list-own", next(b for b in env.pdp.bodies if b["resource"]["id"] == "own"))
@@ -1044,18 +1096,19 @@ def test_list_scope_per_page(env: Env) -> None:
     """The scope is evaluated again for every page."""
     alice, _ = fill(env.store)
     env.pdp.decide = per_action(ListTasks_all=True)
-    client = env.pdp_on()
+    client = env.pdp_on(sharing=True)
     token = client.get(TASKS, params={"page_size": 2}).json()["next_page_token"]
     env.pdp.decide = per_action(ListTasks_own=True)
     page = client.get(TASKS, params={"page_size": 6, "page_token": token}).json()
     assert {t["id"] for t in page["tasks"]} <= set(alice)
 
 
-def test_list_denied(env: Env) -> None:
-    """Neither set allowed: 403."""
+@pytest.mark.parametrize(("sharing", "calls"), [(False, 1), (True, 2)])
+def test_list_denied(env: Env, *, sharing: bool, calls: int) -> None:
+    """Neither set allowed (sharing on) or `own` denied (off): 403."""
     env.pdp.decide = per_action()
-    assert env.pdp_on().get(TASKS).status_code == 403  # noqa: PLR2004
-    assert len(env.pdp.requests) == 2  # noqa: PLR2004
+    assert env.pdp_on(sharing=sharing).get(TASKS).status_code == 403  # noqa: PLR2004
+    assert len(env.pdp.requests) == calls
 
 
 def test_claims_allowlist(env: Env) -> None:
@@ -1078,3 +1131,358 @@ def test_userinfo_claims(env: Env) -> None:
     assert client.post(TASKS, json=TASK).status_code == 200  # noqa: PLR2004
     claims = env.pdp.bodies[0]["subject"]["properties"]["claims"]
     assert claims == {ENTITLEMENT: [MEMBER], "groups": [MEMBER]}
+
+
+# -- tes-authzen/2: rich decisions -----------------------------------------------
+
+
+def _scope_json(scope: TaskScope | None) -> dict[str, Any] | None:
+    """Return `scope` as in the golden response cases (`tags` as pairs)."""
+    if scope is None:
+        return None
+    return {
+        name: [list(value) if name == "tags" else value for value in values]
+        for name, values in (
+            ("owners", scope.owners),
+            ("groups", scope.groups),
+            ("tags", scope.tags),
+        )
+        if values is not None
+    }
+
+
+@pytest.mark.parametrize(
+    "case",
+    json.loads((GOLDEN / "responses.json").read_text()),
+    ids=lambda case: case["name"],
+)
+def test_response(case: dict[str, Any]) -> None:
+    """Responses are read by the shared cases; malformed ones are refused.
+
+    `allow` is the effective decision, after obligations.
+    """
+    expect = case["expect"]
+    if expect.get("malformed"):
+        with pytest.raises(ValueError, match="."):
+            parse_decision(case["response"])
+        return
+    decision = parse_decision(case["response"])
+    assert (decision.allow and not decision.obligations) is expect["allow"]
+    assert _scope_json(decision.scope) == expect.get("scope")
+    assert list(decision.groups) == expect.get("groups", [])
+
+
+def test_plain_decision_service(env: Env) -> None:
+    """A plain yes/no decision service works for every operation, unchanged."""
+    client = env.pdp_on()
+    own = client.post(TASKS, json=TASK).json()["id"]
+    assert client.get(f"{TASKS}/{own}").status_code == 200  # noqa: PLR2004
+    assert [t["id"] for t in client.get(TASKS).json()["tasks"]] == [own]
+    assert client.post(f"{TASKS}/{own}:cancel").status_code == 200  # noqa: PLR2004
+    assert [b["action"]["name"] for b in env.pdp.bodies] == [
+        "CreateTask",
+        "GetTask",
+        "ListTasks",
+        "CancelTask",
+    ]
+    assert env.store.groups[own] == []
+
+
+def authz_logs(caplog: pytest.LogCaptureFixture) -> list[Any]:
+    """Return the records logged by `poiesis.api.authz`."""
+    return [r for r in caplog.records if r.name == "poiesis.api.authz"]
+
+
+def test_obligation_denies(env: Env, caplog: pytest.LogCaptureFixture) -> None:
+    """An allow with an unknown obligation is a deny, logged with its names."""
+    env.pdp.decide = lambda _: {
+        "decision": True,
+        "context": {"tes": {"obligations": ["log-access", "notify-pi"]}},
+    }
+    env.store.add(ALICE, ALICE_TASK)
+    client = env.pdp_on()
+    assert client.post(TASKS, json=TASK).status_code == 403  # noqa: PLR2004
+    assert client.get(TASKS).status_code == 403  # noqa: PLR2004
+    # A denied get is a 404, as for any deny.
+    assert client.get(f"{TASKS}/{ALICE_TASK}").status_code == 404  # noqa: PLR2004
+    assert env.store.tasks.keys() == {ALICE_TASK}
+    warnings = [r for r in authz_logs(caplog) if r.levelname == "WARNING"]
+    assert len(warnings) == 3  # noqa: PLR2004
+    assert all("['log-access', 'notify-pi']" in r.getMessage() for r in warnings)
+
+
+def test_advice_ignored(env: Env) -> None:
+    """Advice doesn't change the decision."""
+    env.pdp.decide = lambda _: {
+        "decision": True,
+        "context": {"tes": {"advice": ["consider-quota"]}},
+    }
+    assert env.pdp_on().post(TASKS, json=TASK).status_code == 200  # noqa: PLR2004
+
+
+def test_reason_logged_not_returned(env: Env, caplog: pytest.LogCaptureFixture) -> None:
+    """The reason is logged with the decision, never sent to the client."""
+    reason = "not a member of project x"
+    env.pdp.decide = lambda _: {
+        "decision": False,
+        "context": {"tes": {"reason": reason}},
+    }
+    response = env.pdp_on().post(TASKS, json=TASK)
+    assert response.status_code == 403  # noqa: PLR2004
+    assert reason not in response.text
+    assert repr(reason) in caplog.text
+
+
+@pytest.mark.parametrize(
+    "tes",
+    [[], {"scope": {"owners": "x"}}, {"groups": [1]}, {"reason": 1}],
+    ids=["tes-list", "owners-string", "groups-number", "reason-number"],
+)
+def test_malformed_context_is_failure(
+    env: Env, tes: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Wrong types in `context.tes` are a 503, like a failed decision service."""
+    env.pdp.decide = lambda _: {"decision": True, "context": {"tes": tes}}
+    response = env.pdp_on().post(TASKS, json=TASK)
+    assert response.status_code == 503  # noqa: PLR2004
+    assert response.headers["retry-after"] == "1"
+    assert "Decision service failed (invalid response" in caplog.text
+    assert env.store.tasks == {}
+
+
+# -- sharing ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sharing", [False, True])
+def test_create_groups_only_with_sharing(env: Env, *, sharing: bool) -> None:
+    """The decision's groups are stored with sharing on only, never the claims."""
+    env.claims["groups"] = ["community"]
+    env.pdp.decide = per_action({"groups": ["lab-alpha", "lab-beta"]}, CreateTask=True)
+    client = env.pdp_on(sharing=sharing, decision_service_claims=("groups",))
+    task_id = client.post(TASKS, json=TASK).json()["id"]
+    assert env.store.groups[task_id] == (["lab-alpha", "lab-beta"] if sharing else [])
+
+
+def test_create_groups_absent(env: Env) -> None:
+    """With sharing on and no groups in the decision, the task has none."""
+    env.claims["groups"] = ["community"]
+    task_id = env.pdp_on(sharing=True).post(TASKS, json=TASK).json()["id"]
+    assert env.store.groups[task_id] == []
+
+
+def test_sharing_off_lists_own_only(env: Env) -> None:
+    """Sharing off: one `own` question; own tasks even if all would be allowed."""
+    alice, _ = fill(env.store)
+    env.pdp.decide = per_action(
+        {"scope": {"owners": [BOB]}}, ListTasks_all=True, ListTasks_own=True
+    )
+    pages = page_through(env.pdp_on(), page_size=2)
+    assert sorted(i for page in pages for i in page) == sorted(alice)
+    assert {b["resource"]["id"] for b in env.pdp.bodies} == {"own"}
+    assert len(env.pdp.requests) == len(pages)
+
+
+@pytest.mark.parametrize(
+    ("method", "task_id", "path"),
+    [
+        ("GET", BOB_TASK, f"{TASKS}/{BOB_TASK}"),
+        ("GET", MISSING, f"{TASKS}/{MISSING}"),
+        ("POST", BOB_TASK, f"{TASKS}/{BOB_TASK}:cancel"),
+        ("POST", MISSING, f"{TASKS}/{MISSING}:cancel"),
+    ],
+)
+def test_sharing_off_foreign_and_missing(
+    env: Env, method: str, task_id: str, path: str
+) -> None:
+    """Sharing off: foreign and missing tasks are 404 without asking, alike."""
+    env.store.add(BOB, BOB_TASK)
+    response = env.pdp_on().request(method, path)
+    assert response.status_code == 404  # noqa: PLR2004
+    assert response.json()["message"] == f"task {task_id} not found"
+    assert env.pdp.requests == []
+    assert env.store.tasks[BOB_TASK][1].state == TesState.RUNNING
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+def test_sharing_off_own_task_asked(env: Env, *, allowed: bool) -> None:
+    """Sharing off: get and cancel of an own task are still asked."""
+    env.store.add(ALICE, ALICE_TASK)
+    env.pdp.decide = per_action(GetTask=allowed, CancelTask=allowed)
+    client = env.pdp_on()
+    status = 200 if allowed else 404
+    assert client.get(f"{TASKS}/{ALICE_TASK}").status_code == status
+    assert client.post(f"{TASKS}/{ALICE_TASK}:cancel").status_code == status
+    asked = ["GetTask", "CancelTask"] + ([] if allowed else ["GetTask"])
+    assert [b["action"]["name"] for b in env.pdp.bodies] == asked
+
+
+def test_sharing_off_own_cancel_denied_but_readable(env: Env) -> None:
+    """Sharing off: an own task readable but not cancellable is 403."""
+    env.store.add(ALICE, ALICE_TASK)
+    env.pdp.decide = per_action(GetTask=True)
+    response = env.pdp_on().post(f"{TASKS}/{ALICE_TASK}:cancel")
+    assert response.status_code == 403  # noqa: PLR2004
+
+
+CAROL = f"{ISSUER}|carol"
+
+
+def share(store: Store) -> dict[str, str]:
+    """Store tasks of alice and others with groups and tags; ids by name."""
+    return {
+        "alice": store.add(ALICE, "00000000-0000-4000-8000-0000000000a0"),
+        "bob-alpha": store.add(
+            BOB, "00000000-0000-4000-8000-0000000000b0", ["lab-alpha"]
+        ),
+        "bob-x": store.add(
+            BOB, "00000000-0000-4000-8000-0000000000b1", tags={"project": "x"}
+        ),
+        "bob-alpha-y": store.add(
+            BOB,
+            "00000000-0000-4000-8000-0000000000b2",
+            ["lab-alpha", "lab-beta"],
+            tags={"project": "y"},
+        ),
+        "carol-alpha": store.add(
+            CAROL, "00000000-0000-4000-8000-0000000000c0", ["lab-alpha"]
+        ),
+        "carol-z": store.add(
+            CAROL, "00000000-0000-4000-8000-0000000000c1", tags={"project": "z"}
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    ("scope", "shared"),
+    [
+        (None, []),
+        ({}, []),
+        ({"owners": [BOB]}, ["bob-alpha", "bob-x", "bob-alpha-y"]),
+        ({"groups": ["lab-alpha"]}, ["bob-alpha", "bob-alpha-y", "carol-alpha"]),
+        ({"groups": ["lab-beta", "lab-gamma"]}, ["bob-alpha-y"]),
+        ({"tags": {"project": ["x", "z"]}}, ["bob-x", "carol-z"]),
+        ({"owners": [BOB], "groups": ["lab-alpha"]}, ["bob-alpha", "bob-alpha-y"]),
+        ({"groups": ["lab-alpha"], "tags": {"project": ["y"]}}, ["bob-alpha-y"]),
+        ({"owners": [BOB], "tags": {"project": ["z"]}}, []),
+        ({"owners": [], "groups": ["lab-alpha"]}, []),
+    ],
+    ids=[
+        "absent",
+        "empty",
+        "owners",
+        "groups",
+        "groups-any",
+        "tags-any",
+        "owners-and-groups",
+        "groups-and-tags",
+        "disjoint",
+        "empty-dimension",
+    ],
+)
+def test_sharing_on_own_and_scope(
+    env: Env, scope: dict[str, Any] | None, shared: list[str]
+) -> None:
+    """Sharing on, `all` denied: own tasks and those of the `own` scope."""
+    ids = share(env.store)
+    tes = None if scope is None else {"scope": scope}
+    env.pdp.decide = per_action(tes, ListTasks_own=True)
+    pages = page_through(env.pdp_on(sharing=True), page_size=2)
+    listed = sorted(i for page in pages for i in page)
+    assert listed == sorted(ids[name] for name in ["alice", *shared])
+
+
+def test_sharing_on_all(env: Env) -> None:
+    """Sharing on, `all` allowed: every task, whatever the `own` scope."""
+    ids = share(env.store)
+    env.pdp.decide = per_action({"scope": {"owners": [BOB]}}, ListTasks_all=True)
+    listed = env.pdp_on(sharing=True).get(TASKS).json()["tasks"]
+    assert sorted(t["id"] for t in listed) == sorted(ids.values())
+
+
+def test_sharing_on_scope_of_all_ignored(env: Env) -> None:
+    """A scope on a denied `all` adds nothing; `own` decides."""
+    ids = share(env.store)
+
+    def decide(body: dict[str, Any]) -> Any:
+        if body["resource"]["id"] == "all":
+            scope = {"owners": [BOB]}
+            return {"decision": False, "context": {"tes": {"scope": scope}}}
+        return {"decision": True}
+
+    env.pdp.decide = decide
+    listed = env.pdp_on(sharing=True).get(TASKS).json()["tasks"]
+    assert [t["id"] for t in listed] == [ids["alice"]]
+
+
+def test_sharing_on_neither(env: Env) -> None:
+    """Sharing on, neither set allowed: 403, even with a scope."""
+    share(env.store)
+    env.pdp.decide = per_action({"scope": {"owners": [BOB]}})
+    assert env.pdp_on(sharing=True).get(TASKS).status_code == 403  # noqa: PLR2004
+
+
+@pytest.mark.parametrize(("owners", "status"), [(2, 200), (3, 403)])
+def test_max_owners(
+    env: Env, owners: int, status: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A scope naming more than `maxOwners` owners denies, logged as an error.
+
+    Duplicates count once.
+    """
+    scope = {"owners": [f"owner-{i}" for i in range(owners)] + ["owner-0"]}
+    env.pdp.decide = per_action({"scope": scope}, ListTasks_own=True)
+    response = env.pdp_on(sharing=True, max_owners=2).get(TASKS)
+    assert response.status_code == status
+    errors = [r for r in authz_logs(caplog) if r.levelname == "ERROR"]
+    assert len(errors) == (0 if status == 200 else 1)  # noqa: PLR2004
+    assert all("authz.maxOwners (2)" in r.getMessage() for r in errors)
+
+
+def test_sharing_needs_decision_service() -> None:
+    """Sharing without a decision service refuses to start; it would do nothing."""
+    with pytest.raises(ValueError, match="DECISION_SERVICE_URL"):
+        AuthzSettings(sharing=True).validate_for(auth_enabled=True)
+    with pytest.raises(ValueError, match="auth is disabled"):
+        AuthzSettings(sharing=True).validate_for(auth_enabled=False)
+
+
+@pytest.mark.parametrize(
+    ("value", "sharing"),
+    [
+        ("", False),
+        ("true", True),
+        ("ON", True),
+        ("1", True),
+        ("false", False),
+        ("no", False),
+    ],
+)
+def test_sharing_from_env(
+    monkeypatch: pytest.MonkeyPatch, value: str, *, sharing: bool
+) -> None:
+    """`POIESIS_AUTHZ_SHARING` is a boolean, off by default."""
+    monkeypatch.setenv("POIESIS_AUTHZ_SHARING", value)
+    assert AuthzSettings().sharing is sharing
+
+
+@pytest.mark.parametrize("value", ["of", "enabled", "2", "yeah"])
+def test_sharing_typo_refused(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """An unrecognised boolean refuses to start rather than guess."""
+    monkeypatch.setenv("POIESIS_AUTHZ_SHARING", value)
+    with pytest.raises(ValueError, match="POIESIS_AUTHZ_SHARING"):
+        AuthzSettings()
+
+
+def test_max_owners_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`POIESIS_AUTHZ_MAX_OWNERS` defaults to 1000 and must be at least 1."""
+    monkeypatch.delenv("POIESIS_AUTHZ_MAX_OWNERS", raising=False)
+    assert AuthzSettings().max_owners == 1000  # noqa: PLR2004
+    monkeypatch.setenv("POIESIS_AUTHZ_MAX_OWNERS", "5")
+    assert AuthzSettings().max_owners == 5  # noqa: PLR2004
+    for value in ("0", "-1"):
+        monkeypatch.setenv("POIESIS_AUTHZ_MAX_OWNERS", value)
+        with pytest.raises(ValueError, match="max_owners"):
+            AuthzSettings()
+    monkeypatch.setenv("POIESIS_AUTHZ_MAX_OWNERS", "many")
+    with pytest.raises(ValueError, match="POIESIS_AUTHZ_MAX_OWNERS"):
+        AuthzSettings()
