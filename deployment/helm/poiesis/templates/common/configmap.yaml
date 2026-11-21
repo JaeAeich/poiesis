@@ -74,6 +74,20 @@ data:
   # Directories file:// URLs may point into; empty turns the scheme off.
   POIESIS_FILE_URL_ROOTS: {{ join "," (.Values.taskpods.fileUrlRoots | default list) | quote }}
 
+  # ---- TaskPod system-container resources ----------------------------------
+  # JSON resources blocks for trec, tif/tof and ack; empty ones are omitted.
+  {{- with .Values.taskpods.systemResources }}
+  {{- with .recorder }}
+  POIESIS_TASKPOD_RECORDER_RESOURCES: {{ toJson . | quote }}
+  {{- end }}
+  {{- with .filer }}
+  POIESIS_TASKPOD_FILER_RESOURCES: {{ toJson . | quote }}
+  {{- end }}
+  {{- with .ack }}
+  POIESIS_TASKPOD_ACK_RESOURCES: {{ toJson . | quote }}
+  {{- end }}
+  {{- end }}
+
   # ---- Operator-supplied TaskPod extensions ---------------------------------
   # Serialised as JSON arrays so the API can decode them at startup. Empty
   # lists are omitted entirely; the runtime defaults to [] when unset.

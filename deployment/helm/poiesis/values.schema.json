@@ -237,6 +237,15 @@
           "items": { "type": "string", "pattern": "^/[^,]+$" }
         },
         "activeDeadlineSeconds": { "type": ["integer", "null"], "minimum": 1 },
+        "systemResources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "recorder": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/resources" }] },
+            "filer":    { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/resources" }] },
+            "ack":      { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/resources" }] }
+          }
+        },
         "extraEnv":          { "type": "array", "items": { "type": "object" } },
         "extraVolumes":      { "type": "array", "items": { "type": "object" } },
         "extraVolumeMounts": { "type": "array", "items": { "type": "object" } },

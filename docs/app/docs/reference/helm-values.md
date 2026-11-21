@@ -204,9 +204,18 @@ Baked into TaskPod manifests by the API when a task is created. See
 | `taskpods.activeDeadlineSeconds` | `3600` | [Time limit](../concepts/tasks.md#time-limit) of a task in seconds (`activeDeadlineSeconds` of the Job), at least 1; `null` is no limit. Also ends the wait of a task that can't be scheduled. |
 | `taskpods.outputGlobFallback` | `false` | Upload everything under `path_prefix` when an output glob matches nothing. |
 | `taskpods.fileUrlRoots` | `[]` | Directories `file://` URLs may point into; empty turns the scheme off. See [Local paths](../concepts/storage.md#local-paths). |
+| `taskpods.systemResources.recorder` | requests `10m`/`128Mi`, limits `200m`/`256Mi` | Resources of `trec`, the sidecar that records the task. |
+| `taskpods.systemResources.filer` | requests `100m`/`256Mi`, limits `1000m`/`1Gi` | Resources of `tif` and `tof`. Transfers are streamed, so memory doesn't grow with file size. |
+| `taskpods.systemResources.ack` | requests `10m`/`128Mi`, limits `100m`/`256Mi` | Resources of `ack`, the last container. |
 | `taskpods.extraEnv` | `[]` | Env for `trec`, `tif`, `tof`. Reserved: `DATABASE_URL`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `POIESIS_*`. |
 | `taskpods.extraVolumes` | `[]` | Volumes added to every TaskPod. Reserved names: `task-data`, `postgres-ca`, `tmp`. |
 | `taskpods.extraVolumeMounts` | `[]` | Mounts for Poiesis containers and executors (reference data). |
+
+`taskpods.systemResources` entries are Kubernetes resources blocks
+(`requests`, `limits`). Your values merge with the defaults key by key;
+`null` (e.g. `ack: null`) leaves that container without requests or
+limits. A malformed block, or a request above its limit, stops the API
+at startup. Executors get their resources from the task.
 
 The serialised TaskPod extras are capped at about 32 KiB (the
 Kubernetes env-var limit); use a mounted ConfigMap for very large sets.

@@ -547,6 +547,43 @@ taskpods:
   # e.g. ["/mnt/reference"]. Never list a path that holds credentials.
   fileUrlRoots: []
 
+  # Requests and limits of the poiesis-owned TaskPod containers. Needed when
+  # the TaskPod namespace has a ResourceQuota on cpu or memory and no
+  # LimitRange: Kubernetes then rejects Pods with containers that set none.
+  # Executors get theirs from the task's TES `resources`. Your values merge
+  # with these defaults key by key; null (e.g. `ack: null`) leaves that
+  # container without requests or limits. Invalid values stop the API at
+  # startup.
+  systemResources:
+    # trec: sidecar for the whole task; watches the Pod and writes state
+    # and logs to Postgres. Mostly idle.
+    recorder:
+      requests:
+        cpu: 10m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    # tif and tof: stage inputs and outputs. Transfers are streamed (HTTP in
+    # 8 KiB chunks, S3 through boto3's multipart transfers of about 80 MiB in
+    # flight), so memory doesn't grow with file size; the limit leaves room
+    # for that and the Python process. Raise cpu for faster large transfers.
+    filer:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    # ack: last container; records that the task ended and exits.
+    ack:
+      requests:
+        cpu: 10m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+
   # Operator-supplied TaskPod extensions. Append to every per-task pod.
   #
   # env / volumes inject into poiesis-owned containers (trec / tif / tof).

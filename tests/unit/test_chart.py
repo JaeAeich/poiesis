@@ -6,6 +6,7 @@ Runs `helm template` on the chart in `deployment/helm/poiesis` with the
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -13,6 +14,8 @@ from typing import Any
 
 import pytest
 import yaml
+
+from poiesis.api.settings import AuthSettings, Settings
 
 CHART = Path(__file__).parents[2] / "deployment" / "helm" / "poiesis"
 LINT = str(CHART / "ci" / "lint-values.yaml")
@@ -159,3 +162,32 @@ def test_prestop_sleep_zero_drops_the_hook() -> None:
     """preStopSleepSeconds: 0 renders no lifecycle hook."""
     pod = api_pod(LINT, sets=("api.preStopSleepSeconds=0",))
     assert "lifecycle" not in pod["containers"][0]
+
+
+def test_system_resources_reach_the_runtime_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ConfigMap's JSON parses in Settings into the container resources."""
+    configmap = next(d for d in render(LINT) if d["kind"] == "ConfigMap")["data"]
+    for name in ("RECORDER", "FILER", "ACK"):
+        monkeypatch.setenv(
+            f"POIESIS_TASKPOD_{name}_RESOURCES",
+            configmap[f"POIESIS_TASKPOD_{name}_RESOURCES"],
+        )
+    config = Settings(auth=AuthSettings(enabled=False)).runtime_config()
+    assert config.filer_resources is not None
+    assert config.filer_resources.limits == {"cpu": "1000m", "memory": "1Gi"}
+    assert config.recorder_resources is not None
+    assert config.recorder_resources.requests == {"cpu": "10m", "memory": "128Mi"}
+    assert config.ack_resources is not None
+    assert config.ack_resources.limits == {"cpu": "100m", "memory": "256Mi"}
+
+
+def test_system_resources_null_is_omitted() -> None:
+    """`ack: null` renders no env, so ack gets no requests or limits."""
+    configmap = next(d for d in render(FULL) if d["kind"] == "ConfigMap")["data"]
+    assert "POIESIS_TASKPOD_ACK_RESOURCES" not in configmap
+    assert json.loads(configmap["POIESIS_TASKPOD_FILER_RESOURCES"])["limits"] == {
+        "cpu": 2,
+        "memory": "2Gi",
+    }

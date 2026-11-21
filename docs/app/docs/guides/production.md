@@ -62,6 +62,15 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 - `taskpods.activeDeadlineSeconds` set above your longest task. The
   default stops every task after one hour. See
   [Time limit](../concepts/tasks.md#time-limit).
+- With a ResourceQuota on `cpu` or `memory` in the task namespace, every
+  container needs requests and limits (or a LimitRange that sets them).
+  The chart sets them on `trec`, `tif`, `tof` and `ack` through
+  `taskpods.systemResources`. The containers run one after another
+  next to `trec`, so with the defaults a TaskPod requests at least
+  110m CPU and 384Mi memory (`trec` with `tif` or `tof`), plus `trec`'s
+  share while executors run. Executors get theirs from the task's
+  `resources`; check that such a quota admits them too, or add a
+  LimitRange with defaults.
 - `tctl.unschedulableTimeoutSeconds` left `null` if tasks may queue for
   capacity (a full cluster, a ResourceQuota, an autoscaler adding
   nodes): they wait in `QUEUED` until the time limit. Set it to fail

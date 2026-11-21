@@ -107,6 +107,19 @@ kubectl -n poiesis-tasks create secret generic poiesis-s3 \
 |---|---|---|---|
 | `taskpods.fileUrlRoots` | list of strings | `[]` | Directories `file://` URLs may point into. Empty turns the scheme off. List only directories mounted into TaskPods through `extraVolumes` / `extraVolumeMounts`. |
 
+### System-container resources (`taskpods.systemResources`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `taskpods.systemResources.recorder` | resources | requests `10m`/`128Mi`, limits `200m`/`256Mi` | `trec` sidecar: watches the Pod, writes state and logs. |
+| `taskpods.systemResources.filer` | resources | requests `100m`/`256Mi`, limits `1000m`/`1Gi` | `tif` and `tof`. Transfers stream (HTTP 8 KiB chunks, boto3 multipart), so memory doesn't grow with file size. |
+| `taskpods.systemResources.ack` | resources | requests `10m`/`128Mi`, limits `100m`/`256Mi` | `ack`, the last container. |
+
+Needed when the TaskPod namespace has a `ResourceQuota` on cpu or memory
+and no `LimitRange`. Values merge with the defaults; `null` removes a
+block. Rendered as JSON in `POIESIS_TASKPOD_{RECORDER,FILER,ACK}_RESOURCES`;
+a malformed block or a request above its limit stops the API at startup.
+
 ### TaskPod extension points (`taskpods.extraEnv`, `taskpods.extraVolumes`, `taskpods.extraVolumeMounts`)
 
 Operator-supplied env vars and volumes injected into every TaskPod. The
