@@ -51,9 +51,8 @@ podSecurityContext: {}
 containerSecurityContext: {}
 
 # PodSecurity profile applied to poiesis-owned containers (api, tctl, hook,
-# and per-TaskPod trec/tif/tof/ack). Executor containers in TaskPods always
-# run user-supplied images and are exempt — operators needing constraints on
-# user code should rely on the namespace's PodSecurity admission level.
+# and per-TaskPod trec/tif/tof/ack). Executor containers in TaskPods run
+# user-supplied images and follow taskpods.executorSecurityEnforce instead.
 #
 # Allowed: restricted | baseline | off.
 podSecurityEnforce: restricted
@@ -700,6 +699,30 @@ taskpods:
     # as a bearer token to DRS servers, and never to the data URL. Executors
     # don't get it. Empty sends no token.
     existingSecret: ""
+
+  # Pod Security profile of the executor containers (user images) and of the
+  # TaskPod's Pod-level securityContext. A namespace that enforces Pod
+  # Security `restricted` refuses every TaskPod unless this is `restricted`.
+  #   off        → no securityContext: executors run as their images say,
+  #                root included (the default).
+  #   baseline   → executors: allowPrivilegeEscalation false, drop ALL
+  #                capabilities.
+  #   restricted → baseline, plus runAsNonRoot and seccomp RuntimeDefault on
+  #                executors, and on the Pod runAsUser/runAsGroup/fsGroup
+  #                65532 (the poiesis image's user) with fsGroupChangePolicy
+  #                OnRootMismatch. Every container then runs as uid 65532, so
+  #                images that need root, or a user of their own, fail.
+  # On OpenShift, keep `off`: its SecurityContextConstraints assign users.
+  # Quote "off": unquoted, YAML reads it as false and the schema refuses it.
+  executorSecurityEnforce: "off"
+  # Pod-level securityContext keys merged over the profile (keys you set
+  # replace the profile's), e.g. {runAsUser: 1000, runAsGroup: 1000,
+  # fsGroup: 1000} for another fixed user. Applies to every TaskPod
+  # container, trec/tif/tof/ack included.
+  podSecurityContext: {}
+  # securityContext keys of every executor container, merged over the
+  # profile the same way, e.g. {readOnlyRootFilesystem: true}.
+  executorSecurityContext: {}
 
   # Requests and limits of the poiesis-owned TaskPod containers. Needed when
   # the TaskPod namespace has a ResourceQuota on cpu or memory and no

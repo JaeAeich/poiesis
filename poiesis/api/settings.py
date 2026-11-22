@@ -20,8 +20,10 @@ import httpx
 from kubernetes.client import (
     V1EnvVar,
     V1EnvVarSource,
+    V1PodSecurityContext,
     V1ResourceRequirements,
     V1SecretKeySelector,
+    V1SecurityContext,
 )
 from kubernetes.utils import parse_quantity  # ty: ignore[unresolved-import]
 from pydantic import (
@@ -71,6 +73,7 @@ from poiesis.core.taskpod.config import (
     NodePlacement,
     SchedulingConfig,
 )
+from poiesis.core.taskpod.pod import from_json
 from poiesis.core.taskpod.volumes import identity_token_path, identity_token_volume_name
 
 if TYPE_CHECKING:
@@ -82,6 +85,12 @@ logger = logging.getLogger(__name__)
 RECORDER_RESOURCES_ENV = "POIESIS_TASKPOD_RECORDER_RESOURCES"
 FILER_RESOURCES_ENV = "POIESIS_TASKPOD_FILER_RESOURCES"
 ACK_RESOURCES_ENV = "POIESIS_TASKPOD_ACK_RESOURCES"
+
+#: Profile of the executors and the TaskPod's Pod-level security context,
+#: and the operator's keys over each (JSON objects, Kubernetes camelCase).
+EXECUTOR_SECURITY_ENFORCE_ENV = "POIESIS_EXECUTOR_SECURITY_ENFORCE"
+TASKPOD_POD_SECURITY_CONTEXT_ENV = "POIESIS_TASKPOD_POD_SECURITY_CONTEXT"
+EXECUTOR_SECURITY_CONTEXT_ENV = "POIESIS_EXECUTOR_SECURITY_CONTEXT"
 
 
 def _parse_int_env(name: str, default: int | None = None) -> int | None:
@@ -215,6 +224,57 @@ def _parse_json_array_env(name: str) -> list[dict[str, Any]]:
             raise TypeError(f"{name}[{idx}] must be a JSON object")
         items.append({str(k): v for k, v in entry.items()})
     return items
+
+
+def _parse_security_enforce_env(name: str) -> PodSecurityEnforce:
+    """``restricted`` | ``baseline`` | ``off`` env value; empty/unset is ``off``.
+
+    Strict: a typo must not change what user images may do.
+    """
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return PodSecurityEnforce.OFF
+    try:
+        return PodSecurityEnforce(raw)
+    except ValueError:
+        raise ValueError(
+            f"{name} must be restricted, baseline or off, got {raw!r}"
+        ) from None
+
+
+def _parse_json_dict_env(name: str) -> dict[str, Any]:
+    """JSON-object env value → dict, values kept as they are. Empty/unset is {}.
+
+    Invalid JSON or anything but an object raises, so the API stops at
+    startup rather than building TaskPods the operator didn't ask for.
+    """
+    raw = os.environ.get(name, "")
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{name} is not valid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise TypeError(f"{name} must encode a JSON object")
+    return {str(k): v for k, v in parsed.items()}
+
+
+def _parse_security_context_env(
+    name: str, model: type[V1PodSecurityContext | V1SecurityContext]
+) -> dict[str, Any]:
+    """JSON securityContext keys env value → dict, checked against ``model``.
+
+    Empty/unset is {}. A key the Kubernetes model doesn't have, nested ones
+    included (``capabilities.drops``), raises naming the setting, so a typo
+    stops the API at startup instead of every TaskPod being refused.
+    """
+    parsed = _parse_json_dict_env(name)
+    try:
+        from_json(model, parsed)
+    except (TypeError, ValueError) as exc:
+        raise type(exc)(f"{name}: {exc}") from exc
+    return parsed
 
 
 def _parse_quantity(where: str, quantity: object) -> Decimal:
@@ -1660,6 +1720,22 @@ class Settings(BaseModel):
             os.environ.get("POIESIS_POD_SECURITY_ENFORCE", "restricted")
         ),
     )
+    # Executors and the Pod-level context: off unless the operator opts in.
+    executor_security_enforce: PodSecurityEnforce = Field(
+        default_factory=lambda: _parse_security_enforce_env(
+            EXECUTOR_SECURITY_ENFORCE_ENV
+        ),
+    )
+    taskpod_pod_security_context: dict[str, Any] = Field(
+        default_factory=lambda: _parse_security_context_env(
+            TASKPOD_POD_SECURITY_CONTEXT_ENV, V1PodSecurityContext
+        ),
+    )
+    executor_security_context: dict[str, Any] = Field(
+        default_factory=lambda: _parse_security_context_env(
+            EXECUTOR_SECURITY_CONTEXT_ENV, V1SecurityContext
+        ),
+    )
     # Comma-separated list of Secrets to attach as imagePullSecrets on every TaskPod.
     image_pull_secrets: tuple[str, ...] = Field(
         default_factory=lambda: tuple(
@@ -1811,6 +1887,9 @@ class Settings(BaseModel):
             job_ttl_seconds=self.job_ttl_seconds,
             active_deadline_seconds=self.active_deadline_seconds,
             pod_security_enforce=self.pod_security_enforce,
+            executor_security_enforce=self.executor_security_enforce,
+            pod_security_context=self.taskpod_pod_security_context,
+            executor_security_context=self.executor_security_context,
             image_pull_secrets=self.image_pull_secrets,
             postgres_ca_configmap=self.postgres_ca_configmap,
             extra_env=env,

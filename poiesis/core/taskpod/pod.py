@@ -10,6 +10,10 @@ task's TES ``resources`` and the operator's `SchedulingConfig` meet here:
     backend_parameters  → GPUs, a PriorityClass, a node pool (only the
                             keys the operator allows)
 
+The Pod-level security context and the executors' come from the
+operator's ``executor_security_enforce`` profile and overrides
+(`pod_security_context`, `executor_security_context`).
+
 Executors run one after another as init containers, so each gets the
 task's full cpu and memory; Kubernetes schedules the Pod on the largest
 init container request, not on their sum.
@@ -19,13 +23,22 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 from typing import TYPE_CHECKING, Any
 
-from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
+import kubernetes.client
+from kubernetes.client import (
+    V1LocalObjectReference,
+    V1PodSecurityContext,
+    V1ResourceRequirements,
+    V1SecurityContext,
+)
 
-from poiesis.core.taskpod.config import ZONE_LABEL
+from poiesis.core.taskpod.config import ZONE_LABEL, PodSecurityEnforce
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from poiesis.api.tes.models import TesExecutor, TesTask
     from poiesis.core.taskpod.config import (
         NodePlacement,
@@ -65,7 +78,118 @@ def pod_settings(task: TesTask, config: RuntimeConfig) -> dict[str, Any]:
             priority_class(params, scheduling) or scheduling.priority_class_name
         ),
         "runtime_class_name": scheduling.runtime_class_name,
+        "security_context": pod_security_context(config),
     }
+
+
+#: Pod-level security context per executor profile. `restricted` fixes a
+#: numeric non-root user, the poiesis image's 65532, so that images whose
+#: ``USER`` is root or a name still start, and every container owns the
+#: task volume alike (``fsGroup``).
+_POD_PROFILES: dict[PodSecurityEnforce, dict[str, Any]] = {
+    PodSecurityEnforce.RESTRICTED: {
+        "runAsNonRoot": True,
+        "runAsUser": 65532,
+        "runAsGroup": 65532,
+        "fsGroup": 65532,
+        "fsGroupChangePolicy": "OnRootMismatch",
+        "seccompProfile": {"type": "RuntimeDefault"},
+    },
+}
+
+#: Executor container security context per profile. No
+#: ``readOnlyRootFilesystem``: user images expect to write where they like.
+_EXECUTOR_PROFILES: dict[PodSecurityEnforce, dict[str, Any]] = {
+    PodSecurityEnforce.RESTRICTED: {
+        "runAsNonRoot": True,
+        "allowPrivilegeEscalation": False,
+        "capabilities": {"drop": ["ALL"]},
+        "seccompProfile": {"type": "RuntimeDefault"},
+    },
+    PodSecurityEnforce.BASELINE: {
+        "allowPrivilegeEscalation": False,
+        "capabilities": {"drop": ["ALL"]},
+    },
+}
+
+
+def pod_security_context(config: RuntimeConfig) -> V1PodSecurityContext | None:
+    """The TaskPod's Pod-level securityContext.
+
+    The ``executor_security_enforce`` profile with the operator's
+    ``pod_security_context`` keys over it. None when both are empty.
+
+    Raises:
+        ValueError: A key that ``V1PodSecurityContext`` doesn't have.
+    """
+    merged = _merged(
+        _POD_PROFILES.get(config.executor_security_enforce, {}),
+        config.pod_security_context,
+    )
+    return None if merged is None else from_json(V1PodSecurityContext, merged)
+
+
+def executor_security_context(config: RuntimeConfig) -> V1SecurityContext | None:
+    """An executor container's securityContext.
+
+    The ``executor_security_enforce`` profile with the operator's
+    ``executor_security_context`` keys over it. None when both are empty.
+
+    Raises:
+        ValueError: A key that ``V1SecurityContext`` doesn't have.
+    """
+    merged = _merged(
+        _EXECUTOR_PROFILES.get(config.executor_security_enforce, {}),
+        config.executor_security_context,
+    )
+    return None if merged is None else from_json(V1SecurityContext, merged)
+
+
+def from_json[M](model: type[M], data: Mapping[str, Any]) -> M:
+    """A Kubernetes client model from its JSON form (camelCase keys).
+
+    Nested objects and lists of them become their models too, as the
+    client's own deserialiser does. Values are not type-checked; the API
+    server does that.
+
+    Raises:
+        ValueError: A key the model doesn't have.
+        TypeError: Something other than an object where it expects one.
+    """
+    if not isinstance(data, dict):
+        raise TypeError(f"{model.__name__} must be an object, got {data!r}")
+    # Every client model has both maps; the type stubs don't declare them.
+    attribute_map: dict[str, str] = getattr(model, "attribute_map")  # noqa: B009
+    types: dict[str, str] = getattr(model, "openapi_types")  # noqa: B009
+    fields = {v: k for k, v in attribute_map.items()}
+    kwargs: dict[str, Any] = {}
+    for key, value in data.items():
+        if key not in fields:
+            raise ValueError(f"{model.__name__} has no field {key!r}")
+        name = fields[key]
+        kwargs[name] = _field_value(types[name], value)
+    return model(**kwargs)
+
+
+def _field_value(kind: str, value: Any) -> Any:
+    """``value`` as the client type ``kind`` names (``V1X``, ``list[V1X]``)."""
+    if value is None:
+        return None
+    listed = re.fullmatch(r"list\[(V\w+)\]", kind)
+    if listed and isinstance(value, list):
+        nested = getattr(kubernetes.client, listed.group(1))
+        return [from_json(nested, item) for item in value]
+    if re.fullmatch(r"V\w+", kind):
+        return from_json(getattr(kubernetes.client, kind), value)
+    return value
+
+
+def _merged(
+    profile: Mapping[str, Any], overrides: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """``overrides`` over a copy of ``profile`` (top-level keys); None if empty."""
+    merged = copy.deepcopy({**profile, **overrides})
+    return merged or None
 
 
 def executor_resources(

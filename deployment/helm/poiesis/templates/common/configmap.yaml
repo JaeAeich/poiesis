@@ -95,6 +95,17 @@ data:
   POIESIS_TASKPOD_DRS_SECRET: {{ . | quote }}
   {{- end }}
 
+  # ---- TaskPod executor security ------------------------------------------
+  # Profile of the executors and the Pod-level securityContext; the operator's
+  # keys over each as JSON objects (empty ones are omitted).
+  POIESIS_EXECUTOR_SECURITY_ENFORCE: {{ .Values.taskpods.executorSecurityEnforce | quote }}
+  {{- with .Values.taskpods.podSecurityContext }}
+  POIESIS_TASKPOD_POD_SECURITY_CONTEXT: {{ toJson . | quote }}
+  {{- end }}
+  {{- with .Values.taskpods.executorSecurityContext }}
+  POIESIS_EXECUTOR_SECURITY_CONTEXT: {{ toJson . | quote }}
+  {{- end }}
+
   # ---- TaskPod system-container resources ----------------------------------
   # JSON resources blocks for trec, tif/tof and ack; empty ones are omitted.
   {{- with .Values.taskpods.systemResources }}
