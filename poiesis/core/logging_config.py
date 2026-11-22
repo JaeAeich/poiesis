@@ -207,9 +207,9 @@ def setup_logging(
         root_logger.removeHandler(old)
     root_logger.addHandler(handler)
 
-    # Lines of the core module and of the servers (gunicorn, uvicorn) go
+    # Lines of the core module and of the server (uvicorn) go
     # through the root handler.
-    for name in ("poiesis.core", "gunicorn.error", "uvicorn", "uvicorn.error"):
+    for name in ("poiesis.core", "uvicorn", "uvicorn.error"):
         logger = logging.getLogger(name)
         logger.handlers.clear()
         logger.propagate = True

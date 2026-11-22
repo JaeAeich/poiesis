@@ -19,7 +19,7 @@ dependencies = [
   "asyncpg",
   "click",
   "fastapi",
-  "gunicorn",
+  "httptools",
   "httpx",
   "joserfc",
   "kubernetes",
@@ -29,6 +29,7 @@ dependencies = [
   "requests",
   "urllib3",
   "uvicorn",
+  "uvloop",
 ]
 description = "TES on kubernetes"
 keywords = [
@@ -59,9 +60,9 @@ Repository = "https://github.com/jaeaeich/poiesis"
 known_first_party = ["poiesis"]
 
 [tool.deptry.per_rule_ignores]
-# uvicorn is loaded by gunicorn via the worker_class string
-# "uvicorn.workers.UvicornWorker" in asgi.py — deptry can't see it.
-DEP002 = ["uvicorn"]
+# Uvicorn picks its event loop (uvloop) and HTTP parser (httptools) when
+# they are installed; nothing imports them.
+DEP002 = ["httptools", "uvloop"]
 
 [tool.pytest.ini_options]
 # The end-to-end tests need a cluster: run them with `pytest tests/e2e`.
@@ -113,10 +114,6 @@ ignore = [
   "TRY400", # logger.exception vs logger.error — covered by review
 ]
 select = ["ALL"]
-
-[tool.ruff.lint.per-file-ignores]
-# The Gunicorn subclasses follow Gunicorn's untyped signatures.
-"poiesis/api/asgi.py" = ["ANN", "ARG002"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

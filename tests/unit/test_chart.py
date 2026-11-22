@@ -134,7 +134,7 @@ def api_pod(*values: str, sets: tuple[str, ...] = ()) -> dict[str, Any]:
 
 
 def test_api_shutdown_defaults() -> None:
-    """A preStop sleep and a grace period covering gunicorn's 30 s drain."""
+    """A preStop sleep and a grace period covering the API's 30 s drain."""
     pod = api_pod(LINT)
     container = pod["containers"][0]
     sleep = int(container["lifecycle"]["preStop"]["exec"]["command"][1])

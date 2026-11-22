@@ -357,7 +357,7 @@ below only; with metrics on, the API and tctl accept `metrics.port` from
 | Path | Type | Default | Description |
 |---|---|---|---|
 | `api.preStopSleepSeconds` | integer | `5` | preStop sleep before SIGTERM, so endpoints drop the Pod first. `0` → no hook. |
-| `api.terminationGracePeriodSeconds` | integer | `40` | Gunicorn drains running requests for up to 30 s after SIGTERM; keep this ≥ `preStopSleepSeconds` + 30. |
+| `api.terminationGracePeriodSeconds` | integer | `40` | The API drains running requests for up to 30 s after SIGTERM; keep this ≥ `preStopSleepSeconds` + 30. |
 | `api.topologySpreadConstraints` | list | `[]` | Pod topology spread. An entry without `labelSelector` gets the API Pods' selector labels. |
 | `api.probes.{readiness,liveness}.failureThreshold` | integer | `3` | Probe failures before the Pod is marked unready / restarted. |
 
