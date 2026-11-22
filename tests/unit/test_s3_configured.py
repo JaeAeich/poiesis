@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from poiesis.api.settings import AuthSettings, Settings
-from poiesis.api.tes.models import TesExecutor, TesInput, TesTask
+from poiesis.tes.models import TesExecutor, TesInput, TesTask
 from poiesis.core.taskpod import build_taskpod_job
 
 TASK = TesTask(

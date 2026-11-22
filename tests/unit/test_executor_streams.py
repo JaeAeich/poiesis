@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from poiesis.api.tes.models import (
+from poiesis.tes.models import (
     TesExecutor,
     TesFileType,
     TesInput,
@@ -30,7 +30,7 @@ from poiesis.api.tes.models import (
     TesState,
     TesTask,
 )
-from poiesis.core import executor_logs, executor_shell, ignore_error, tctl
+from poiesis.core import executor_logs, executor_shell, ignore_error, reconcile, tctl
 from poiesis.core.constants import EXECUTOR_STREAMS_ENV
 from poiesis.core.executor_logs import (
     MAX_OUTPUT_BYTES,
@@ -41,7 +41,7 @@ from poiesis.core.executor_logs import (
     streams_from_pod,
 )
 from poiesis.core.pod_status import extract_terminal_reason, pod_terminated_terminal
-from poiesis.core.services.filer.tif import make_task_dirs
+from poiesis.core.filer.tif import make_task_dirs
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
 
 if TYPE_CHECKING:
@@ -408,7 +408,7 @@ def test_missing_shell_names_the_stream_fields() -> None:
     pod = failed_pod(command, START_ERROR)
 
     state, _ = pod_terminated_terminal(extract_terminal_reason(pod))
-    (line,) = tctl._terminal_system_logs(pod, state)
+    (line,) = reconcile.terminal_system_logs(pod, state)
 
     assert state is TesState.EXECUTOR_ERROR
     assert "executor 0 sets stdout, stderr, which needs /bin/sh in its image" in line
@@ -422,7 +422,7 @@ def test_command_not_found_is_not_a_shell_problem() -> None:
     )
     assert command is not None
     pod = failed_pod(command, {"exit_code": 127, "reason": "Error"})
-    lines = tctl._terminal_system_logs(pod, TesState.EXECUTOR_ERROR)
+    lines = reconcile.terminal_system_logs(pod, TesState.EXECUTOR_ERROR)
     assert lines == ["container exec-0 exited with code 127"]
 
 

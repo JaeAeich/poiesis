@@ -3,7 +3,7 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [dependency-groups]
-code_quality = ["deptry", "ruff", "ty", "typos"]
+code_quality = ["deptry", "import-linter", "ruff", "ty", "typos"]
 test = ["pyftpdlib", "pytest"]
 types = ["asyncpg-stubs", "kubernetes-stubs", "types-pyyaml", "types-requests"]
 
@@ -19,7 +19,7 @@ dependencies = [
   "asyncpg",
   "click",
   "fastapi",
-  "gunicorn",
+  "httptools",
   "httpx",
   "joserfc",
   "kubernetes",
@@ -27,9 +27,9 @@ dependencies = [
   "prometheus-client",
   "pydantic",
   "requests",
-  "tomli",
   "urllib3",
   "uvicorn",
+  "uvloop",
 ]
 description = "TES on kubernetes"
 keywords = [
@@ -60,9 +60,9 @@ Repository = "https://github.com/jaeaeich/poiesis"
 known_first_party = ["poiesis"]
 
 [tool.deptry.per_rule_ignores]
-# uvicorn is loaded by gunicorn via the worker_class string
-# "uvicorn.workers.UvicornWorker" in asgi.py — deptry can't see it.
-DEP002 = ["uvicorn"]
+# Uvicorn picks its event loop (uvloop) and HTTP parser (httptools) when
+# they are installed; nothing imports them.
+DEP002 = ["httptools", "uvloop"]
 
 [tool.pytest.ini_options]
 # The end-to-end tests need a cluster: run them with `pytest tests/e2e`.
@@ -82,20 +82,11 @@ quote-style = "double"
 
 [tool.ruff.lint]
 ignore = [
-  "A001",
   "A002", # TES spec uses `type`, `id`, `input` — builtin shadows are intentional
   # Annotation rules — aspirational; revisit after v2 lands
   "ANN001",
-  "ANN002",
-  "ANN003",
-  "ANN201",
-  "ANN202",
-  "ANN204",
-  "ANN205",
-  "ANN206",
   "ANN401", # Any in annotations — sometimes intentional
-  "ARG001",
-  "ARG002", # unused args — connexion handler signatures (FastAPI rewrite)
+  "ARG001", # unused args — Starlette handler signatures
   "ASYNC", # asyncio patterns — revisit during TRec/API rewrites
   "COM812", # conflicts with formatter
   # Style preferences we don't share
@@ -106,23 +97,17 @@ ignore = [
   "E501", # line length is enforced by ruff-format
   "EM101",
   "EM102", # exception literal/f-string — same
-  # TODO / fixme metadata rules — pedantic for a small team
-  "FIX002",
   # Cosmetic / opinionated rules that don't pay for themselves
   "G004", # f-strings in logging — readability > theoretical perf
   "ISC001", # conflicts with formatter
   # Naming exceptions driven by external schemas
   "N802",
   "N815", # TES spec field names (camelCase from OpenAPI)
-  "PGH003", # blanket type: ignore — kubernetes-stubs gaps drive these
   # Deferred to the v2 slices that rewrite the affected modules.
   # Drop these once the filer-strategy / K8s-adapter / API rewrites land.
   "PTH", # os.path → pathlib — bulk migration in filer-strategy rewrite
   # CLI / script ergonomics
   "S101", # asserts — used as invariants in dev code
-  "SLF001", # private member access — kubernetes client internals
-  "TD002",
-  "TD003",
   "TRY003", # long messages outside exception class — bulk noise
   "TRY300",
   "TRY301", # try/except restructuring — incremental in v2

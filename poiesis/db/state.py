@@ -26,7 +26,7 @@ import uuid
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from poiesis.api.tes.models import TesOutputFileLog, TesState
+from poiesis.tes.models import TesOutputFileLog, TesState
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

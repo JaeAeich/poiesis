@@ -12,10 +12,10 @@ from pathlib import Path
 import pytest
 
 from poiesis.api.settings import AuthSettings, Settings
-from poiesis.api.tes.models import TesExecutor, TesOutput, TesTask
+from poiesis.tes.models import TesExecutor, TesOutput, TesTask
 from poiesis.core.constants import FILE_URL_ROOTS_ENV, OUTPUT_GLOB_FALLBACK_ENV
-from poiesis.core.services.filer.strategy import filer_strategy
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer.strategy import filer_strategy
+from poiesis.core.filer.tof import Tof
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
 
 GLOB = "/outputs/*.vcf"
@@ -54,7 +54,7 @@ def _logs(
 def run_tof(dest: Path, path: str = GLOB) -> None:
     """Upload one output to `dest`, as TOF does."""
     output = TesOutput(url=f"file://{dest}", path=path, path_prefix="/outputs/")
-    asyncio.run(Tof("task", [output]).file())
+    asyncio.run(Tof("task", [output]).transfer())
 
 
 def uploaded(dest: Path) -> list[str]:

@@ -10,7 +10,7 @@ from typing import Any
 
 from postgres import DSN, needs_postgres, run
 
-from poiesis.api.tes.models import TesExecutor, TesState, TesTask
+from poiesis.tes.models import TesExecutor, TesState, TesTask
 from poiesis.core import trec
 from poiesis.core.pod_status import TaskStateSnapshot
 from poiesis.db import state as state_db

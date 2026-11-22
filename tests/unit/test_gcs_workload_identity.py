@@ -22,19 +22,19 @@ from urllib.parse import unquote
 import httpx
 import pytest
 
-from poiesis.api.tes.models import TesInput
+from poiesis.tes.models import TesInput
 from poiesis.core.constants import (
     GCS_IDENTITY_TOKEN_FILE_ENV,
     GCS_SERVICE_ACCOUNT_ENV,
     GCS_WORKLOAD_IDENTITY_PROVIDER_ENV,
 )
-from poiesis.core.services.filer.strategy import filer_strategy, gcs_identity
-from poiesis.core.services.filer.strategy.gcs_identity import (
+from poiesis.core.filer.strategy import filer_strategy, gcs_identity
+from poiesis.core.filer.strategy.gcs_identity import (
     GcsIdentityError,
     GcsWorkloadIdentity,
     token_audience,
 )
-from poiesis.core.services.filer.strategy.object_store_filer import (
+from poiesis.core.filer.strategy.object_store_filer import (
     ObjectStoreFilerStrategy,
     ObjectUrl,
     gcs_credential_provider,

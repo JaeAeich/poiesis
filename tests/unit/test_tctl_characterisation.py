@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from test_tctl_reconcile import T1, T2, World, deadline, job, pod, unscheduled
 
-from poiesis.api.tes.models import TesState
+from poiesis.tes.models import TesState
 from poiesis.core import tctl
 
 if TYPE_CHECKING:

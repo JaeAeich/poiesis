@@ -13,14 +13,14 @@ from typing import TYPE_CHECKING
 import pytest
 import requests
 
-from poiesis.api.tes.models import TesFileType, TesInput, TesOutput, TesState
-from poiesis.cli.commands.poiesis import tif as tif_cli
-from poiesis.cli.commands.poiesis import tof as tof_cli
-from poiesis.core import filer_error, tctl
+from poiesis.tes.models import TesFileType, TesInput, TesOutput, TesState
+from poiesis.cli import tif as tif_cli
+from poiesis.cli import tof as tof_cli
+from poiesis.core import filer_error, reconcile
 from poiesis.core.pod_status import extract_terminal_reason, pod_terminated_terminal
-from poiesis.core.services.filer.strategy import filer_strategy, http_filer
-from poiesis.core.services.filer.tif import Tif
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer.strategy import filer_strategy, http_filer
+from poiesis.core.filer.tif import Tif
+from poiesis.core.filer.tof import Tof
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -93,7 +93,7 @@ def failed_pod(name: str, message: str | None, reason: str = "Error") -> dict:
 def terminal(pod: dict) -> tuple[TesState, str | None, list[str]]:
     """The state, reason and system logs tctl records for `pod`."""
     state, reason = pod_terminated_terminal(extract_terminal_reason(pod))
-    return state, reason, tctl._terminal_system_logs(pod, state)
+    return state, reason, reconcile.terminal_system_logs(pod, state)
 
 
 def run(filer: Tif | Tof) -> None:

@@ -16,7 +16,7 @@ import pytest
 from click.testing import CliRunner
 from kubernetes.client.exceptions import ApiException
 
-from poiesis.cli.commands.poiesis import tctl as tctl_cli
+from poiesis.cli import tctl as tctl_cli
 from poiesis.core import leases, tctl
 
 if TYPE_CHECKING:
@@ -78,7 +78,7 @@ class Harness:
 
         monkeypatch.setattr(tctl, "try_acquire_or_renew", lease)
         monkeypatch.setattr(tctl, "_reconcile_once", reconcile_once)
-        monkeypatch.setattr(tctl, "_install_signal_handlers", lambda: self.cancelled)
+        monkeypatch.setattr(tctl, "stop_on_signals", lambda: self.cancelled)
         monkeypatch.setattr(tctl, "CoordinationV1Api", lambda: None)
         monkeypatch.setattr(tctl, "CoreV1Api", lambda: None)
         monkeypatch.setattr(tctl, "BatchV1Api", lambda: None)
@@ -266,7 +266,7 @@ def test_cli_passes_both_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("POIESIS_DATABASE_COMMAND_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("POIESIS_METRICS_PORT", raising=False)
 
-    result = CliRunner().invoke(tctl_cli.TctlCommand().create_command(), ["run"])
+    result = CliRunner().invoke(tctl_cli.tctl, ["run"])
 
     assert result.exit_code == 0, result.output
     assert seen == {
@@ -303,13 +303,13 @@ def test_heartbeat_is_touched_by_leader_and_standby(
     heartbeat = tmp_path / "heartbeat"
     harness = Harness(monkeypatch)
     beats: list[str] = []
-    real_beat = tctl._beat
+    real_beat = tctl._touch_heartbeat
 
     def beat(path: Path | None) -> None:
         real_beat(path)
         beats.append("leader" if harness.reconciled else "standby")
 
-    monkeypatch.setattr(tctl, "_beat", beat)
+    monkeypatch.setattr(tctl, "_touch_heartbeat", beat)
     # Standby first: the Lease is held by another instance twice.
     answers = iter([False, False])
 
@@ -352,7 +352,7 @@ def test_cli_reads_the_heartbeat_file(
     monkeypatch.setenv("POIESIS_TASKPOD_NAMESPACE", TASK_NS)
     monkeypatch.setenv("DATABASE_URL", "dsn")
     monkeypatch.setenv("POIESIS_TCTL_HEARTBEAT_FILE", value)
-    result = CliRunner().invoke(tctl_cli.TctlCommand().create_command(), ["run"])
+    result = CliRunner().invoke(tctl_cli.tctl, ["run"])
     assert result.exit_code == 0, result.output
     assert seen["heartbeat"] == (Path(expected) if expected else None)
 
@@ -364,6 +364,6 @@ def test_cli_refuses_a_relative_heartbeat_file(
     monkeypatch.setenv("POIESIS_TASKPOD_NAMESPACE", TASK_NS)
     monkeypatch.setenv("DATABASE_URL", "dsn")
     monkeypatch.setenv("POIESIS_TCTL_HEARTBEAT_FILE", "heartbeat")
-    result = CliRunner().invoke(tctl_cli.TctlCommand().create_command(), ["run"])
+    result = CliRunner().invoke(tctl_cli.tctl, ["run"])
     assert result.exit_code != 0
     assert "must be an absolute path" in result.output

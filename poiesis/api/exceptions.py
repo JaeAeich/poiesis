@@ -7,10 +7,12 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from poiesis.errors import PoiesisError
+
 logger = logging.getLogger(__name__)
 
 
-class APIError(Exception):
+class APIError(PoiesisError):
     """Base exception for all API errors."""
 
     status_code = HTTPStatus.INTERNAL_SERVER_ERROR.value

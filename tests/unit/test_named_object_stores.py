@@ -19,14 +19,14 @@ from pydantic import ValidationError
 
 from poiesis.api.app import create_app
 from poiesis.api.settings import AuthSettings, Settings
-from poiesis.api.tes.models import TesExecutor, TesInput, TesOutput, TesTask
+from poiesis.tes.models import TesExecutor, TesInput, TesOutput, TesTask
 from poiesis.core.constants import (
     DRS_OBJECT_STORES_ENV,
     IDENTITY_TOKEN_DIR,
     OBJECT_STORE_DEFAULTS_ENV,
     OBJECT_STORES_ENV,
 )
-from poiesis.core.services.filer.object_stores import (
+from poiesis.core.filer.object_stores import (
     ObjectStoreSpec,
     bucket_matches,
     check_stores,
@@ -37,8 +37,8 @@ from poiesis.core.services.filer.object_stores import (
     patterns_overlap,
     secret_env_name,
 )
-from poiesis.core.services.filer.strategy import drs_filer, object_store_filer
-from poiesis.core.services.filer.strategy.object_store_filer import (
+from poiesis.core.filer.strategy import drs_filer, object_store_filer
+from poiesis.core.filer.strategy.object_store_filer import (
     ObjectStoreError,
     ObjectUrl,
     make_store,

@@ -38,7 +38,7 @@ from poiesis.core.ignore_error import SHELL
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from poiesis.api.tes.models import TesExecutor
+    from poiesis.tes.models import TesExecutor
 
 #: The TES executor fields that are files the shell opens, in this order.
 STREAMS = ("stdin", "stdout", "stderr")

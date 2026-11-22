@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from postgres import needs_postgres, run
 
-from poiesis.api.tes.models import (
+from poiesis.tes.models import (
     TesExecutor,
     TesExecutorLog,
     TesInput,

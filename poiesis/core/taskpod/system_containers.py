@@ -31,14 +31,14 @@ from poiesis.core.constants import (
     OUTPUT_GLOB_FALLBACK_ENV,
 )
 from poiesis.core.executor_logs import Streams, encode_streams
-from poiesis.core.logging_config import LOG_FORMAT_ENV
-from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
-from poiesis.core.services.filer.object_stores import (
+from poiesis.core.filer.object_stores import (
     OPTIONAL_SECRET_KEYS,
     PROVIDER_SCHEMES,
     dump_stores,
     secret_env_name,
 )
+from poiesis.core.logging_config import LOG_FORMAT_ENV
+from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
 from poiesis.core.taskpod.config import PodSecurityEnforce
 from poiesis.core.taskpod.paths import is_within, normalised
 from poiesis.core.taskpod.volumes import (
@@ -50,8 +50,8 @@ from poiesis.core.taskpod.volumes import (
 if TYPE_CHECKING:
     from kubernetes.client import V1VolumeMount
 
-    from poiesis.api.tes.models import TesTask
     from poiesis.core.taskpod.config import RuntimeConfig
+    from poiesis.tes.models import TesTask
 
 
 def build_trec(

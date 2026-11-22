@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from kubernetes.client import ApiClient, V1Container
+from kubernetes.client import ApiClient
 from pydantic import ValidationError
 
 from poiesis.api.app import create_app
 from poiesis.api.settings import AuthSettings, Settings, StorageSettings
-from poiesis.api.tes.models import TesExecutor, TesInput, TesOutput, TesTask
+from poiesis.tes.models import TesExecutor, TesInput, TesOutput, TesTask
 from poiesis.core.constants import IDENTITY_TOKEN_DIR
 from poiesis.core.taskpod import build_taskpod_job
 

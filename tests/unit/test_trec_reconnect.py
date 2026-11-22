@@ -129,7 +129,7 @@ def watch(postgres: Postgres, *statuses: dict[str, Any]) -> Any:
 
 
 def run_trec(monkeypatch: pytest.MonkeyPatch, sigterm: asyncio.Event) -> int:
-    monkeypatch.setattr(trec, "_install_signal_handlers", lambda: sigterm)
+    monkeypatch.setattr(trec, "stop_on_signals", lambda: sigterm)
 
     async def main() -> int:
         async with asyncio.timeout(5):

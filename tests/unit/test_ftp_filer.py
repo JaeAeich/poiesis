@@ -22,7 +22,7 @@ from pyftpdlib.handlers import FTPHandler
 from pyftpdlib.servers import FTPServer
 
 from poiesis.api.settings import Settings
-from poiesis.api.tes.models import (
+from poiesis.tes.models import (
     TesExecutor,
     TesFileType,
     TesInput,
@@ -31,12 +31,12 @@ from poiesis.api.tes.models import (
 )
 from poiesis.core import filer_error
 from poiesis.core.constants import FTP_ENABLED_ENV
-from poiesis.core.services.filer import filer_strategy_factory as factory
-from poiesis.core.services.filer.strategy import filer_strategy, ftp_filer
-from poiesis.core.services.filer.strategy.filer_strategy import redact_url
-from poiesis.core.services.filer.strategy.ftp_filer import FtpError
-from poiesis.core.services.filer.tif import Tif
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer import filer_strategy_factory as factory
+from poiesis.core.filer.strategy import filer_strategy, ftp_filer
+from poiesis.core.filer.strategy.filer_strategy import redact_url
+from poiesis.core.filer.strategy.ftp_filer import FtpError
+from poiesis.core.filer.tif import Tif
+from poiesis.core.filer.tof import Tof
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
 
 PASSWORD = "s3cret-pass"  # noqa: S105 - a test login
@@ -104,7 +104,7 @@ def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 
 
 def stage(url: str, path: str, kind: TesFileType = TesFileType.FILE) -> None:
-    asyncio.run(Tif("task", [TesInput(url=url, path=path, type=kind)]).file())
+    asyncio.run(Tif("task", [TesInput(url=url, path=path, type=kind)]).transfer())
 
 
 def test_anonymous_file_is_downloaded(server: Ftp, pvc: Path) -> None:
@@ -281,7 +281,7 @@ def upload(output: TesOutput) -> list[str]:
     async def record(files) -> None:
         uploaded.extend(f.url for f in files)
 
-    asyncio.run(Tof("task", [output], record).file())
+    asyncio.run(Tof("task", [output], record).transfer())
     return uploaded
 
 

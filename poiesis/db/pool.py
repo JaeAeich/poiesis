@@ -12,11 +12,13 @@ from typing import TYPE_CHECKING, Any
 
 import asyncpg
 
+from poiesis.errors import PoiesisError
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
 
-class PoolTimeoutError(TimeoutError):
+class PoolTimeoutError(PoiesisError, TimeoutError):
     """No pooled connection became free within the acquire timeout."""
 
 

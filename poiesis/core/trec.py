@@ -32,9 +32,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import signal
 import uuid
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -52,8 +50,10 @@ from poiesis.core.pod_status import (
     EventKind,
     TaskEvent,
     TaskStateSnapshot,
+    parse_timestamp,
     translate,
 )
+from poiesis.core.shutdown import stop_on_signals
 from poiesis.db import state as state_db
 
 logger = logging.getLogger(__name__)
@@ -170,7 +170,7 @@ async def _run_until_terminal(
 ) -> int:
     """Drive the Pod watch and apply each event to Postgres."""
     snapshot = TaskStateSnapshot()
-    cancelled = _install_signal_handlers()
+    cancelled = stop_on_signals()
     # While watching, a SIGTERM ends a wait for Postgres; the last read
     # below then tries again within its own time budget.
     watch_db = db.until(cancelled)
@@ -317,8 +317,8 @@ async def _apply_event(
                 task_id,
                 ordinal=event.executor_index,
                 exit_code=event.exit_code,
-                start_time=_parse_iso(event.started_at),
-                end_time=_parse_iso(event.finished_at),
+                start_time=parse_timestamp(event.started_at),
+                end_time=parse_timestamp(event.finished_at),
                 stdout=stdout,
                 stderr=stderr,
             )
@@ -338,13 +338,6 @@ _FILER_DEFAULT_REASON = {
 }
 _FILER_FINISHED_KINDS = frozenset(_FILER_DEFAULT_REASON)
 _EXECUTOR_KINDS = frozenset({EventKind.EXECUTOR_STARTED, EventKind.EXECUTOR_FINISHED})
-
-
-def _parse_iso(value: str | None) -> datetime | None:
-    """Parse a kubelet ISO-8601 timestamp into a datetime; None passes through."""
-    if value is None:
-        return None
-    return datetime.fromisoformat(value)
 
 
 def _advance_snapshot(snapshot: TaskStateSnapshot, event: TaskEvent) -> None:
@@ -391,12 +384,3 @@ async def _mark_running(conn: asyncpg.Connection, task_id: str) -> None:
         """,
         uuid.UUID(task_id),
     )
-
-
-def _install_signal_handlers() -> asyncio.Event:
-    """Wire SIGTERM/SIGINT to set an asyncio Event the watch loop polls."""
-    cancelled = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, cancelled.set)
-    return cancelled

@@ -7,8 +7,8 @@ output strategy.
 
 import logging
 
-from poiesis.api.tes.models import TesInput
-from poiesis.core.services.filer.strategy.filer_strategy import InputFilerStrategy
+from poiesis.core.filer.strategy.filer_strategy import InputFilerStrategy
+from poiesis.tes.models import TesInput
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class ContentFilerStrategy(InputFilerStrategy):
     """Stage an inline `content` payload onto the PVC."""
 
-    def __init__(self, payload: TesInput):
+    def __init__(self, payload: TesInput) -> None:
         """Initialise with the TES input carrying inline content."""
         super().__init__(payload)
         self.input = payload

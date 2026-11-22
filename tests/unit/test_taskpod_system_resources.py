@@ -21,7 +21,7 @@ from poiesis.api.settings import (
     AuthSettings,
     Settings,
 )
-from poiesis.api.tes.models import TesExecutor, TesInput, TesOutput, TesTask
+from poiesis.tes.models import TesExecutor, TesInput, TesOutput, TesTask
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
 
 ENVS = (RECORDER_RESOURCES_ENV, FILER_RESOURCES_ENV, ACK_RESOURCES_ENV)

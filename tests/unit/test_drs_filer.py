@@ -19,17 +19,17 @@ from typing import Any
 import pytest
 
 from poiesis.api.settings import Settings
-from poiesis.api.tes.models import TesExecutor, TesFileType, TesInput, TesTask
+from poiesis.tes.models import TesExecutor, TesFileType, TesInput, TesTask
 from poiesis.core.constants import (
     DRS_ALLOWED_HOSTS_ENV,
     DRS_BEARER_TOKEN_ENV,
     DRS_ENABLED_ENV,
     DRS_OBJECT_STORES_ENV,
 )
-from poiesis.core.services.filer import filer_strategy_factory as factory
-from poiesis.core.services.filer.strategy import drs_filer, filer_strategy
-from poiesis.core.services.filer.strategy.drs_filer import DrsError, resolve
-from poiesis.core.services.filer.tif import Tif
+from poiesis.core.filer import filer_strategy_factory as factory
+from poiesis.core.filer.strategy import drs_filer, filer_strategy
+from poiesis.core.filer.strategy.drs_filer import DrsError, resolve
+from poiesis.core.filer.tif import Tif
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
 
 HOST = "drs.example.org"
@@ -134,7 +134,7 @@ def pvc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def stage(uri: str, path: str = "/in/genome.fa") -> None:
-    asyncio.run(Tif("task", [TesInput(url=uri, path=path)]).file())
+    asyncio.run(Tif("task", [TesInput(url=uri, path=path)]).transfer())
 
 
 def test_access_id_is_followed_and_its_headers_go_with_the_data(

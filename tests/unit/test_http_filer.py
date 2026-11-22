@@ -21,15 +21,15 @@ from urllib.parse import unquote_to_bytes
 import pytest
 import requests
 
-from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
-from poiesis.core.services.filer.filer_strategy_factory import (
+from poiesis.tes.models import TesFileType, TesInput, TesOutput
+from poiesis.core.filer.filer_strategy_factory import (
     can_output,
     create_input_strategy,
     create_output_strategy,
 )
-from poiesis.core.services.filer.strategy import filer_strategy, http_filer
-from poiesis.core.services.filer.tif import Tif
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer.strategy import filer_strategy, http_filer
+from poiesis.core.filer.tif import Tif
+from poiesis.core.filer.tof import Tof
 
 MIB = 1024 * 1024
 ERROR_BODY = b"<Error><Code>SignatureDoesNotMatch</Code></Error>"
@@ -494,12 +494,12 @@ def test_filer_logs_leave_out_the_query(server, pvc, caplog, monkeypatch):
     ok = TesOutput(
         url=server.url(f"/redirect/307/store/out{query}"), path="/outputs/out"
     )
-    asyncio.run(Tof("task", [ok]).file())
+    asyncio.run(Tof("task", [ok]).transfer())
     rejected = TesOutput(url=server.url(f"/status/403/out{query}"), path="/outputs/out")
     with pytest.raises(requests.HTTPError):
-        asyncio.run(Tof("task", [rejected]).file())
+        asyncio.run(Tof("task", [rejected]).transfer())
     tes_input = TesInput(url=server.url(f"/in{query}"), path="/inputs/in")
-    asyncio.run(Tif("task", [tes_input]).file())
+    asyncio.run(Tif("task", [tes_input]).transfer())
     assert server.store == {b"/out": b"data"}
     assert "Uploaded" in caplog.text
     assert "TOF failed" in caplog.text
@@ -644,7 +644,7 @@ def test_failed_download_hides_the_query(pvc, caplog, monkeypatch, sleeps):
         port = sock.getsockname()[1]
     url = f"http://127.0.0.1:{port}/in?X-Amz-Signature=secret"
     with pytest.raises(requests.ConnectionError) as error:
-        asyncio.run(Tif("task", [TesInput(url=url, path="/inputs/in")]).file())
+        asyncio.run(Tif("task", [TesInput(url=url, path="/inputs/in")]).transfer())
     assert "secret" not in str(error.value)
     assert "secret" not in caplog.text
     assert "retrying" in caplog.text

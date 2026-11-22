@@ -12,29 +12,29 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from poiesis.core.services.filer.file_urls import file_url_allowed, file_url_roots
-from poiesis.core.services.filer.strategy.content_filer import ContentFilerStrategy
-from poiesis.core.services.filer.strategy.drs_filer import (
+from poiesis.core.filer.file_urls import file_url_allowed, file_url_roots
+from poiesis.core.filer.strategy.content_filer import ContentFilerStrategy
+from poiesis.core.filer.strategy.drs_filer import (
     DrsFilerStrategy,
     drs_enabled,
     drs_uri_problem,
 )
-from poiesis.core.services.filer.strategy.ftp_filer import (
+from poiesis.core.filer.strategy.ftp_filer import (
     FtpFilerStrategy,
     ftp_enabled,
 )
-from poiesis.core.services.filer.strategy.http_filer import HttpFilerStrategy
-from poiesis.core.services.filer.strategy.local_filer import LocalFilerStrategy
-from poiesis.core.services.filer.strategy.object_store_filer import (
+from poiesis.core.filer.strategy.http_filer import HttpFilerStrategy
+from poiesis.core.filer.strategy.local_filer import LocalFilerStrategy
+from poiesis.core.filer.strategy.object_store_filer import (
     ObjectStoreFilerStrategy,
 )
 
 if TYPE_CHECKING:
-    from poiesis.api.tes.models import TesInput, TesOutput
-    from poiesis.core.services.filer.strategy.filer_strategy import (
+    from poiesis.core.filer.strategy.filer_strategy import (
         InputFilerStrategy,
         OutputFilerStrategy,
     )
+    from poiesis.tes.models import TesInput, TesOutput
 
 
 @dataclass(frozen=True)
@@ -102,7 +102,7 @@ def _enabled() -> list[_SchemeEntry]:
     return [e for e in _SCHEMES.values() if on.get(e.name, True)]
 
 
-def refusal(uri: str | None) -> str | None:
+def scheme_refusal(uri: str | None) -> str | None:
     """Why this deployment refuses `uri` though its scheme is registered.
 
     None if it doesn't. For `ftp`/`ftps` turned off and for `drs` URIs;
@@ -124,7 +124,7 @@ def _lookup(uri: str | None) -> _SchemeEntry | None:
         assert uri is not None
         if not file_url_allowed(uri):
             return None
-    if entry is not None and refusal(uri):
+    if entry is not None and scheme_refusal(uri):
         return None
     return entry
 

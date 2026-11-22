@@ -35,7 +35,7 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_camel
 
-from poiesis.api.constants import get_poiesis_api_constants
+from poiesis.api.constants import SERVICE_ID
 from poiesis.core.constants import (
     AZURE_ANONYMOUS_ENV,
     DRS_ALLOWED_HOSTS_ENV,
@@ -55,16 +55,16 @@ from poiesis.core.constants import (
     S3_SSE_KMS_KEY_ID_ENV,
     S3_VIRTUAL_HOSTED_STYLE_ENV,
 )
-from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
-from poiesis.core.metrics import metrics_port_from_env
-from poiesis.core.services.filer.file_urls import parse_file_url_roots
-from poiesis.core.services.filer.object_stores import (
+from poiesis.core.filer.file_urls import parse_file_url_roots
+from poiesis.core.filer.object_stores import (
     S3_SSE_MODES,
     ObjectStoreSpec,
     gcs_token_name,
     parse_stores,
 )
-from poiesis.core.services.filer.strategy.gcs_identity import token_audience
+from poiesis.core.filer.strategy.gcs_identity import token_audience
+from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
+from poiesis.core.metrics import metrics_port_from_env
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 from poiesis.core.taskpod.config import (
     BACKEND_PARAMETERS,
@@ -1017,9 +1017,7 @@ class ServiceInfoSettings(BaseModel):
     """
 
     id: str = Field(
-        default_factory=lambda: (
-            _service_info_env("ID") or get_poiesis_api_constants().SERVICE_ID
-        ),
+        default_factory=lambda: _service_info_env("ID") or SERVICE_ID,
         min_length=1,
     )
     name: str | None = Field(
@@ -1171,7 +1169,7 @@ def _env_or_none(name: str) -> str | None:
     return os.environ.get(name) or None
 
 
-def _on(flag: bool) -> str | None:  # noqa: FBT001 - a value, not an option
+def _true_or_unset(flag: bool) -> str | None:  # noqa: FBT001 - a value, not an option
     """``"true"`` for a set flag, else None (the variable is left out)."""
     return "true" if flag else None
 
@@ -1359,17 +1357,19 @@ class StorageSettings(BaseModel):
             if value:
                 env.append(V1EnvVar(name=name, value=value))
 
-        literal(S3_VIRTUAL_HOSTED_STYLE_ENV, _on(self.s3_virtual_hosted_style))
+        literal(
+            S3_VIRTUAL_HOSTED_STYLE_ENV, _true_or_unset(self.s3_virtual_hosted_style)
+        )
         literal(S3_SERVER_SIDE_ENCRYPTION_ENV, self.s3_server_side_encryption)
         literal(S3_SSE_KMS_KEY_ID_ENV, self.s3_sse_kms_key_id)
-        literal(S3_REQUESTER_PAYS_ENV, _on(self.s3_requester_pays))
-        literal(S3_ANONYMOUS_ENV, _on(self.s3_anonymous))
+        literal(S3_REQUESTER_PAYS_ENV, _true_or_unset(self.s3_requester_pays))
+        literal(S3_ANONYMOUS_ENV, _true_or_unset(self.s3_anonymous))
         if self.s3_role_arn:
             literal("AWS_ROLE_ARN", self.s3_role_arn)
             literal("AWS_WEB_IDENTITY_TOKEN_FILE", identity_token_path("aws"))
         if self.gcs_enabled:
             literal("GOOGLE_BASE_URL", self.gcs_endpoint)
-            literal(GCS_ANONYMOUS_ENV, _on(self.gcs_anonymous))
+            literal(GCS_ANONYMOUS_ENV, _true_or_unset(self.gcs_anonymous))
             if self.gcs_workload_identity_provider:
                 literal(
                     GCS_WORKLOAD_IDENTITY_PROVIDER_ENV,
@@ -1388,7 +1388,7 @@ class StorageSettings(BaseModel):
         if self.azure_enabled:
             literal("AZURE_STORAGE_ACCOUNT_NAME", self.azure_account_name)
             literal("AZURE_STORAGE_ENDPOINT", self.azure_endpoint)
-            literal(AZURE_ANONYMOUS_ENV, _on(self.azure_anonymous))
+            literal(AZURE_ANONYMOUS_ENV, _true_or_unset(self.azure_anonymous))
             if self.taskpod_azure_secret:
                 # One of the two keys, so each is optional.
                 env.extend(

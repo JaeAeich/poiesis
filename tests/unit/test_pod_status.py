@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from poiesis.api.tes.models import TesState
-from poiesis.core import tctl
+from poiesis.tes.models import TesState
+from poiesis.core import reconcile
 from poiesis.core.pod_status import extract_terminal_reason, pod_terminated_terminal
 
 
@@ -112,7 +112,7 @@ def test_filer_failure_is_a_system_error_with_its_cause(
     state, reason = pod_terminated_terminal(extract_terminal_reason(pod))
 
     assert (state, reason) == (TesState.SYSTEM_ERROR, "FilerError")
-    assert tctl._terminal_system_logs(pod, state) == [
+    assert reconcile.terminal_system_logs(pod, state) == [
         f"container {name} exited with code 1: {CAUSE}"
     ]
 
@@ -125,7 +125,7 @@ def test_filer_failure_without_a_cause_is_a_system_error(name: str) -> None:
     state, reason = pod_terminated_terminal(extract_terminal_reason(pod))
 
     assert (state, reason) == (TesState.SYSTEM_ERROR, "FilerError")
-    assert tctl._terminal_system_logs(pod, state) == [
+    assert reconcile.terminal_system_logs(pod, state) == [
         f"container {name} exited with code 137"
     ]
 
@@ -147,7 +147,7 @@ def test_oom_killed_filer_is_a_system_error() -> None:
     state, reason = pod_terminated_terminal(extract_terminal_reason(pod))
 
     assert (state, reason) == (TesState.SYSTEM_ERROR, "SystemOOMKilled")
-    assert tctl._terminal_system_logs(pod, state) == ["container tif OOMKilled"]
+    assert reconcile.terminal_system_logs(pod, state) == ["container tif OOMKilled"]
 
 
 def test_output_the_executors_did_not_produce_is_an_executor_error() -> None:
@@ -157,7 +157,7 @@ def test_output_the_executors_did_not_produce_is_an_executor_error() -> None:
     state, reason = pod_terminated_terminal(extract_terminal_reason(pod))
 
     assert (state, reason) == (TesState.EXECUTOR_ERROR, "Error")
-    assert tctl._terminal_system_logs(pod, state) == [
+    assert reconcile.terminal_system_logs(pod, state) == [
         "container tof exited with code 1: "
         "output /out.txt was not produced by the executors"
     ]
@@ -170,7 +170,7 @@ def test_executor_message_is_not_read_as_a_filer_cause() -> None:
     state, reason = pod_terminated_terminal(extract_terminal_reason(pod))
 
     assert (state, reason) == (TesState.EXECUTOR_ERROR, "Error")
-    assert tctl._terminal_system_logs(pod, state) == [
+    assert reconcile.terminal_system_logs(pod, state) == [
         "container exec-1 exited with code 1"
     ]
 
@@ -180,7 +180,7 @@ def test_filer_cause_is_cut_to_one_line_without_a_query() -> None:
     message = "first\nsecond https://host.example/x?sig=abcdef " + "y" * 4096
     pod = failed_pod(with_message(status("tif", 1, "Error"), message))
 
-    (line,) = tctl._terminal_system_logs(pod, TesState.SYSTEM_ERROR)
+    (line,) = reconcile.terminal_system_logs(pod, TesState.SYSTEM_ERROR)
 
     assert line.startswith(
         "container tif exited with code 1: "

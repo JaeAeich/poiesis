@@ -59,6 +59,7 @@ from poiesis.api.exceptions import (
     ServiceUnavailableError,
     UnauthorizedError,
 )
+from poiesis.errors import PoiesisError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -114,11 +115,11 @@ def _unavailable() -> ServiceUnavailableError:
     )
 
 
-class IssuerConfigError(RuntimeError):
+class IssuerConfigError(PoiesisError, RuntimeError):
     """The issuer's answers show a misconfiguration; retrying won't help."""
 
 
-class IssuerUnavailableError(Exception):
+class IssuerUnavailableError(PoiesisError):
     """The issuer can't be reached right now (transport, timeout, 5xx)."""
 
 
@@ -158,11 +159,6 @@ class IssuerValidator:
     def ready(self) -> bool:
         """Whether a key set is loaded, so tokens can be validated."""
         return self._keys is not None
-
-    @property
-    def userinfo_enabled(self) -> bool:
-        """Whether principals carry the issuer's userinfo response."""
-        return self._userinfo_uri is not None
 
     def _http(self) -> httpx.AsyncClient:
         """Return the validator's HTTP client, creating it on first use."""

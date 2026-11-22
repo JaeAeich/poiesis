@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from poiesis.api.exceptions import handle_pool_timeout
 from poiesis.api.settings import DatabaseSettings
-from poiesis.cli.commands.poiesis import tctl as tctl_cli
+from poiesis.cli import tctl as tctl_cli
 from poiesis.db import pool as pool_module
 from poiesis.db.pool import Pool, PoolTimeoutError
 

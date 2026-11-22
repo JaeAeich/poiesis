@@ -31,7 +31,7 @@ from poiesis.api.exceptions import APIError, handle_api_exception
 from poiesis.api.jwt_auth import JWTAuthenticator
 from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.settings import AuthzSettings, IssuerSettings
-from poiesis.api.tes.models import TesState, TesTask
+from poiesis.tes.models import TesState, TesTask
 from poiesis.db.tasks import ListFilters, TaskScope
 
 GOLDEN = Path(__file__).parent / "golden" / "authz"
@@ -340,7 +340,7 @@ def gate(claims: dict[str, Any], name: str = ENTITLEMENT, **match: Any) -> bool:
     issuers = [IssuerSettings.model_validate(entry)]
     try:
         principal = Principal(issuer=ISSUER, subject="a", via="oidc", claims=claims)
-        Authz(AuthzSettings(), issuers).gate(principal)
+        Authz(AuthzSettings(), issuers).enforce_issuer_rules(principal)
     except APIError:
         return False
     return True
@@ -425,7 +425,7 @@ def judge(
                 principal = await oidc.authenticate(request)
                 assert principal is not None
                 try:
-                    authz.gate(principal)
+                    authz.enforce_issuer_rules(principal)
                 except APIError:
                     results.append(False)
                 else:

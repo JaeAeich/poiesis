@@ -23,12 +23,12 @@ from urllib.parse import parse_qsl, quote, urljoin, urlsplit, urlunsplit
 
 import requests
 
-from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.services.filer.strategy.filer_strategy import (
+from poiesis.core.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     OutputFilerStrategy,
     redact_url,
 )
+from poiesis.tes.models import TesInput, TesOutput
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -69,7 +69,7 @@ _MIN_SECRET_LENGTH = 8
 class HttpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
     """Filer strategy for HTTP and HTTPS inputs and outputs."""
 
-    def __init__(self, payload: TesInput | TesOutput):
+    def __init__(self, payload: TesInput | TesOutput) -> None:
         """Initialise with the TES input or output."""
         super().__init__(payload)
         self.input = self.payload if isinstance(self.payload, TesInput) else None

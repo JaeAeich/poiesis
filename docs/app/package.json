@@ -3,7 +3,7 @@
     "docs:dev": "npm run copy-spec && npm run llms && vitepress dev",
     "docs:build": "npm run copy-spec && npm run llms && vitepress build .",
     "docs:preview": "npm run copy-spec && vitepress preview",
-    "copy-spec": "cp ../../poiesis/api/tes/spec/*.openapi.yaml public/openapi.yaml",
+    "copy-spec": "cp ../../poiesis/tes/spec/*.openapi.yaml public/openapi.yaml",
     "llms": "node scripts/build-llms.mjs",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 0",

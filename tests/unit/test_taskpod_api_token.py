@@ -12,7 +12,7 @@ from typing import Any
 
 from kubernetes.client import V1Job
 
-from poiesis.api.tes.models import TesExecutor, TesInput, TesOutput, TesTask
+from poiesis.tes.models import TesExecutor, TesInput, TesOutput, TesTask
 from poiesis.core.taskpod import (
     API_TOKEN_MOUNT_PATH,
     API_TOKEN_VOLUME_NAME,

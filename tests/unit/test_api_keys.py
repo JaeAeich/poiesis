@@ -56,7 +56,7 @@ from poiesis.api.settings import (
     format_ttl,
     parse_ttl,
 )
-from poiesis.api.tes.models import TesState, TesTask
+from poiesis.tes.models import TesState, TesTask
 from poiesis.db import api_keys as api_keys_db
 from poiesis.db.api_keys import ApiKeyCredential, ApiKeyRecord
 
@@ -992,7 +992,7 @@ def gated(
     principal = principal_for(table, key, configured)
     assert isinstance(principal, Principal)
     try:
-        Authz(AuthzSettings(), configured).gate(principal)
+        Authz(AuthzSettings(), configured).enforce_issuer_rules(principal)
     except ForbiddenError:
         return False
     return True

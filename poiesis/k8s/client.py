@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 from kubernetes import client, config
+from kubernetes.client.exceptions import ApiException
 from urllib3.exceptions import HTTPError
+
+from poiesis.errors import PoiesisError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -23,12 +27,38 @@ logger = logging.getLogger(__name__)
 _REQUEST_TIMEOUT_SECONDS = (5, 30)
 
 
-class K8sRequestError(Exception):
+class K8sError(PoiesisError):
+    """A Kubernetes call failed. The only error `K8sClient` raises."""
+
+
+class K8sUnreachableError(K8sError):
     """The Kubernetes API didn't answer: a timeout or a connection failure.
 
-    Unlike an `ApiException`, the call may have taken effect: a create
+    Unlike a `K8sRejectedError`, the call may have taken effect: a create
     that timed out may still have created the object.
     """
+
+
+class K8sRejectedError(K8sError):
+    """The Kubernetes API answered with an error instead of doing the call.
+
+    Attributes:
+        status: The HTTP status of the answer.
+        reason: Its reason phrase, such as ``Forbidden``.
+        body: Its body, which names the cause (a quota, a webhook).
+    """
+
+    def __init__(self, status: int, reason: str = "", body: str = "") -> None:
+        """Keep what the API server answered."""
+        super().__init__(f"({status}) {reason}".strip())
+        self.status = status
+        self.reason = reason
+        self.body = body
+
+    @property
+    def not_found(self) -> bool:
+        """Whether the object, or its namespace, doesn't exist."""
+        return self.status == HTTPStatus.NOT_FOUND
 
 
 def load_config() -> None:
@@ -50,9 +80,9 @@ class K8sClient:
 
     Each method runs the underlying sync call in a worker thread via
     `asyncio.to_thread`, with a request timeout; a call the API server
-    doesn't answer raises `K8sRequestError`. The wrapper holds no
-    per-call state — instances are cheap and safe to share across
-    requests.
+    doesn't answer raises `K8sUnreachableError`, an error it answers with
+    raises `K8sRejectedError`. The wrapper holds no per-call state:
+    instances are cheap and safe to share across requests.
     """
 
     def __init__(self) -> None:
@@ -84,24 +114,33 @@ class K8sClient:
         This is the *only* delete in Poiesis. PVC garbage collection happens
         automatically through the PVC's `ownerReferences` pointing at the
         Job — kube-controller-manager handles it.
+
+        Deleting a Job that is already gone succeeds.
         """
-        await _call(
-            self._batch.delete_namespaced_job,
-            name=name,
-            namespace=namespace,
-            propagation_policy="Background",
-        )
+        try:
+            await _call(
+                self._batch.delete_namespaced_job,
+                name=name,
+                namespace=namespace,
+                propagation_policy="Background",
+            )
+        except K8sRejectedError as exc:
+            if not exc.not_found:
+                raise
 
 
 async def _call(method: Callable[..., Any], **kwargs: Any) -> Any:
     """Run a client call in a worker thread, with the request timeout.
 
-    Raises `K8sRequestError` when the API server doesn't answer in time
-    or can't be reached; an `ApiException` (an answer) passes through.
+    Raises `K8sUnreachableError` when the API server doesn't answer in time
+    or can't be reached, `K8sRejectedError` when it answers with an error.
     """
     try:
         return await asyncio.to_thread(
             method, **kwargs, _request_timeout=_REQUEST_TIMEOUT_SECONDS
         )
     except HTTPError as exc:
-        raise K8sRequestError(str(exc)) from exc
+        raise K8sUnreachableError(str(exc)) from exc
+    except ApiException as exc:
+        body = exc.body if isinstance(exc.body, str) else ""
+        raise K8sRejectedError(exc.status or 0, exc.reason or "", body) from exc

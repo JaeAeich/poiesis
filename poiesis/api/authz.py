@@ -67,15 +67,15 @@ from poiesis.api import audit
 from poiesis.api.apikey_auth import TASKS_READ, TASKS_WRITE
 from poiesis.api.audit import ALLOW, BUILTIN, DECISION_SERVICE, DENY, ERROR
 from poiesis.api.auth import Principal, get_principal
-from poiesis.api.constants import get_poiesis_api_constants
+from poiesis.api.constants import SERVICE_ID
 from poiesis.api.exceptions import (
     ForbiddenError,
     NotFoundError,
     ServiceUnavailableError,
 )
 from poiesis.api.settings import AuthzSettings, ClaimRuleSettings, IssuerSettings
-from poiesis.api.tes.models import TesInput, TesOutput, TesTask
 from poiesis.db.tasks import TaskScope
+from poiesis.tes.models import TesInput, TesOutput, TesTask
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +221,7 @@ class Authz:
         ``service_id`` is this deployment's service-info ``id``, sent as
         ``context.tes.service_id`` (default: the built-in one).
         """
-        self._service_id = service_id or get_poiesis_api_constants().SERVICE_ID
+        self._service_id = service_id or SERVICE_ID
         # By issuer, not by namespace: issuers sharing a namespace may
         # still admit differently.
         self._rules = {
@@ -252,7 +252,8 @@ class Authz:
             if not credential:
                 raise ValueError(f"decision service credential file {path} is empty")
             self._headers["Authorization"] = "Bearer " + credential
-        # asyncio.timeout in _ask bounds the whole call; this bounds each phase.
+        # asyncio.timeout in _request_decision bounds the whole call; this
+        # bounds each phase.
         # trust_env=False: proxy variables or ~/.netrc must not reroute
         # (or add credentials to) calls that carry the caller's claims.
         self._client = client or httpx.AsyncClient(
@@ -264,7 +265,7 @@ class Authz:
         if self._client is not None:
             await self._client.aclose()
 
-    def gate(self, principal: Principal) -> None:
+    def enforce_issuer_rules(self, principal: Principal) -> None:
         """Apply the principal's issuer's claim rule and the delegation rule.
 
         Raises ``403`` unless the issuer of the principal has no claim
@@ -321,10 +322,10 @@ class Authz:
         resource = {
             "type": "tes_task_set",
             "id": "own",
-            "properties": {"task": project(task)},
+            "properties": {"task": task_projection(task)},
         }
         with _errors_audited(event, principal):
-            decision = await self._ask(principal, "CreateTask", resource)
+            decision = await self._request_decision(principal, "CreateTask", resource)
         if not decision.allow:
             _audit(event, principal, DENY, DECISION_SERVICE)
             raise ForbiddenError("forbidden")
@@ -357,7 +358,9 @@ class Authz:
             return allowed
         resource = _task_resource(task_id, meta)
         with _errors_audited(event, principal, task_id=task_id):
-            decision = await self._ask(principal, "GetTask", resource, {"view": view})
+            decision = await self._request_decision(
+                principal, "GetTask", resource, {"view": view}
+            )
         outcome = ALLOW if decision.allow else DENY
         _audit(event, principal, outcome, DECISION_SERVICE, task_id=task_id)
         return decision.allow
@@ -384,9 +387,11 @@ class Authz:
             decided_by = DECISION_SERVICE
             resource = _task_resource(task_id, meta)
             with _errors_audited(event, principal, task_id=task_id):
-                allowed = (await self._ask(principal, "CancelTask", resource)).allow
+                allowed = (
+                    await self._request_decision(principal, "CancelTask", resource)
+                ).allow
                 readable = (not allowed or meta is None) and (
-                    await self._ask(principal, "GetTask", resource)
+                    await self._request_decision(principal, "GetTask", resource)
                 ).allow
         granted = meta is not None and allowed
         outcome = ALLOW if granted else DENY
@@ -421,11 +426,14 @@ class Authz:
         with _errors_audited(event, principal):
             if self._sharing:
                 every, own = await asyncio.gather(
-                    self._ask_list(principal, "all", view),
-                    self._ask_list(principal, "own", view),
+                    self._request_list_decision(principal, "all", view),
+                    self._request_list_decision(principal, "own", view),
                 )
             else:
-                every, own = None, await self._ask_list(principal, "own", view)
+                every, own = (
+                    None,
+                    await self._request_list_decision(principal, "own", view),
+                )
         if every is not None and every.allow:
             _audit(event, principal, ALLOW, DECISION_SERVICE, list_scope="all")
             return None, None
@@ -468,18 +476,20 @@ class Authz:
             raise ForbiddenError("only admins may list or revoke keys by owner")
         resource = {"type": OWNER_ACCESS_TYPE, "id": owner}
         with _errors_audited(event, principal, target_owner=owner):
-            decision = await self._ask(principal, action, resource)
+            decision = await self._request_decision(principal, action, resource)
         if not decision.allow:
             _audit(event, principal, DENY, DECISION_SERVICE, target_owner=owner)
             raise ForbiddenError("forbidden")
         return Grant(DECISION_SERVICE, admin=False)
 
-    async def _ask_list(
+    async def _request_list_decision(
         self, principal: Principal, task_set: str, view: str
     ) -> Decision:
         """Ask ``ListTasks`` on the task set ``all`` or ``own``."""
         resource = {"type": "tes_task_set", "id": task_set}
-        return await self._ask(principal, "ListTasks", resource, {"view": view})
+        return await self._request_decision(
+            principal, "ListTasks", resource, {"view": view}
+        )
 
     def _subject(self, principal: Principal) -> dict[str, Any]:
         """Return the AuthZEN subject: validated identity, never the token."""
@@ -521,7 +531,7 @@ class Authz:
         }
         return {"type": "user", "id": principal.owner, "properties": properties}
 
-    async def _ask(
+    async def _request_decision(
         self,
         principal: Principal,
         action: str,
@@ -612,7 +622,7 @@ async def authorized_principal(
 ) -> Principal:
     """FastAPI dependency: the principal, admitted by the claim rule."""
     try:
-        authz.gate(principal)
+        authz.enforce_issuer_rules(principal)
     except ForbiddenError:
         audit.denied(request, principal)
         raise
@@ -710,7 +720,7 @@ def _first_of(text: str, characters: str, start: int, end: int) -> int:
     return min((index for index in found if index >= 0), default=end)
 
 
-def project(task: TesTask) -> dict[str, Any]:
+def task_projection(task: TesTask) -> dict[str, Any]:
     """Return the fixed projection of a submitted task for ``CreateTask``.
 
     Leaves out what may hold secrets: commands, environments, input

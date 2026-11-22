@@ -13,17 +13,17 @@ from typing import Any
 import pytest
 import requests
 
-from poiesis.api.tes.models import TesFileType, TesOutput, TesOutputFileLog
+from poiesis.tes.models import TesFileType, TesOutput, TesOutputFileLog
 from poiesis.core.constants import FILE_URL_ROOTS_ENV
-from poiesis.core.services.filer.filer_strategy_factory import create_output_strategy
+from poiesis.core.filer.filer_strategy_factory import create_output_strategy
 from obstore.store import MemoryStore
 
-from poiesis.core.services.filer.strategy import (
+from poiesis.core.filer.strategy import (
     filer_strategy,
     http_filer,
     object_store_filer,
 )
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer.tof import Tof
 
 
 @pytest.fixture
@@ -155,7 +155,7 @@ def test_tof_records_every_output_once_uploaded(pvc, puts):
         TesOutput(url="https://h/a", path="/out/a.txt"),
         TesOutput(url="https://h/d", path="/out/dir", type=TesFileType.DIRECTORY),
     ]
-    asyncio.run(Tof("task", outputs, record).file())
+    asyncio.run(Tof("task", outputs, record).transfer())
     (files,) = stored
     assert sorted(f.path for f in files) == [
         "/out/a.txt",
@@ -172,5 +172,5 @@ def test_failure_to_record_fails_tof(pvc, puts):
 
     tof = Tof("task", [TesOutput(url="https://h/a", path="/out/a.txt")], record)
     with pytest.raises(ConnectionRefusedError) as error:
-        asyncio.run(tof.file())
+        asyncio.run(tof.transfer())
     assert "recording the output file logs in the database" in (error.value.__notes__)

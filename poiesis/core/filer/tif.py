@@ -8,17 +8,17 @@ import stat
 from typing import TYPE_CHECKING
 
 from poiesis.core.constants import FILER_PVC_PATH
-from poiesis.core.services.filer.filer import Filer
-from poiesis.core.services.filer.filer_strategy_factory import (
+from poiesis.core.filer.filer import Filer
+from poiesis.core.filer.filer_strategy_factory import (
     create_input_strategy,
     input_url,
 )
-from poiesis.core.services.filer.strategy.filer_strategy import redact_url
+from poiesis.core.filer.strategy.filer_strategy import redact_url
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from poiesis.api.tes.models import TesInput
+    from poiesis.tes.models import TesInput
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class Tif(Filer):
         """Name of the filer."""
         return self._name
 
-    async def file(self) -> None:
+    async def transfer(self) -> None:
         """Filing logic — download inputs, then create the task's directories."""
         for tes_input in self.inputs:
             url = input_url(tes_input)

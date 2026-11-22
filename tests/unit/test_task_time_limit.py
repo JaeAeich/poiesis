@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from poiesis.api.settings import AuthSettings, Settings
-from poiesis.api.tes.models import TesExecutor, TesState, TesTask
+from poiesis.tes.models import TesExecutor, TesState, TesTask
 from poiesis.core.pod_status import job_deadline_terminal
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
 

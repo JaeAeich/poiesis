@@ -29,7 +29,7 @@ from kubernetes.client import (
     V1SecretKeySelector,
 )
 
-from poiesis.api.tes.models import (
+from poiesis.tes.models import (
     TesExecutor,
     TesFileType,
     TesInput,
@@ -38,7 +38,7 @@ from poiesis.api.tes.models import (
     TesTask,
 )
 from poiesis.core.constants import FILE_URL_ROOTS_ENV
-from poiesis.core.services.filer.object_stores import gcs_token_name, parse_stores
+from poiesis.core.filer.object_stores import gcs_token_name, parse_stores
 from poiesis.core.taskpod import (
     PodSecurityEnforce,
     RuntimeConfig,

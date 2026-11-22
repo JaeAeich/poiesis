@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from poiesis.api.tes.models import TesState
-from poiesis.core import k8s_watch, tctl, trec
+from poiesis.tes.models import TesState
+from poiesis.core import k8s_watch, reconcile, trec
 from poiesis.core.k8s_watch import PodSelector, watch_pods
 from poiesis.core.pod_status import (
     extract_terminal_reason,
@@ -128,7 +128,7 @@ def test_sigterm_records_the_last_state_and_exits(
         return "hello\n", None
 
     monkeypatch.setattr(trec, "watch_pods", no_events)
-    monkeypatch.setattr(trec, "_install_signal_handlers", lambda: sigterm)
+    monkeypatch.setattr(trec, "stop_on_signals", lambda: sigterm)
     monkeypatch.setattr(trec.client, "CoreV1Api", lambda: core_v1)
     monkeypatch.setattr(trec.state_db, "append_executor_log", append)
     monkeypatch.setattr(trec, "read_executor_streams", read_streams)
@@ -170,7 +170,7 @@ def test_sigterm_exits_even_if_the_pod_cannot_be_read(
         yield  # pragma: no cover
 
     monkeypatch.setattr(trec, "watch_pods", no_events)
-    monkeypatch.setattr(trec, "_install_signal_handlers", lambda: sigterm)
+    monkeypatch.setattr(trec, "stop_on_signals", lambda: sigterm)
     monkeypatch.setattr(trec.client, "CoreV1Api", BrokenCoreV1)
 
     db: Any = FakeDb()
@@ -206,7 +206,7 @@ def test_trec_killed_at_the_end_is_not_a_failure() -> None:
     reason = extract_terminal_reason(pod)
     state, _ = pod_terminated_terminal(reason)
 
-    assert tctl._terminal_system_logs(pod, state) == [
+    assert reconcile.terminal_system_logs(pod, state) == [
         "container exec-0 exited with code 1"
     ]
     assert (reason, state) == ("Error", TesState.EXECUTOR_ERROR)
@@ -221,7 +221,7 @@ def test_trec_stop_does_not_hide_an_oom_kill() -> None:
     reason = extract_terminal_reason(pod)
     assert reason == "OOMKilled"
     assert pod_terminated_terminal(reason)[0] is TesState.EXECUTOR_ERROR
-    assert tctl._terminal_system_logs(pod, TesState.EXECUTOR_ERROR) == [
+    assert reconcile.terminal_system_logs(pod, TesState.EXECUTOR_ERROR) == [
         "container exec-0 OOMKilled: the executor ran out of memory and has no "
         "memory limit; set resources.ram_gb"
     ]
@@ -233,7 +233,7 @@ def test_trec_ending_before_the_work_is_a_failure() -> None:
         status("trec", 1, "Error", "10"),
         status("exec-0", 137, "Error", "23"),
     )
-    assert tctl._terminal_system_logs(pod, TesState.EXECUTOR_ERROR) == [
+    assert reconcile.terminal_system_logs(pod, TesState.EXECUTOR_ERROR) == [
         "container trec exited with code 1",
         "container exec-0 exited with code 137",
     ]

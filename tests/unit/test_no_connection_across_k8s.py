@@ -23,8 +23,8 @@ from poiesis.api.exceptions import (
     ServiceUnavailableError,
 )
 from poiesis.api.routes import tasks as tasks_routes
-from poiesis.api.tes.models import TesCancelTaskResponse, TesState
-from poiesis.k8s import K8sRequestError
+from poiesis.tes.models import TesCancelTaskResponse, TesState
+from poiesis.k8s import K8sRejectedError, K8sUnreachableError
 from poiesis.k8s import client as k8s_client
 
 if TYPE_CHECKING:
@@ -137,31 +137,31 @@ def test_create_task_releases_the_connection_before_kubernetes(
     [
         (
             "create_job",
-            ApiException(status=403, reason="Forbidden"),
+            K8sRejectedError(403, "Forbidden"),
             ServiceUnavailableError,
             ["create_job"],
         ),
         (
             "create_job",
-            ApiException(status=500, reason="Internal"),
+            K8sRejectedError(500, "Internal"),
             InternalServerError,
             ["create_job"],
         ),
         (
             "create_pvc",
-            ApiException(status=404, reason="Not Found"),
+            K8sRejectedError(404, "Not Found"),
             BadRequestError,
             ["create_job", "create_pvc", "delete_job"],
         ),
         (
             "create_job",
-            K8sRequestError("Read timed out"),
+            K8sUnreachableError("Read timed out"),
             ServiceUnavailableError,
             ["create_job", "delete_job"],
         ),
         (
             "create_pvc",
-            K8sRequestError("Read timed out"),
+            K8sUnreachableError("Read timed out"),
             ServiceUnavailableError,
             ["create_job", "create_pvc", "delete_job"],
         ),
@@ -234,11 +234,18 @@ def test_kubernetes_calls_have_a_request_timeout() -> None:
     ],
     ids=["read-timeout", "unreachable"],
 )
-def test_no_answer_is_a_k8s_request_error(error: Exception) -> None:
-    with pytest.raises(K8sRequestError):
+def test_no_answer_is_a_k8s_unreachable_error(error: Exception) -> None:
+    with pytest.raises(K8sUnreachableError):
         asyncio.run(k8s_client._call(FakeApi(error)))
 
 
-def test_an_answer_passes_through() -> None:
-    with pytest.raises(ApiException):
-        asyncio.run(k8s_client._call(FakeApi(ApiException(status=409))))
+def test_an_error_answer_is_a_k8s_rejected_error() -> None:
+    answer = ApiException(status=409, reason="Conflict")
+    answer.body = "already exists"
+    with pytest.raises(K8sRejectedError) as rejected:
+        asyncio.run(k8s_client._call(FakeApi(answer)))
+    assert (rejected.value.status, rejected.value.reason, rejected.value.body) == (
+        409,
+        "Conflict",
+        "already exists",
+    )

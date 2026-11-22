@@ -3,7 +3,7 @@
 Each process serves the default registry on its own port
 (``POIESIS_METRICS_PORT``), apart from the TES API's port: the endpoint is
 never reached through the Ingress, needs no auth and is not in the access
-log. The API runs one Gunicorn worker per Pod (`poiesis.api.asgi`), so one
+log. The API runs one process per Pod (`poiesis.api.asgi`), so one
 process owns every metric and no multiprocess mode is needed.
 
 Labels are bounded: no task id, user or owner is ever a label value.

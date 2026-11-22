@@ -30,24 +30,25 @@ from urllib.parse import quote, urlsplit
 
 import requests
 
-from poiesis.api.tes.models import TesInput
 from poiesis.core.constants import (
     DRS_ALLOWED_HOSTS_ENV,
     DRS_BEARER_TOKEN_ENV,
     DRS_ENABLED_ENV,
     DRS_OBJECT_STORES_ENV,
 )
-from poiesis.core.services.filer.strategy.filer_strategy import (
+from poiesis.core.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     redact_url,
 )
-from poiesis.core.services.filer.strategy.ftp_filer import ftp_enabled
-from poiesis.core.services.filer.strategy.http_filer import (
+from poiesis.core.filer.strategy.ftp_filer import ftp_enabled
+from poiesis.core.filer.strategy.http_filer import (
     _TRANSIENT_STATUSES,
     HttpFilerStrategy,
     _retry,
 )
-from poiesis.core.services.filer.strategy.object_store_filer import is_served
+from poiesis.core.filer.strategy.object_store_filer import is_served
+from poiesis.errors import PoiesisError
+from poiesis.tes.models import TesInput
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ _FTP = frozenset({"ftp", "ftps"})
 _ON = frozenset({"1", "true", "yes", "on"})
 
 
-class DrsError(Exception):
+class DrsError(PoiesisError):
     """A DRS object that can't be resolved to a URL this deployment can stage."""
 
 
@@ -122,7 +123,7 @@ def stageable_schemes() -> list[str]:
 class DrsFilerStrategy(InputFilerStrategy):
     """Input strategy for `drs://` URIs: resolve, then stage with another strategy."""
 
-    def __init__(self, payload: TesInput):
+    def __init__(self, payload: TesInput) -> None:
         """Initialise with the TES input."""
         super().__init__(payload)
         assert isinstance(payload, TesInput)
@@ -134,7 +135,7 @@ class DrsFilerStrategy(InputFilerStrategy):
         url, headers = resolve(self.input.url)
         logger.info("Resolved %s to %s", self.input.url, redact_url(url))
         # Imported here: the factory imports this module.
-        from poiesis.core.services.filer import filer_strategy_factory  # noqa: PLC0415
+        from poiesis.core.filer import filer_strategy_factory  # noqa: PLC0415
 
         resolved = self.input.model_copy(update={"url": url})
         strategy = filer_strategy_factory.create_input_strategy(url, resolved)

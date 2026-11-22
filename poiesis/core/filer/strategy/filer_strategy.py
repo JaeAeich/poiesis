@@ -18,14 +18,14 @@ from abc import ABC, abstractmethod
 from glob import glob
 from urllib.parse import urlsplit, urlunsplit
 
-from poiesis.api.tes.models import (
+from poiesis.core.constants import FILER_PVC_PATH, OUTPUT_GLOB_FALLBACK_ENV
+from poiesis.core.filer_error import OutputOutsideVolumeError
+from poiesis.tes.models import (
     TesFileType,
     TesInput,
     TesOutput,
     TesOutputFileLog,
 )
-from poiesis.core.constants import FILER_PVC_PATH, OUTPUT_GLOB_FALLBACK_ENV
-from poiesis.core.filer_error import OutputOutsideVolumeError
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class BaseFilerStrategy:
     subclasses.
     """
 
-    def __init__(self, payload: TesInput | TesOutput):
+    def __init__(self, payload: TesInput | TesOutput) -> None:
         """Initialise with the TES input or output the strategy will handle."""
         self.payload = payload
 
@@ -179,7 +179,7 @@ class OutputFilerStrategy(BaseFilerStrategy, ABC):
     `uploaded` is then the output's entries for `TesTaskLog.outputs`.
     """
 
-    def __init__(self, payload: TesInput | TesOutput):
+    def __init__(self, payload: TesInput | TesOutput) -> None:
         """Initialise with the TES output the strategy will upload."""
         super().__init__(payload)
         self.uploaded: list[TesOutputFileLog] = []

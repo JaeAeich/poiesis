@@ -22,6 +22,8 @@ from urllib.parse import quote
 
 import httpx
 
+from poiesis.errors import PoiesisError
+
 if TYPE_CHECKING:
     from obstore.store import GCSCredential
 
@@ -39,7 +41,7 @@ _REFRESH_MARGIN = timedelta(minutes=5)
 _TIMEOUT = httpx.Timeout(30.0)
 
 
-class GcsIdentityError(OSError):
+class GcsIdentityError(PoiesisError, OSError):
     """The ServiceAccount token could not be traded for Google credentials."""
 
 

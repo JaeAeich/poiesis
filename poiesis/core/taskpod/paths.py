@@ -8,11 +8,11 @@ from __future__ import annotations
 import posixpath
 from typing import TYPE_CHECKING
 
-from poiesis.api.tes.models import TesFileType
 from poiesis.core.constants import FILER_PVC_PATH
+from poiesis.tes.models import TesFileType
 
 if TYPE_CHECKING:
-    from poiesis.api.tes.models import TesTask
+    from poiesis.tes.models import TesTask
 
 
 _GLOB_CHARS = frozenset("*?[]{}")

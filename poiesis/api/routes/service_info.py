@@ -21,24 +21,22 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Request
 from pydantic import AnyUrl
 
-from poiesis.api.constants import get_poiesis_api_constants
-from poiesis.api.tes.models import (
+from poiesis.api.constants import TES_VERSION
+from poiesis.core.filer.filer_strategy_factory import (
+    supported_input_schemes,
+    supported_output_schemes,
+)
+from poiesis.tes.models import (
     Artifact,
     Organization,
     TesServiceInfo,
     TesServiceType,
-)
-from poiesis.core.services.filer.filer_strategy_factory import (
-    supported_input_schemes,
-    supported_output_schemes,
 )
 
 if TYPE_CHECKING:
     from poiesis.api.settings import ServiceInfoSettings, Settings
 
 router = APIRouter(tags=["TaskService"])
-
-_api_constants = get_poiesis_api_constants()
 
 
 def _poiesis_version() -> str:
@@ -83,7 +81,7 @@ async def service_info(request: Request) -> TesServiceInfo:
         type=TesServiceType(
             group="org.ga4gh",
             artifact=Artifact.tes,
-            version=_api_constants.TES_VERSION,
+            version=TES_VERSION,
         ),
         version=_POIESIS_VERSION,
         storage=_supported_storage_schemes(request.app.state.settings),

@@ -193,7 +193,7 @@ default TaskPod NetworkPolicy) is planned
 - `api.topologySpreadConstraints` to spread API replicas across zones
   or nodes.
 - On rollouts the API sleeps `api.preStopSleepSeconds` (5 s) before
-  SIGTERM, then gunicorn lets running requests finish for up to 30 s.
+  SIGTERM, then the API lets running requests finish for up to 30 s.
   Keep `api.terminationGracePeriodSeconds` (40 s) at least their sum.
 - What the API does when the Kubernetes API server is slow or down:
   each call gives up after 30 seconds (5 to connect). CreateTask then

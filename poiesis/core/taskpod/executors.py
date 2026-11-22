@@ -13,8 +13,8 @@ from poiesis.core.taskpod.volumes import executor_mounts
 if TYPE_CHECKING:
     from kubernetes.client import V1VolumeMount
 
-    from poiesis.api.tes.models import TesExecutor, TesTask
     from poiesis.core.taskpod.config import RuntimeConfig
+    from poiesis.tes.models import TesExecutor, TesTask
 
 
 def build_executor(
@@ -45,7 +45,7 @@ def build_executor(
         env=env or None,
         volume_mounts=executor_mounts(config, path_mounts),
         stdin=False,
-        resources=executor_resources(executor, task, config),
+        resources=executor_resources(task, config),
     )
     if executor.ignore_error:
         container.termination_message_path = ignore_error.TERMINATION_MESSAGE_PATH

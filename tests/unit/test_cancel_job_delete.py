@@ -13,11 +13,12 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from kubernetes.client.exceptions import ApiException
 
 from poiesis.api.exceptions import InternalServerError
 from poiesis.api.routes import tasks as tasks_routes
-from poiesis.api.tes.models import TesCancelTaskResponse, TesState
+from poiesis.tes.models import TesCancelTaskResponse, TesState
+from poiesis.k8s import K8sClient, K8sRejectedError
+from poiesis.k8s import client as k8s_client
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -31,7 +32,7 @@ class Fakes:
     def __init__(self, monkeypatch: pytest.MonkeyPatch, state: TesState) -> None:
         self.state = state
         self.deletes: list[tuple[str, str]] = []
-        self.delete_errors: list[ApiException] = []
+        self.delete_errors: list[K8sRejectedError] = []
         monkeypatch.setattr(tasks_routes.tasks_db, "get_task_meta", self.meta)
         monkeypatch.setattr(tasks_routes.state_db, "mark_canceling", self.mark)
 
@@ -80,7 +81,7 @@ def test_retry_after_a_failed_delete_deletes_the_job(
 ) -> None:
     """The first cancel gets a 500; the retry deletes instead of returning 200."""
     fakes = Fakes(monkeypatch, TesState.RUNNING)
-    fakes.delete_errors = [ApiException(status=500, reason="boom")]
+    fakes.delete_errors = [K8sRejectedError(500, "boom")]
     with pytest.raises(InternalServerError):
         fakes.cancel()
     assert fakes.state is TesState.CANCELING
@@ -91,11 +92,31 @@ def test_retry_after_a_failed_delete_deletes_the_job(
 def test_cancel_of_a_canceling_task_whose_job_is_gone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A 404 from the repeated delete is success."""
+    """The repeated delete is sent, and a missing Job is success."""
     fakes = Fakes(monkeypatch, TesState.CANCELING)
-    fakes.delete_errors = [ApiException(status=404, reason="Not Found")]
     assert fakes.cancel() == TesCancelTaskResponse()
     assert fakes.deletes == [JOB]
+
+
+def _client_whose_delete_answers(status: int) -> K8sClient:
+    def delete_namespaced_job(**_: Any) -> None:
+        raise k8s_client.ApiException(status=status, reason="nope")
+
+    client = K8sClient.__new__(K8sClient)
+    batch: Any = SimpleNamespace(delete_namespaced_job=delete_namespaced_job)
+    client._batch = batch
+    return client
+
+
+def test_deleting_a_job_that_is_gone_succeeds() -> None:
+    """A 404 from the delete is success."""
+    asyncio.run(_client_whose_delete_answers(404).delete_job("tasks", "task-1"))
+
+
+def test_a_refused_delete_is_an_error() -> None:
+    with pytest.raises(K8sRejectedError) as refused:
+        asyncio.run(_client_whose_delete_answers(403).delete_job("tasks", "task-1"))
+    assert refused.value.status == 403
 
 
 @pytest.mark.parametrize(

@@ -14,7 +14,7 @@ import pytest
 from kubernetes.client import ApiClient, V1Container
 
 from poiesis.api.settings import AuthSettings, Settings
-from poiesis.api.tes.models import TesExecutor, TesInput, TesOutput, TesTask
+from poiesis.tes.models import TesExecutor, TesInput, TesOutput, TesTask
 from poiesis.core.taskpod import build_taskpod_job
 
 DSN = "postgresql://poiesis:db-pass-hunter2@db.example.org:5432/poiesis"

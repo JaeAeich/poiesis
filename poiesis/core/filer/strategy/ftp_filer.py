@@ -33,13 +33,14 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
-from poiesis.api.tes.models import TesInput, TesOutput
 from poiesis.core.constants import FTP_ENABLED_ENV
-from poiesis.core.services.filer.strategy.filer_strategy import (
+from poiesis.core.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     OutputFilerStrategy,
     redact_url,
 )
+from poiesis.errors import PoiesisError
+from poiesis.tes.models import TesInput, TesOutput
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -59,14 +60,14 @@ def ftp_enabled() -> bool:
     return os.environ.get(FTP_ENABLED_ENV, "").strip().lower() not in _OFF
 
 
-class FtpError(Exception):
+class FtpError(PoiesisError):
     """The FTP server refused a login or a command for good (a 5xx reply)."""
 
 
 class FtpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
     """Filer strategy for FTP and FTPS inputs and outputs."""
 
-    def __init__(self, payload: TesInput | TesOutput):
+    def __init__(self, payload: TesInput | TesOutput) -> None:
         """Initialise with the TES input or output."""
         super().__init__(payload)
         self.input = self.payload if isinstance(self.payload, TesInput) else None

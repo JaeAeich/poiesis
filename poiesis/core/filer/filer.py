@@ -27,7 +27,7 @@ class Filer(ABC):
         """
         try:
             logger.info("Starting file operation")
-            await self.file()
+            await self.transfer()
         except Exception as e:
             logger.exception("Filer failed")
             filer_error.record(e)
@@ -35,7 +35,7 @@ class Filer(ABC):
         logger.info("File operation completed successfully")
 
     @abstractmethod
-    async def file(self) -> None:
+    async def transfer(self) -> None:
         """Filing logic — upload or download."""
 
     @property

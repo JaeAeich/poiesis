@@ -56,25 +56,26 @@ from poiesis.core.constants import (
     S3_SSE_KMS_KEY_ID_ENV,
     S3_VIRTUAL_HOSTED_STYLE_ENV,
 )
-from poiesis.core.services.filer.object_stores import (
+from poiesis.core.filer.object_stores import (
     ObjectStoreSpec,
     find_store,
     gcs_token_name,
     parse_stores,
     secret_env_name,
 )
-from poiesis.core.services.filer.strategy.filer_strategy import (
+from poiesis.core.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     OutputFilerStrategy,
 )
-from poiesis.core.services.filer.strategy.gcs_identity import GcsWorkloadIdentity
+from poiesis.core.filer.strategy.gcs_identity import GcsWorkloadIdentity
+from poiesis.errors import PoiesisError
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
 
     from obstore.store import ClientConfig, ObjectStore, RetryConfig
 
-    from poiesis.api.tes.models import TesInput, TesOutput
+    from poiesis.tes.models import TesInput, TesOutput
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ _CLIENT: ClientConfig = {
 _GLOB_CHARS = "*?[{"
 
 
-class ObjectStoreError(OSError):
+class ObjectStoreError(PoiesisError, OSError):
     """A request to an object store failed."""
 
 
@@ -474,7 +475,9 @@ def _brief(error: BaseException) -> str:
 class ObjectStoreFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
     """Inputs and outputs on S3, Google Cloud Storage or Azure Blob."""
 
-    def __init__(self, payload: TesInput | TesOutput, store: ObjectStore | None = None):
+    def __init__(
+        self, payload: TesInput | TesOutput, store: ObjectStore | None = None
+    ) -> None:
         """Initialise for `payload`; `store` defaults to `make_store`."""
         super().__init__(payload)
         if payload.url is None:
