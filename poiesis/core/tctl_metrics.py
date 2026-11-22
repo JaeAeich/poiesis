@@ -15,8 +15,8 @@ from enum import StrEnum
 
 from prometheus_client import Counter, Gauge, Histogram
 
-from poiesis.api.tes.models import TesState
 from poiesis.db.state import NON_TERMINAL_STATES
+from poiesis.tes.models import TesState
 
 #: Seconds between two refreshes of the task gauges.
 TASK_GAUGE_INTERVAL_SECONDS = 30

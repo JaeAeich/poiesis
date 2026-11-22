@@ -33,14 +33,14 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
-from poiesis.api.tes.models import TesInput, TesOutput
 from poiesis.core.constants import FTP_ENABLED_ENV
-from poiesis.core.services.filer.strategy.filer_strategy import (
+from poiesis.core.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     OutputFilerStrategy,
     redact_url,
 )
 from poiesis.errors import PoiesisError
+from poiesis.tes.models import TesInput, TesOutput
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator

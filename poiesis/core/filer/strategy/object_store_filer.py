@@ -56,18 +56,18 @@ from poiesis.core.constants import (
     S3_SSE_KMS_KEY_ID_ENV,
     S3_VIRTUAL_HOSTED_STYLE_ENV,
 )
-from poiesis.core.services.filer.object_stores import (
+from poiesis.core.filer.object_stores import (
     ObjectStoreSpec,
     find_store,
     gcs_token_name,
     parse_stores,
     secret_env_name,
 )
-from poiesis.core.services.filer.strategy.filer_strategy import (
+from poiesis.core.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     OutputFilerStrategy,
 )
-from poiesis.core.services.filer.strategy.gcs_identity import GcsWorkloadIdentity
+from poiesis.core.filer.strategy.gcs_identity import GcsWorkloadIdentity
 from poiesis.errors import PoiesisError
 
 if TYPE_CHECKING:
@@ -75,7 +75,7 @@ if TYPE_CHECKING:
 
     from obstore.store import ClientConfig, ObjectStore, RetryConfig
 
-    from poiesis.api.tes.models import TesInput, TesOutput
+    from poiesis.tes.models import TesInput, TesOutput
 
 logger = logging.getLogger(__name__)
 

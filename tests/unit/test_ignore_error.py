@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from poiesis.api.tes.models import TesExecutor, TesState, TesTask
+from poiesis.tes.models import TesExecutor, TesState, TesTask
 from poiesis.core import ignore_error, reconcile, tctl
 from poiesis.core.pod_status import (
     EventKind,

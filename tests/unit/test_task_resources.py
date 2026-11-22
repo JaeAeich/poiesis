@@ -23,7 +23,7 @@ from poiesis.api.settings import (
     SchedulingSettings,
     Settings,
 )
-from poiesis.api.tes.models import TesExecutor, TesResources, TesState, TesTask
+from poiesis.tes.models import TesExecutor, TesResources, TesState, TesTask
 from poiesis.core import reconcile
 from poiesis.core.pod_status import extract_terminal_reason, pod_terminated_terminal
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job

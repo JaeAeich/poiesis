@@ -18,14 +18,14 @@ from abc import ABC, abstractmethod
 from glob import glob
 from urllib.parse import urlsplit, urlunsplit
 
-from poiesis.api.tes.models import (
+from poiesis.core.constants import FILER_PVC_PATH, OUTPUT_GLOB_FALLBACK_ENV
+from poiesis.core.filer_error import OutputOutsideVolumeError
+from poiesis.tes.models import (
     TesFileType,
     TesInput,
     TesOutput,
     TesOutputFileLog,
 )
-from poiesis.core.constants import FILER_PVC_PATH, OUTPUT_GLOB_FALLBACK_ENV
-from poiesis.core.filer_error import OutputOutsideVolumeError
 
 logger = logging.getLogger(__name__)
 

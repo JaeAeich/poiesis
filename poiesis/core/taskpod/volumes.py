@@ -36,8 +36,8 @@ from poiesis.core.taskpod.paths import (
 )
 
 if TYPE_CHECKING:
-    from poiesis.api.tes.models import TesTask
     from poiesis.core.taskpod.config import RuntimeConfig
+    from poiesis.tes.models import TesTask
 
 
 PVC_VOLUME_NAME = "task-data"

@@ -1,0 +1,17 @@
+; A package imports only from the ones below it: the CLI starts each
+; process, the API serves TES, core builds and reconciles TaskPods, db and
+; k8s talk to Postgres and Kubernetes, tes holds the spec's models.
+; Kept out of pyproject.toml: toml-sort would sort the layers.
+[importlinter]
+root_package = poiesis
+
+[importlinter:contract:layers]
+name = poiesis layers
+type = layers
+layers =
+    poiesis.cli
+    poiesis.api
+    poiesis.core
+    poiesis.db | poiesis.k8s
+    poiesis.tes
+    poiesis.errors

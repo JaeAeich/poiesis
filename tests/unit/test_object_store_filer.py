@@ -14,7 +14,7 @@ import obstore
 import pytest
 from obstore.store import AzureStore, GCSStore, MemoryStore, S3Store
 
-from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
+from poiesis.tes.models import TesFileType, TesInput, TesOutput
 from poiesis.core import filer_error
 from poiesis.core.constants import (
     S3_REQUESTER_PAYS_ENV,
@@ -22,12 +22,12 @@ from poiesis.core.constants import (
     S3_SSE_KMS_KEY_ID_ENV,
     S3_VIRTUAL_HOSTED_STYLE_ENV,
 )
-from poiesis.core.services.filer.filer_strategy_factory import (
+from poiesis.core.filer.filer_strategy_factory import (
     create_input_strategy,
     create_output_strategy,
 )
-from poiesis.core.services.filer.strategy import filer_strategy, object_store_filer
-from poiesis.core.services.filer.strategy.object_store_filer import (
+from poiesis.core.filer.strategy import filer_strategy, object_store_filer
+from poiesis.core.filer.strategy.object_store_filer import (
     MAX_PARALLEL_TRANSFERS,
     ObjectStoreError,
     ObjectStoreFilerStrategy,
@@ -38,8 +38,8 @@ from poiesis.core.services.filer.strategy.object_store_filer import (
     plan_directory_download,
     run_bounded,
 )
-from poiesis.core.services.filer.tif import Tif
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer.tif import Tif
+from poiesis.core.filer.tof import Tof
 
 SCHEMES = ["s3", "gs", "az"]
 

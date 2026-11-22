@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     import asyncpg
 
-from poiesis.api.tes.models import (
+from poiesis.tes.models import (
     TesExecutor,
     TesExecutorLog,
     TesFileType,

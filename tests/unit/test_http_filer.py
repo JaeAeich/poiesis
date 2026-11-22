@@ -21,15 +21,15 @@ from urllib.parse import unquote_to_bytes
 import pytest
 import requests
 
-from poiesis.api.tes.models import TesFileType, TesInput, TesOutput
-from poiesis.core.services.filer.filer_strategy_factory import (
+from poiesis.tes.models import TesFileType, TesInput, TesOutput
+from poiesis.core.filer.filer_strategy_factory import (
     can_output,
     create_input_strategy,
     create_output_strategy,
 )
-from poiesis.core.services.filer.strategy import filer_strategy, http_filer
-from poiesis.core.services.filer.tif import Tif
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer.strategy import filer_strategy, http_filer
+from poiesis.core.filer.tif import Tif
+from poiesis.core.filer.tof import Tof
 
 MIB = 1024 * 1024
 ERROR_BODY = b"<Error><Code>SignatureDoesNotMatch</Code></Error>"

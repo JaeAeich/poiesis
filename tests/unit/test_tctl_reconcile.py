@@ -19,7 +19,7 @@ import pytest
 from kubernetes.client.exceptions import ApiException
 from postgres import needs_postgres, run
 
-from poiesis.api.tes.models import TesExecutor, TesState, TesTask
+from poiesis.tes.models import TesExecutor, TesState, TesTask
 from poiesis.core import tctl
 from poiesis.core.logging_config import setup_logging
 from poiesis.db import state as state_db

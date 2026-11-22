@@ -13,17 +13,17 @@ from typing import Any
 import pytest
 import requests
 
-from poiesis.api.tes.models import TesFileType, TesOutput, TesOutputFileLog
+from poiesis.tes.models import TesFileType, TesOutput, TesOutputFileLog
 from poiesis.core.constants import FILE_URL_ROOTS_ENV
-from poiesis.core.services.filer.filer_strategy_factory import create_output_strategy
+from poiesis.core.filer.filer_strategy_factory import create_output_strategy
 from obstore.store import MemoryStore
 
-from poiesis.core.services.filer.strategy import (
+from poiesis.core.filer.strategy import (
     filer_strategy,
     http_filer,
     object_store_filer,
 )
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer.tof import Tof
 
 
 @pytest.fixture

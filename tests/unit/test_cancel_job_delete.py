@@ -16,7 +16,7 @@ import pytest
 
 from poiesis.api.exceptions import InternalServerError
 from poiesis.api.routes import tasks as tasks_routes
-from poiesis.api.tes.models import TesCancelTaskResponse, TesState
+from poiesis.tes.models import TesCancelTaskResponse, TesState
 from poiesis.k8s import K8sClient, K8sRejectedError
 from poiesis.k8s import client as k8s_client
 

@@ -31,7 +31,7 @@ from poiesis.api.exceptions import APIError, handle_api_exception
 from poiesis.api.jwt_auth import JWTAuthenticator
 from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.settings import AuthzSettings, IssuerSettings
-from poiesis.api.tes.models import TesState, TesTask
+from poiesis.tes.models import TesState, TesTask
 from poiesis.db.tasks import ListFilters, TaskScope
 
 GOLDEN = Path(__file__).parent / "golden" / "authz"

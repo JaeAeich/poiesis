@@ -26,12 +26,12 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 from poiesis.core.taskpod.config import ZONE_LABEL
 
 if TYPE_CHECKING:
-    from poiesis.api.tes.models import TesTask
     from poiesis.core.taskpod.config import (
         NodePlacement,
         RuntimeConfig,
         SchedulingConfig,
     )
+    from poiesis.tes.models import TesTask
 
 
 def pod_settings(task: TesTask, config: RuntimeConfig) -> dict[str, Any]:

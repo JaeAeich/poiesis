@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from poiesis.api.tes.models import TesState
+from poiesis.tes.models import TesState
 from poiesis.core import reconcile
 from poiesis.core.pod_status import extract_terminal_reason, pod_terminated_terminal
 

@@ -20,13 +20,6 @@ from poiesis.api.exceptions import (
     ServiceUnavailableError,
 )
 from poiesis.api.metrics import SubmitOutcome, count_submission
-from poiesis.api.tes.models import (
-    TesCancelTaskResponse,
-    TesCreateTaskResponse,
-    TesListTasksResponse,
-    TesState,
-    TesTask,
-)
 from poiesis.core.taskpod import (
     RuntimeConfig,
     attach_pvc_owner,
@@ -37,6 +30,13 @@ from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
 from poiesis.db.tasks import ListFilters, TaskView
 from poiesis.k8s import K8sClient, K8sError, K8sRejectedError, K8sUnreachableError
+from poiesis.tes.models import (
+    TesCancelTaskResponse,
+    TesCreateTaskResponse,
+    TesListTasksResponse,
+    TesState,
+    TesTask,
+)
 
 _MAX_PAGE_SIZE = 2048
 _DEFAULT_PAGE_SIZE = 256

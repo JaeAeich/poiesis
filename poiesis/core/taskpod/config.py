@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
     from kubernetes.client import V1EnvVar, V1ResourceRequirements
 
-    from poiesis.core.services.filer.object_stores import ObjectStoreSpec
+    from poiesis.core.filer.object_stores import ObjectStoreSpec
 
 
 #: Floor for the per-task scratch PVC when neither the TES request nor the

@@ -6,17 +6,17 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from poiesis.api.tes.models import TesFileType, TesOutput
+from poiesis.core.filer.filer import Filer
+from poiesis.core.filer.filer_strategy_factory import create_output_strategy
+from poiesis.core.filer.strategy import filer_strategy
+from poiesis.core.filer.strategy.filer_strategy import redact_url
 from poiesis.core.filer_error import MissingOutputError
-from poiesis.core.services.filer.filer import Filer
-from poiesis.core.services.filer.filer_strategy_factory import create_output_strategy
-from poiesis.core.services.filer.strategy import filer_strategy
-from poiesis.core.services.filer.strategy.filer_strategy import redact_url
+from poiesis.tes.models import TesFileType, TesOutput
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from poiesis.api.tes.models import TesOutputFileLog
+    from poiesis.tes.models import TesOutputFileLog
 
     #: Stores the task's output file logs, replacing any stored before.
     RecordOutputs = Callable[[list[TesOutputFileLog]], Awaitable[None]]

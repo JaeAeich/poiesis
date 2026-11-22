@@ -23,6 +23,7 @@ description = "Run all pre-commit hooks + deptry + ty (advisory)"
 run = [
   "mise x -- lefthook run pre-commit --all-files",
   "uv run deptry poiesis",
+  "uv run lint-imports",
   "uv run ty check poiesis || echo '(ty diagnostics are advisory; see CI policy in ci.yml)'",
 ]
 
@@ -43,10 +44,11 @@ description = "Run ruff format"
 run = "uv run ruff format poiesis"
 
 [tasks.lint]
-description = "Run ruff check + typos + deptry"
+description = "Run ruff check + typos + deptry + import layers"
 run = [
   "mise x -- typos .",
   "uv run deptry poiesis",
+  "uv run lint-imports",
   "uv run ruff check poiesis",
 ]
 

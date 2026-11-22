@@ -33,7 +33,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from poiesis.api.tes.models import TesState
 from poiesis.core import executor_shell
 from poiesis.core.pod_status import (
     ContainerKind,
@@ -49,6 +48,7 @@ from poiesis.core.pod_status import (
     parse_timestamp,
     pod_terminated_terminal,
 )
+from poiesis.tes.models import TesState
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

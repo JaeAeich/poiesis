@@ -7,12 +7,12 @@ import sys
 import asyncpg
 import click
 
-from poiesis.api.tes.models import TesOutputFileLog
 from poiesis.cli.env import configure_logging, required_env
 from poiesis.core import filer_error
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer.tof import Tof
 from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
+from poiesis.tes.models import TesOutputFileLog
 
 logger = logging.getLogger(__name__)
 

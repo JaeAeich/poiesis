@@ -49,6 +49,18 @@ jobs:
       - run: uv sync --all-extras --all-groups
       - run: uv run deptry poiesis
 
+  layers:
+    name: import layers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+      - run: uv sync --all-extras --all-groups
+      - run: uv run lint-imports
+
   typecheck:
     name: ty (advisory)
     runs-on: ubuntu-latest

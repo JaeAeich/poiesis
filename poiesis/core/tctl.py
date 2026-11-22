@@ -88,7 +88,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
 
-from poiesis.api.tes.models import TesState
 from poiesis.core import ignore_error
 from poiesis.core import metrics as metrics_server
 from poiesis.core import tctl_metrics as metrics
@@ -107,6 +106,7 @@ from poiesis.core.reconcile import (
 from poiesis.core.shutdown import stop_on_signals
 from poiesis.core.taskpod import job_name_for
 from poiesis.db import state as state_db
+from poiesis.tes.models import TesState
 
 logger = logging.getLogger(__name__)
 

@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from poiesis.api.tes.models import TesExecutor, TesInput, TesTask
+from poiesis.tes.models import TesExecutor, TesInput, TesTask
 from poiesis.core.constants import FILE_URL_ROOTS_ENV
-from poiesis.core.services.filer.strategy import filer_strategy
-from poiesis.core.services.filer.tif import Tif
+from poiesis.core.filer.strategy import filer_strategy
+from poiesis.core.filer.tif import Tif
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
 
 CONFIG = RuntimeConfig(taskpod_namespace="poiesis", poiesis_image="poiesis:test")

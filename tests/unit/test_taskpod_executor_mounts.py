@@ -12,7 +12,7 @@ import posixpath
 
 import pytest
 
-from poiesis.api.tes.models import (
+from poiesis.tes.models import (
     TesExecutor,
     TesFileType,
     TesInput,

@@ -23,7 +23,7 @@ from poiesis.api.exceptions import (
     ServiceUnavailableError,
 )
 from poiesis.api.routes import tasks as tasks_routes
-from poiesis.api.tes.models import TesCancelTaskResponse, TesState
+from poiesis.tes.models import TesCancelTaskResponse, TesState
 from poiesis.k8s import K8sRejectedError, K8sUnreachableError
 from poiesis.k8s import client as k8s_client
 

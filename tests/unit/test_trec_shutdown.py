@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from poiesis.api.tes.models import TesState
+from poiesis.tes.models import TesState
 from poiesis.core import k8s_watch, reconcile, trec
 from poiesis.core.k8s_watch import PodSelector, watch_pods
 from poiesis.core.pod_status import (

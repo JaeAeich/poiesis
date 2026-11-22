@@ -9,10 +9,9 @@ import math
 import posixpath
 from typing import TYPE_CHECKING
 
-from poiesis.api.tes.models import TesFileType
 from poiesis.core import executor_shell
-from poiesis.core.services.filer import filer_strategy_factory as _filer
-from poiesis.core.services.filer.object_stores import find_store
+from poiesis.core.filer import filer_strategy_factory as _filer
+from poiesis.core.filer.object_stores import find_store
 from poiesis.core.taskpod.paths import is_within, normalised
 from poiesis.core.taskpod.pod import (
     backend_parameters,
@@ -21,12 +20,13 @@ from poiesis.core.taskpod.pod import (
     priority_class,
 )
 from poiesis.core.taskpod.volumes import executor_path_mounts
+from poiesis.tes.models import TesFileType
 
 if TYPE_CHECKING:
     from kubernetes.client import V1VolumeMount
 
-    from poiesis.api.tes.models import TesTask
     from poiesis.core.taskpod.config import RuntimeConfig
+    from poiesis.tes.models import TesTask
 
 
 def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:

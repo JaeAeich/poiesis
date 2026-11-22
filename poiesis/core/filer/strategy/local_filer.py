@@ -5,12 +5,12 @@ import os
 import shutil
 from pathlib import Path
 
-from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.services.filer.file_urls import resolve_file_url
-from poiesis.core.services.filer.strategy.filer_strategy import (
+from poiesis.core.filer.file_urls import resolve_file_url
+from poiesis.core.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     OutputFilerStrategy,
 )
+from poiesis.tes.models import TesInput, TesOutput
 
 logger = logging.getLogger(__name__)
 

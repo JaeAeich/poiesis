@@ -9,7 +9,7 @@ import click
 
 from poiesis.cli.env import configure_logging, required_env
 from poiesis.core import filer_error
-from poiesis.core.services.filer.tif import Tif
+from poiesis.core.filer.tif import Tif
 from poiesis.db import tasks as tasks_db
 
 logger = logging.getLogger(__name__)

@@ -27,7 +27,7 @@ from test_tctl_reconcile import T1, T2, World, job, pod
 from poiesis.api import app as app_module
 from poiesis.api import metrics
 from poiesis.api.routes import tasks as tasks_routes
-from poiesis.api.tes.models import TesState
+from poiesis.tes.models import TesState
 from poiesis.core import metrics as metrics_server
 from poiesis.core import tctl, tctl_metrics
 from poiesis.db.pool import Pool

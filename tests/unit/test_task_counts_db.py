@@ -8,7 +8,7 @@ from typing import Any
 
 from postgres import needs_postgres, run
 
-from poiesis.api.tes.models import TesExecutor, TesState, TesTask
+from poiesis.tes.models import TesExecutor, TesState, TesTask
 from poiesis.db import state as state_db
 from poiesis.db import tasks as tasks_db
 

@@ -13,17 +13,17 @@ from pathlib import Path
 import pytest
 
 from poiesis.api.settings import Settings
-from poiesis.api.tes.models import TesExecutor, TesInput, TesOutput, TesTask
+from poiesis.tes.models import TesExecutor, TesInput, TesOutput, TesTask
 from poiesis.core.constants import FILE_URL_ROOTS_ENV
-from poiesis.core.services.filer import filer_strategy_factory as factory
-from poiesis.core.services.filer.file_urls import (
+from poiesis.core.filer import filer_strategy_factory as factory
+from poiesis.core.filer.file_urls import (
     file_url_allowed,
     parse_file_url_roots,
     resolve_file_url,
 )
-from poiesis.core.services.filer.strategy import filer_strategy
-from poiesis.core.services.filer.tif import Tif
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer.strategy import filer_strategy
+from poiesis.core.filer.tif import Tif
+from poiesis.core.filer.tof import Tof
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
 
 

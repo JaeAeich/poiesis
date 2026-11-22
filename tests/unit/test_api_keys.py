@@ -56,7 +56,7 @@ from poiesis.api.settings import (
     format_ttl,
     parse_ttl,
 )
-from poiesis.api.tes.models import TesState, TesTask
+from poiesis.tes.models import TesState, TesTask
 from poiesis.db import api_keys as api_keys_db
 from poiesis.db.api_keys import ApiKeyCredential, ApiKeyRecord
 

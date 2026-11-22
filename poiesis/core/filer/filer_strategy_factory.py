@@ -12,29 +12,29 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from poiesis.core.services.filer.file_urls import file_url_allowed, file_url_roots
-from poiesis.core.services.filer.strategy.content_filer import ContentFilerStrategy
-from poiesis.core.services.filer.strategy.drs_filer import (
+from poiesis.core.filer.file_urls import file_url_allowed, file_url_roots
+from poiesis.core.filer.strategy.content_filer import ContentFilerStrategy
+from poiesis.core.filer.strategy.drs_filer import (
     DrsFilerStrategy,
     drs_enabled,
     drs_uri_problem,
 )
-from poiesis.core.services.filer.strategy.ftp_filer import (
+from poiesis.core.filer.strategy.ftp_filer import (
     FtpFilerStrategy,
     ftp_enabled,
 )
-from poiesis.core.services.filer.strategy.http_filer import HttpFilerStrategy
-from poiesis.core.services.filer.strategy.local_filer import LocalFilerStrategy
-from poiesis.core.services.filer.strategy.object_store_filer import (
+from poiesis.core.filer.strategy.http_filer import HttpFilerStrategy
+from poiesis.core.filer.strategy.local_filer import LocalFilerStrategy
+from poiesis.core.filer.strategy.object_store_filer import (
     ObjectStoreFilerStrategy,
 )
 
 if TYPE_CHECKING:
-    from poiesis.api.tes.models import TesInput, TesOutput
-    from poiesis.core.services.filer.strategy.filer_strategy import (
+    from poiesis.core.filer.strategy.filer_strategy import (
         InputFilerStrategy,
         OutputFilerStrategy,
     )
+    from poiesis.tes.models import TesInput, TesOutput
 
 
 @dataclass(frozen=True)

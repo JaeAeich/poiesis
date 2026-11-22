@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from poiesis.api.tes.models import (
+from poiesis.tes.models import (
     TesExecutor,
     TesFileType,
     TesInput,
@@ -41,7 +41,7 @@ from poiesis.core.executor_logs import (
     streams_from_pod,
 )
 from poiesis.core.pod_status import extract_terminal_reason, pod_terminated_terminal
-from poiesis.core.services.filer.tif import make_task_dirs
+from poiesis.core.filer.tif import make_task_dirs
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
 
 if TYPE_CHECKING:

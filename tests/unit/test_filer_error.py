@@ -13,14 +13,14 @@ from typing import TYPE_CHECKING
 import pytest
 import requests
 
-from poiesis.api.tes.models import TesFileType, TesInput, TesOutput, TesState
+from poiesis.tes.models import TesFileType, TesInput, TesOutput, TesState
 from poiesis.cli import tif as tif_cli
 from poiesis.cli import tof as tof_cli
 from poiesis.core import filer_error, reconcile
 from poiesis.core.pod_status import extract_terminal_reason, pod_terminated_terminal
-from poiesis.core.services.filer.strategy import filer_strategy, http_filer
-from poiesis.core.services.filer.tif import Tif
-from poiesis.core.services.filer.tof import Tof
+from poiesis.core.filer.strategy import filer_strategy, http_filer
+from poiesis.core.filer.tif import Tif
+from poiesis.core.filer.tof import Tof
 
 if TYPE_CHECKING:
     from pathlib import Path

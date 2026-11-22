@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from postgres import needs_postgres, run
 
-from poiesis.api.tes.models import TesExecutor, TesState, TesTask
+from poiesis.tes.models import TesExecutor, TesState, TesTask
 from poiesis.db import tasks as tasks_db
 from poiesis.db.tasks import ListFilters, TaskScope, TaskView
 

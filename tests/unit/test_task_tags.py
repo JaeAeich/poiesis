@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from poiesis.api import app as app_module
 from poiesis.api.routes import tasks as tasks_routes
-from poiesis.api.tes.models import TesTask
+from poiesis.tes.models import TesTask
 
 TASKS = "/ga4gh/tes/v1/tasks"
 TASK = {"executors": [{"image": "alpine", "command": ["true"]}]}
@@ -107,7 +107,7 @@ def test_cromwell_null_tag_dropped(
     client: TestClient, stored: dict[str, TesTask], caplog: pytest.LogCaptureFixture
 ) -> None:
     """Cromwell's null tag is dropped, the others kept, the drop logged."""
-    caplog.set_level(logging.DEBUG, logger="poiesis.api.tes.models")
+    caplog.set_level(logging.DEBUG, logger="poiesis.tes.models")
     response = create(client, CROMWELL_TAGS)
     assert response.status_code == HTTPStatus.OK, response.text
     task_id = response.json()["id"]
@@ -119,7 +119,7 @@ def test_cromwell_null_tag_dropped(
     assert task.status_code == HTTPStatus.OK, task.text
     assert task.json()["tags"] == kept
 
-    dropped = [r for r in caplog.records if r.name == "poiesis.api.tes.models"]
+    dropped = [r for r in caplog.records if r.name == "poiesis.tes.models"]
     assert len(dropped) == 1
     assert dropped[0].levelno == logging.DEBUG
     assert "parent_workflow_id" in dropped[0].getMessage()
@@ -139,11 +139,11 @@ def test_no_null_tags_untouched(
     client: TestClient, stored: dict[str, TesTask], caplog: pytest.LogCaptureFixture
 ) -> None:
     """Tags without nulls are kept as sent and nothing is logged."""
-    caplog.set_level(logging.DEBUG, logger="poiesis.api.tes.models")
+    caplog.set_level(logging.DEBUG, logger="poiesis.tes.models")
     response = create(client, {"project": "x", "empty": ""})
     assert response.status_code == HTTPStatus.OK, response.text
     assert stored[response.json()["id"]].tags == {"project": "x", "empty": ""}
-    assert not [r for r in caplog.records if r.name == "poiesis.api.tes.models"]
+    assert not [r for r in caplog.records if r.name == "poiesis.tes.models"]
 
 
 @pytest.mark.parametrize(

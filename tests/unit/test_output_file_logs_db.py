@@ -7,7 +7,7 @@ from typing import Any
 
 from postgres import needs_postgres, run
 
-from poiesis.api.tes.models import (
+from poiesis.tes.models import (
     TesExecutor,
     TesOutputFileLog,
     TesState,

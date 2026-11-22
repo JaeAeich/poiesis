@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from poiesis.api.tes.models import TesState
+from poiesis.tes.models import TesState
 from poiesis.core.reconcile import (
     Action,
     DeleteJob,

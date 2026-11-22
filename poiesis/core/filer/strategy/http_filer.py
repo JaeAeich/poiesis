@@ -23,12 +23,12 @@ from urllib.parse import parse_qsl, quote, urljoin, urlsplit, urlunsplit
 
 import requests
 
-from poiesis.api.tes.models import TesInput, TesOutput
-from poiesis.core.services.filer.strategy.filer_strategy import (
+from poiesis.core.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     OutputFilerStrategy,
     redact_url,
 )
+from poiesis.tes.models import TesInput, TesOutput
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -28,8 +28,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from poiesis.api.tes.models import TesState
 from poiesis.core import filer_error, ignore_error
+from poiesis.tes.models import TesState
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

@@ -55,16 +55,16 @@ from poiesis.core.constants import (
     S3_SSE_KMS_KEY_ID_ENV,
     S3_VIRTUAL_HOSTED_STYLE_ENV,
 )
-from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
-from poiesis.core.metrics import metrics_port_from_env
-from poiesis.core.services.filer.file_urls import parse_file_url_roots
-from poiesis.core.services.filer.object_stores import (
+from poiesis.core.filer.file_urls import parse_file_url_roots
+from poiesis.core.filer.object_stores import (
     S3_SSE_MODES,
     ObjectStoreSpec,
     gcs_token_name,
     parse_stores,
 )
-from poiesis.core.services.filer.strategy.gcs_identity import token_audience
+from poiesis.core.filer.strategy.gcs_identity import token_audience
+from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
+from poiesis.core.metrics import metrics_port_from_env
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 from poiesis.core.taskpod.config import (
     BACKEND_PARAMETERS,

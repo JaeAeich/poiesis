@@ -74,8 +74,8 @@ from poiesis.api.exceptions import (
     ServiceUnavailableError,
 )
 from poiesis.api.settings import AuthzSettings, ClaimRuleSettings, IssuerSettings
-from poiesis.api.tes.models import TesInput, TesOutput, TesTask
 from poiesis.db.tasks import TaskScope
+from poiesis.tes.models import TesInput, TesOutput, TesTask
 
 logger = logging.getLogger(__name__)
 
