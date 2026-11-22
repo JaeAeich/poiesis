@@ -80,7 +80,7 @@ onUnmounted(() => {
         <div>
           <h1>Deploy Poiesis</h1>
           <p class="dsub">
-            You bring a cluster, Postgres, an S3 bucket and an OIDC issuer. You get a values.yaml
+            You bring a cluster, Postgres, an object store and an OIDC issuer. You get a values.yaml
             and the commands to install it.
           </p>
         </div>

@@ -50,6 +50,28 @@ describe("installShLines", () => {
     );
   });
 
+  it("creates the chosen store's Secret", () => {
+    const gcs = installSh((config) => (config.storage = "gcs"));
+    expect(gcs).toContain(
+      "kubectl -n poiesis create secret generic poiesis-gcs \\\n" +
+        "  --from-file=GOOGLE_SERVICE_ACCOUNT_KEY=key.json\n",
+    );
+    expect(gcs).not.toContain("AWS_ACCESS_KEY_ID");
+    const azure = installSh((config) => {
+      config.storage = "azure";
+      config.azureSecret = "blob";
+    });
+    expect(azure).toContain(
+      "kubectl -n poiesis create secret generic blob \\\n" +
+        "  --from-literal=AZURE_STORAGE_ACCOUNT_KEY=…\n",
+    );
+    const identity = installSh((config) => {
+      config.storage = "azure";
+      config.azureCredentials = "identity";
+    });
+    expect(identity).not.toContain("AZURE_STORAGE_ACCOUNT_KEY");
+  });
+
   it("creates a separate task namespace only when it differs", () => {
     expect(installSh((config) => (config.advanced["taskpods.namespace"] = "jobs"))).toContain(
       "kubectl create namespace poiesis\nkubectl create namespace jobs\n",

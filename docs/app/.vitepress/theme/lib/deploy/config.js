@@ -1,7 +1,9 @@
 // The configurator's inputs: everything the values.yaml and install.sh generators read.
 
 /** @typedef {"cert-manager" | "secret" | "none"} TlsMode */
+/** @typedef {"s3" | "gcs" | "azure"} StorageProvider */
 /** @typedef {"secret" | "irsa"} S3Credentials */
+/** @typedef {"secret" | "identity"} AzureCredentials */
 /** @typedef {"owner" | "decision-service"} AuthzMode */
 /** @typedef {"oidc" | "gateway"} IssuerType */
 
@@ -26,11 +28,18 @@
  * @property {string} tlsSecret
  * @property {string} databaseSecret
  * @property {string} databaseCaConfigMap
+ * @property {StorageProvider} storage
  * @property {string} s3Endpoint
  * @property {string} s3Region
  * @property {S3Credentials} s3Credentials
  * @property {string} s3Secret
  * @property {string} s3RoleArn
+ * @property {string} gcsSecret
+ * @property {string} azureAccount
+ * @property {AzureCredentials} azureCredentials
+ * @property {string} azureSecret
+ * @property {string} azureClientId
+ * @property {string} azureTenantId
  * @property {number | string} defaultSizeGi Raw input text once edited.
  * @property {number | string} maxSizeGi
  * @property {string} storageClass
@@ -55,6 +64,11 @@ export const TLS_MODES = /** @type {const} */ ([
 export const S3_CREDENTIAL_MODES = /** @type {const} */ ([
   ["secret", "Access key Secret"],
   ["irsa", "Workload identity"],
+]);
+
+export const AZURE_CREDENTIAL_MODES = /** @type {const} */ ([
+  ["secret", "Account key Secret"],
+  ["identity", "Workload identity"],
 ]);
 
 export const AUTHZ_MODES = /** @type {const} */ ([
@@ -103,11 +117,18 @@ export function createConfig() {
     tlsSecret: "",
     databaseSecret: "",
     databaseCaConfigMap: "",
+    storage: "s3",
     s3Endpoint: "",
     s3Region: "",
     s3Credentials: "secret",
     s3Secret: "",
     s3RoleArn: "",
+    gcsSecret: "",
+    azureAccount: "",
+    azureCredentials: "secret",
+    azureSecret: "",
+    azureClientId: "",
+    azureTenantId: "",
     defaultSizeGi: VOLUME_DEFAULTS.defaultSizeGi,
     maxSizeGi: VOLUME_DEFAULTS.maxSizeGi,
     storageClass: "",
@@ -147,4 +168,19 @@ export function withoutScheme(url) {
 /** First OIDC issuer's position, or -1. */
 export function firstOidcIndex(config) {
   return config.issuers.findIndex((issuer) => issuer.type === "oidc");
+}
+
+/**
+ * Name of the Secret holding the chosen store's credentials, or null with workload identity.
+ * @param {DeployConfig} config
+ * @returns {{ name: string, key: string } | null} `key` is the config key of the name field.
+ */
+export function storageSecret(config) {
+  if (config.storage === "gcs") return { name: config.gcsSecret, key: "gcsSecret" };
+  if (config.storage === "azure") {
+    return config.azureCredentials === "secret"
+      ? { name: config.azureSecret, key: "azureSecret" }
+      : null;
+  }
+  return config.s3Credentials === "secret" ? { name: config.s3Secret, key: "s3Secret" } : null;
 }

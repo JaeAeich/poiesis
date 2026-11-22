@@ -15,7 +15,6 @@ const VALUES_HEADER = "# Poiesis values.yaml (non-default values only)";
 const EXAMPLE_MARKER = "  # example, replace";
 const REQUIRED_PLACEHOLDER = '""  # required';
 const DEFAULT_TLS_SECRET = "poiesis-tls";
-const IRSA_ANNOTATION = "eks.amazonaws.com/role-arn";
 const KEYCLOAK_TOKEN_TYPES =
   "tokenTypes: [JWT]  # Keycloak access tokens; other issuers default to at+jwt";
 const KEY_MINTING_MAX_AUTH_AGE = 600;
@@ -68,7 +67,7 @@ export function valuesYamlLines(config) {
   }
   out.blank(STEP.DATABASE);
 
-  writeS3(out, config, marker, requiredValue);
+  writeStorage(out, config, marker, requiredValue);
   writeTaskPods(out, config, overrides);
   writeAuth(out, config, overrides, marker, requiredValue);
   writeAuthz(out, config, overrides, requiredValue);
@@ -134,6 +133,28 @@ function writeApi(out, config, overrides, marker) {
   out.blank(STEP.BASICS);
 }
 
+function writeStorage(out, config, marker, requiredValue) {
+  const step = STEP.STORAGE;
+  if (config.storage === "gcs") {
+    out.add("gcs:", step);
+    out.add("  enabled: true", step);
+    out.add(`  existingSecret: ${requiredValue(config.gcsSecret, "gcsSecret")}`, step);
+  } else if (config.storage === "azure") {
+    out.add("azure:", step);
+    out.add("  enabled: true", step);
+    out.add(`  accountName: ${requiredValue(config.azureAccount, "azureAccount")}`, step);
+    if (config.azureCredentials === "secret") {
+      out.add(`  existingSecret: ${requiredValue(config.azureSecret, "azureSecret")}`, step);
+    } else {
+      out.add(`  clientId: ${requiredValue(config.azureClientId, "azureClientId")}`, step);
+      out.add(`  tenantId: ${requiredValue(config.azureTenantId, "azureTenantId")}`, step);
+    }
+  } else {
+    writeS3(out, config, marker, requiredValue);
+  }
+  out.blank(step);
+}
+
 function writeS3(out, config, marker, requiredValue) {
   const step = STEP.STORAGE;
   out.add("s3:", step);
@@ -143,19 +164,13 @@ function writeS3(out, config, marker, requiredValue) {
   out.add(`  region: ${requiredValue(config.s3Region, "s3Region")}`, step);
   if (config.s3Credentials === "secret") {
     out.add(`  existingSecret: ${requiredValue(config.s3Secret, "s3Secret")}`, step);
+    return;
   }
-  out.blank(step);
-
-  if (config.s3Credentials !== "irsa") return;
-  // Role ARNs contain ":" sequences, so they are always quoted.
-  const role = config.s3RoleArn ? JSON.stringify(config.s3RoleArn) : REQUIRED_PLACEHOLDER;
-  out.add("serviceAccount:", step);
-  for (const account of ["api", "taskpod"]) {
-    out.add(`  ${account}:`, step);
-    out.add("    annotations:", step);
-    out.add(`      ${IRSA_ANNOTATION}: ${role}${marker("s3RoleArn")}`, step);
-  }
-  out.blank(step);
+  // tif and tof assume the role; role ARNs contain ":" sequences, so they are always quoted.
+  const role = config.s3RoleArn
+    ? JSON.stringify(config.s3RoleArn) + marker("s3RoleArn")
+    : REQUIRED_PLACEHOLDER;
+  out.add(`  roleArn: ${role}`, step);
 }
 
 function writeTaskPods(out, config, overrides) {

@@ -18,6 +18,20 @@ describe("missingFields", () => {
     ]);
   });
 
+  it("asks for the chosen store's values only", () => {
+    const config = createConfig();
+    config.storage = "gcs";
+    expect(labels(config)).toContain("GCS Secret");
+    expect(labels(config)).not.toContain("S3 region");
+    config.storage = "azure";
+    expect(labels(config)).toEqual(expect.arrayContaining(["Storage account", "Azure Secret"]));
+    config.azureCredentials = "identity";
+    expect(labels(config)).toEqual(expect.arrayContaining(["Client ID", "Tenant ID"]));
+    expect(labels(config)).not.toContain("Azure Secret");
+    fillAllExamples(config);
+    expect(labels(config)).toEqual([]);
+  });
+
   it("follows the chosen modes", () => {
     const config = createConfig();
     config.tlsMode = "secret";

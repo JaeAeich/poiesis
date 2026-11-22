@@ -38,7 +38,13 @@ export const STEPS = [
     id: "storage",
     title: "Storage",
     optional: false,
-    summary: (config) => (config.s3Region ? `S3 · ${config.s3Region}` : "S3"),
+    summary: (config) => {
+      if (config.storage === "gcs") return "Google Cloud Storage";
+      if (config.storage === "azure") {
+        return config.azureAccount ? `Azure · ${config.azureAccount}` : "Azure Blob";
+      }
+      return config.s3Region ? `S3 · ${config.s3Region}` : "S3";
+    },
   },
   {
     id: "volumes",

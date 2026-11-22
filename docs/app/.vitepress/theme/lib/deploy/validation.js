@@ -18,14 +18,7 @@ export function missingFields(config) {
   const checks = [
     [!config.publicUrl, "Public URL", STEP.BASICS, "w-url"],
     [!config.databaseSecret, "Database Secret", STEP.DATABASE, "w-dbSecret"],
-    [!config.s3Region, "S3 region", STEP.STORAGE, "w-s3Region"],
-    [
-      config.s3Credentials === "secret" && !config.s3Secret,
-      "S3 Secret",
-      STEP.STORAGE,
-      "w-s3Secret",
-    ],
-    [config.s3Credentials === "irsa" && !config.s3RoleArn, "IAM role", STEP.STORAGE, "w-s3Role"],
+    ...storageChecks(config),
     [config.tlsMode === "secret" && !config.tlsSecret, "TLS Secret", STEP.BASICS, "w-tlsSecret"],
     [
       config.tlsMode === "cert-manager" && !config.clusterIssuer,
@@ -46,6 +39,27 @@ export function missingFields(config) {
     .map(([, label, step, focusId]) => ({ label, step, focusId }));
 }
 
+/** @returns {[boolean, string, number, string][]} */
+function storageChecks(config) {
+  const step = STEP.STORAGE;
+  if (config.storage === "gcs") return [[!config.gcsSecret, "GCS Secret", step, "w-gcsSecret"]];
+  if (config.storage === "azure") {
+    const withSecret = config.azureCredentials === "secret";
+    return [
+      [!config.azureAccount, "Storage account", step, "w-azureAccount"],
+      [withSecret && !config.azureSecret, "Azure Secret", step, "w-azureSecret"],
+      [!withSecret && !config.azureClientId, "Client ID", step, "w-azureClientId"],
+      [!withSecret && !config.azureTenantId, "Tenant ID", step, "w-azureTenantId"],
+    ];
+  }
+  const withSecret = config.s3Credentials === "secret";
+  return [
+    [!config.s3Region, "S3 region", step, "w-s3Region"],
+    [withSecret && !config.s3Secret, "S3 Secret", step, "w-s3Secret"],
+    [!withSecret && !config.s3RoleArn, "IAM role", step, "w-s3Role"],
+  ];
+}
+
 // Where each example-valued field lives, for the "Example values to replace" list.
 const EXAMPLE_TARGETS = {
   clusterIssuer: { label: "ClusterIssuer", step: STEP.BASICS, focusId: "w-cmIssuer" },
@@ -55,6 +69,11 @@ const EXAMPLE_TARGETS = {
   s3Endpoint: { label: "S3 endpoint", step: STEP.STORAGE, focusId: "w-s3Endpoint" },
   s3Region: { label: "S3 region", step: STEP.STORAGE, focusId: "w-s3Region" },
   s3Secret: { label: "S3 Secret", step: STEP.STORAGE, focusId: "w-s3Secret" },
+  gcsSecret: { label: "GCS Secret", step: STEP.STORAGE, focusId: "w-gcsSecret" },
+  azureAccount: { label: "Storage account", step: STEP.STORAGE, focusId: "w-azureAccount" },
+  azureSecret: { label: "Azure Secret", step: STEP.STORAGE, focusId: "w-azureSecret" },
+  azureClientId: { label: "Client ID", step: STEP.STORAGE, focusId: "w-azureClientId" },
+  azureTenantId: { label: "Tenant ID", step: STEP.STORAGE, focusId: "w-azureTenantId" },
   decisionServiceUrl: { label: "Decision service URL", step: STEP.AUTHORIZATION, focusId: "w-pdp" },
 };
 

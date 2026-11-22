@@ -1,11 +1,19 @@
 // install.sh: the Secrets the chart expects, then helm install.
-import { DEFAULT_NAMESPACE } from "./config.js";
+import { DEFAULT_NAMESPACE, storageSecret } from "./config.js";
 import { LINE_OWNER, createLineWriter } from "./file-lines.js";
 import { STEP } from "./steps.js";
 
 const CHART_PATH = "./deployment/helm/poiesis";
 const DEFAULT_DATABASE_SECRET = "poiesis-db";
-const DEFAULT_S3_SECRET = "poiesis-s3";
+// Per store: the Secret's default name and the kubectl arguments that fill it.
+const STORAGE_SECRETS = {
+  s3: {
+    name: "poiesis-s3",
+    args: ["--from-literal=AWS_ACCESS_KEY_ID=…", "--from-literal=AWS_SECRET_ACCESS_KEY=…"],
+  },
+  gcs: { name: "poiesis-gcs", args: ["--from-file=GOOGLE_SERVICE_ACCOUNT_KEY=key.json"] },
+  azure: { name: "poiesis-azure", args: ["--from-literal=AZURE_STORAGE_ACCOUNT_KEY=…"] },
+};
 const SSL_VERIFY_FULL = "sslmode=verify-full&sslrootcert=/etc/ssl/poiesis/ca.crt";
 const SSL_REQUIRE = "sslmode=require";
 
@@ -19,9 +27,9 @@ export function helmInstallCommand(namespace) {
   return `helm install poiesis ${CHART_PATH} -n ${namespace} -f values.yaml`;
 }
 
-/** Secrets the user creates before installing: the database one, plus S3 keys if used. */
+/** Secrets the user creates before installing: the database one, plus storage keys if used. */
 export function secretCount(config) {
-  return config.s3Credentials === "secret" ? 2 : 1;
+  return storageSecret(config) ? 2 : 1;
 }
 
 /**
@@ -49,11 +57,16 @@ export function installShLines(config) {
   );
   out.blank(STEP.DATABASE);
 
-  if (config.s3Credentials === "secret") {
-    const s3Secret = config.s3Secret || DEFAULT_S3_SECRET;
-    out.add(`kubectl -n ${namespace} create secret generic ${s3Secret} \\`, STEP.STORAGE);
-    out.add("  --from-literal=AWS_ACCESS_KEY_ID=… \\", STEP.STORAGE);
-    out.add("  --from-literal=AWS_SECRET_ACCESS_KEY=…", STEP.STORAGE);
+  const secret = storageSecret(config);
+  if (secret) {
+    const { name, args } = STORAGE_SECRETS[config.storage];
+    out.add(
+      `kubectl -n ${namespace} create secret generic ${secret.name || name} \\`,
+      STEP.STORAGE,
+    );
+    args.forEach((arg, index) => {
+      out.add(`  ${arg}${index < args.length - 1 ? " \\" : ""}`, STEP.STORAGE);
+    });
     out.blank(STEP.STORAGE);
   }
 
