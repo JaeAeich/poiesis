@@ -149,6 +149,31 @@ taskpods:
         memory: 2Gi
     # null: no requests or limits for ack.
     ack: null
+  resources:
+    defaultCpuCores: 1
+    defaultRamGb: 2
+    maxCpuCores: 64
+    maxRamGb: 512
+    cpuLimit: false
+  nodeSelector:
+    poiesis.io/workload: tasks
+  tolerations:
+    - {key: tasks, operator: Exists, effect: NoSchedule}
+  priorityClassName: tasks-default
+  runtimeClassName: ""
+  preemptible:
+    nodeSelector:
+      cloud.google.com/gke-spot: "true"
+    tolerations:
+      - {key: cloud.google.com/gke-spot, operator: Equal, value: "true", effect: NoSchedule}
+  gpu:
+    maxCount: 4
+  backendParameters:
+    allowed: [gpu_count, priority_class, node_pool]
+    priorityClasses: [tasks-high]
+    nodePools:
+      highmem:
+        nodeSelector: {pool: highmem}
   extraEnv: []
   extraVolumes: []
   extraVolumeMounts: []

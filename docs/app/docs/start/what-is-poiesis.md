@@ -23,13 +23,13 @@ for migrations), one PostgreSQL schema, no broker.
 
 ## Components
 
-| Component | Role |
-| --- | --- |
-| **API** | FastAPI service exposing TES under `/ga4gh/tes/v1`. No scheduler, no reconciler. |
-| **TaskPod** | One Pod per task: `trec` (sidecar), then `tif`, `exec-0..N`, `tof`, `ack`. `tif` and `tof` only if the task has inputs or outputs. |
-| **TRec** | In-pod recorder. Watches the surrounding Pod, marks the task `INITIALIZING`, then `RUNNING` when the first executor starts, and writes executor logs. |
-| **TCtl** | Leader-elected Deployment. Writes every final state from the Pod's phase, including OOMKill, eviction, node loss, pending timeouts and vanished Pods. |
-| **Postgres** | Relational store. Conditional `UPDATE`s make concurrent state writes (TRec, TCtl, a cancel) race-correct. |
+| Component    | Role                                                                                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **API**      | FastAPI service exposing TES under `/ga4gh/tes/v1`. No scheduler, no reconciler.                                                                      |
+| **TaskPod**  | One Pod per task: `trec` (sidecar), then `tif`, `exec-0..N`, `tof`, `ack`. `tif` and `tof` only if the task has inputs or outputs.                    |
+| **TRec**     | In-pod recorder. Watches the surrounding Pod, marks the task `INITIALIZING`, then `RUNNING` when the first executor starts, and writes executor logs. |
+| **TCtl**     | Leader-elected Deployment. Writes every final state from the Pod's phase, including OOMKill, eviction, node loss, pending timeouts and vanished Pods. |
+| **Postgres** | Relational store. Conditional `UPDATE`s make concurrent state writes (TRec, TCtl, a cancel) race-correct.                                             |
 
 See [Tasks and TaskPods](../concepts/tasks.md) and
 [Architecture](../concepts/architecture.md) for how they fit together.
@@ -44,12 +44,12 @@ the operator allows it, and so do `gs://` (Google Cloud Storage) and
 
 ## What's yours and what's ours
 
-| You | Poiesis |
-| --- | --- |
-| Executor image and command | Pod composition, scheduling, lifecycle |
-| Input and output URLs | Staging and upload |
-| `TesResources` | Volume sizing, container resources |
-| Kubernetes 1.29+, Postgres, object storage, an OIDC issuer | API, recorder, controller, schema |
+| You                                                        | Poiesis                                                     |
+| ---------------------------------------------------------- | ----------------------------------------------------------- |
+| Executor image and command                                 | Pod composition, scheduling, lifecycle                      |
+| Input and output URLs                                      | Staging and upload                                          |
+| `TesResources`                                             | Volume sizing, executor requests and limits, node placement |
+| Kubernetes 1.29+, Postgres, object storage, an OIDC issuer | API, recorder, controller, schema                           |
 
 ## Pick a client
 

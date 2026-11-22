@@ -169,6 +169,46 @@ and no `LimitRange`. Values merge with the defaults; `null` removes a
 block. Rendered as JSON in `POIESIS_TASKPOD_{RECORDER,FILER,ACK}_RESOURCES`;
 a malformed block or a request above its limit stops the API at startup.
 
+### Executor resources and scheduling (`taskpods.resources` and others)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `taskpods.resources.defaultCpuCores` | integer / null | `null` | CPU of each executor when the task sets no `cpu_cores`. `null`: no request or limit. |
+| `taskpods.resources.defaultRamGb` | number / null | `null` | Memory (GiB) of each executor when the task sets no `ram_gb`. `null`: no request or limit. |
+| `taskpods.resources.maxCpuCores` | integer / null | `null` | Largest `cpu_cores`; more is HTTP 400 at submit. |
+| `taskpods.resources.maxRamGb` | number / null | `null` | Largest `ram_gb`; more is HTTP 400 at submit. |
+| `taskpods.resources.cpuLimit` | bool | `true` | `false`: CPU request only, no CPU limit. |
+| `taskpods.nodeSelector` | object | `{}` | `nodeSelector` of every TaskPod. |
+| `taskpods.tolerations` | list | `[]` | Tolerations of every TaskPod. |
+| `taskpods.affinity` | object | `{}` | Affinity of every TaskPod. A task's `zones` are added to each required node selector term. |
+| `taskpods.priorityClassName` | string | `""` | PriorityClass of every TaskPod; a task's `priority_class` wins. |
+| `taskpods.runtimeClassName` | string | `""` | RuntimeClass of every TaskPod. |
+| `taskpods.preemptible` | `{nodeSelector, tolerations}` | empty | Added for `preemptible: true` tasks. Empty: `preemptible` is ignored. |
+| `taskpods.gpu.resourceName` | string | `nvidia.com/gpu` | Resource `gpu_count` sets as a limit on each executor. |
+| `taskpods.gpu.maxCount` | integer / null | `null` | Largest `gpu_count`; more is HTTP 400. |
+| `taskpods.backendParameters.allowed` | list | `[]` | Keys honoured: `gpu_count`, `priority_class`, `node_pool`. Listed in `GET /service-info`. |
+| `taskpods.backendParameters.priorityClasses` | list | `[]` | PriorityClasses `priority_class` may name. |
+| `taskpods.backendParameters.nodePools` | object | `{}` | Name → `{nodeSelector, tolerations}` that `node_pool` may name. |
+
+| TES `resources` field | TaskPod gets |
+|---|---|
+| `cpu_cores` | each executor: `requests.cpu`, and `limits.cpu` unless `cpuLimit: false` |
+| `ram_gb` | each executor: `requests.memory` = `limits.memory`, as GiB |
+| `zones` | required node affinity on `topology.kubernetes.io/zone` |
+| `preemptible: true` | `taskpods.preemptible` node selector and tolerations |
+| `backend_parameters.gpu_count` | each executor: `limits.<gpu.resourceName>` |
+| `backend_parameters.priority_class` | `priorityClassName` |
+| `backend_parameters.node_pool` | that pool's node selector and tolerations |
+
+Executors are init containers that run one after another, so each gets
+the full amount and the Pod is scheduled on the largest one (plus the
+`trec` sidecar), not on the sum. An executor OOMKilled over its memory
+limit ends the task `EXECUTOR_ERROR`. Keys not in `allowed`, and values
+that can't be honoured, are ignored, or HTTP 400 under
+`backend_parameters_strict`. Rendered as JSON in
+`POIESIS_TASKPOD_SCHEDULING`; a bad value stops the API at startup.
+TaskPods use the top-level `imagePullSecrets`.
+
 ### TaskPod extension points (`taskpods.extraEnv`, `taskpods.extraVolumes`, `taskpods.extraVolumeMounts`)
 
 Operator-supplied env vars and volumes injected into every TaskPod. The
@@ -370,6 +410,7 @@ out-of-band cleanup process.
 | `PVC unbound` | Provisioning failed (capacity, CSI driver down) |
 | `Volume zone mismatch` | Scheduler can't find a node in the PV's AZ |
 | `Quota exceeded` | Namespace `ResourceQuota` reached |
+| `container exec-N OOMKilled: the executor exceeded its memory limit of …` | The task used more memory than its `ram_gb`; `EXECUTOR_ERROR` |
 | `Job submission rejected: namespace quota exceeded` | Same as above, surfaced at submit time |
 | `pending timeout: the Job created no Pod` | The Job had no Pod after 5 minutes: a `ResourceQuota` or an admission webhook rejects the Pod (see the Job's events) |
 | `job failed without a pod: <reason>` | The Job failed and its Pod is gone: `DeadlineExceeded` when the time limit ran out, `BackoffLimitExceeded` when the Pod was deleted or lost with its node |

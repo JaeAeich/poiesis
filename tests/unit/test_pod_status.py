@@ -29,7 +29,10 @@ def status(name: str, exit_code: int, reason: str) -> dict[str, Any]:
     [
         (status("exec-1", 1, "Error"), (TesState.EXECUTOR_ERROR, "Error")),
         (status("exec-1", 128, "StartError"), (TesState.EXECUTOR_ERROR, "StartError")),
-        (status("exec-1", 137, "OOMKilled"), (TesState.SYSTEM_ERROR, "OOMKilled")),
+        (
+            status("exec-1", 137, "OOMKilled"),
+            (TesState.EXECUTOR_ERROR, "OOMKilled"),
+        ),
     ],
     ids=["error", "start-error", "oom"],
 )
@@ -137,13 +140,13 @@ def test_filer_start_failure_is_a_system_error() -> None:
     )
 
 
-def test_oom_killed_filer_stays_oom_killed() -> None:
-    """The more specific reason is kept."""
+def test_oom_killed_filer_is_a_system_error() -> None:
+    """A filer over its own memory limit is the system's fault, not the task's."""
     pod = failed_pod(status("tif", 137, "OOMKilled"))
 
     state, reason = pod_terminated_terminal(extract_terminal_reason(pod))
 
-    assert (state, reason) == (TesState.SYSTEM_ERROR, "OOMKilled")
+    assert (state, reason) == (TesState.SYSTEM_ERROR, "SystemOOMKilled")
     assert tctl._terminal_system_logs(pod, state) == ["container tif OOMKilled"]
 
 

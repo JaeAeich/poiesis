@@ -93,6 +93,12 @@ data:
   {{- end }}
   {{- end }}
 
+  # ---- TaskPod scheduling and executor resources -----------------------------
+  # One JSON object; the API checks it at startup (unknown keys, a default
+  # above its maximum, an unknown backend parameter).
+  {{- $tp := .Values.taskpods }}
+  POIESIS_TASKPOD_SCHEDULING: {{ dict "resources" $tp.resources "nodeSelector" $tp.nodeSelector "tolerations" $tp.tolerations "affinity" $tp.affinity "priorityClassName" $tp.priorityClassName "runtimeClassName" $tp.runtimeClassName "preemptible" $tp.preemptible "gpu" $tp.gpu "backendParameters" $tp.backendParameters | toJson | quote }}
+
   # ---- Operator-supplied TaskPod extensions ---------------------------------
   # Serialised as JSON arrays so the API can decode them at startup. Empty
   # lists are omitted entirely; the runtime defaults to [] when unset.

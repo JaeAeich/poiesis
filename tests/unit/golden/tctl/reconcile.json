@@ -72,16 +72,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=FilerError)"]
   ],
   "task=canceling-just-seen job=being-deleted pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=being-deleted pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=being-deleted pod=none unschedulable=600": [],
   "task=canceling-just-seen job=being-deleted pod=none unschedulable=unset": [],
@@ -197,18 +197,18 @@
   "task=canceling-just-seen job=complete pod=failed-oom unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=complete pod=failed-oom unschedulable=unset": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=complete pod=none unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
@@ -943,18 +943,18 @@
   "task=canceling-just-seen job=failed-other pod=failed-oom unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=failed-other pod=failed-oom unschedulable=unset": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=failed-other pod=none unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
@@ -1123,18 +1123,18 @@
   "task=canceling-just-seen job=live-old pod=failed-oom unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=live-old pod=failed-oom unschedulable=unset": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=live-old pod=none unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
@@ -1302,18 +1302,18 @@
   "task=canceling-just-seen job=live-young pod=failed-oom unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=live-young pod=failed-oom unschedulable=unset": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=live-young pod=none unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
@@ -1462,16 +1462,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=FilerError)"]
   ],
   "task=canceling-just-seen job=none pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=none pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-just-seen job=none pod=none unschedulable=600": [],
   "task=canceling-just-seen job=none pod=none unschedulable=unset": [],
@@ -1573,16 +1573,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=FilerError)"]
   ],
   "task=canceling-past-grace job=being-deleted pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=being-deleted pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=being-deleted pod=none unschedulable=600": [
     ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Pod disappeared before reaching terminal phase", "canceled_instead"],
@@ -1710,18 +1710,18 @@
   "task=canceling-past-grace job=complete pod=failed-oom unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=complete pod=failed-oom unschedulable=unset": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=complete pod=none unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
@@ -2456,18 +2456,18 @@
   "task=canceling-past-grace job=failed-other pod=failed-oom unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=failed-other pod=failed-oom unschedulable=unset": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=failed-other pod=none unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
@@ -2636,18 +2636,18 @@
   "task=canceling-past-grace job=live-old pod=failed-oom unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=live-old pod=failed-oom unschedulable=unset": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=live-old pod=none unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
@@ -2815,18 +2815,18 @@
   "task=canceling-past-grace job=live-young pod=failed-oom unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=live-young pod=failed-oom unschedulable=unset": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
     ["log", "INFO", "tctl: deleted the Job of task=00000000-0000-4000-8000-000000000001"],
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=live-young pod=none unschedulable=600": [
     ["delete", "task-00000000-0000-4000-8000-000000000001"],
@@ -2975,16 +2975,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=FilerError)"]
   ],
   "task=canceling-past-grace job=none pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=none pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "canceled_instead"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "canceled_instead"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
     ["system_log", "00000000-0000-4000-8000-000000000001", "task cancelled by client"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=canceled_instead, reason=OOMKilled)"]
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=canceled_instead, reason=OOMKilled)"]
   ],
   "task=canceling-past-grace job=none pod=none unschedulable=600": [
     ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Pod disappeared before reaching terminal phase", "canceled_instead"],
@@ -3332,16 +3332,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-just-seen job=being-deleted pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=being-deleted pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=being-deleted pod=none unschedulable=600": [],
   "task=queued-just-seen job=being-deleted pod=none unschedulable=unset": [],
@@ -3442,16 +3442,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-just-seen job=complete pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=complete pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=complete pod=none unschedulable=600": [
     ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "applied"],
@@ -4022,16 +4022,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-just-seen job=failed-other pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=failed-other pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=failed-other pod=none unschedulable=600": [
     ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Job failed: BackoffLimitExceeded: Job has reached the specified backoff limit", "applied"],
@@ -4140,16 +4140,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-just-seen job=live-old pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=live-old pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=live-old pod=none unschedulable=600": [
     ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Job created no Pod", "applied"],
@@ -4256,16 +4256,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-just-seen job=live-young pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=live-young pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=live-young pod=none unschedulable=600": [],
   "task=queued-just-seen job=live-young pod=none unschedulable=unset": [],
@@ -4366,16 +4366,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-just-seen job=none pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=none pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-just-seen job=none pod=none unschedulable=600": [],
   "task=queued-just-seen job=none pod=none unschedulable=unset": [],
@@ -4476,16 +4476,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-past-grace job=being-deleted pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=being-deleted pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=being-deleted pod=none unschedulable=600": [
     ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Pod disappeared before reaching terminal phase", "applied"],
@@ -4598,16 +4598,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-past-grace job=complete pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=complete pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=complete pod=none unschedulable=600": [
     ["write", "00000000-0000-4000-8000-000000000001", "COMPLETE", null, "applied"],
@@ -5178,16 +5178,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-past-grace job=failed-other pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=failed-other pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=failed-other pod=none unschedulable=600": [
     ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Job failed: BackoffLimitExceeded: Job has reached the specified backoff limit", "applied"],
@@ -5296,16 +5296,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-past-grace job=live-old pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=live-old pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=live-old pod=none unschedulable=600": [
     ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Job created no Pod", "applied"],
@@ -5412,16 +5412,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-past-grace job=live-young pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=live-young pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=live-young pod=none unschedulable=600": [],
   "task=queued-past-grace job=live-young pod=none unschedulable=unset": [],
@@ -5522,16 +5522,16 @@
     ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=FilerError)"]
   ],
   "task=queued-past-grace job=none pod=failed-oom unschedulable=600": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=none pod=failed-oom unschedulable=unset": [
-    ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "OOMKilled", "applied"],
+    ["write", "00000000-0000-4000-8000-000000000001", "EXECUTOR_ERROR", "OOMKilled", "applied"],
     ["backfill", "00000000-0000-4000-8000-000000000001", "task-00000000-0000-4000-8000-000000000001-abcde"],
-    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled"],
-    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as SYSTEM_ERROR (write=applied, reason=OOMKilled)"]
+    ["system_log", "00000000-0000-4000-8000-000000000001", "container exec-0 OOMKilled: the executor ran out of memory and has no memory limit; set resources.ram_gb"],
+    ["log", "INFO", "tctl: pod-terminal reconciled task=00000000-0000-4000-8000-000000000001 as EXECUTOR_ERROR (write=applied, reason=OOMKilled)"]
   ],
   "task=queued-past-grace job=none pod=none unschedulable=600": [
     ["write", "00000000-0000-4000-8000-000000000001", "SYSTEM_ERROR", "Pod disappeared before reaching terminal phase", "applied"],

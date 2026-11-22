@@ -295,12 +295,13 @@ CASES = [
         pods=[FAILED],
     ),
     Case(
-        "Failed Pod, executor OOMKilled: SYSTEM_ERROR",
+        "Failed Pod, executor OOMKilled: EXECUTOR_ERROR",
         [
             write(
-                TesState.SYSTEM_ERROR,
+                TesState.EXECUTOR_ERROR,
                 "OOMKilled",
-                "container exec-0 OOMKilled",
+                "container exec-0 OOMKilled: the executor ran out of memory and "
+                "has no memory limit; set resources.ram_gb",
                 source="pod-terminal",
                 pod=OOM,
             )

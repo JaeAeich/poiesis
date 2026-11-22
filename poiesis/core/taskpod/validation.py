@@ -13,6 +13,12 @@ from poiesis.api.tes.models import TesFileType
 from poiesis.core import executor_shell
 from poiesis.core.services.filer import filer_strategy_factory as _filer
 from poiesis.core.taskpod.paths import is_within, normalised
+from poiesis.core.taskpod.pod import (
+    backend_parameters,
+    gpu_count,
+    node_pool,
+    priority_class,
+)
 from poiesis.core.taskpod.volumes import executor_path_mounts
 
 if TYPE_CHECKING:
@@ -20,13 +26,6 @@ if TYPE_CHECKING:
 
     from poiesis.api.tes.models import TesTask
     from poiesis.core.taskpod.config import RuntimeConfig
-
-
-#: Backend parameter keys this server knows how to honour. Empty until
-#: we ship a backend feature that consumes one. Per TES spec, any key
-#: not in this set is rejected with 400 when `backend_parameters_strict`
-#: is true; non-strict tasks silently ignore unknowns.
-_SUPPORTED_BACKEND_PARAMETERS: frozenset[str] = frozenset()
 
 
 def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
@@ -62,22 +61,8 @@ def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
     reject_relative_stream_paths(task)
 
     reject_oversized_disk(task, config)
-
-    resources = task.resources
-    if (
-        resources is not None
-        and resources.backend_parameters_strict
-        and resources.backend_parameters
-    ):
-        unknown = sorted(
-            set(resources.backend_parameters) - _SUPPORTED_BACKEND_PARAMETERS
-        )
-        if unknown:
-            msg = (
-                f"resources.backend_parameters contains unsupported keys "
-                f"under backend_parameters_strict=true: {unknown}"
-            )
-            raise ValueError(msg)
+    reject_oversized_cpu_ram(task, config)
+    reject_unsupported_backend_parameters(task, config)
 
 
 def reject_unstageable_directory(where: str, url: str | None) -> None:
@@ -137,6 +122,91 @@ def reject_oversized_disk(task: TesTask, config: RuntimeConfig) -> None:
             "GiB. Ask your administrator to raise "
             "taskpods.persistence.maxSizeGi or reduce the request."
         )
+
+
+def reject_oversized_cpu_ram(task: TesTask, config: RuntimeConfig) -> None:
+    """Reject ``cpu_cores`` or ``ram_gb`` above the operator's maximum."""
+    resources = task.resources
+    if resources is None:
+        return
+    scheduling = config.scheduling
+    cpu, ram = resources.cpu_cores, resources.ram_gb
+    if (
+        cpu is not None
+        and scheduling.max_cpu_cores is not None
+        and cpu > scheduling.max_cpu_cores
+    ):
+        raise ValueError(
+            f"resources.cpu_cores={cpu} exceeds the operator-configured maximum "
+            f"of {scheduling.max_cpu_cores}. Ask your administrator to raise "
+            "taskpods.resources.maxCpuCores or reduce the request."
+        )
+    if (
+        ram is not None
+        and scheduling.max_ram_gb is not None
+        and ram > scheduling.max_ram_gb
+    ):
+        raise ValueError(
+            f"resources.ram_gb={ram} exceeds the operator-configured maximum "
+            f"of {scheduling.max_ram_gb:g} GB. Ask your administrator to raise "
+            "taskpods.resources.maxRamGb or reduce the request."
+        )
+
+
+def reject_unsupported_backend_parameters(task: TesTask, config: RuntimeConfig) -> None:
+    """Reject ``backend_parameters`` this deployment can't honour.
+
+    A ``gpu_count`` above the operator's maximum is always rejected, as
+    ``cpu_cores`` above its maximum is. Under ``backend_parameters_strict``
+    (TES: fail the task if any key or value is unsupported) also keys the
+    operator doesn't allow, and values it can't honour: a ``gpu_count``
+    that isn't a whole number, a ``priority_class`` or ``node_pool`` the
+    operator doesn't list. Without it they are ignored. Keys are matched
+    without case, as TES says.
+    """
+    resources = task.resources
+    if resources is None or not resources.backend_parameters:
+        return
+    scheduling = config.scheduling
+    params = backend_parameters(task, config)
+    gpus = gpu_count(params)
+    if (
+        gpus is not None
+        and scheduling.max_gpu_count is not None
+        and gpus > scheduling.max_gpu_count
+    ):
+        raise ValueError(
+            f"resources.backend_parameters.gpu_count={gpus} exceeds the "
+            f"operator-configured maximum of {scheduling.max_gpu_count}. Ask "
+            "your administrator to raise taskpods.gpu.maxCount or reduce the "
+            "request."
+        )
+    if not resources.backend_parameters_strict:
+        return
+    unknown = sorted(
+        k
+        for k in resources.backend_parameters
+        if k.lower() not in scheduling.backend_parameters
+    )
+    if unknown:
+        msg = (
+            f"resources.backend_parameters contains unsupported keys "
+            f"under backend_parameters_strict=true: {unknown}"
+        )
+        raise ValueError(msg)
+    honoured = {
+        "gpu_count": gpus is not None,
+        "priority_class": priority_class(params, scheduling) is not None,
+        "node_pool": node_pool(params, scheduling) is not None,
+    }
+    invalid = sorted(k for k in params if not honoured[k])
+    if invalid:
+        values = ", ".join(f"{k}={params[k]!r}" for k in invalid)
+        msg = (
+            "resources.backend_parameters contains unsupported values "
+            f"under backend_parameters_strict=true: {values}"
+        )
+        raise ValueError(msg)
 
 
 def reject_relative_stream_paths(task: TesTask) -> None:

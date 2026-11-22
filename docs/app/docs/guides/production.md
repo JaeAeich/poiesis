@@ -106,8 +106,17 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
   next to `trec`, so with the defaults a TaskPod requests at least
   110m CPU and 384Mi memory (`trec` with `tif` or `tof`), plus `trec`'s
   share while executors run. Executors get theirs from the task's
-  `resources`; check that such a quota admits them too, or add a
-  LimitRange with defaults.
+  `cpu_cores` and `ram_gb`; set `taskpods.resources.defaultCpuCores`
+  and `defaultRamGb` so tasks that ask for none get some too.
+- `taskpods.resources.maxCpuCores` and `maxRamGb` set to what your
+  largest node can give one Pod: a task asking for more gets a `400`
+  instead of waiting forever for a node. If your cluster avoids CPU
+  limits, set `cpuLimit: false`. See
+  [Resources and scheduling](../concepts/tasks.md#resources-and-scheduling).
+- TaskPods on dedicated nodes: `taskpods.nodeSelector` and
+  `tolerations`; spot nodes for `preemptible: true` tasks:
+  `taskpods.preemptible`; GPUs and node pools per task:
+  `taskpods.backendParameters.allowed`.
 - `tctl.unschedulableTimeoutSeconds` left `null` if tasks may queue for
   capacity (a full cluster, a ResourceQuota, an autoscaler adding
   nodes): they wait in `QUEUED` until the time limit. Set it to fail
@@ -161,6 +170,7 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 
   The migration hook isn't selected by the policies; under a default-deny
   policy of your own, allow it to reach Postgres too.
+
 - Rate-limit at the ingress or gateway: Poiesis doesn't.
 - Split tasks into their own namespace with `taskpods.namespace` if
   you want them apart from the control plane. The API and TCtl stay in

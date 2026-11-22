@@ -249,7 +249,8 @@ def test_missing_shell_is_an_executor_error() -> None:
         (
             {"exit_code": 137, "reason": "OOMKilled"},
             True,
-            "container exec-0 OOMKilled",
+            "container exec-0 OOMKilled: the executor ran out of memory and has "
+            "no memory limit; set resources.ram_gb",
         ),
         (
             {"exit_code": 137, "reason": "Error"},

@@ -293,6 +293,47 @@
         "databaseSecret":    { "type": "string" },
         "s3Secret":          { "type": "string" },
         "outputGlobFallback": { "type": "boolean" },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "defaultCpuCores": { "type": ["integer", "null"], "minimum": 1 },
+            "defaultRamGb":    { "type": ["number", "null"], "exclusiveMinimum": 0 },
+            "maxCpuCores":     { "type": ["integer", "null"], "minimum": 1 },
+            "maxRamGb":        { "type": ["number", "null"], "exclusiveMinimum": 0 },
+            "cpuLimit":        { "type": "boolean" }
+          }
+        },
+        "nodeSelector":      { "$ref": "#/$defs/nodeSelector" },
+        "tolerations":       { "$ref": "#/$defs/tolerations" },
+        "affinity":          { "type": "object" },
+        "priorityClassName": { "type": "string" },
+        "runtimeClassName":  { "type": "string" },
+        "preemptible":       { "$ref": "#/$defs/nodePlacement" },
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resourceName": { "type": "string", "minLength": 1 },
+            "maxCount":     { "type": ["integer", "null"], "minimum": 0 }
+          }
+        },
+        "backendParameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowed": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "enum": ["gpu_count", "priority_class", "node_pool"] }
+            },
+            "priorityClasses": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "nodePools": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/$defs/nodePlacement" }
+            }
+          }
+        },
         "fileUrlRoots": {
           "type": "array",
           "items": { "type": "string", "pattern": "^/[^,]+$" }
@@ -505,6 +546,22 @@
         "requests": { "$ref": "#/$defs/resourceList" },
         "limits":   { "$ref": "#/$defs/resourceList" },
         "claims":   { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "tolerations": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "nodePlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodeSelector": { "$ref": "#/$defs/nodeSelector" },
+        "tolerations":  { "$ref": "#/$defs/tolerations" }
       }
     },
     "resourceList": {

@@ -18,14 +18,13 @@ A TES task declares:
   working directory;
 - `inputs`: URLs to stage onto the task's volume (optional);
 - `outputs`: paths to upload after the executors run (optional);
-- `resources`: CPU, RAM and disk.
+- `resources`: CPU, RAM, disk, zones and whether it may run on
+  preemptible nodes ([Resources and scheduling](../concepts/tasks.md#resources-and-scheduling)).
 
 ```json
 {
   "name": "hello",
-  "executors": [
-    {"image": "alpine:3.20", "command": ["echo", "hello from poiesis"]}
-  ]
+  "executors": [{ "image": "alpine:3.20", "command": ["echo", "hello from poiesis"] }]
 }
 ```
 
@@ -33,13 +32,13 @@ A TES task declares:
 
 Five operations under `/ga4gh/tes/v1`:
 
-| Method | Path | Operation |
-| --- | --- | --- |
-| `GET` | `/service-info` | `GetServiceInfo` |
-| `GET` | `/tasks` | `ListTasks` (filters, pagination, views) |
-| `POST` | `/tasks` | `CreateTask` |
-| `GET` | `/tasks/{id}` | `GetTask` (`MINIMAL`, `BASIC` or `FULL` view) |
-| `POST` | `/tasks/{id}:cancel` | `CancelTask` |
+| Method | Path                 | Operation                                     |
+| ------ | -------------------- | --------------------------------------------- |
+| `GET`  | `/service-info`      | `GetServiceInfo`                              |
+| `GET`  | `/tasks`             | `ListTasks` (filters, pagination, views)      |
+| `POST` | `/tasks`             | `CreateTask`                                  |
+| `GET`  | `/tasks/{id}`        | `GetTask` (`MINIMAL`, `BASIC` or `FULL` view) |
+| `POST` | `/tasks/{id}:cancel` | `CancelTask`                                  |
 
 The full contract is on the [TES API](../reference/api.md) page.
 
@@ -64,7 +63,7 @@ The full contract is on the [TES API](../reference/api.md) page.
     { f: 'i', t: 's', label: 'tif fails', tone: 'bad', cap: 'An input that fails to stage, or an image that fails to pull: SYSTEM_ERROR.' },
     { f: 'r', t: 'c', label: 'exit 0', tone: 'ok', cap: 'Every executor succeeded and the outputs are uploaded: COMPLETE.' },
     { f: 'r', t: 'e', label: 'exit 1', tone: 'bad', cap: 'An executor failed: EXECUTOR_ERROR.' },
-    { f: 'r', t: 's', label: 'OOMKill', tone: 'bad', cap: 'The infrastructure failed (OOMKill, eviction, node loss): SYSTEM_ERROR.' },
+    { f: 'r', t: 's', label: 'eviction', tone: 'bad', cap: 'The infrastructure failed (eviction, node loss): SYSTEM_ERROR. An executor killed for using more memory than ram_gb is an EXECUTOR_ERROR.' },
     { f: 'q', t: 'x', label: 'cancel', cap: 'A cancel at any point goes through CANCELING and ends in CANCELED.' }
   ]
 }" />

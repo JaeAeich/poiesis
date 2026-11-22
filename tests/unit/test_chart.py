@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 from poiesis.api.settings import AuthSettings, DatabaseSettings, Settings
+from poiesis.core.taskpod.config import SchedulingConfig
 
 CHART = Path(__file__).parents[2] / "deployment" / "helm" / "poiesis"
 LINT = str(CHART / "ci" / "lint-values.yaml")
@@ -105,6 +106,8 @@ def test_database_egress_null_drops_the_rule() -> None:
     [
         ("taskpod.namespace=x", "additional properties 'taskpod' not allowed"),
         ("api.resources.request.cpu=1", "additional properties 'request'"),
+        ("taskpods.resources.maxCpu=1", "additional properties 'maxCpu'"),
+        ("taskpods.backendParameters.allowed={VmSize}", "gpu_count"),
     ],
 )
 def test_schema_refuses_unknown_keys(override: str, error: str) -> None:
@@ -181,6 +184,39 @@ def test_system_resources_reach_the_runtime_config(
     assert config.recorder_resources.requests == {"cpu": "10m", "memory": "128Mi"}
     assert config.ack_resources is not None
     assert config.ack_resources.limits == {"cpu": "100m", "memory": "256Mi"}
+
+
+def test_scheduling_reaches_the_runtime_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`taskpods` scheduling values parse in Settings (#170)."""
+    configmap = next(d for d in render(FULL) if d["kind"] == "ConfigMap")["data"]
+    monkeypatch.setenv(
+        "POIESIS_TASKPOD_SCHEDULING", configmap["POIESIS_TASKPOD_SCHEDULING"]
+    )
+    scheduling = Settings(auth=AuthSettings(enabled=False)).runtime_config().scheduling
+    assert scheduling.default_ram_gb == 2  # noqa: PLR2004
+    assert scheduling.max_cpu_cores == 64  # noqa: PLR2004
+    assert scheduling.cpu_limit is False
+    assert scheduling.node_selector == {"poiesis.io/workload": "tasks"}
+    assert scheduling.priority_class_name == "tasks-default"
+    assert scheduling.runtime_class_name is None
+    assert scheduling.preemptible is not None
+    assert scheduling.preemptible.node_selector == {"cloud.google.com/gke-spot": "true"}
+    assert scheduling.gpu_resource_name == "nvidia.com/gpu"
+    assert scheduling.max_gpu_count == 4  # noqa: PLR2004
+    assert scheduling.backend_parameters == {"gpu_count", "priority_class", "node_pool"}
+    assert set(scheduling.node_pools) == {"highmem"}
+
+
+def test_scheduling_defaults_change_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The chart's defaults are the builder's: no requests, no constraints."""
+    configmap = next(d for d in render(LINT) if d["kind"] == "ConfigMap")["data"]
+    monkeypatch.setenv(
+        "POIESIS_TASKPOD_SCHEDULING", configmap["POIESIS_TASKPOD_SCHEDULING"]
+    )
+    scheduling = Settings(auth=AuthSettings(enabled=False)).runtime_config().scheduling
+    assert scheduling == SchedulingConfig()
 
 
 def test_system_resources_null_is_omitted() -> None:

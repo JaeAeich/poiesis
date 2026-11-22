@@ -47,6 +47,11 @@ from poiesis.core.constants import (
 from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
 from poiesis.core.services.filer.file_urls import parse_file_url_roots
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
+from poiesis.core.taskpod.config import (
+    BACKEND_PARAMETERS,
+    NodePlacement,
+    SchedulingConfig,
+)
 from poiesis.core.taskpod.volumes import identity_token_path, identity_token_volume_name
 
 if TYPE_CHECKING:
@@ -1280,6 +1285,149 @@ class StorageSettings(BaseModel):
         return audiences
 
 
+#: TaskPod scheduling and executor resources, as JSON (see `SchedulingSettings`).
+SCHEDULING_ENV = "POIESIS_TASKPOD_SCHEDULING"
+
+
+class _CamelModel(BaseModel):
+    """Keys camelCase, as in the Helm values; unknown keys refused."""
+
+    model_config = ConfigDict(alias_generator=to_camel, extra="forbid", frozen=True)
+
+
+class PlacementSettings(_CamelModel):
+    """A node selector and tolerations (``preemptible``, a node pool)."""
+
+    node_selector: dict[str, str] = Field(default_factory=dict)
+    tolerations: tuple[dict[str, Any], ...] = ()
+
+    def placement(self) -> NodePlacement:
+        """As the TaskPod builder takes it."""
+        return NodePlacement(
+            node_selector=self.node_selector, tolerations=self.tolerations
+        )
+
+
+class ExecutorResourceSettings(_CamelModel):
+    """``taskpods.resources``: executor cpu/ram defaults and maximums."""
+
+    default_cpu_cores: int | None = Field(default=None, ge=1)
+    default_ram_gb: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    max_cpu_cores: int | None = Field(default=None, ge=1)
+    max_ram_gb: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    cpu_limit: bool = True
+
+    @model_validator(mode="after")
+    def _check_defaults_within_maximums(self) -> ExecutorResourceSettings:
+        """A default above its maximum would make every task without one fail."""
+        for name, default, maximum in (
+            ("CpuCores", self.default_cpu_cores, self.max_cpu_cores),
+            ("RamGb", self.default_ram_gb, self.max_ram_gb),
+        ):
+            if default is not None and maximum is not None and default > maximum:
+                raise ValueError(f"default{name} is above max{name}")
+        return self
+
+
+class GpuSettings(_CamelModel):
+    """``taskpods.gpu``: the resource ``gpu_count`` sets, and its maximum."""
+
+    resource_name: str = Field(default="nvidia.com/gpu", min_length=1)
+    max_count: int | None = Field(default=None, ge=0)
+
+
+class BackendParameterSettings(_CamelModel):
+    """``taskpods.backendParameters``: the keys honoured, and their choices."""
+
+    allowed: tuple[str, ...] = ()
+    priority_classes: tuple[str, ...] = ()
+    node_pools: dict[str, PlacementSettings] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_allowed(self) -> BackendParameterSettings:
+        """Only keys Poiesis implements, each with something to pick from."""
+        allowed = {k.lower() for k in self.allowed}
+        unknown = sorted(allowed - BACKEND_PARAMETERS)
+        if unknown:
+            raise ValueError(
+                f"allowed has unknown keys {unknown}; known: "
+                f"{sorted(BACKEND_PARAMETERS)}"
+            )
+        if "priority_class" in allowed and not self.priority_classes:
+            raise ValueError("allowing priority_class needs priorityClasses")
+        if "node_pool" in allowed and not self.node_pools:
+            raise ValueError("allowing node_pool needs nodePools")
+        return self
+
+
+class SchedulingSettings(_CamelModel):
+    """Where TaskPods run and what their executors get.
+
+    Read from ``POIESIS_TASKPOD_SCHEDULING``, a JSON object the chart
+    renders from ``taskpods.resources``, ``nodeSelector``, ``tolerations``,
+    ``affinity``, ``priorityClassName``, ``runtimeClassName``,
+    ``preemptible``, ``gpu`` and ``backendParameters``. Unset is all
+    defaults: executors without requests or limits, no constraints. A bad
+    value stops the API at startup.
+    """
+
+    resources: ExecutorResourceSettings = Field(
+        default_factory=ExecutorResourceSettings
+    )
+    node_selector: dict[str, str] = Field(default_factory=dict)
+    tolerations: tuple[dict[str, Any], ...] = ()
+    affinity: dict[str, Any] = Field(default_factory=dict)
+    priority_class_name: str | None = None
+    runtime_class_name: str | None = None
+    preemptible: PlacementSettings = Field(default_factory=PlacementSettings)
+    gpu: GpuSettings = Field(default_factory=GpuSettings)
+    backend_parameters: BackendParameterSettings = Field(
+        default_factory=BackendParameterSettings
+    )
+
+    @classmethod
+    def from_env(cls) -> SchedulingSettings:
+        """Parse ``POIESIS_TASKPOD_SCHEDULING``; unset or empty: defaults."""
+        raw = os.environ.get(SCHEDULING_ENV, "")
+        if not raw.strip():
+            return cls()
+        try:
+            return cls.model_validate_json(raw)
+        except ValidationError as exc:
+            raise ValueError(f"{SCHEDULING_ENV} is invalid: {exc}") from exc
+
+    def config(self) -> SchedulingConfig:
+        """As the TaskPod builder takes it."""
+        resources = self.resources
+        preemptible = self.preemptible
+        params = self.backend_parameters
+        return SchedulingConfig(
+            default_cpu_cores=resources.default_cpu_cores,
+            default_ram_gb=resources.default_ram_gb,
+            max_cpu_cores=resources.max_cpu_cores,
+            max_ram_gb=resources.max_ram_gb,
+            cpu_limit=resources.cpu_limit,
+            node_selector=self.node_selector,
+            tolerations=self.tolerations,
+            affinity=self.affinity,
+            priority_class_name=self.priority_class_name or None,
+            runtime_class_name=self.runtime_class_name or None,
+            # Not configured: `preemptible` is a hint TES lets us ignore.
+            preemptible=(
+                preemptible.placement()
+                if preemptible.node_selector or preemptible.tolerations
+                else None
+            ),
+            backend_parameters=frozenset(k.lower() for k in params.allowed),
+            gpu_resource_name=self.gpu.resource_name,
+            max_gpu_count=self.gpu.max_count,
+            priority_classes=params.priority_classes,
+            node_pools={
+                name: pool.placement() for name, pool in params.node_pools.items()
+            },
+        )
+
+
 class Settings(BaseModel):
     """API runtime settings."""
 
@@ -1446,6 +1594,7 @@ class Settings(BaseModel):
     audit: AuditSettings = Field(default_factory=AuditSettings)
     service_info: ServiceInfoSettings = Field(default_factory=ServiceInfoSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
+    scheduling: SchedulingSettings = Field(default_factory=SchedulingSettings.from_env)
 
     def runtime_config(self) -> RuntimeConfig:
         """Materialise the TaskPod RuntimeConfig used by the spec builder."""
@@ -1489,6 +1638,7 @@ class Settings(BaseModel):
             azure_configured=self.storage_enabled("az"),
             filer_env=storage.filer_env(),
             filer_identity_audiences=storage.identity_audiences(),
+            scheduling=self.scheduling.config(),
         )
 
     def storage_enabled(self, scheme: str) -> bool:

@@ -44,6 +44,7 @@ from poiesis.core.taskpod import (
     attach_pvc_owner,
     build_taskpod_job,
 )
+from poiesis.core.taskpod.config import NodePlacement, SchedulingConfig
 
 GOLDEN = Path(__file__).parent / "golden" / "taskpod"
 WRITE_ENV = "POIESIS_WRITE_GOLDEN"
@@ -96,6 +97,66 @@ FULL_CONFIG = RuntimeConfig(
     output_glob_fallback=True,
     file_url_roots=("/srv/shared", "/scratch"),
 )
+
+
+# Every scheduling setting an operator can set, at once.
+SCHEDULING = SchedulingConfig(
+    default_cpu_cores=1,
+    default_ram_gb=2,
+    max_cpu_cores=32,
+    max_ram_gb=256,
+    node_selector={"poiesis.io/workload": "tasks", "disk": "ssd"},
+    tolerations=({"key": "tasks", "operator": "Exists", "effect": "NoSchedule"},),
+    affinity={
+        "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+                "nodeSelectorTerms": [
+                    {
+                        "matchExpressions": [
+                            {"key": "arch", "operator": "In", "values": ["amd64"]}
+                        ]
+                    },
+                    {
+                        "matchFields": [
+                            {
+                                "key": "metadata.name",
+                                "operator": "NotIn",
+                                "values": ["n1"],
+                            }
+                        ]
+                    },
+                ]
+            }
+        },
+        "podAntiAffinity": {"preferredDuringSchedulingIgnoredDuringExecution": []},
+    },
+    priority_class_name="tasks-default",
+    runtime_class_name="gvisor",
+    preemptible=NodePlacement(
+        node_selector={"cloud.google.com/gke-spot": "true"},
+        tolerations=(
+            {"key": "cloud.google.com/gke-spot", "operator": "Equal", "value": "true"},
+        ),
+    ),
+    backend_parameters=frozenset({"gpu_count", "priority_class", "node_pool"}),
+    gpu_resource_name="amd.com/gpu",
+    max_gpu_count=4,
+    priority_classes=("tasks-high", "tasks-low"),
+    node_pools={
+        "highmem": NodePlacement(
+            node_selector={"pool": "highmem", "disk": "nvme"},
+            tolerations=({"key": "highmem", "operator": "Exists"},),
+        )
+    },
+)
+
+
+def _scheduling(**fields: Any) -> RuntimeConfig:
+    return RuntimeConfig(
+        taskpod_namespace="poiesis",
+        poiesis_image="poiesis:golden",
+        scheduling=SchedulingConfig(**fields),
+    )
 
 
 def _task(**fields: Any) -> TesTask:
@@ -365,6 +426,94 @@ CASES: dict[str, tuple[TesTask, RuntimeConfig]] = {
             ),
         ),
     ),
+    # cpu/ram on every executor; requests = limits
+    "resources-cpu-ram": (
+        _task(
+            executors=[EXEC, EXEC],
+            resources=TesResources(cpu_cores=4, ram_gb=8, disk_gb=1),
+        ),
+        BASE,
+    ),
+    # a fractional ram_gb, rounded up to whole MiB; operator CPU limit off
+    "resources-no-cpu-limit": (
+        _task(resources=TesResources(cpu_cores=2, ram_gb=0.3)),
+        _scheduling(cpu_limit=False),
+    ),
+    # the task sets none: the operator's defaults
+    "resources-defaults": (
+        _task(),
+        _scheduling(default_cpu_cores=1, default_ram_gb=1.5),
+    ),
+    # zones without operator affinity: one required term
+    "zones": (
+        _task(
+            resources=TesResources(zones=["eu-west-1a", "eu-west-1b", "", "eu-west-1a"])
+        ),
+        BASE,
+    ),
+    # preemptible with no operator placement: ignored, as `minimal`
+    "preemptible-unconfigured": (
+        _task(resources=TesResources(preemptible=True)),
+        BASE,
+    ),
+    # backend_parameters the operator doesn't allow: ignored, as `minimal`
+    "backend-params-not-allowed": (
+        _task(
+            resources=TesResources(
+                backend_parameters={"gpu_count": "1", "node_pool": "highmem"}
+            )
+        ),
+        BASE,
+    ),
+    # allowed keys with values that can't be honoured, not strict: ignored
+    "backend-params-unsupported-values": (
+        _task(
+            resources=TesResources(
+                backend_parameters={
+                    "gpu_count": "two",
+                    "priority_class": "system-cluster-critical",
+                    "node_pool": "nope",
+                }
+            )
+        ),
+        RuntimeConfig(
+            taskpod_namespace="poiesis",
+            poiesis_image="poiesis:golden",
+            scheduling=SCHEDULING,
+        ),
+    ),
+    # operator defaults only: every Pod gets them
+    "scheduling-operator": (
+        _task(),
+        RuntimeConfig(
+            taskpod_namespace="poiesis",
+            poiesis_image="poiesis:golden",
+            scheduling=SCHEDULING,
+        ),
+    ),
+    # everything a task can ask for, keys in any case
+    "scheduling-full": (
+        _task(
+            executors=[EXEC, EXEC],
+            resources=TesResources(
+                cpu_cores=8,
+                ram_gb=64,
+                zones=["us-east1-b"],
+                preemptible=True,
+                backend_parameters={
+                    "GPU_COUNT": "2",
+                    "Priority_Class": "tasks-high",
+                    "node_pool": "highmem",
+                },
+                backend_parameters_strict=True,
+            ),
+        ),
+        RuntimeConfig(
+            taskpod_namespace="poiesis",
+            poiesis_image="poiesis:golden",
+            scheduling=SCHEDULING,
+        ),
+    ),
 }
 
 #: case name → (task, config) the builder must refuse; the golden file holds
@@ -474,6 +623,43 @@ REJECTED_STORAGE: dict[str, tuple[TesTask, RuntimeConfig]] = {
 }
 
 
+SCHEDULED = RuntimeConfig(
+    taskpod_namespace="poiesis", poiesis_image="poiesis:golden", scheduling=SCHEDULING
+)
+
+#: Resources over the operator's maximums and backend parameters it can't
+#: honour under strict (#170); kept apart so the files above stay as they were.
+REJECTED_RESOURCES: dict[str, tuple[TesTask, RuntimeConfig]] = {
+    "cpu-over-max": (_task(resources=TesResources(cpu_cores=33)), SCHEDULED),
+    "ram-over-max": (_task(resources=TesResources(ram_gb=256.5)), SCHEDULED),
+    "gpu-over-max": (
+        _task(resources=TesResources(backend_parameters={"gpu_count": "5"})),
+        SCHEDULED,
+    ),
+    "strict-not-allowed": (
+        _task(
+            resources=TesResources(
+                backend_parameters={"gpu_count": "1"}, backend_parameters_strict=True
+            )
+        ),
+        BASE,
+    ),
+    "strict-unsupported-values": (
+        _task(
+            resources=TesResources(
+                backend_parameters={
+                    "gpu_count": "-1",
+                    "priority_class": "system-node-critical",
+                    "Node_Pool": "nope",
+                },
+                backend_parameters_strict=True,
+            )
+        ),
+        SCHEDULED,
+    ),
+}
+
+
 @pytest.fixture(autouse=True)
 def _file_roots(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fix the `file://` roots the input/output checks read from the env."""
@@ -542,6 +728,16 @@ def test_rejections_of_disabled_object_stores_match_golden() -> None:
             build_taskpod_job(task, config)
         messages[case] = str(caught.value)
     _check("rejected-storage.json", _dump(messages))
+
+
+def test_rejections_of_resources_match_golden() -> None:
+    """Over-maximum resources and unsupported strict parameters are refused."""
+    messages: dict[str, str] = {}
+    for case, (task, config) in REJECTED_RESOURCES.items():
+        with pytest.raises(ValueError) as caught:  # noqa: PT011 - message is checked
+            build_taskpod_job(task, config)
+        messages[case] = str(caught.value)
+    _check("rejected-resources.json", _dump(messages))
 
 
 def test_s3_with_no_credentials_still_takes_other_schemes() -> None:

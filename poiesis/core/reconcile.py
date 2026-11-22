@@ -36,6 +36,8 @@ from typing import TYPE_CHECKING, Any
 from poiesis.api.tes.models import TesState
 from poiesis.core import executor_shell
 from poiesis.core.pod_status import (
+    ContainerKind,
+    classify_container,
     created_at,
     extract_job_failure,
     extract_pending_failure_reason,
@@ -366,7 +368,7 @@ def terminal_system_logs(
             )
             filer_failure = filer_failure_log(name, terminated)
             if reason == "OOMKilled":
-                lines.append(f"container {name} OOMKilled")
+                lines.append(oom_killed_log(pod, name))
             elif shell_failure is not None:
                 lines.append(shell_failure)
             elif filer_failure is not None:
@@ -376,6 +378,38 @@ def terminal_system_logs(
     if not lines:
         lines.append(f"task ended in {proposed.value}")
     return lines
+
+
+def oom_killed_log(pod: Mapping[str, Any], name: str) -> str:
+    """System log line for container `name`, OOMKilled.
+
+    For an executor it says the memory limit it exceeded, from the Pod
+    spec (``resources.ram_gb``), or that it had none.
+    """
+    line = f"container {name} OOMKilled"
+    if classify_container(name)[0] is not ContainerKind.EXECUTOR:
+        return line
+    limit = _memory_limit(pod, name)
+    if limit is None:
+        return (
+            f"{line}: the executor ran out of memory and has no memory limit; "
+            "set resources.ram_gb"
+        )
+    return (
+        f"{line}: the executor exceeded its memory limit of {limit} (resources.ram_gb)"
+    )
+
+
+def _memory_limit(pod: Mapping[str, Any], name: str) -> str | None:
+    """The memory limit of container `name` in the Pod spec, if any."""
+    spec = pod.get("spec") or {}
+    for key in ("init_containers", "initContainers", "containers"):
+        for container in spec.get(key) or []:
+            if container.get("name") == name:
+                limits = (container.get("resources") or {}).get("limits") or {}
+                memory = limits.get("memory")
+                return str(memory) if memory is not None else None
+    return None
 
 
 def pending_system_logs(pod: Mapping[str, Any], timeout: str, reason: str) -> list[str]:
