@@ -61,6 +61,8 @@ def _field_value(kind: str, value: Any, where: str = "") -> Any:
     if listed:
         if not isinstance(value, list):
             raise TypeError(f"{where or kind} must be a list, got {value!r}")
+        if any(item is None for item in value):
+            raise TypeError(f"{where or kind} must not hold null, got {value!r}")
         return [_field_value(listed.group(1), item, where) for item in value]
     if re.fullmatch(r"V\w+", kind):
         return from_json(getattr(kubernetes.client, kind), value)

@@ -285,6 +285,28 @@ class RuntimeConfig:
     filer_identity_audiences: Mapping[str, str] = field(default_factory=dict)
     scheduling: SchedulingConfig = field(default_factory=SchedulingConfig)
 
+    def __post_init__(self) -> None:
+        """Refuse restricted executors next to unrestricted poiesis containers.
+
+        Only containers can set ``allowPrivilegeEscalation`` and
+        ``capabilities``: with ``pod_security_enforce`` off, trec, tif, tof
+        and ack lack them, and a namespace enforcing Pod Security
+        restricted would refuse every TaskPod.
+
+        Raises:
+            ValueError: ``executor_security_enforce`` is restricted and
+                ``pod_security_enforce`` is off.
+        """
+        if (
+            self.executor_security_enforce is PodSecurityEnforce.RESTRICTED
+            and self.pod_security_enforce is PodSecurityEnforce.OFF
+        ):
+            msg = (
+                "executor_security_enforce restricted needs pod_security_enforce "
+                "restricted or baseline, not off"
+            )
+            raise ValueError(msg)
+
     def storage_enabled(self, scheme: str) -> bool:
         """False for an object-store scheme with no store at all."""
         return self.default_store_enabled(scheme) or any(

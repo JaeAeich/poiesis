@@ -110,7 +110,7 @@ def test_restricted_profile(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_baseline_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`baseline` only stops privilege escalation: root images keep their capabilities."""
+    """`baseline` only stops privilege escalation; root images keep capabilities."""
     config = settings(
         monkeypatch, **{EXECUTOR_SECURITY_ENFORCE_ENV: "baseline"}
     ).runtime_config()
@@ -172,6 +172,17 @@ def test_restricted_executors_need_restricted_poiesis_containers(
         settings(monkeypatch, **{EXECUTOR_SECURITY_ENFORCE_ENV: "restricted"})
 
 
+def test_runtime_config_refuses_restricted_executors_with_off() -> None:
+    """The builder's own config refuses the combination too, without Settings."""
+    with pytest.raises(ValueError, match="not off"):
+        RuntimeConfig(
+            taskpod_namespace="ns",
+            poiesis_image="poiesis:test",
+            executor_security_enforce=PodSecurityEnforce.RESTRICTED,
+            pod_security_enforce=PodSecurityEnforce.OFF,
+        )
+
+
 def test_overrides_apply_without_a_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     """With `off`, the operator's contexts are used as they are."""
     config = settings(
@@ -187,21 +198,39 @@ def test_overrides_apply_without_a_profile(monkeypatch: pytest.MonkeyPatch) -> N
         assert executor["securityContext"] == {"runAsNonRoot": True}
 
 
+#: securityContext of trec/tif/tof/ack per podSecurityEnforce.
+POIESIS_CONTEXTS: dict[str, dict[str, Any] | None] = {
+    "restricted": {
+        "runAsNonRoot": True,
+        "allowPrivilegeEscalation": False,
+        "readOnlyRootFilesystem": True,
+        "capabilities": {"drop": ["ALL"]},
+        "seccompProfile": {"type": "RuntimeDefault"},
+    },
+    "baseline": {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}},
+    "off": None,
+}
+
+
+@pytest.mark.parametrize("executor_profile", ["off", "baseline", "restricted"])
+@pytest.mark.parametrize("poiesis_profile", ["restricted", "baseline", "off"])
 def test_poiesis_containers_keep_their_own_profile(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, poiesis_profile: str, executor_profile: str
 ) -> None:
     """trec, tif and ack follow podSecurityEnforce, not the executor setting."""
-    off = pod_spec(settings(monkeypatch).runtime_config())
-    restricted = pod_spec(
+    if executor_profile == "restricted" and poiesis_profile == "off":
+        pytest.skip("refused, see test_restricted_executors_need_restricted_poiesis")
+    monkeypatch.setenv("POIESIS_POD_SECURITY_ENFORCE", poiesis_profile)
+    spec = pod_spec(
         settings(
-            monkeypatch, **{EXECUTOR_SECURITY_ENFORCE_ENV: "restricted"}
+            monkeypatch, **{EXECUTOR_SECURITY_ENFORCE_ENV: executor_profile}
         ).runtime_config()
     )
     for name in ("trec", "tif", "ack"):
         assert (
-            containers(restricted)[name]["securityContext"]
-            == containers(off)[name]["securityContext"]
-        )
+            containers(spec)[name].get("securityContext")
+            == POIESIS_CONTEXTS[poiesis_profile]
+        ), name
 
 
 @pytest.mark.parametrize("poiesis_profile", ["restricted", "baseline"])
@@ -294,6 +323,11 @@ def test_dict_fields_pass_unconverted() -> None:
             "no field 'drops'",
         ),
         (EXECUTOR_SECURITY_CONTEXT_ENV, '{"capabilities": "ALL"}', "must be an object"),
+        (
+            EXECUTOR_SECURITY_CONTEXT_ENV,
+            '{"capabilities": {"drop": [null]}}',
+            "V1Capabilities.drop must not hold null",
+        ),
         (
             EXECUTOR_SECURITY_CONTEXT_ENV,
             '{"capabilities": {"drop": "ALL"}}',
