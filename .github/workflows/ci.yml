@@ -62,9 +62,8 @@ jobs:
       - run: uv run lint-imports
 
   typecheck:
-    name: ty (advisory)
+    name: ty
     runs-on: ubuntu-latest
-    continue-on-error: true  # ty is pre-1.0 and kubernetes-stubs is incomplete; advisory until the v2 rewrite lands clean types
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v4

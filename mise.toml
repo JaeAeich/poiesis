@@ -19,12 +19,12 @@ description = "Render the chart with the CI lint-values overlay"
 run = "mise x -- helm template t deployment/helm/poiesis -f deployment/helm/poiesis/ci/lint-values.yaml"
 
 [tasks.checks]
-description = "Run all pre-commit hooks + deptry + ty (advisory)"
+description = "Run all pre-commit hooks + deptry + import layers + ty"
 run = [
   "mise x -- lefthook run pre-commit --all-files",
   "uv run deptry poiesis",
   "uv run lint-imports",
-  "uv run ty check poiesis || echo '(ty diagnostics are advisory; see CI policy in ci.yml)'",
+  "uv run ty check poiesis",
 ]
 
 [tasks."db:down"]
