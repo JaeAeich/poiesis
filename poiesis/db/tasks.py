@@ -101,53 +101,79 @@ async def create_task(
     the operator enabled sharing.
     """
     task_id = task.id or str(uuid.uuid4())
-    resources = task.resources or TesResources()
+    key = uuid.UUID(task_id)
 
     async with conn.transaction():
-        await conn.execute(
-            """
-            INSERT INTO tasks (
-            id, state, name, description,
-            cpu_cores, preemptible, ram_gb, disk_gb, zones,
-            backend_parameters, backend_parameters_strict,
-            volumes, tags, creation_time, owner, groups
-            )
-            VALUES (
-            $1, $2, $3, $4,
-            $5, $6, $7, $8, $9,
-            $10::jsonb, $11,
-            $12, $13::jsonb, $14, $15, $16
-            )
-            """,
-            uuid.UUID(task_id),
-            (task.state or TesState.UNKNOWN).value,
-            task.name,
-            task.description,
-            resources.cpu_cores,
-            resources.preemptible,
-            resources.ram_gb,
-            resources.disk_gb,
-            resources.zones,
-            _dumps(resources.backend_parameters),
-            bool(resources.backend_parameters_strict),
-            task.volumes,
-            _dumps(task.tags),
-            _parse_dt(task.creation_time),
-            owner,
-            list(groups),
-        )
+        await _insert_task_row(conn, key, task, owner, groups)
+        await _insert_inputs(conn, key, task.inputs or [])
+        await _insert_outputs(conn, key, task.outputs or [])
+        await _insert_executors(conn, key, task.executors)
+        await _insert_logs(conn, key, task.logs or [])
 
-        for idx, inp in enumerate(task.inputs or []):
-            await conn.execute(
-                """
-                INSERT INTO task_inputs (
-                task_id, ordinal, name, description,
-                url, path, type, content, streamable
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """,
-                uuid.UUID(task_id),
-                idx,
+    return task_id
+
+
+async def _insert_task_row(
+    conn: asyncpg.Connection,
+    key: uuid.UUID,
+    task: TesTask,
+    owner: str,
+    groups: Sequence[str],
+) -> None:
+    """Insert the row of ``tasks``."""
+    resources = task.resources or TesResources()
+    await conn.execute(
+        """
+        INSERT INTO tasks (
+        id, state, name, description,
+        cpu_cores, preemptible, ram_gb, disk_gb, zones,
+        backend_parameters, backend_parameters_strict,
+        volumes, tags, creation_time, owner, groups
+        )
+        VALUES (
+        $1, $2, $3, $4,
+        $5, $6, $7, $8, $9,
+        $10::jsonb, $11,
+        $12, $13::jsonb, $14, $15, $16
+        )
+        """,
+        key,
+        (task.state or TesState.UNKNOWN).value,
+        task.name,
+        task.description,
+        resources.cpu_cores,
+        resources.preemptible,
+        resources.ram_gb,
+        resources.disk_gb,
+        resources.zones,
+        _dumps(resources.backend_parameters),
+        bool(resources.backend_parameters_strict),
+        task.volumes,
+        _dumps(task.tags),
+        _parse_dt(task.creation_time),
+        owner,
+        list(groups),
+    )
+
+
+async def _insert_inputs(
+    conn: asyncpg.Connection, key: uuid.UUID, inputs: Sequence[TesInput]
+) -> None:
+    """Insert the task's inputs, in one round trip."""
+    if not inputs:
+        return
+    await conn.executemany(
+        """
+        INSERT INTO task_inputs (
+        task_id, ordinal, name, description,
+        url, path, type, content, streamable
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        """,
+        [
+            (
+                key,
+                ordinal,
                 inp.name,
                 inp.description,
                 inp.url,
@@ -156,18 +182,29 @@ async def create_task(
                 inp.content,
                 inp.streamable,
             )
+            for ordinal, inp in enumerate(inputs)
+        ],
+    )
 
-        for idx, out in enumerate(task.outputs or []):
-            await conn.execute(
-                """
-                INSERT INTO task_outputs (
-                task_id, ordinal, name, description,
-                url, path, path_prefix, type
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                """,
-                uuid.UUID(task_id),
-                idx,
+
+async def _insert_outputs(
+    conn: asyncpg.Connection, key: uuid.UUID, outputs: Sequence[TesOutput]
+) -> None:
+    """Insert the task's outputs, in one round trip."""
+    if not outputs:
+        return
+    await conn.executemany(
+        """
+        INSERT INTO task_outputs (
+        task_id, ordinal, name, description,
+        url, path, path_prefix, type
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        """,
+        [
+            (
+                key,
+                ordinal,
                 out.name,
                 out.description,
                 out.url,
@@ -175,27 +212,27 @@ async def create_task(
                 out.path_prefix,
                 (out.type or TesFileType.FILE).value,
             )
+            for ordinal, out in enumerate(outputs)
+        ],
+    )
 
-        if not task.logs:
-            await conn.execute(
-                """
-                INSERT INTO task_logs (task_id, ordinal, start_time)
-                VALUES ($1, 0, now())
-                """,
-                uuid.UUID(task_id),
-            )
 
-        for idx, ex in enumerate(task.executors):
-            await conn.execute(
-                """
-                INSERT INTO task_executors (
-                task_id, ordinal, image, command,
-                workdir, stdin, stdout, stderr, env, ignore_error
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
-                """,
-                uuid.UUID(task_id),
-                idx,
+async def _insert_executors(
+    conn: asyncpg.Connection, key: uuid.UUID, executors: Sequence[TesExecutor]
+) -> None:
+    """Insert the task's executors, in one round trip."""
+    await conn.executemany(
+        """
+        INSERT INTO task_executors (
+        task_id, ordinal, image, command,
+        workdir, stdin, stdout, stderr, env, ignore_error
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
+        """,
+        [
+            (
+                key,
+                ordinal,
                 ex.image,
                 ex.command,
                 ex.workdir,
@@ -205,44 +242,63 @@ async def create_task(
                 _dumps(ex.env),
                 ex.ignore_error,
             )
+            for ordinal, ex in enumerate(executors)
+        ],
+    )
 
-        for log_idx, log in enumerate(task.logs or []):
-            task_log_id: int = await conn.fetchval(
-                """
-                INSERT INTO task_logs (
-                task_id, ordinal, metadata, start_time, end_time,
-                system_logs, outputs
-                )
-                VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb)
-                RETURNING id
-                """,
-                uuid.UUID(task_id),
-                log_idx,
-                _dumps(log.metadata),
-                _parse_dt(log.start_time),
-                _parse_dt(log.end_time),
-                log.system_logs,
-                json.dumps([o.model_dump(mode="json") for o in (log.outputs or [])]),
+
+async def _insert_logs(
+    conn: asyncpg.Connection, key: uuid.UUID, logs: Sequence[TesTaskLog]
+) -> None:
+    """Insert the task's logs; a task without any gets its first, empty one."""
+    if not logs:
+        await conn.execute(
+            """
+            INSERT INTO task_logs (task_id, ordinal, start_time)
+            VALUES ($1, 0, now())
+            """,
+            key,
+        )
+        return
+    for ordinal, log in enumerate(logs):
+        task_log_id: int = await conn.fetchval(
+            """
+            INSERT INTO task_logs (
+            task_id, ordinal, metadata, start_time, end_time,
+            system_logs, outputs
             )
-            for ex_idx, exlog in enumerate(log.logs or []):
-                await conn.execute(
-                    """
-                    INSERT INTO executor_logs (
-                    task_log_id, ordinal, start_time, end_time,
-                    stdout, stderr, exit_code
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    """,
+            VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb)
+            RETURNING id
+            """,
+            key,
+            ordinal,
+            _dumps(log.metadata),
+            _parse_dt(log.start_time),
+            _parse_dt(log.end_time),
+            log.system_logs,
+            json.dumps([o.model_dump(mode="json") for o in (log.outputs or [])]),
+        )
+        await conn.executemany(
+            """
+            INSERT INTO executor_logs (
+            task_log_id, ordinal, start_time, end_time,
+            stdout, stderr, exit_code
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            """,
+            [
+                (
                     task_log_id,
-                    ex_idx,
-                    _parse_dt(exlog.start_time),
-                    _parse_dt(exlog.end_time),
-                    exlog.stdout,
-                    exlog.stderr,
-                    exlog.exit_code,
+                    executor_ordinal,
+                    _parse_dt(executor_log.start_time),
+                    _parse_dt(executor_log.end_time),
+                    executor_log.stdout,
+                    executor_log.stderr,
+                    executor_log.exit_code,
                 )
-
-    return task_id
+                for executor_ordinal, executor_log in enumerate(log.logs or [])
+            ],
+        )
 
 
 # -- reads -------------------------------------------------------------------
