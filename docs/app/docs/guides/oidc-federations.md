@@ -44,7 +44,8 @@ auth:
 
 Federations change, and not everything is documented. Before going
 live, decode an access token from your client and check `iss`, `aud`,
-`azp` and the header's `typ`:
+`azp` and the header's `typ` (needs jq 1.7 or later, which decodes
+unpadded base64):
 
 ```sh
 # header, then payload

@@ -378,3 +378,11 @@ Without the chart, set the same as `POIESIS_SERVICE_INFO_ID`, `_NAME`,
   builds them with plain `CREATE INDEX`, so writes to `tasks` (new
   tasks, state changes) wait until it finishes. On a large table, run
   the upgrade when few tasks are submitted.
+- `requiredScopes` entries must now be scope tokens (RFC 6749 §3.3):
+  the API refuses to start, and the chart to render, if an entry has a
+  space, a double quote or a backslash. Such a scope never matched a
+  token, so split it into separate entries or drop it.
+- The `resource_name` and `resource_documentation` of
+  `/.well-known/oauth-protected-resource` now follow
+  `serviceInfo.name` and `serviceInfo.documentationUrl` (defaults
+  unchanged: `Poiesis` and the Poiesis docs).

@@ -395,7 +395,9 @@ class IssuerValidator:
             return
         if isinstance(typ, str) and normalize_token_type(typ) in self._token_types:
             return
-        logger.warning(
+        # semgrep false positive: logs the issuer and a truncated header
+        # value, never the token.
+        logger.warning(  # nosemgrep
             "Token of %s refused: header typ %s is not in its tokenTypes %s; if "
             "the issuer's access tokens carry it, add it to "
             "auth.issuers[].tokenTypes",
@@ -413,7 +415,9 @@ class IssuerValidator:
         client = client_of(claims)
         if isinstance(client, str) and client in allowed:
             return
-        logger.warning(
+        # semgrep false positive: logs the issuer and a truncated client
+        # id, never the token.
+        logger.warning(  # nosemgrep
             "Token of %s refused: client %s is not in its clients",
             self.settings.issuer,
             "missing" if client is None else repr(str(client)[:100]),
