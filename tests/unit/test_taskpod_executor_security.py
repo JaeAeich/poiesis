@@ -14,7 +14,7 @@ import json
 from typing import Any
 
 import pytest
-from kubernetes.client import ApiClient
+from kubernetes.client import ApiClient, V1ObjectMeta, V1PodSecurityContext
 
 from poiesis.api.settings import (
     EXECUTOR_SECURITY_CONTEXT_ENV,
@@ -24,6 +24,7 @@ from poiesis.api.settings import (
     Settings,
 )
 from poiesis.api.tes.models import TesExecutor, TesInput, TesTask
+from poiesis.core.k8s_json import from_json
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig, build_taskpod_job
 
 ENVS = (
@@ -221,6 +222,31 @@ def test_nested_fields_become_models(monkeypatch: pytest.MonkeyPatch) -> None:
     assert spec["securityContext"] == {"sysctls": sysctls, "supplementalGroups": [1, 2]}
     for executor in executors(spec):
         assert executor["securityContext"] == {"seLinuxOptions": {"level": "s0:c1"}}
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("pod_security_context", {"bogus": 1}),
+        ("executor_security_context", {"capabilities": {"bogus": []}}),
+    ],
+)
+def test_runtime_config_with_unknown_key_refused(field: str, value: Any) -> None:
+    """A RuntimeConfig built without Settings still can't build such a TaskPod."""
+    config = RuntimeConfig(
+        taskpod_namespace="ns", poiesis_image="poiesis:test", **{field: value}
+    )
+    with pytest.raises(ValueError, match="no field 'bogus'"):
+        pod_spec(config)
+
+
+def test_dict_fields_pass_unconverted() -> None:
+    """`dict(…)` and scalar fields keep their JSON value; models are built."""
+    meta = from_json(V1ObjectMeta, {"name": "x", "labels": {"a": "b"}})
+    assert meta.labels == {"a": "b"}
+    context = from_json(V1PodSecurityContext, {"seccompProfile": {"type": "X"}})
+    assert context.seccomp_profile is not None
+    assert context.seccomp_profile.type == "X"
 
 
 @pytest.mark.parametrize(

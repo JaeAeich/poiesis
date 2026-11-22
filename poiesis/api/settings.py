@@ -57,6 +57,7 @@ from poiesis.core.constants import (
     S3_SSE_KMS_KEY_ID_ENV,
     S3_VIRTUAL_HOSTED_STYLE_ENV,
 )
+from poiesis.core.k8s_json import from_json
 from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
 from poiesis.core.metrics import metrics_port_from_env
 from poiesis.core.services.filer.file_urls import parse_file_url_roots
@@ -73,7 +74,6 @@ from poiesis.core.taskpod.config import (
     NodePlacement,
     SchedulingConfig,
 )
-from poiesis.core.taskpod.pod import from_json
 from poiesis.core.taskpod.volumes import identity_token_path, identity_token_volume_name
 
 if TYPE_CHECKING:
@@ -257,7 +257,7 @@ def _parse_json_dict_env(name: str) -> dict[str, Any]:
         raise ValueError(f"{name} is not valid JSON: {exc}") from exc
     if not isinstance(parsed, dict):
         raise TypeError(f"{name} must encode a JSON object")
-    return {str(k): v for k, v in parsed.items()}
+    return parsed
 
 
 def _parse_security_context_env(

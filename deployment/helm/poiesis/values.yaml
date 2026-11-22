@@ -721,7 +721,8 @@ taskpods:
   # container, trec/tif/tof/ack included.
   podSecurityContext: {}
   # securityContext keys of every executor container, merged over the
-  # profile the same way, e.g. {readOnlyRootFilesystem: true}.
+  # profile the same way, e.g. {readOnlyRootFilesystem: true}. Keys of both
+  # are checked at API startup: an unknown one stops the API.
   executorSecurityContext: {}
 
   # Requests and limits of the poiesis-owned TaskPod containers. Needed when

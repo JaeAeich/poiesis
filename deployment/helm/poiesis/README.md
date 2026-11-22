@@ -184,7 +184,7 @@ subject `system:serviceaccount:<taskpod namespace>:<taskpod ServiceAccount>`.
 
 | Path | Type | Default | Description |
 |---|---|---|---|
-| `taskpods.executorSecurityEnforce` | string | `"off"` | Profile of the executor containers and the TaskPod's Pod-level `securityContext`: `restricted` / `baseline` / `off`. `restricted` is needed in namespaces that enforce Pod Security `restricted`; every container then runs as uid 65532. Quote `"off"`. |
+| `taskpods.executorSecurityEnforce` | string | `"off"` | Profile of the executor containers and the TaskPod's Pod-level `securityContext`: `restricted` / `baseline` / `off`. `restricted` is needed in namespaces that enforce Pod Security `restricted`; it also sets the Pod's `runAsUser`/`runAsGroup`/`fsGroup` to 65532, for every container (trec/tif/tof/ack too). Quote `"off"`. |
 | `taskpods.podSecurityContext` | object | `{}` | Pod-level `securityContext` keys over the profile's, e.g. `{runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}`. |
 | `taskpods.executorSecurityContext` | object | `{}` | `securityContext` keys of every executor container over the profile's. |
 
