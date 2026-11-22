@@ -82,6 +82,26 @@ gcs:
   existingSecret: poiesis-gcs
 ```
 
+## Another project or public buckets
+
+A second project's buckets, through another pool provider, or public
+buckets read without credentials, go in `objectStores`:
+
+```yaml
+objectStores:
+  - name: partner
+    provider: gcs
+    buckets: ["partner-*"]
+    workloadIdentityProvider: //iam.googleapis.com/projects/987654321/locations/global/workloadIdentityPools/poiesis/providers/cluster
+  - name: public
+    provider: gcs
+    buckets: ["gcp-public-data-*"]
+    anonymous: true
+```
+
+Each pool provider gets its own token, mounted into `tif` and `tof` only.
+See [Several stores](../concepts/storage.md#several-stores).
+
 ## What is tested
 
 CI runs `gs://` inputs and outputs end to end against fake-gcs-server on

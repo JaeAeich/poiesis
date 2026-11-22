@@ -75,6 +75,24 @@ until the Secret holds a new one.
 `azure.endpoint` points at another blob endpoint: a private endpoint
 with its own DNS name, a sovereign cloud, or Azure Stack Hub.
 
+## Two storage accounts
+
+An `az://` URL names a container, not an account. To use a second
+account, list its containers in `objectStores`; the default `azure`
+block keeps the rest:
+
+```yaml
+objectStores:
+  - name: archive
+    provider: azure
+    buckets: ["archive", "cold-*"] # containers
+    accountName: labarchive
+    existingSecret: poiesis-azure-archive # or clientId and tenantId
+```
+
+A container name can belong to one store only. See
+[Several stores](../concepts/storage.md#several-stores).
+
 ## What is tested
 
 CI runs `az://` inputs and outputs end to end against Azurite on kind,

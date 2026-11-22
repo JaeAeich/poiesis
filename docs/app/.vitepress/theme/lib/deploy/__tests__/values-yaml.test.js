@@ -105,6 +105,26 @@ describe("valuesYamlLines", () => {
     expect(yaml).not.toContain("s3:");
   });
 
+  it("GCS writes a pool provider with workload identity", () => {
+    const yaml = valuesYaml((config) => {
+      config.storage = "gcs";
+      config.gcsCredentials = "identity";
+      config.gcsWorkloadIdentityProvider = "//iam.googleapis.com/p";
+      config.gcsServiceAccount = "filer@p.iam.gserviceaccount.com";
+    });
+    expect(yaml).toContain(
+      "gcs:\n  enabled: true\n  workloadIdentityProvider: //iam.googleapis.com/p\n" +
+        "  serviceAccount: filer@p.iam.gserviceaccount.com\n\n",
+    );
+    expect(yaml).not.toMatch(/gcs:\n( {2}.*\n)* {2}existingSecret/);
+    const noAccount = valuesYaml((config) => {
+      config.storage = "gcs";
+      config.gcsCredentials = "identity";
+      config.gcsWorkloadIdentityProvider = "//iam.googleapis.com/p";
+    });
+    expect(noAccount).toContain("  workloadIdentityProvider: //iam.googleapis.com/p\n\n");
+  });
+
   it("Azure writes the account with a Secret or a workload identity", () => {
     const withSecret = valuesYaml((config) => {
       config.storage = "azure";

@@ -409,6 +409,122 @@ def test_unusable_storage_values_fail_the_install(
     assert error in result.stderr
 
 
+@pytest.mark.parametrize(
+    ("sets", "error"),
+    [
+        (
+            ("s3.anonymous=true", "s3.existingSecret=k"),
+            "s3.anonymous takes no s3.existingSecret or s3.roleArn",
+        ),
+        (
+            ("gcs.enabled=true", "gcs.anonymous=true", "gcs.existingSecret=k"),
+            "gcs.enabled needs one of",
+        ),
+        (
+            (
+                "azure.enabled=true",
+                "azure.accountName=a",
+                "azure.anonymous=true",
+                "azure.existingSecret=k",
+            ),
+            "azure.anonymous takes no",
+        ),
+    ],
+)
+def test_anonymous_with_credentials_fails_the_install(
+    sets: tuple[str, ...], error: str
+) -> None:
+    """An anonymous default store takes no credentials."""
+    args = ["template", "t", str(CHART), "-f", LINT]
+    for item in sets:
+        args += ["--set", item]
+    result = helm(*args)
+    assert result.returncode != 0
+    assert error in result.stderr
+
+
+@pytest.mark.usefixtures("no_storage_env")
+def test_anonymous_default_stores_reach_the_filers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`anonymous` turns S3 on, and lets GCS on without credentials."""
+    configmap, config = storage_config(
+        monkeypatch,
+        "s3.anonymous=true",
+        "gcs.enabled=true",
+        "gcs.anonymous=true",
+    )
+    assert configmap["POIESIS_S3_ANONYMOUS"] == "true"
+    assert config.s3_configured
+    assert config.gcs_configured
+    env = {e.name: e.value for e in config.filer_env}
+    assert env["POIESIS_S3_ANONYMOUS"] == "true"
+    assert env["POIESIS_GCS_ANONYMOUS"] == "true"
+    assert "GOOGLE_SERVICE_ACCOUNT_KEY" not in env
+
+
+#: Two named stores, as an operator writes them in values.yaml.
+OBJECT_STORES = {
+    "objectStores": [
+        {
+            "name": "aws-open-data",
+            "provider": "s3",
+            "buckets": ["1000genomes", "gnomad-public-*"],
+            "region": "us-east-1",
+            "anonymous": True,
+        },
+        {
+            "name": "ceph",
+            "provider": "s3",
+            "buckets": ["lab-*"],
+            "endpoint": "https://ceph.example.org",
+            "existingSecret": "poiesis-ceph",
+        },
+    ]
+}
+
+
+def test_object_stores_reach_the_runtime_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`objectStores` is one JSON value the API reads back as it was written."""
+    values = tmp_path / "stores.yaml"
+    values.write_text(yaml.safe_dump(OBJECT_STORES))
+    configmap = next(d for d in render(LINT, str(values)) if d["kind"] == "ConfigMap")[
+        "data"
+    ]
+    assert (
+        json.loads(configmap["POIESIS_OBJECT_STORES"]) == OBJECT_STORES["objectStores"]
+    )
+    monkeypatch.setenv("POIESIS_OBJECT_STORES", configmap["POIESIS_OBJECT_STORES"])
+    config = Settings(auth=AuthSettings(enabled=False)).runtime_config()
+    assert [s.name for s in config.object_stores] == ["aws-open-data", "ceph"]
+
+
+def test_no_object_stores_render_nothing() -> None:
+    configmap = next(d for d in render(LINT) if d["kind"] == "ConfigMap")["data"]
+    assert "POIESIS_OBJECT_STORES" not in configmap
+
+
+@pytest.mark.parametrize(
+    ("store", "error"),
+    [
+        ({"name": "x", "provider": "s4", "buckets": ["b"]}, "provider"),
+        ({"name": "x", "provider": "s3", "buckets": ["b"], "secret": "s"}, "secret"),
+        ({"name": "x", "provider": "s3", "buckets": []}, "minItems"),
+        ({"name": "X", "provider": "s3", "buckets": ["b"]}, "does not match"),
+    ],
+)
+def test_schema_refuses_bad_object_stores(
+    tmp_path: Path, store: dict[str, Any], error: str
+) -> None:
+    values = tmp_path / "stores.yaml"
+    values.write_text(yaml.safe_dump({"objectStores": [store]}))
+    result = helm("lint", str(CHART), "-f", LINT, "-f", str(values))
+    assert result.returncode != 0
+    assert error in result.stdout + result.stderr
+
+
 def ftp_drs_config(monkeypatch: pytest.MonkeyPatch, *sets: str) -> Any:
     """The RuntimeConfig the API builds from the rendered FTP and DRS settings."""
     configmap = next(d for d in render(LINT, sets=sets) if d["kind"] == "ConfigMap")[

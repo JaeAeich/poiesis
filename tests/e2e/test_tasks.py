@@ -4,7 +4,7 @@ import time
 import uuid
 
 import pytest
-from e2e import IMAGE, S3, Azure, Gcs, Tes, kubectl, s3_get, s3_put
+from e2e import IMAGE, S3, SECOND_BUCKET, Azure, Gcs, Tes, kubectl, s3_get, s3_put
 
 
 def executor(*command: str, **extra: object) -> dict[str, object]:
@@ -103,6 +103,29 @@ def test_s3_input_and_output_round_trip(tes: Tes) -> None:
 
     assert task["state"] == "COMPLETE", task["logs"][-1].get("system_logs")
     assert s3_get(f"{prefix}/out.txt") == "FROM S3\n"
+
+
+def test_named_store_with_its_own_keys(tes: Tes) -> None:
+    """An input from the default S3 store, an output to a named store (#198).
+
+    Each store's keys open only its own bucket on SeaweedFS, so the task
+    completes only if each URL got its store's endpoint and keys.
+    """
+    prefix = f"named-store/{uuid.uuid4().hex}"
+    url_in = s3_put(f"{prefix}/in.txt", "from the default store\n")
+    url_out = f"s3://{SECOND_BUCKET}/{prefix}/out.txt"
+    task = tes.run(
+        {
+            "inputs": [{"url": url_in, "path": "/data/in.txt"}],
+            "outputs": [{"url": url_out, "path": "/data/out.txt"}],
+            "executors": [
+                executor("sh", "-c", "tr a-z A-Z < /data/in.txt > /data/out.txt")
+            ],
+        }
+    )
+
+    assert task["state"] == "COMPLETE", task["logs"][-1].get("system_logs")
+    assert s3_get(f"{prefix}/out.txt", SECOND_BUCKET) == "FROM THE DEFAULT STORE\n"
 
 
 def test_output_log_lists_uploaded_files(tes: Tes) -> None:

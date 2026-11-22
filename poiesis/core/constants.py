@@ -50,6 +50,20 @@ S3_SERVER_SIDE_ENCRYPTION_ENV: str = "POIESIS_S3_SERVER_SIDE_ENCRYPTION"
 S3_SSE_KMS_KEY_ID_ENV: str = "POIESIS_S3_SSE_KMS_KEY_ID"
 S3_REQUESTER_PAYS_ENV: str = "POIESIS_S3_REQUESTER_PAYS"
 
+#: Env vars the API sets on TIF/TOF when a provider's default store sends
+#: unsigned requests (``s3.anonymous``, ``gcs.anonymous``, ``azure.anonymous``).
+S3_ANONYMOUS_ENV: str = "POIESIS_S3_ANONYMOUS"
+GCS_ANONYMOUS_ENV: str = "POIESIS_GCS_ANONYMOUS"
+AZURE_ANONYMOUS_ENV: str = "POIESIS_AZURE_ANONYMOUS"
+
+#: Named object stores (``objectStores``), as JSON: the API reads the
+#: operator's list from it, and sets it on TIF/TOF without secret values.
+OBJECT_STORES_ENV: str = "POIESIS_OBJECT_STORES"
+#: Env var the API sets on TIF/TOF next to ``OBJECT_STORES_ENV``: the
+#: schemes whose default store is on (comma separated), for buckets no
+#: named store serves.
+OBJECT_STORE_DEFAULTS_ENV: str = "POIESIS_OBJECT_STORE_DEFAULTS"
+
 #: Directory under which TIF/TOF, and no other container, find the
 #: ServiceAccount token they trade for cloud credentials: one subdirectory
 #: per provider, holding ``token``.

@@ -42,7 +42,13 @@ export function missingFields(config) {
 /** @returns {[boolean, string, number, string][]} */
 function storageChecks(config) {
   const step = STEP.STORAGE;
-  if (config.storage === "gcs") return [[!config.gcsSecret, "GCS Secret", step, "w-gcsSecret"]];
+  if (config.storage === "gcs") {
+    const withSecret = config.gcsCredentials === "secret";
+    return [
+      [withSecret && !config.gcsSecret, "GCS Secret", step, "w-gcsSecret"],
+      [!withSecret && !config.gcsWorkloadIdentityProvider, "Pool provider", step, "w-gcsProvider"],
+    ];
+  }
   if (config.storage === "azure") {
     const withSecret = config.azureCredentials === "secret";
     return [
@@ -70,6 +76,11 @@ const EXAMPLE_TARGETS = {
   s3Region: { label: "S3 region", step: STEP.STORAGE, focusId: "w-s3Region" },
   s3Secret: { label: "S3 Secret", step: STEP.STORAGE, focusId: "w-s3Secret" },
   gcsSecret: { label: "GCS Secret", step: STEP.STORAGE, focusId: "w-gcsSecret" },
+  gcsWorkloadIdentityProvider: {
+    label: "Pool provider",
+    step: STEP.STORAGE,
+    focusId: "w-gcsProvider",
+  },
   azureAccount: { label: "Storage account", step: STEP.STORAGE, focusId: "w-azureAccount" },
   azureSecret: { label: "Azure Secret", step: STEP.STORAGE, focusId: "w-azureSecret" },
   azureClientId: { label: "Client ID", step: STEP.STORAGE, focusId: "w-azureClientId" },

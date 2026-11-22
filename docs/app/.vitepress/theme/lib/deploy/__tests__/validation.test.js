@@ -23,6 +23,9 @@ describe("missingFields", () => {
     config.storage = "gcs";
     expect(labels(config)).toContain("GCS Secret");
     expect(labels(config)).not.toContain("S3 region");
+    config.gcsCredentials = "identity";
+    expect(labels(config)).toContain("Pool provider");
+    expect(labels(config)).not.toContain("GCS Secret");
     config.storage = "azure";
     expect(labels(config)).toEqual(expect.arrayContaining(["Storage account", "Azure Secret"]));
     config.azureCredentials = "identity";

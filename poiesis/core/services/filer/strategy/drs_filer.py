@@ -6,6 +6,9 @@ fetches the object, picks the first of its access methods whose URL this
 deployment can stage (HTTPS first, then the object stores the operator
 enabled, then FTP and HTTP), follows an ``access_id`` through
 ``/access/<access_id>``, and hands the URL to the strategy for its scheme.
+An object-store URL counts only when one of the deployment's stores serves
+its bucket (`object_store_filer.is_served`): the same lookup as for a
+task's own URLs.
 Headers the server returns with the URL go with the data request.
 
 The scheme is off unless the operator turns it on (``taskpods.drs.enabled``),
@@ -44,6 +47,7 @@ from poiesis.core.services.filer.strategy.http_filer import (
     HttpFilerStrategy,
     _retry,
 )
+from poiesis.core.services.filer.strategy.object_store_filer import is_served
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +180,9 @@ def resolve(uri: str) -> tuple[str, dict[str, str]]:
         scheme = urlsplit(url).scheme.lower()
         headers = _headers(answer.get("headers"))
         if scheme not in schemes:
+            continue
+        if scheme in _OBJECT_STORES and not is_served(url):
+            # A bucket none of this deployment's stores serves.
             continue
         if headers and scheme not in {"http", "https"}:
             # Headers can't go with an object-store or FTP transfer.

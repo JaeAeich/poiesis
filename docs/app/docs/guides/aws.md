@@ -70,9 +70,33 @@ s3:
   existingSecret: poiesis-s3
 ```
 
+## Public data next to a private bucket
+
+Public datasets on AWS (the Registry of Open Data) take unsigned
+requests. Add them as a named store, so the default store keeps your own
+credentials:
+
+```yaml
+s3:
+  region: eu-central-1
+  roleArn: arn:aws:iam::<account>:role/poiesis-filer
+objectStores:
+  - name: open-data
+    provider: s3
+    buckets: ["1000genomes", "gnomad-public-*"]
+    region: us-east-1 # the buckets' region
+    anonymous: true
+```
+
+`s3://1000genomes/…` is then read without credentials; every other bucket
+goes through the role. A named store can also be an on-prem Ceph or
+MinIO with its own `endpoint` and `existingSecret`. See
+[Several stores](../concepts/storage.md#several-stores).
+
 ## What is tested
 
 CI runs `s3://` inputs and outputs end to end against SeaweedFS on kind,
-with static keys. IRSA is covered by unit tests only; it has not been run
+with static keys, and one task that reads from the default store and
+writes to a named store whose keys open only its bucket. IRSA is covered by unit tests only; it has not been run
 on EKS in CI. Other S3 settings (encryption, requester pays, path or
 virtual-hosted style) are in [Storage and staging](../concepts/storage.md#s3).

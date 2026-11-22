@@ -138,7 +138,18 @@ function writeStorage(out, config, marker, requiredValue) {
   if (config.storage === "gcs") {
     out.add("gcs:", step);
     out.add("  enabled: true", step);
-    out.add(`  existingSecret: ${requiredValue(config.gcsSecret, "gcsSecret")}`, step);
+    if (config.gcsCredentials === "secret") {
+      out.add(`  existingSecret: ${requiredValue(config.gcsSecret, "gcsSecret")}`, step);
+    } else {
+      const provider = requiredValue(
+        config.gcsWorkloadIdentityProvider,
+        "gcsWorkloadIdentityProvider",
+      );
+      out.add(`  workloadIdentityProvider: ${provider}`, step);
+      if (config.gcsServiceAccount) {
+        out.add(`  serviceAccount: ${yamlScalar(config.gcsServiceAccount)}`, step);
+      }
+    }
   } else if (config.storage === "azure") {
     out.add("azure:", step);
     out.add("  enabled: true", step);

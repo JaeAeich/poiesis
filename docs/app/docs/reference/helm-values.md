@@ -81,6 +81,7 @@ To size the pool against Postgres, see
 | `s3.serverSideEncryption` | `""`    | `AES256`, `aws:kms` or `aws:kms:dsse` for uploads.                                                                                                     |
 | `s3.kmsKeyId`             | `""`    | KMS key for `aws:kms` / `aws:kms:dsse`.                                                                                                                |
 | `s3.requesterPays`        | `false` | Pay for requests to requester-pays buckets.                                                                                                            |
+| `s3.anonymous`            | `false` | Unsigned requests, for public buckets; turns S3 on. No `existingSecret` or `roleArn` with it.                                                          |
 
 Needed only when inputs or outputs use `s3://`. While S3 is off, an
 `s3://` URL is refused at submit. See
@@ -95,6 +96,7 @@ Needed only when inputs or outputs use `s3://`. While S3 is off, an
 | `gcs.workloadIdentityProvider` | `""`    | Workload Identity Federation: full name of the pool provider, `//iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`. `tif` and `tof` get a ServiceAccount token for `https:<that name>` and trade it at Google STS. |
 | `gcs.serviceAccount`           | `""`    | Service account to impersonate with the federated token. Needs `gcs.workloadIdentityProvider`. Empty uses the federated principal.                                                                                                                                        |
 | `gcs.endpoint`                 | `""`    | Base URL of the GCS API; empty for `https://storage.googleapis.com`. `http://` is allowed.                                                                                                                                                                                |
+| `gcs.anonymous`                | `false` | Unsigned requests, for public buckets, in place of `gcs.existingSecret` or `gcs.workloadIdentityProvider`.                                                                                                                                                                |
 
 ## azure
 
@@ -105,6 +107,26 @@ Needed only when inputs or outputs use `s3://`. While S3 is off, an
 | `azure.existingSecret`             | `""`    | Secret in the TaskPod namespace with `AZURE_STORAGE_ACCOUNT_KEY` or `AZURE_STORAGE_SAS_TOKEN`.                                                                       |
 | `azure.clientId`, `azure.tenantId` | `""`    | Workload identity: the managed identity `tif` and `tof` act as, with a ServiceAccount token for `api://AzureADTokenExchange`. Set both or neither.                   |
 | `azure.endpoint`                   | `""`    | Blob endpoint; empty for `https://<accountName>.blob.core.windows.net`. For a private endpoint, a sovereign cloud, Azure Stack Hub or Azurite. `http://` is allowed. |
+| `azure.anonymous`                  | `false` | Unsigned requests, for public containers. No `existingSecret` or `clientId` with it.                                                                                 |
+
+## objectStores
+
+Named stores next to the default `s3`, `gcs` and `azure` stores. Default
+`[]`. Each entry:
+
+| Key              | What it does                                                                                                                                                                                                                                                                                                                                                |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`           | Lower case letters, digits and `-`, at most 40 characters. Unique.                                                                                                                                                                                                                                                                                          |
+| `provider`       | `s3`, `gcs` or `azure`.                                                                                                                                                                                                                                                                                                                                     |
+| `buckets`        | Bucket names (containers, for Azure) and `prefix*` patterns the store serves. Patterns of two stores of one provider may not overlap.                                                                                                                                                                                                                       |
+| `anonymous`      | Unsigned requests; no credentials.                                                                                                                                                                                                                                                                                                                          |
+| provider options | Those of the provider's default block, without `enabled`: `endpoint`, `region`, `existingSecret`, `roleArn`, `virtualHostedStyle`, `serverSideEncryption`, `kmsKeyId`, `requesterPays` (s3); `existingSecret`, `workloadIdentityProvider`, `serviceAccount`, `endpoint` (gcs); `accountName`, `existingSecret`, `clientId`, `tenantId`, `endpoint` (azure). |
+
+A URL goes to the named store of its provider whose patterns match its
+bucket, else to the provider's default store, else it is refused at
+submit. The API refuses to start on an option of another provider, two
+credential sources in one store, or overlapping patterns. See
+[Several stores](../concepts/storage.md#several-stores).
 
 CI runs `s3://`, `gs://` and `az://` end to end against emulators, not
 the real clouds. See

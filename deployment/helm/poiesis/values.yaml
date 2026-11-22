@@ -373,6 +373,9 @@ s3:
   kmsKeyId: ""
   # Send x-amz-request-payer: requester, for requester-pays buckets.
   requesterPays: false
+  # Unsigned requests, for public buckets: no credentials. Turns S3 on;
+  # leave existingSecret and roleArn empty.
+  anonymous: false
 
 # Google Cloud Storage (gs://). Needs existingSecret or
 # workloadIdentityProvider: without either, tif/tof would use the node's
@@ -394,6 +397,9 @@ gcs:
   # Base URL of the GCS API; empty for https://storage.googleapis.com.
   # For Private Service Connect, a sovereign cloud or an emulator.
   endpoint: ""
+  # Unsigned requests, for public buckets, in place of existingSecret or
+  # workloadIdentityProvider.
+  anonymous: false
 
 # Azure Blob Storage (az://container/blob).
 azure:
@@ -412,6 +418,36 @@ azure:
   # For a private endpoint, a sovereign cloud, Azure Stack or Azurite
   # (http://azurite:10000/<account>).
   endpoint: ""
+  # Unsigned requests, for public containers: no existingSecret or clientId.
+  anonymous: false
+
+# Named object stores, next to the default ones above: each serves the
+# buckets (containers, for Azure) its `buckets` patterns match, with its
+# own endpoint and credentials. A pattern is a bucket name or a prefix
+# ending in `*`. A URL goes to the named store of its provider whose
+# patterns match its bucket, else to that provider's default store (s3,
+# gcs, azure above) when it is on, else submit refuses it. Patterns of two
+# stores of one provider may not overlap; the API refuses to start.
+# Options are those of the provider's default block, minus `enabled`;
+# existingSecret is a Secret in the TaskPod namespace with the same keys.
+# Credentials reach tif and tof only.
+objectStores: []
+#  - name: aws-open-data        # lower case, digits, '-'; at most 40
+#    provider: s3               # s3 | gcs | azure
+#    buckets: ["1000genomes", "gnomad-public-*"]
+#    region: us-east-1
+#    anonymous: true
+#  - name: ceph
+#    provider: s3
+#    buckets: ["lab-*"]
+#    endpoint: https://ceph.example.org
+#    existingSecret: poiesis-ceph   # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#  - name: archive
+#    provider: azure
+#    buckets: ["archive"]
+#    accountName: labarchive
+#    clientId: 00000000-0000-0000-0000-000000000000
+#    tenantId: 00000000-0000-0000-0000-000000000000
 
 # -----------------------------------------------------------------------------
 # API (TES HTTP endpoint)

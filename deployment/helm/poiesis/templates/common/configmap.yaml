@@ -161,10 +161,17 @@ data:
   {{- if $s3.requesterPays }}
   POIESIS_S3_REQUESTER_PAYS: "true"
   {{- end }}
+  {{- if $s3.anonymous }}
+  {{- if or $s3.existingSecret $s3.roleArn }}
+  {{- fail "s3.anonymous takes no s3.existingSecret or s3.roleArn" }}
+  {{- end }}
+  POIESIS_S3_ANONYMOUS: "true"
+  {{- end }}
   {{- $gcs := .Values.gcs }}
   {{- if $gcs.enabled }}
-  {{- if eq (empty $gcs.existingSecret) (empty $gcs.workloadIdentityProvider) }}
-  {{- fail "gcs.enabled needs one of gcs.existingSecret (a service-account key) or gcs.workloadIdentityProvider: the node's metadata server would reach executors too" }}
+  {{- $gcsCredentials := compact (list $gcs.existingSecret $gcs.workloadIdentityProvider (ternary "anonymous" "" (default false $gcs.anonymous))) }}
+  {{- if ne (len $gcsCredentials) 1 }}
+  {{- fail "gcs.enabled needs one of gcs.existingSecret (a service-account key), gcs.workloadIdentityProvider or gcs.anonymous: the node's metadata server would reach executors too" }}
   {{- end }}
   {{- if and $gcs.serviceAccount (not $gcs.workloadIdentityProvider) }}
   {{- fail "gcs.serviceAccount needs gcs.workloadIdentityProvider" }}
@@ -181,6 +188,9 @@ data:
   {{- end }}
   {{- with $gcs.endpoint }}
   POIESIS_GCS_ENDPOINT: {{ . | quote }}
+  {{- end }}
+  {{- if $gcs.anonymous }}
+  POIESIS_GCS_ANONYMOUS: "true"
   {{- end }}
   {{- end }}
   {{- $azure := .Values.azure }}
@@ -203,6 +213,16 @@ data:
   {{- with $azure.endpoint }}
   POIESIS_AZURE_ENDPOINT: {{ . | quote }}
   {{- end }}
+  {{- if $azure.anonymous }}
+  {{- if or $azure.existingSecret $azure.clientId }}
+  {{- fail "azure.anonymous takes no azure.existingSecret or azure.clientId" }}
+  {{- end }}
+  POIESIS_AZURE_ANONYMOUS: "true"
+  {{- end }}
+  {{- end }}
+  {{- with .Values.objectStores }}
+  # Named stores; the API checks them at startup (see objectStores).
+  POIESIS_OBJECT_STORES: {{ toJson . | quote }}
   {{- end }}
 
   # ---- Auth --------------------------------------------------------------------

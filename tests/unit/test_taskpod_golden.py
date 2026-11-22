@@ -38,6 +38,7 @@ from poiesis.api.tes.models import (
     TesTask,
 )
 from poiesis.core.constants import FILE_URL_ROOTS_ENV
+from poiesis.core.services.filer.object_stores import gcs_token_name, parse_stores
 from poiesis.core.taskpod import (
     PodSecurityEnforce,
     RuntimeConfig,
@@ -53,6 +54,11 @@ WRITE_ENV = "POIESIS_WRITE_GOLDEN"
 FILE_ROOTS = "/srv/shared"
 
 BASE = RuntimeConfig(taskpod_namespace="poiesis", poiesis_image="poiesis:golden")
+
+_GCS_PROVIDER = (
+    "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/"
+    "providers/c"
+)
 
 EXEC = TesExecutor(image="busybox:1.36", command=["echo", "hi"])
 
@@ -377,6 +383,47 @@ CASES: dict[str, tuple[TesTask, RuntimeConfig]] = {
                     ),
                 ),
             ],
+        ),
+    ),
+    # The default S3 store and two named ones: Ceph with its own keys, and
+    # a Google project through workload identity (#198).
+    "named-stores": (
+        _task(inputs=[_inp("/data/in.txt")], outputs=[_out("/data/out.txt")]),
+        RuntimeConfig(
+            taskpod_namespace="poiesis",
+            poiesis_image="poiesis:golden",
+            extra_env=[
+                V1EnvVar(
+                    name="AWS_ACCESS_KEY_ID",
+                    value_from=V1EnvVarSource(
+                        secret_key_ref=V1SecretKeySelector(
+                            name="poiesis-s3", key="AWS_ACCESS_KEY_ID"
+                        )
+                    ),
+                ),
+            ],
+            object_stores=parse_stores(
+                json.dumps(
+                    [
+                        {
+                            "name": "ceph",
+                            "provider": "s3",
+                            "buckets": ["lab-*"],
+                            "endpoint": "https://ceph.example.org",
+                            "existingSecret": "poiesis-ceph",
+                        },
+                        {
+                            "name": "other-project",
+                            "provider": "gcs",
+                            "buckets": ["shared"],
+                            "workloadIdentityProvider": _GCS_PROVIDER,
+                        },
+                    ]
+                )
+            ),
+            filer_identity_audiences={
+                gcs_token_name(_GCS_PROVIDER, None): f"https:{_GCS_PROVIDER}",
+            },
         ),
     ),
     "log-format": (
