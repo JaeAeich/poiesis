@@ -252,7 +252,8 @@ class Authz:
             if not credential:
                 raise ValueError(f"decision service credential file {path} is empty")
             self._headers["Authorization"] = "Bearer " + credential
-        # asyncio.timeout in _request_decision bounds the whole call; this bounds each phase.
+        # asyncio.timeout in _request_decision bounds the whole call; this
+        # bounds each phase.
         # trust_env=False: proxy variables or ~/.netrc must not reroute
         # (or add credentials to) calls that carry the caller's claims.
         self._client = client or httpx.AsyncClient(
