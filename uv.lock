@@ -525,7 +525,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 code-quality = [
     { name = "deptry" },
-    { name = "import-linter", specifier = ">=2.17" },
+    { name = "import-linter" },
     { name = "ruff" },
     { name = "ty" },
     { name = "typos" },

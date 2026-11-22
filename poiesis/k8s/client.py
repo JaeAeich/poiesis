@@ -40,7 +40,7 @@ class K8sUnreachableError(K8sError):
 
 
 class K8sRejectedError(K8sError):
-    """The Kubernetes API answered with an error; the call had no effect.
+    """The Kubernetes API answered with an error instead of doing the call.
 
     Attributes:
         status: The HTTP status of the answer.
@@ -81,8 +81,8 @@ class K8sClient:
     Each method runs the underlying sync call in a worker thread via
     `asyncio.to_thread`, with a request timeout; a call the API server
     doesn't answer raises `K8sUnreachableError`, an error it answers with
-    raises `K8sRejectedError`. The wrapper holds no per-call state — instances are cheap and safe to share across
-    requests.
+    raises `K8sRejectedError`. The wrapper holds no per-call state:
+    instances are cheap and safe to share across requests.
     """
 
     def __init__(self) -> None:

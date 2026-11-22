@@ -5,7 +5,7 @@
 //   POIESIS_URL=http://localhost:8000 k6 run tests/load/tasks.js
 //
 // Three scenarios run one after another, so their latencies don't mix:
-//   reads   service-info and GetTask at READ_RATE requests a second,
+//   reads   service-info and GetTask, READ_RATE times a second each,
 //   lists   ListTasks (BASIC view, 50 a page) at LIST_RATE,
 //   creates CreateTask at CREATE_RATE; each one makes a Job and a PVC, so
 //           keep it small on a laptop cluster.
@@ -13,7 +13,7 @@ import http from "k6/http";
 import { check } from "k6";
 
 const base = `${__ENV.POIESIS_URL || "http://localhost:8000"}/ga4gh/tes/v1`;
-const duration = __ENV.DURATION || "30s";
+const seconds = Number(__ENV.DURATION_SECONDS || 30);
 const rate = (name, fallback) => Number(__ENV[name] || fallback);
 
 const scenario = (exec, perSecond, startAfter) => ({
@@ -21,8 +21,8 @@ const scenario = (exec, perSecond, startAfter) => ({
   exec,
   rate: perSecond,
   timeUnit: "1s",
-  duration,
-  startTime: `${startAfter * (parseInt(duration) + 5)}s`,
+  duration: `${seconds}s`,
+  startTime: `${startAfter * (seconds + 5)}s`,
   preAllocatedVUs: 50,
   maxVUs: 400,
 });

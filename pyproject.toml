@@ -3,7 +3,7 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [dependency-groups]
-code_quality = ["deptry", "import-linter>=2.17", "ruff", "ty", "typos"]
+code_quality = ["deptry", "import-linter", "ruff", "ty", "typos"]
 test = ["pyftpdlib", "pytest"]
 types = ["asyncpg-stubs", "kubernetes-stubs", "types-pyyaml", "types-requests"]
 

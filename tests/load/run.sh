@@ -2,7 +2,8 @@
 # Run tests/load/tasks.js from inside the cluster, next to the API, so the
 # numbers aren't those of `kubectl port-forward`:
 #   tests/load/run.sh [kube-context] [namespace]
-# READ_RATE, LIST_RATE, CREATE_RATE and DURATION pass through to the script.
+# READ_RATE, LIST_RATE, CREATE_RATE and DURATION_SECONDS pass through to the
+# script. Exits with k6's status: non-zero when a threshold fails.
 set -euo pipefail
 
 context="${1:-kind-poiesis-e2e}"
@@ -30,7 +31,7 @@ spec:
         - {name: READ_RATE, value: "${READ_RATE:-}"}
         - {name: LIST_RATE, value: "${LIST_RATE:-}"}
         - {name: CREATE_RATE, value: "${CREATE_RATE:-}"}
-        - {name: DURATION, value: "${DURATION:-}"}
+        - {name: DURATION_SECONDS, value: "${DURATION_SECONDS:-}"}
       volumeMounts:
         - {name: script, mountPath: /scripts}
   volumes:
@@ -41,3 +42,5 @@ YAML
 # Running, then finished: the summary is at the end of its log.
 "${kc[@]}" wait pod/k6 --for=condition=Ready --timeout=180s >/dev/null || true
 "${kc[@]}" logs -f pod/k6
+exit "$("${kc[@]}" get pod k6 \
+  -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
