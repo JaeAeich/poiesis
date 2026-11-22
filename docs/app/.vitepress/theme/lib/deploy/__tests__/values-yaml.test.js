@@ -116,7 +116,7 @@ describe("valuesYamlLines", () => {
       "gcs:\n  enabled: true\n  workloadIdentityProvider: //iam.googleapis.com/p\n" +
         "  serviceAccount: filer@p.iam.gserviceaccount.com\n\n",
     );
-    expect(yaml).not.toMatch(/gcs:\n(  .*\n)*  existingSecret/);
+    expect(yaml).not.toMatch(/gcs:\n( {2}.*\n)* {2}existingSecret/);
     const noAccount = valuesYaml((config) => {
       config.storage = "gcs";
       config.gcsCredentials = "identity";
