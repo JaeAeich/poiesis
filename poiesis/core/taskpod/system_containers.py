@@ -12,14 +12,20 @@ from kubernetes.client import (
     V1EnvVarSource,
     V1ObjectFieldSelector,
     V1SeccompProfile,
+    V1SecretKeySelector,
     V1SecurityContext,
 )
 
 from poiesis.core import executor_shell
 from poiesis.core.constants import (
+    DRS_ALLOWED_HOSTS_ENV,
+    DRS_BEARER_TOKEN_ENV,
+    DRS_ENABLED_ENV,
+    DRS_OBJECT_STORES_ENV,
     EXECUTOR_STREAMS_ENV,
     FILE_URL_ROOTS_ENV,
     FILER_PVC_PATH,
+    FTP_ENABLED_ENV,
     OUTPUT_GLOB_FALLBACK_ENV,
 )
 from poiesis.core.executor_logs import Streams, encode_streams
@@ -131,7 +137,7 @@ def build_tif(
         image=config.poiesis_image,
         image_pull_policy=config.image_pull_policy,
         command=command,
-        env=filer_env(config),
+        env=[*filer_env(config), *drs_env(config)],
         volume_mounts=[*poiesis_mounts(config), *identity_token_mounts(config)],
         resources=config.filer_resources,
         security_context=poiesis_security_context(config),
@@ -169,6 +175,37 @@ def filer_env(config: RuntimeConfig) -> list[V1EnvVar]:
     if config.file_url_roots:
         env.append(
             V1EnvVar(name=FILE_URL_ROOTS_ENV, value=",".join(config.file_url_roots))
+        )
+    if not config.ftp_enabled:
+        env.append(V1EnvVar(name=FTP_ENABLED_ENV, value="false"))
+    return env
+
+
+def drs_env(config: RuntimeConfig) -> list[V1EnvVar]:
+    """Env vars TIF, and only TIF, needs to resolve `drs://` inputs.
+
+    The switch, the allowed hosts, the object stores a DRS URL may resolve
+    to, and a reference to the bearer token for DRS servers. Nothing when
+    DRS is off. Executors never get the token.
+    """
+    if not config.drs_enabled:
+        return []
+    stores = [s for s in ("s3", "gs", "az") if config.storage_enabled(s)]
+    env = [
+        V1EnvVar(name=DRS_ENABLED_ENV, value="true"),
+        V1EnvVar(name=DRS_ALLOWED_HOSTS_ENV, value=",".join(config.drs_allowed_hosts)),
+        V1EnvVar(name=DRS_OBJECT_STORES_ENV, value=",".join(stores)),
+    ]
+    if config.drs_secret:
+        env.append(
+            V1EnvVar(
+                name=DRS_BEARER_TOKEN_ENV,
+                value_from=V1EnvVarSource(
+                    secret_key_ref=V1SecretKeySelector(
+                        name=config.drs_secret, key=DRS_BEARER_TOKEN_ENV
+                    )
+                ),
+            )
         )
     return env
 

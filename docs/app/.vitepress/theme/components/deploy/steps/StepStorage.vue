@@ -17,7 +17,7 @@ const STORES = [
 ];
 // Planned backends: a short text mark and the tracking issue.
 const PLANNED = [
-  { mark: "FTP", name: "FTP / SFTP", issue: 29 },
+  { mark: "SFTP", name: "SFTP", issue: 29 },
   { mark: "FS", name: "FUSE mounts", issue: 27 },
 ];
 const { config } = useDeploy();

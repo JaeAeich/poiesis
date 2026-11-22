@@ -39,6 +39,7 @@ def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
         # Inline `content` wins over `url`; the empty-scheme entry in the
         # filer registry handles it, so `can_input(None)` is True.
         url = _filer.input_url(inp)
+        reject_refused_url(f"inputs[{idx}].url", url)
         if not _filer.can_input(url):
             raise ValueError(
                 f"inputs[{idx}].url scheme is not supported as a TES input: {inp.url!r}"
@@ -48,6 +49,8 @@ def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
         reject_unconfigured_storage(f"inputs[{idx}].url", url, config)
 
     for idx, out in enumerate(task.outputs or []):
+        if _filer.scheme(out.url) != "drs":
+            reject_refused_url(f"outputs[{idx}].url", out.url)
         if not _filer.can_output(out.url):
             raise ValueError(
                 f"outputs[{idx}].url scheme is not supported as a TES output: "
@@ -65,13 +68,29 @@ def reject_unsupported_features(task: TesTask, config: RuntimeConfig) -> None:
     reject_unsupported_backend_parameters(task, config)
 
 
-def reject_unstageable_directory(where: str, url: str | None) -> None:
-    """Reject a DIRECTORY input TIF can't stage: inline content or HTTP(S).
+def reject_refused_url(where: str, url: str | None) -> None:
+    """Reject a URL of a scheme this deployment turned off, saying why.
 
-    HTTP has no standard directory listing, and content is one file.
+    FTP turned off, DRS turned off, a DRS host not allowed, or a DRS URI
+    that isn't hostname-based (`filer_strategy_factory.refusal`).
+    """
+    if reason := _filer.refusal(url):
+        raise ValueError(f"{where} {reason}")
+
+
+def reject_unstageable_directory(where: str, url: str | None) -> None:
+    """Reject a DIRECTORY input TIF can't stage: inline content, HTTP(S) or DRS.
+
+    HTTP has no standard directory listing, content is one file, and so is
+    a DRS object (bundles aren't supported).
     """
     if url is None:
         raise ValueError(f"{where} has inline content, which can't be a DIRECTORY")
+    if _filer.scheme(url) == "drs":
+        raise ValueError(
+            f"{where} is a DIRECTORY with a drs:// url; a DRS object is staged "
+            "as a FILE (bundles aren't supported)"
+        )
     if _filer.scheme(url) in {"http", "https"}:
         raise ValueError(
             f"{where} is a DIRECTORY with an HTTP(S) url; directories can't be "

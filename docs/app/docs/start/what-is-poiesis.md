@@ -36,10 +36,12 @@ See [Tasks and TaskPods](../concepts/tasks.md) and
 
 ## Storage protocols
 
-Inputs: `s3://`, `http://`, `https://` and inline `content`.
-Outputs: `s3://`, `http://` and `https://`. `file://` works for both when
-the operator allows it, and so do `gs://` (Google Cloud Storage) and
-`az://` (Azure Blob Storage), which are experimental. See
+Inputs: `s3://`, `http://`, `https://`, `ftp://`, `ftps://` and inline
+`content`. Outputs: `s3://`, `http://`, `https://`, `ftp://` and
+`ftps://`. `file://` works for both when the operator allows it, and so
+do `gs://` (Google Cloud Storage) and `az://` (Azure Blob Storage), which
+are experimental. GA4GH DRS (`drs://`) inputs work when the operator
+turns them on. See
 [Storage and staging](../concepts/storage.md).
 
 ## What's yours and what's ours

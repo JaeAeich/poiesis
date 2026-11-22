@@ -31,13 +31,16 @@ logger = logging.getLogger(__name__)
 
 
 def redact_url(url: str | None) -> str | None:
-    """Return `url` without its query and fragment, for logs and errors.
+    """Return `url` without credentials, query and fragment, for logs and errors.
 
-    The query of a presigned URL is its signature.
+    The query of a presigned URL is its signature; the ``user:password@``
+    of an FTP URL is a login.
     """
     if not url:
         return url
-    return urlunsplit(urlsplit(url)._replace(query="", fragment=""))
+    parts = urlsplit(url)
+    netloc = parts.netloc.rpartition("@")[2]
+    return urlunsplit(parts._replace(netloc=netloc, query="", fragment=""))
 
 
 def output_glob_fallback() -> bool:

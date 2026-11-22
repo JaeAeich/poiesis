@@ -520,13 +520,13 @@ CASES: dict[str, tuple[TesTask, RuntimeConfig]] = {
 #: the exact message of each.
 REJECTED: dict[str, tuple[TesTask, RuntimeConfig]] = {
     "missing-id": (TesTask(executors=[EXEC]), BASE),
-    "input-scheme": (_task(inputs=[_inp("/data/x", url="ftp://host/x")]), BASE),
+    "input-scheme": (_task(inputs=[_inp("/data/x", url="sftp://host/x")]), BASE),
     "input-file-outside-roots": (
         _task(inputs=[_inp("/data/x", url="file:///etc/passwd")]),
         BASE,
     ),
     "output-scheme": (
-        _task(outputs=[_out("/data/x", url="ftp://host/x")]),
+        _task(outputs=[_out("/data/x", url="sftp://host/x")]),
         BASE,
     ),
     "parent-component": (_task(volumes=["/data/../etc"]), BASE),

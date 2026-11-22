@@ -74,6 +74,10 @@ class HttpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         super().__init__(payload)
         self.input = self.payload if isinstance(self.payload, TesInput) else None
         self.output = self.payload if isinstance(self.payload, TesOutput) else None
+        #: Headers sent with the download, such as those a DRS server's
+        #: ``/access`` answer names for its URL. Sent on redirects only to
+        #: the same scheme, host and port.
+        self.headers: dict[str, str] = {}
 
     async def download_input_file(self, container_path: str) -> None:
         """Stream the input file from the HTTP(S) URL to `container_path`."""
@@ -81,7 +85,7 @@ class HttpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         if self.input.url is None:
             raise ValueError("URL is required")
 
-        _get(self.input.url, container_path)
+        _get(self.input.url, container_path, self.headers)
 
     async def download_input_directory(self, container_path: str) -> None:
         """HTTP directory listing is not standardised; refuse."""
@@ -138,7 +142,7 @@ def _put_directory(directory: str, url: str) -> list[tuple[str, str]]:
     return uploaded
 
 
-def _get(url: str, path: str) -> None:
+def _get(url: str, path: str, headers: dict[str, str] | None = None) -> None:
     """GET `url` into the file at `path`, retrying transient failures.
 
     The body goes to a temporary file in the directory of `path`, renamed to
@@ -148,7 +152,10 @@ def _get(url: str, path: str) -> None:
     directory, name = os.path.split(path)
     partial = os.path.join(directory, f".{name}.{uuid.uuid4().hex}.part")
     try:
-        _retry(lambda: _get_once(url, partial), f"Download of {redact_url(url)}")
+        _retry(
+            lambda: _get_once(url, partial, headers or {}),
+            f"Download of {redact_url(url)}",
+        )
         os.replace(partial, path)
     finally:
         if os.path.lexists(partial):
@@ -156,11 +163,16 @@ def _get(url: str, path: str) -> None:
     logger.info("Downloaded %s to %s", redact_url(url), path)
 
 
-def _get_once(url: str, path: str) -> None:
-    """GET `url` into the file at `path`, following redirects."""
+def _get_once(url: str, path: str, headers: dict[str, str]) -> None:
+    """GET `url` into the file at `path`, following redirects.
+
+    `headers` go with each request to the origin of `url`, not elsewhere.
+    """
+    origin = _origin(url)
     target = url
     for _ in range(_MAX_REDIRECTS + 1):
-        with _request("GET", target) as response:
+        sent = headers if _origin(target) == origin else {}
+        with _request("GET", target, headers=sent) as response:
             location = response.headers.get("Location")
             if response.status_code in _DOWNLOAD_REDIRECTS and location:
                 target = _redirect("GET", target, location, response)
@@ -172,6 +184,12 @@ def _get_once(url: str, path: str) -> None:
     raise requests.TooManyRedirects(
         f"GET {redact_url(url)} stopped after {_MAX_REDIRECTS} redirects"
     )
+
+
+def _origin(url: str) -> tuple[str, str | None, int | None]:
+    """Scheme, host and port of `url`."""
+    parts = urlsplit(url)
+    return parts.scheme.lower(), parts.hostname, parts.port
 
 
 def _put(path: str, url: str) -> None:

@@ -14,6 +14,15 @@ from urllib.parse import urlparse
 
 from poiesis.core.services.filer.file_urls import file_url_allowed, file_url_roots
 from poiesis.core.services.filer.strategy.content_filer import ContentFilerStrategy
+from poiesis.core.services.filer.strategy.drs_filer import (
+    DrsFilerStrategy,
+    drs_enabled,
+    drs_uri_problem,
+)
+from poiesis.core.services.filer.strategy.ftp_filer import (
+    FtpFilerStrategy,
+    ftp_enabled,
+)
 from poiesis.core.services.filer.strategy.http_filer import HttpFilerStrategy
 from poiesis.core.services.filer.strategy.local_filer import LocalFilerStrategy
 from poiesis.core.services.filer.strategy.object_store_filer import (
@@ -38,9 +47,9 @@ class _SchemeEntry:
 
 
 #: The empty-scheme entry is reserved for inline `TesInput.content`.
-#: Every other entry maps to a real URI scheme. A scheme that resolves to
-#: another URL first (DRS) would be one more entry, whose strategy hands
-#: the resolved URL to the entry for its scheme.
+#: Every other entry maps to a real URI scheme. `drs` resolves to another
+#: URL first; its strategy hands the resolved URL to the entry for its
+#: scheme.
 _SCHEMES: dict[str, _SchemeEntry] = {
     "": _SchemeEntry(name="content", input=ContentFilerStrategy, output=None),
     "file": _SchemeEntry(
@@ -63,6 +72,11 @@ _SCHEMES: dict[str, _SchemeEntry] = {
     "https": _SchemeEntry(
         name="https", input=HttpFilerStrategy, output=HttpFilerStrategy
     ),
+    # On unless the operator turns them off (`ftp_enabled`).
+    "ftp": _SchemeEntry(name="ftp", input=FtpFilerStrategy, output=FtpFilerStrategy),
+    "ftps": _SchemeEntry(name="ftps", input=FtpFilerStrategy, output=FtpFilerStrategy),
+    # Off unless the operator turns it on (`drs_enabled`). Inputs only.
+    "drs": _SchemeEntry(name="drs", input=DrsFilerStrategy, output=None),
 }
 
 
@@ -79,10 +93,28 @@ def supported_output_schemes() -> list[str]:
 def _enabled() -> list[_SchemeEntry]:
     """Registry entries usable in this deployment.
 
-    `file` counts only when the operator configured roots for it.
+    `file` counts only when the operator configured roots for it, `ftp`
+    and `ftps` unless the operator turned them off, `drs` only when the
+    operator turned it on.
     """
-    file_on = bool(file_url_roots())
-    return [e for e in _SCHEMES.values() if e.name != "file" or file_on]
+    on = {"file": bool(file_url_roots()), "drs": drs_enabled()}
+    on["ftp"] = on["ftps"] = ftp_enabled()
+    return [e for e in _SCHEMES.values() if on.get(e.name, True)]
+
+
+def refusal(uri: str | None) -> str | None:
+    """Why this deployment refuses `uri` though its scheme is registered.
+
+    None if it doesn't. For `ftp`/`ftps` turned off and for `drs` URIs;
+    the submit check puts the reason in its 400.
+    """
+    name = scheme(uri)
+    if name in {"ftp", "ftps"} and not ftp_enabled():
+        return f"is an {name}:// URL, but this deployment has FTP turned off"
+    if name == "drs":
+        assert uri is not None
+        return drs_uri_problem(uri)
+    return None
 
 
 def _lookup(uri: str | None) -> _SchemeEntry | None:
@@ -92,6 +124,8 @@ def _lookup(uri: str | None) -> _SchemeEntry | None:
         assert uri is not None
         if not file_url_allowed(uri):
             return None
+    if entry is not None and refusal(uri):
+        return None
     return entry
 
 

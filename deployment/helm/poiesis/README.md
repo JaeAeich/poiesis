@@ -156,6 +156,20 @@ credential (Azure) names the subject
 |---|---|---|---|
 | `taskpods.fileUrlRoots` | list of strings | `[]` | Directories `file://` URLs may point into. Empty turns the scheme off. List only directories mounted into TaskPods through `extraVolumes` / `extraVolumeMounts`. |
 
+### FTP (`taskpods.ftp`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `taskpods.ftp.enabled` | boolean | `true` | `ftp://` and `ftps://` inputs and outputs. A URL with no user logs in as anonymous; `user:password@` in a URL is stored with the task and left out of logs. `false` refuses both schemes with a 400 and drops them from service-info. |
+
+### DRS (`taskpods.drs`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `taskpods.drs.enabled` | boolean | `false` | `drs://<host>/<object_id>` inputs. TIF resolves them through `https://<host>/ga4gh/drs/v1` and stages the access URL. |
+| `taskpods.drs.allowedHosts` | list of strings | `[]` | DRS hosts tasks may name. Empty allows any host. |
+| `taskpods.drs.existingSecret` | string | `""` | Secret in the TaskPod namespace with key `DRS_BEARER_TOKEN`, sent by TIF to DRS servers only (never to the data URL, never to executors). |
+
 ### System-container resources (`taskpods.systemResources`)
 
 | Path | Type | Default | Description |
@@ -238,7 +252,7 @@ Scope:
 
 Reserved names rejected at API startup:
 
-- env: `DATABASE_URL`, anything starting with `AWS_` or `POIESIS_`.
+- env: `DATABASE_URL`, `DRS_BEARER_TOKEN`, anything starting with `AWS_` or `POIESIS_`.
 - volumes: `task-data`, `postgres-ca`, `tmp`.
 
 Total serialised JSON capped at ~32 KiB by Kubernetes' env-var size

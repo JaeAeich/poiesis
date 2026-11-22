@@ -1,5 +1,5 @@
 ---
-description: How tif stages inputs and tof uploads outputs - supported URL schemes, S3, Google Cloud Storage and Azure Blob configuration, workload identity, glob outputs and presigned HTTP uploads.
+description: How tif stages inputs and tof uploads outputs - supported URL schemes, S3, Google Cloud Storage and Azure Blob configuration, workload identity, FTP and DRS, glob outputs and presigned HTTP uploads.
 ---
 
 # Storage and staging
@@ -29,8 +29,13 @@ after they finish.
   ]
 }" />
 
-- Inputs: `s3://`, `http://`, `https://` and inline `content`.
-- Outputs: `s3://`, `http://` and `https://`.
+- Inputs: `s3://`, `http://`, `https://`, `ftp://`, `ftps://` and inline
+  `content`.
+- Outputs: `s3://`, `http://`, `https://`, `ftp://` and `ftps://`.
+- `ftp://` and `ftps://` are on unless the operator turns them off (see
+  [FTP](#ftp)).
+- `drs://` (GA4GH DRS) for inputs, only where the operator turns it on
+  (see [DRS](#drs)).
 - `gs://` (Google Cloud Storage) and `az://` (Azure Blob Storage) for
   both, only where the operator turns them on. Both are experimental
   (see [Object stores](#object-stores)).
@@ -40,8 +45,10 @@ after they finish.
   `400`. `GET /service-info` lists the schemes this deployment accepts.
 - Also refused with `400` at submit, since they would only fail in the
   Pod: an input with neither `url` nor `content`, a `DIRECTORY` input
-  over `http(s)://` or as inline `content`, and an `s3://`, `gs://` or
-  `az://` URL whose provider the operator hasn't turned on.
+  over `http(s)://`, `drs://` or as inline `content`, an `s3://`, `gs://`
+  or `az://` URL whose provider the operator hasn't turned on, an FTP URL
+  where FTP is off, and a `drs://` URI that DRS is off for, whose host
+  isn't allowed, or that is a compact identifier.
 
 ## Common patterns
 
@@ -247,12 +254,89 @@ inject the token into every container, executors included.
 <Callout type="info">
 
 GCS and Azure share the S3 code path, which is tested on a cluster, but
-they have not been run against the real services. FTP is planned
-([#29](https://github.com/jaeaeich/poiesis/issues/29)), as are DRS URLs
-and FUSE mounts
+they have not been run against the real services. SFTP is not
+supported. FUSE mounts are planned
 ([#27](https://github.com/jaeaeich/poiesis/issues/27)).
 
 </Callout>
+
+## FTP
+
+`ftp://` and `ftps://` URLs work for inputs (`FILE` and `DIRECTORY`) and
+outputs (`FILE`, `DIRECTORY` and glob), for public archives such as EBI,
+ENA and NCBI:
+
+```json
+{"url": "ftp://ftp.ebi.ac.uk/pub/databases/…/genome.fa.gz", "path": "/data/genome.fa.gz"}
+```
+
+- Passive mode, binary transfers. `ftps://` is explicit TLS (`AUTH TLS`),
+  with the server's certificate checked; implicit TLS (port 990) is not
+  supported.
+- A URL with no user logs in as `anonymous`. `ftp://user:password@host/…`
+  logs in with those.
+- The path is relative to the login directory, as in RFC 1738; on public
+  archives that is the server's root. Start it with `%2F` for an absolute
+  path.
+- A `DIRECTORY` input downloads everything under the directory. Names in
+  the server's listing are reduced to their last path segment, and `.`
+  and `..` are skipped, so nothing lands outside the input's path.
+- A `FILE` input is written to a temporary file next to its path and
+  renamed into place once complete.
+- An upload creates the directories it needs.
+- A dropped or refused connection, a timeout or a `4xx` reply is retried
+  twice, after 1 s and 2 s. A `5xx` reply fails at once: `550` for a file
+  that is missing or not readable, `530` for a rejected login. The
+  task's `system_logs` show the reply.
+
+<Callout type="warn">
+
+Credentials in an FTP URL are stored with the task, like the rest of the
+URL, and anyone who can read the task can read them. Logs, termination
+messages and `logs[].outputs` leave them out. Plain `ftp://` sends them
+unencrypted; use `ftps://` where the server has it.
+
+</Callout>
+
+The operator turns FTP off with `taskpods.ftp.enabled: false`; tasks
+using it then get a `400`, and `GET /service-info` doesn't list it.
+
+## DRS
+
+`drs://` inputs name an object on a
+[GA4GH DRS](https://ga4gh.github.io/data-repository-service-schemas/)
+1.x server, as a hostname-based URI: `drs://<host>/<object_id>`. DRS is
+off by default:
+
+```yaml
+taskpods:
+  drs:
+    enabled: true
+    allowedHosts: ["drs.example.org"]   # empty: any host
+    existingSecret: poiesis-drs         # optional, key DRS_BEARER_TOKEN
+```
+
+`tif` resolves the URI, then stages the URL it gets like any other input:
+
+1. `GET https://<host>/ga4gh/drs/v1/objects/<object_id>`.
+2. It picks the first access method whose URL this deployment can stage:
+   `https`, then `s3`, `gs` or `az` where the operator turned that store
+   on, then `ftps`, `ftp` and `http`.
+3. For an `access_id`, it gets the URL from
+   `/objects/<object_id>/access/<access_id>`. Headers in that answer go
+   with the data request (not to another host after a redirect). An
+   object-store or FTP URL that needs headers is skipped.
+
+- The bearer token from `existingSecret` goes to the DRS server only,
+  never to the data URL. It reaches `tif` by reference; `tof`, `trec` and
+  executors don't get it.
+- Refused with `400` at submit: `drs://` while DRS is off, a host not in
+  `allowedHosts`, a compact-identifier URI (`drs://namespace:accession`)
+  and a `DIRECTORY` input.
+- Fails the task in `tif`: a bundle (an object with `contents`), an
+  unknown object (`404`), access denied (`401`, `403`), or no access
+  method this deployment can stage.
+- `drs://` can't be an output: DRS has no upload API.
 
 ## Glob outputs
 

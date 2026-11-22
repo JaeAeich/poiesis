@@ -79,6 +79,18 @@ data:
   # Directories file:// URLs may point into; empty turns the scheme off.
   POIESIS_FILE_URL_ROOTS: {{ join "," (.Values.taskpods.fileUrlRoots | default list) | quote }}
 
+  # ---- FTP and DRS -----------------------------------------------------------
+  # ftp:// and ftps://: on unless taskpods.ftp.enabled is false.
+  POIESIS_FTP_ENABLED: {{ dig "ftp" "enabled" true .Values.taskpods | quote }}
+  # drs:// inputs: off unless taskpods.drs.enabled; hosts empty allow any.
+  {{- $drs := .Values.taskpods.drs | default dict }}
+  POIESIS_DRS_ENABLED: {{ $drs.enabled | default false | quote }}
+  POIESIS_DRS_ALLOWED_HOSTS: {{ join "," ($drs.allowedHosts | default list) | quote }}
+  {{- with $drs.existingSecret }}
+  # Secret name, not value: TIF reads DRS_BEARER_TOKEN from it by reference.
+  POIESIS_TASKPOD_DRS_SECRET: {{ . | quote }}
+  {{- end }}
+
   # ---- TaskPod system-container resources ----------------------------------
   # JSON resources blocks for trec, tif/tof and ack; empty ones are omitted.
   {{- with .Values.taskpods.systemResources }}

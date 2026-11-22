@@ -627,6 +627,28 @@ taskpods:
   # e.g. ["/mnt/reference"]. Never list a path that holds credentials.
   fileUrlRoots: []
 
+  # ftp:// and ftps:// (explicit TLS) inputs and outputs. On by default, like
+  # http(s): public archives (EBI, ENA, NCBI) need no credentials, and a URL
+  # with no user logs in as anonymous. A URL may carry user:password@; it is
+  # stored with the task like the rest of the URL, and left out of logs.
+  # false refuses ftp:// and ftps:// URLs with a 400.
+  ftp:
+    enabled: true
+
+  # GA4GH DRS inputs: drs://<host>/<object_id> (hostname-based DRS 1.x URIs).
+  # TIF asks https://<host>/ga4gh/drs/v1 for the object's access URL and
+  # stages it over https, an enabled object store, ftp or http. Off by
+  # default: tasks using drs:// get a 400.
+  drs:
+    enabled: false
+    # DRS hosts tasks may name, e.g. ["drs.example.org"]. Empty, with
+    # enabled: true, allows any host.
+    allowedHosts: []
+    # Secret in the TaskPod namespace with key DRS_BEARER_TOKEN. TIF sends it
+    # as a bearer token to DRS servers, and never to the data URL. Executors
+    # don't get it. Empty sends no token.
+    existingSecret: ""
+
   # Requests and limits of the poiesis-owned TaskPod containers. Needed when
   # the TaskPod namespace has a ResourceQuota on cpu or memory and no
   # LimitRange: Kubernetes then rejects Pods with containers that set none.

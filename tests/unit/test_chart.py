@@ -346,3 +346,39 @@ def test_unusable_storage_values_fail_the_install(
     result = helm(*args)
     assert result.returncode != 0
     assert error in result.stderr
+
+
+def ftp_drs_config(monkeypatch: pytest.MonkeyPatch, *sets: str) -> Any:
+    """The RuntimeConfig the API builds from the rendered FTP and DRS settings."""
+    configmap = next(d for d in render(LINT, sets=sets) if d["kind"] == "ConfigMap")[
+        "data"
+    ]
+    for name, value in configmap.items():
+        if name.startswith(("POIESIS_FTP_", "POIESIS_DRS_", "POIESIS_TASKPOD_DRS_")):
+            monkeypatch.setenv(name, value)
+    return Settings(auth=AuthSettings(enabled=False)).runtime_config()
+
+
+def test_ftp_on_and_drs_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Defaults: FTP on, DRS off, no DRS token."""
+    config = ftp_drs_config(monkeypatch)
+    assert config.ftp_enabled
+    assert not config.drs_enabled
+    assert config.drs_secret is None
+
+
+def test_ftp_and_drs_values_reach_the_runtime_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`taskpods.ftp` and `taskpods.drs` values reach the RuntimeConfig."""
+    config = ftp_drs_config(
+        monkeypatch,
+        "taskpods.ftp.enabled=false",
+        "taskpods.drs.enabled=true",
+        "taskpods.drs.allowedHosts={drs.example.org,Other.org}",
+        "taskpods.drs.existingSecret=poiesis-drs",
+    )
+    assert not config.ftp_enabled
+    assert config.drs_enabled
+    assert config.drs_allowed_hosts == ("drs.example.org", "other.org")
+    assert config.drs_secret == "poiesis-drs"
