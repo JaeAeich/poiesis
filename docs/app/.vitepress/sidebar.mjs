@@ -25,6 +25,7 @@ export default [
     items: [
       { text: "Workflow engines", link: "/docs/guides/workflow-engines" },
       { text: "Keycloak", link: "/docs/guides/keycloak" },
+      { text: "OIDC federations", link: "/docs/guides/oidc-federations" },
       { text: "AWS (EKS)", link: "/docs/guides/aws" },
       { text: "Google Cloud (GKE)", link: "/docs/guides/gcp" },
       { text: "Azure (AKS)", link: "/docs/guides/azure" },
