@@ -119,6 +119,7 @@ def pod_security_context(config: RuntimeConfig) -> V1PodSecurityContext | None:
 
     Raises:
         ValueError: A key that ``V1PodSecurityContext`` doesn't have.
+        TypeError: A value of the wrong JSON type.
     """
     merged = _merged(
         _POD_PROFILES.get(config.executor_security_enforce, {}),
@@ -135,6 +136,7 @@ def executor_security_context(config: RuntimeConfig) -> V1SecurityContext | None
 
     Raises:
         ValueError: A key that ``V1SecurityContext`` doesn't have.
+        TypeError: A value of the wrong JSON type.
     """
     merged = _merged(
         _EXECUTOR_PROFILES.get(config.executor_security_enforce, {}),

@@ -172,12 +172,14 @@ What that means for task images:
   `taskpods.executorSecurityContext` does the same for the executor
   containers. Objects merge with the profile's key by key (e.g.
   `{capabilities: {add: [NET_BIND_SERVICE]}}` keeps `drop: [ALL]`);
-  other values replace the profile's. Unknown keys and wrong value
-  types stop the API at startup.
+  other values replace the profile's, and `null` removes a profile
+  key. Unknown keys and wrong value types stop the API at startup;
+  whether the values admit the Pod (e.g. `runAsUser: 0` next to the
+  profile's `runAsNonRoot: true`) shows only when a task starts.
 
 `restricted` executors need `podSecurityEnforce` `restricted` or
 `baseline`: `trec`, `tif`, `tof` and `ack` must drop their capabilities
-themselves, so with `off` the API refuses to start.
+themselves, so with `off` the chart and the API refuse it.
 
 `baseline` only sets `allowPrivilegeEscalation: false`; executors keep
 their user and capabilities, so root images still work. Namespaces that

@@ -98,6 +98,9 @@ data:
   # ---- TaskPod executor security ------------------------------------------
   # Profile of the executors and the Pod-level securityContext; the operator's
   # keys over each as JSON objects (empty ones are omitted).
+  {{- if and (eq .Values.taskpods.executorSecurityEnforce "restricted") (eq .Values.podSecurityEnforce "off") }}
+  {{- fail "taskpods.executorSecurityEnforce restricted needs podSecurityEnforce restricted or baseline: trec, tif, tof and ack must drop their own capabilities" }}
+  {{- end }}
   POIESIS_EXECUTOR_SECURITY_ENFORCE: {{ .Values.taskpods.executorSecurityEnforce | quote }}
   {{- with .Values.taskpods.podSecurityContext }}
   POIESIS_TASKPOD_POD_SECURITY_CONTEXT: {{ toJson . | quote }}

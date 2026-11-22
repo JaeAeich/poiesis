@@ -284,6 +284,23 @@ def test_schema_refuses_unknown_executor_profile() -> None:
     assert "executorSecurityEnforce" in result.stdout + result.stderr
 
 
+def test_restricted_executors_with_unrestricted_poiesis_fail_the_install() -> None:
+    """The API would refuse to start: `helm template` fails first, with the reason."""
+    result = helm(
+        "template",
+        "t",
+        str(CHART),
+        "-f",
+        LINT,
+        "--set",
+        "taskpods.executorSecurityEnforce=restricted",
+        "--set",
+        "podSecurityEnforce=off",
+    )
+    assert result.returncode != 0
+    assert "needs podSecurityEnforce restricted or baseline" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("sets", "expected"),
     [((), "json"), (("logging.format=text",), "text"), (("logging.format=",), None)],
