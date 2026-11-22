@@ -137,6 +137,52 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
   `keyMinting.clients` limited to the client people log in with and a
   `maxTtl` you accept as the [deprovisioning lag](../concepts/api-keys.md#deprovisioning-lag).
 
+## Restricted namespaces
+
+A namespace that enforces Pod Security `restricted`
+(`pod-security.kubernetes.io/enforce: restricted`) refuses a TaskPod
+whose executors may run as root, keep their capabilities or escalate
+privileges, so no task starts:
+
+```text
+pods "…" is forbidden: violates PodSecurity "restricted:latest": allowPrivilegeEscalation != false (container "exec-0" …
+```
+
+Set the executor profile to `restricted` there:
+
+```yaml
+taskpods:
+  executorSecurityEnforce: restricted
+```
+
+Executors then get `allowPrivilegeEscalation: false`, `capabilities:
+{drop: [ALL]}`, `runAsNonRoot: true` and seccomp `RuntimeDefault`, and
+the Pod `runAsUser`, `runAsGroup` and `fsGroup` 65532 (the Poiesis
+image's user) with `fsGroupChangePolicy: OnRootMismatch`. Every
+container of the task runs as uid 65532 and shares the task volume.
+What that means for task images:
+
+- Images that need root at run time (package installs, `chown`,
+  binding ports below 1024) fail.
+- An image's own `USER` is replaced by 65532; `HOME` may point to a
+  directory that user can't write. Tasks that need a writable home set
+  `HOME` in the executor's `env`, e.g. to a path on the task volume.
+- For another fixed user, set `taskpods.podSecurityContext`, e.g.
+  `{runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}`; its keys replace
+  the profile's. `taskpods.executorSecurityContext` does the same for
+  the executor containers.
+
+`baseline` only drops capabilities and privilege escalation; namespaces
+that enforce Pod Security `baseline` admit TaskPods with any of the
+three profiles. On OpenShift keep `off`: its SecurityContextConstraints
+assign users and seccomp profiles and may refuse fixed ones.
+
+A namespace with a `ResourceQuota` on `limits.cpu` or `limits.memory`
+and no `LimitRange` also needs limits on every container: set
+`taskpods.resources.defaultCpuCores` and `defaultRamGb` for tasks that
+ask for none (the defaults of `taskpods.systemResources` cover `trec`,
+`tif`, `tof` and `ack`).
+
 ## Authorization
 
 - Keep `authz.adminRead` off unless operators may see users' task
@@ -150,8 +196,9 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 
 - Serve Poiesis over TLS only; API keys are bearer credentials.
 - `podSecurityEnforce: restricted` (the default) for Poiesis-owned
-  containers. Executors run user images and are exempt; constrain them
-  with the namespace's PodSecurity admission level.
+  containers. Executors run user images and follow
+  `taskpods.executorSecurityEnforce` (default `off`); see
+  [Restricted namespaces](#restricted-namespaces).
 - `networkPolicy.enabled`, and restrict egress from the task
   namespace: `tof` and executors can reach whatever host a URL names.
   The policies cover the API and TCtl. They allow DNS, TCP 443 and
