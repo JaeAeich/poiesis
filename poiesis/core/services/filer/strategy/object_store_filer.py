@@ -68,6 +68,7 @@ from poiesis.core.services.filer.strategy.filer_strategy import (
     OutputFilerStrategy,
 )
 from poiesis.core.services.filer.strategy.gcs_identity import GcsWorkloadIdentity
+from poiesis.errors import PoiesisError
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
@@ -104,7 +105,7 @@ _CLIENT: ClientConfig = {
 _GLOB_CHARS = "*?[{"
 
 
-class ObjectStoreError(OSError):
+class ObjectStoreError(PoiesisError, OSError):
     """A request to an object store failed."""
 
 

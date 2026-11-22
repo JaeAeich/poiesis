@@ -59,6 +59,7 @@ from poiesis.api.exceptions import (
     ServiceUnavailableError,
     UnauthorizedError,
 )
+from poiesis.errors import PoiesisError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -114,11 +115,11 @@ def _unavailable() -> ServiceUnavailableError:
     )
 
 
-class IssuerConfigError(RuntimeError):
+class IssuerConfigError(PoiesisError, RuntimeError):
     """The issuer's answers show a misconfiguration; retrying won't help."""
 
 
-class IssuerUnavailableError(Exception):
+class IssuerUnavailableError(PoiesisError):
     """The issuer can't be reached right now (transport, timeout, 5xx)."""
 
 

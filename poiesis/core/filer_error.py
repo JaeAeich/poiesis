@@ -26,6 +26,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from poiesis.core.ignore_error import TERMINATION_MESSAGE_PATH
+from poiesis.errors import PoiesisError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -47,7 +48,7 @@ _QUERY_RE = re.compile(rf"\?{_QUERY_CHAR}*={_QUERY_CHAR}*")
 _USERINFO_RE = re.compile(r"(?<=://)[^/\s'\"<>@]+@")
 
 
-class UserError(Exception):
+class UserError(PoiesisError):
     """Marks a filer failure that is the user's, not the system's."""
 
 

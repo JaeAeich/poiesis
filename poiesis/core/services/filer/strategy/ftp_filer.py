@@ -40,6 +40,7 @@ from poiesis.core.services.filer.strategy.filer_strategy import (
     OutputFilerStrategy,
     redact_url,
 )
+from poiesis.errors import PoiesisError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -59,7 +60,7 @@ def ftp_enabled() -> bool:
     return os.environ.get(FTP_ENABLED_ENV, "").strip().lower() not in _OFF
 
 
-class FtpError(Exception):
+class FtpError(PoiesisError):
     """The FTP server refused a login or a command for good (a 5xx reply)."""
 
 

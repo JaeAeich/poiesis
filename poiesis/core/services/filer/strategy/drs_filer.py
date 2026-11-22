@@ -48,6 +48,7 @@ from poiesis.core.services.filer.strategy.http_filer import (
     _retry,
 )
 from poiesis.core.services.filer.strategy.object_store_filer import is_served
+from poiesis.errors import PoiesisError
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ _FTP = frozenset({"ftp", "ftps"})
 _ON = frozenset({"1", "true", "yes", "on"})
 
 
-class DrsError(Exception):
+class DrsError(PoiesisError):
     """A DRS object that can't be resolved to a URL this deployment can stage."""
 
 
