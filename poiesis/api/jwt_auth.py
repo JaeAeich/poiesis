@@ -159,11 +159,6 @@ class IssuerValidator:
         """Whether a key set is loaded, so tokens can be validated."""
         return self._keys is not None
 
-    @property
-    def userinfo_enabled(self) -> bool:
-        """Whether principals carry the issuer's userinfo response."""
-        return self._userinfo_uri is not None
-
     def _http(self) -> httpx.AsyncClient:
         """Return the validator's HTTP client, creating it on first use."""
         if self._client is None:

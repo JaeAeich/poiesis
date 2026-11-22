@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from kubernetes.client import ApiClient, V1Container
+from kubernetes.client import ApiClient
 from pydantic import ValidationError
 
 from poiesis.api.app import create_app

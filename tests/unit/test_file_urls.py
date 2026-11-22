@@ -93,14 +93,14 @@ def test_tif_refuses_a_file_url_when_the_scheme_is_off(
     monkeypatch.delenv(FILE_URL_ROOTS_ENV, raising=False)
     task_input = TesInput(url=f"file://{secret}", path="/in/environ")
     with pytest.raises(ValueError, match="Unsupported"):
-        asyncio.run(Tif("task", [task_input]).file())
+        asyncio.run(Tif("task", [task_input]).transfer())
     assert not (volume / "in" / "environ").exists()
 
 
 def test_tif_stages_from_an_allowed_root(volume: Path, root: Path) -> None:
     (root / "genome.fa").write_text(">chr1")
     task_input = TesInput(url=f"file://{root}/genome.fa", path="/in/genome.fa")
-    asyncio.run(Tif("task", [task_input]).file())
+    asyncio.run(Tif("task", [task_input]).transfer())
     assert (volume / "in" / "genome.fa").read_text() == ">chr1"
 
 
@@ -137,7 +137,7 @@ def test_tof_refuses_outputs_that_link_outside_the_volume(
         type="DIRECTORY" if layout in ("dir", "nested") else "FILE",
     )
     with pytest.raises(PermissionError, match="outside the task volume"):
-        asyncio.run(Tof("task", [output]).file())
+        asyncio.run(Tof("task", [output]).transfer())
     assert not list(root.rglob("*"))
 
 
@@ -147,7 +147,7 @@ def test_tof_uploads_links_that_stay_on_the_volume(volume: Path, root: Path) -> 
     (out / "real.txt").write_text("data")
     (out / "alias.txt").symlink_to(out / "real.txt")
     output = TesOutput(url=f"file://{root}/dest", path="/work/out", type="DIRECTORY")
-    asyncio.run(Tof("task", [output]).file())
+    asyncio.run(Tof("task", [output]).transfer())
     assert (root / "dest" / "alias.txt").read_text() == "data"
 
 

@@ -474,7 +474,9 @@ def _brief(error: BaseException) -> str:
 class ObjectStoreFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
     """Inputs and outputs on S3, Google Cloud Storage or Azure Blob."""
 
-    def __init__(self, payload: TesInput | TesOutput, store: ObjectStore | None = None):
+    def __init__(
+        self, payload: TesInput | TesOutput, store: ObjectStore | None = None
+    ) -> None:
         """Initialise for `payload`; `store` defaults to `make_store`."""
         super().__init__(payload)
         if payload.url is None:

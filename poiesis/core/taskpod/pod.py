@@ -26,7 +26,7 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 from poiesis.core.taskpod.config import ZONE_LABEL
 
 if TYPE_CHECKING:
-    from poiesis.api.tes.models import TesExecutor, TesTask
+    from poiesis.api.tes.models import TesTask
     from poiesis.core.taskpod.config import (
         NodePlacement,
         RuntimeConfig,
@@ -69,7 +69,7 @@ def pod_settings(task: TesTask, config: RuntimeConfig) -> dict[str, Any]:
 
 
 def executor_resources(
-    executor: TesExecutor, task: TesTask, config: RuntimeConfig
+    task: TesTask, config: RuntimeConfig
 ) -> V1ResourceRequirements | None:
     """Resource requests and limits of an executor container.
 

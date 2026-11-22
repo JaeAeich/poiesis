@@ -413,7 +413,6 @@ dependencies = [
     { name = "prometheus-client" },
     { name = "pydantic" },
     { name = "requests" },
-    { name = "tomli" },
     { name = "urllib3" },
     { name = "uvicorn" },
 ]
@@ -449,7 +448,6 @@ requires-dist = [
     { name = "prometheus-client" },
     { name = "pydantic" },
     { name = "requests" },
-    { name = "tomli" },
     { name = "urllib3" },
     { name = "uvicorn" },
 ]

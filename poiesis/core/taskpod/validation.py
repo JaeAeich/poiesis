@@ -75,7 +75,7 @@ def reject_refused_url(where: str, url: str | None) -> None:
     FTP turned off, DRS turned off, a DRS host not allowed, or a DRS URI
     that isn't hostname-based (`filer_strategy_factory.refusal`).
     """
-    if reason := _filer.refusal(url):
+    if reason := _filer.scheme_refusal(url):
         raise ValueError(f"{where} {reason}")
 
 

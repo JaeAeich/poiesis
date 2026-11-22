@@ -54,7 +54,7 @@ def _logs(
 def run_tof(dest: Path, path: str = GLOB) -> None:
     """Upload one output to `dest`, as TOF does."""
     output = TesOutput(url=f"file://{dest}", path=path, path_prefix="/outputs/")
-    asyncio.run(Tof("task", [output]).file())
+    asyncio.run(Tof("task", [output]).transfer())
 
 
 def uploaded(dest: Path) -> list[str]:

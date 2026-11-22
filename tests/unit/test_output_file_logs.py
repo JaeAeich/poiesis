@@ -155,7 +155,7 @@ def test_tof_records_every_output_once_uploaded(pvc, puts):
         TesOutput(url="https://h/a", path="/out/a.txt"),
         TesOutput(url="https://h/d", path="/out/dir", type=TesFileType.DIRECTORY),
     ]
-    asyncio.run(Tof("task", outputs, record).file())
+    asyncio.run(Tof("task", outputs, record).transfer())
     (files,) = stored
     assert sorted(f.path for f in files) == [
         "/out/a.txt",
@@ -172,5 +172,5 @@ def test_failure_to_record_fails_tof(pvc, puts):
 
     tof = Tof("task", [TesOutput(url="https://h/a", path="/out/a.txt")], record)
     with pytest.raises(ConnectionRefusedError) as error:
-        asyncio.run(tof.file())
+        asyncio.run(tof.transfer())
     assert "recording the output file logs in the database" in (error.value.__notes__)

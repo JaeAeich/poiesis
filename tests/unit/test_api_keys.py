@@ -992,7 +992,7 @@ def gated(
     principal = principal_for(table, key, configured)
     assert isinstance(principal, Principal)
     try:
-        Authz(AuthzSettings(), configured).gate(principal)
+        Authz(AuthzSettings(), configured).enforce_issuer_rules(principal)
     except ForbiddenError:
         return False
     return True

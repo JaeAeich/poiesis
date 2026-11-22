@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
     """Local-filesystem filer strategy — handles both inputs and outputs."""
 
-    def __init__(self, payload: TesInput | TesOutput):
+    def __init__(self, payload: TesInput | TesOutput) -> None:
         """Initialize the local filer strategy.
 
         Args:
@@ -28,7 +28,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         self.input = self.payload if isinstance(self.payload, TesInput) else None
         self.output = self.payload if isinstance(self.payload, TesOutput) else None
 
-    async def download_input_file(self, container_path: str):
+    async def download_input_file(self, container_path: str) -> None:
         """Download file from storage and mount to PVC."""
         logger.info(f"Starting local file download to {container_path}")
         assert self.input
@@ -36,7 +36,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         source_path = resolve_file_url(self.input.url)
         self._copy_file(source_path, container_path)
 
-    async def download_input_directory(self, container_path: str):
+    async def download_input_directory(self, container_path: str) -> None:
         """Download input directory from a local path."""
         logger.info(f"Starting local directory download to {container_path}")
         assert self.input
@@ -44,7 +44,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         source_path = resolve_file_url(self.input.url)
         self._copy_directory(source_path, container_path)
 
-    async def upload_output_file(self, container_path: str):
+    async def upload_output_file(self, container_path: str) -> None:
         """Dummy upload output (local)."""
         logger.info(f"Starting local file upload from {container_path}")
         assert self.output
@@ -53,7 +53,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         self._copy_file(container_path, destination_path)
         self._record_upload(container_path, Path(destination_path).as_uri())
 
-    async def upload_output_directory(self, container_path: str):
+    async def upload_output_directory(self, container_path: str) -> None:
         """Upload output directory to a local path."""
         logger.info(f"Starting local directory upload from {container_path}")
         assert self.output
@@ -62,7 +62,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         self._copy_directory(container_path, destination_path)
         self._record_directory(container_path, destination_path)
 
-    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]):
+    async def upload_glob(self, glob_files: list[tuple[str, str, bool]]) -> None:
         """Upload files and directories using wildcard pattern.
 
         Args:
@@ -102,7 +102,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
                 target = os.path.join(dst, os.path.relpath(path, src))
                 self._record_upload(path, Path(target).as_uri())
 
-    def _copy_file(self, src: str, dst: str):
+    def _copy_file(self, src: str, dst: str) -> None:
         """Copy a file from src to dst with validation."""
         if not os.path.exists(src):
             logger.error(f"File {src} not found")
@@ -113,7 +113,7 @@ class LocalFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
         shutil.copy2(src, dst)
         logger.info(f"Copied file from {src} to {dst}")
 
-    def _copy_directory(self, src: str, dst: str):
+    def _copy_directory(self, src: str, dst: str) -> None:
         """Copy a directory from src to dst with validation."""
         if not os.path.exists(src):
             logger.error(f"Directory {src} not found")

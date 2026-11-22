@@ -1,51 +1,25 @@
-"""Poiesis CLI main entry point."""
+"""The ``poiesis`` command: one subcommand per Poiesis process."""
 
 import click
 
-from poiesis.cli.commands.poiesis.ack import AckCommand
-from poiesis.cli.commands.poiesis.api import ApiCommand
-from poiesis.cli.commands.poiesis.tctl import TctlCommand
-from poiesis.cli.commands.poiesis.tif import TifCommand
-from poiesis.cli.commands.poiesis.tof import TofCommand
-from poiesis.cli.commands.poiesis.trec import TrecCommand
-from poiesis.cli.utils import get_basic_info, get_version
+from poiesis.cli.ack import ack
+from poiesis.cli.api import api
+from poiesis.cli.tctl import tctl
+from poiesis.cli.tif import tif
+from poiesis.cli.tof import tof
+from poiesis.cli.trec import trec
 
 
 @click.group(help="Poiesis is a GA4GH TES compliant task execution service")
-@click.version_option(get_version(), prog_name="Poiesis")
-def cli():
+@click.version_option(package_name="poiesis", prog_name="Poiesis")
+def cli() -> None:
     """Poiesis CLI main entry point."""
 
 
-@cli.command(name="info", help="Display information about all Poiesis services")
-def info():
-    """Display information about all Poiesis services."""
-    info_data = get_basic_info()
-    info_data.update(
-        {
-            "description": "GA4GH TES compliant task execution service",
-        }
-    )
-
-    info_data = dict(
-        sorted({k.replace("_", " ").title(): v for k, v in info_data.items()}.items())
-    )
-
-    title = f"Poiesis v{get_version()}"
-    click.echo(title)
-    click.echo("-" * len(title))
-
-    for key, value in info_data.items():
-        click.echo(f"{key}: {value}")
+for command in (api, tctl, trec, tif, tof, ack):
+    cli.add_command(command)
 
 
-def main():
-    """Main entry point for the CLI."""
-    ApiCommand.register(cli)
-    TifCommand.register(cli)
-    TofCommand.register(cli)
-    TrecCommand.register(cli)
-    TctlCommand.register(cli)
-    AckCommand.register(cli)
-
+def main() -> None:
+    """Entry point of the ``poiesis`` console script."""
     cli()

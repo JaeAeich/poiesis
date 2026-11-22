@@ -46,6 +46,7 @@ from poiesis.core.pod_status import (
     filer_failure_log,
     is_lifecycle_stop,
     job_deadline_terminal,
+    parse_timestamp,
     pod_terminated_terminal,
 )
 
@@ -435,7 +436,7 @@ def terminating_for(pod: Mapping[str, Any], now: datetime) -> float | None:
     forced delete, removes it. None when the Pod isn't being deleted.
     """
     metadata = pod.get("metadata") or {}
-    deadline = parse_kubelet_ts(
+    deadline = parse_timestamp(
         metadata.get("deletion_timestamp") or metadata.get("deletionTimestamp")
     )
     if deadline is None:
@@ -443,18 +444,6 @@ def terminating_for(pod: Mapping[str, Any], now: datetime) -> float | None:
     if deadline.tzinfo is None:
         deadline = deadline.replace(tzinfo=UTC)
     return (now - deadline).total_seconds()
-
-
-def parse_kubelet_ts(value: Any) -> datetime | None:
-    """Best-effort parse of a kubelet ISO-8601 timestamp."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
 
 
 def pending_timeout(
@@ -473,7 +462,7 @@ def pending_timeout(
     "unschedulable timeout".
     """
     status = pod.get("status") or {}
-    started = parse_kubelet_ts(status.get("startTime") or status.get("start_time"))
+    started = parse_timestamp(status.get("startTime") or status.get("start_time"))
     if started is not None:
         if started.tzinfo is None:
             started = started.replace(tzinfo=UTC)

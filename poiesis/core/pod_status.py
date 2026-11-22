@@ -485,9 +485,11 @@ def is_lifecycle_stop(
     """
     if name not in (TREC_NAME, ACK_NAME):
         return False
-    ended = _timestamp(terminated.get("finishedAt") or terminated.get("finished_at"))
+    ended = parse_timestamp(
+        terminated.get("finishedAt") or terminated.get("finished_at")
+    )
     work_ended = [
-        _timestamp(t.get("finishedAt") or t.get("finished_at"))
+        parse_timestamp(t.get("finishedAt") or t.get("finished_at"))
         for cs in _iter_container_statuses(pod_status)
         if classify_container(cs.get("name") or "")[0]
         in (ContainerKind.TIF, ContainerKind.EXECUTOR, ContainerKind.TOF)
@@ -498,8 +500,11 @@ def is_lifecycle_stop(
     return ended >= max(w for w in work_ended if w is not None)
 
 
-def _timestamp(value: object) -> datetime | None:
-    """A kubelet timestamp: a datetime (``to_dict()``) or ISO-8601 string."""
+def parse_timestamp(value: object) -> datetime | None:
+    """A Kubernetes timestamp: a datetime (``to_dict()``) or ISO-8601 string.
+
+    None for a missing or unreadable value.
+    """
     if isinstance(value, datetime):
         return value
     if not value:
@@ -513,7 +518,7 @@ def _timestamp(value: object) -> datetime | None:
 def created_at(obj: Mapping[str, Any]) -> datetime | None:
     """`metadata.creationTimestamp` of a Pod or Job, made timezone-aware."""
     metadata = obj.get("metadata") or {}
-    created = _timestamp(
+    created = parse_timestamp(
         metadata.get("creationTimestamp") or metadata.get("creation_timestamp")
     )
     if created is not None and created.tzinfo is None:

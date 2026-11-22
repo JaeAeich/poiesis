@@ -27,7 +27,7 @@ def pvc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_content_wins_over_url(pvc):
     """The content is staged; the URL, which would fail, isn't fetched."""
     tes_input = TesInput(path="/in/a.txt", url="ftp://nowhere/x", content="hello")
-    asyncio.run(Tif("task", [tes_input]).file())
+    asyncio.run(Tif("task", [tes_input]).transfer())
     assert (pvc / "in" / "a.txt").read_text() == "hello"
 
 
@@ -37,7 +37,7 @@ def test_empty_content_uses_the_url(pvc, tmp_path, monkeypatch):
     source = tmp_path / "src.txt"
     source.write_text("from url")
     tes_input = TesInput(path="/in/a.txt", url=f"file://{source}", content="")
-    asyncio.run(Tif("task", [tes_input]).file())
+    asyncio.run(Tif("task", [tes_input]).transfer())
     assert (pvc / "in" / "a.txt").read_text() == "from url"
 
 

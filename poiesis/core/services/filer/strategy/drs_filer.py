@@ -122,7 +122,7 @@ def stageable_schemes() -> list[str]:
 class DrsFilerStrategy(InputFilerStrategy):
     """Input strategy for `drs://` URIs: resolve, then stage with another strategy."""
 
-    def __init__(self, payload: TesInput):
+    def __init__(self, payload: TesInput) -> None:
         """Initialise with the TES input."""
         super().__init__(payload)
         assert isinstance(payload, TesInput)

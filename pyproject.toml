@@ -27,7 +27,6 @@ dependencies = [
   "prometheus-client",
   "pydantic",
   "requests",
-  "tomli",
   "urllib3",
   "uvicorn",
 ]
@@ -82,20 +81,11 @@ quote-style = "double"
 
 [tool.ruff.lint]
 ignore = [
-  "A001",
   "A002", # TES spec uses `type`, `id`, `input` — builtin shadows are intentional
   # Annotation rules — aspirational; revisit after v2 lands
   "ANN001",
-  "ANN002",
-  "ANN003",
-  "ANN201",
-  "ANN202",
-  "ANN204",
-  "ANN205",
-  "ANN206",
   "ANN401", # Any in annotations — sometimes intentional
-  "ARG001",
-  "ARG002", # unused args — connexion handler signatures (FastAPI rewrite)
+  "ARG001", # unused args — Starlette handler signatures
   "ASYNC", # asyncio patterns — revisit during TRec/API rewrites
   "COM812", # conflicts with formatter
   # Style preferences we don't share
@@ -106,29 +96,27 @@ ignore = [
   "E501", # line length is enforced by ruff-format
   "EM101",
   "EM102", # exception literal/f-string — same
-  # TODO / fixme metadata rules — pedantic for a small team
-  "FIX002",
   # Cosmetic / opinionated rules that don't pay for themselves
   "G004", # f-strings in logging — readability > theoretical perf
   "ISC001", # conflicts with formatter
   # Naming exceptions driven by external schemas
   "N802",
   "N815", # TES spec field names (camelCase from OpenAPI)
-  "PGH003", # blanket type: ignore — kubernetes-stubs gaps drive these
   # Deferred to the v2 slices that rewrite the affected modules.
   # Drop these once the filer-strategy / K8s-adapter / API rewrites land.
   "PTH", # os.path → pathlib — bulk migration in filer-strategy rewrite
   # CLI / script ergonomics
   "S101", # asserts — used as invariants in dev code
-  "SLF001", # private member access — kubernetes client internals
-  "TD002",
-  "TD003",
   "TRY003", # long messages outside exception class — bulk noise
   "TRY300",
   "TRY301", # try/except restructuring — incremental in v2
   "TRY400", # logger.exception vs logger.error — covered by review
 ]
 select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+# The Gunicorn subclasses follow Gunicorn's untyped signatures.
+"poiesis/api/asgi.py" = ["ANN", "ARG002"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

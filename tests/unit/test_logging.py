@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from poiesis.api import access_log, audit
 from poiesis.api.access_log import AccessLogMiddleware
 from poiesis.api.settings import Settings
-from poiesis.cli.commands.poiesis.base import configure_logging
+from poiesis.cli.env import configure_logging
 from poiesis.core import logging_config
 from poiesis.core.logging_config import (
     LOG_FORMAT_ENV,

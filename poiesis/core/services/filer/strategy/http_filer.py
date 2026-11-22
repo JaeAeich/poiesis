@@ -69,7 +69,7 @@ _MIN_SECRET_LENGTH = 8
 class HttpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
     """Filer strategy for HTTP and HTTPS inputs and outputs."""
 
-    def __init__(self, payload: TesInput | TesOutput):
+    def __init__(self, payload: TesInput | TesOutput) -> None:
         """Initialise with the TES input or output."""
         super().__init__(payload)
         self.input = self.payload if isinstance(self.payload, TesInput) else None

@@ -29,7 +29,7 @@ from poiesis.api import audit, metrics, resource_metadata
 from poiesis.api.access_log import AccessLogMiddleware
 from poiesis.api.apikey_auth import ApiKeyAuthenticator
 from poiesis.api.authz import Authz
-from poiesis.api.constants import get_poiesis_api_constants
+from poiesis.api.constants import BASE_PATH, TES_VERSION
 from poiesis.api.exceptions import (
     APIError,
     UnauthorizedError,
@@ -50,8 +50,6 @@ from poiesis.db.pool import PoolTimeoutError
 from poiesis.k8s import K8sClient, load_config
 
 logger = logging.getLogger(__name__)
-
-api_constants = get_poiesis_api_constants()
 
 
 @asynccontextmanager
@@ -202,7 +200,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="Poiesis",
         description="GA4GH TES (Task Execution Service) on Kubernetes",
-        version=api_constants.TES_VERSION,
+        version=TES_VERSION,
         lifespan=lifespan,
         swagger_ui_init_oauth=_swagger_ui_oauth(settings.auth),
     )
@@ -223,7 +221,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     security = _docs_security(settings.auth)
     # Mount under the TES-canonical prefix so direct callers and the
     # GA4GH compliance suite both hit `<host>/ga4gh/tes/v1/tasks`.
-    prefix = f"/{api_constants.BASE_PATH}"
+    prefix = f"/{BASE_PATH}"
     app.include_router(tasks_routes.router, prefix=prefix, dependencies=security)
     app.include_router(service_info_routes.router, prefix=prefix)
     if settings.auth.enabled and settings.auth.api_keys.enabled:

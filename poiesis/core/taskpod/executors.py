@@ -45,7 +45,7 @@ def build_executor(
         env=env or None,
         volume_mounts=executor_mounts(config, path_mounts),
         stdin=False,
-        resources=executor_resources(executor, task, config),
+        resources=executor_resources(task, config),
     )
     if executor.ignore_error:
         container.termination_message_path = ignore_error.TERMINATION_MESSAGE_PATH

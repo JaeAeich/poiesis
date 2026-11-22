@@ -47,7 +47,7 @@ class Tif(Filer):
         """Name of the filer."""
         return self._name
 
-    async def file(self) -> None:
+    async def transfer(self) -> None:
         """Filing logic — download inputs, then create the task's directories."""
         for tes_input in self.inputs:
             url = input_url(tes_input)

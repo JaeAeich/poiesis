@@ -66,7 +66,7 @@ class FtpError(Exception):
 class FtpFilerStrategy(InputFilerStrategy, OutputFilerStrategy):
     """Filer strategy for FTP and FTPS inputs and outputs."""
 
-    def __init__(self, payload: TesInput | TesOutput):
+    def __init__(self, payload: TesInput | TesOutput) -> None:
         """Initialise with the TES input or output."""
         super().__init__(payload)
         self.input = self.payload if isinstance(self.payload, TesInput) else None

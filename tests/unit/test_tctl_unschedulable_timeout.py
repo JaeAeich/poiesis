@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from poiesis.cli.commands.poiesis import tctl as tctl_cli
+from poiesis.cli import tctl as tctl_cli
 
 ENV = "POIESIS_TCTL_UNSCHEDULABLE_TIMEOUT_SECONDS"
 
@@ -35,7 +35,7 @@ def seen(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 def invoke() -> Any:
-    return CliRunner().invoke(tctl_cli.TctlCommand().create_command(), ["run"])
+    return CliRunner().invoke(tctl_cli.tctl, ["run"])
 
 
 @pytest.mark.parametrize("value", [None, ""])

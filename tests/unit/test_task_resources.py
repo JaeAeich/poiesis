@@ -24,7 +24,7 @@ from poiesis.api.settings import (
     Settings,
 )
 from poiesis.api.tes.models import TesExecutor, TesResources, TesState, TesTask
-from poiesis.core import tctl
+from poiesis.core import reconcile
 from poiesis.core.pod_status import extract_terminal_reason, pod_terminated_terminal
 from poiesis.core.taskpod import RuntimeConfig, build_taskpod_job
 from poiesis.core.taskpod.config import NodePlacement
@@ -202,7 +202,7 @@ def test_oom_killed_executor_is_an_executor_error(
     state, reason = pod_terminated_terminal(extract_terminal_reason(pod))
 
     assert (state, reason) == (TesState.EXECUTOR_ERROR, "OOMKilled")
-    assert tctl._terminal_system_logs(pod, state) == [
+    assert reconcile.terminal_system_logs(pod, state) == [
         "container exec-0 OOMKilled: the executor exceeded its memory limit of "
         "8Gi (resources.ram_gb)"
     ]
@@ -216,4 +216,4 @@ def test_oom_killed_system_container_is_a_system_error(name: str) -> None:
     state, reason = pod_terminated_terminal(extract_terminal_reason(pod))
 
     assert (state, reason) == (TesState.SYSTEM_ERROR, "SystemOOMKilled")
-    assert tctl._terminal_system_logs(pod, state) == [f"container {name} OOMKilled"]
+    assert reconcile.terminal_system_logs(pod, state) == [f"container {name} OOMKilled"]

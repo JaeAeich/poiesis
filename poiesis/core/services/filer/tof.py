@@ -51,7 +51,7 @@ class Tof(Filer):
         """Name of the filer."""
         return self._name
 
-    async def file(self) -> None:
+    async def transfer(self) -> None:
         """Filing logic — upload outputs, then record the files uploaded."""
         uploaded: list[TesOutputFileLog] = []
         for output in self.outputs:

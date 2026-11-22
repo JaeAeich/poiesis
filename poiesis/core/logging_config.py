@@ -23,12 +23,9 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TextIO
 
-from poiesis.constants import get_poiesis_constants
-
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-constant = get_poiesis_constants()
 
 #: Forces the log format: ``json`` or ``text``. Unset or empty: JSON
 #: unless stderr is a terminal.
@@ -187,7 +184,7 @@ def setup_logging(
         stream: Where lines go; defaults to stderr.
     """
     if level is None:
-        level = constant.LOG_LEVEL
+        level = os.environ.get("LOG_LEVEL", "INFO")
     stream = stream or sys.stderr
     if log_format is None:
         log_format = os.environ.get(LOG_FORMAT_ENV)

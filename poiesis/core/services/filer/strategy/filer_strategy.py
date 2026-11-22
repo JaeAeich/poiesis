@@ -61,7 +61,7 @@ class BaseFilerStrategy:
     subclasses.
     """
 
-    def __init__(self, payload: TesInput | TesOutput):
+    def __init__(self, payload: TesInput | TesOutput) -> None:
         """Initialise with the TES input or output the strategy will handle."""
         self.payload = payload
 
@@ -179,7 +179,7 @@ class OutputFilerStrategy(BaseFilerStrategy, ABC):
     `uploaded` is then the output's entries for `TesTaskLog.outputs`.
     """
 
-    def __init__(self, payload: TesInput | TesOutput):
+    def __init__(self, payload: TesInput | TesOutput) -> None:
         """Initialise with the TES output the strategy will upload."""
         super().__init__(payload)
         self.uploaded: list[TesOutputFileLog] = []

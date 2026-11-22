@@ -102,7 +102,7 @@ def _enabled() -> list[_SchemeEntry]:
     return [e for e in _SCHEMES.values() if on.get(e.name, True)]
 
 
-def refusal(uri: str | None) -> str | None:
+def scheme_refusal(uri: str | None) -> str | None:
     """Why this deployment refuses `uri` though its scheme is registered.
 
     None if it doesn't. For `ftp`/`ftps` turned off and for `drs` URIs;
@@ -124,7 +124,7 @@ def _lookup(uri: str | None) -> _SchemeEntry | None:
         assert uri is not None
         if not file_url_allowed(uri):
             return None
-    if entry is not None and refusal(uri):
+    if entry is not None and scheme_refusal(uri):
         return None
     return entry
 

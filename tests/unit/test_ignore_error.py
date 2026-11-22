@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from poiesis.api.tes.models import TesExecutor, TesState, TesTask
-from poiesis.core import ignore_error, tctl
+from poiesis.core import ignore_error, reconcile, tctl
 from poiesis.core.pod_status import (
     EventKind,
     TaskStateSnapshot,
@@ -234,7 +234,7 @@ def test_missing_shell_is_an_executor_error() -> None:
 
     reason = extract_terminal_reason(pod)
     state, _ = pod_terminated_terminal(reason)
-    (line,) = tctl._terminal_system_logs(pod, state)
+    (line,) = reconcile.terminal_system_logs(pod, state)
 
     assert (reason, state) == ("StartError", TesState.EXECUTOR_ERROR)
     assert "ignore_error" in line
@@ -266,7 +266,7 @@ def test_other_failures_keep_their_log(
     """The /bin/sh hint is only for wrapped executors that failed to start."""
     pod = failed_pod(executor, wrapped=wrapped)
 
-    assert tctl._terminal_system_logs(pod, TesState.EXECUTOR_ERROR) == [expected]
+    assert reconcile.terminal_system_logs(pod, TesState.EXECUTOR_ERROR) == [expected]
 
 
 def _tctl_backfill(core_v1: Any, pod: dict[str, Any]) -> None:

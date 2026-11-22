@@ -162,7 +162,7 @@ async def key_manager(
             raise ForbiddenError("managing API keys needs an OIDC token")
         if principal.actor is not None:
             raise ForbiddenError("delegated tokens can't manage keys")
-        authz.gate(principal)
+        authz.enforce_issuer_rules(principal)
     except ForbiddenError:
         audit.denied(request, principal)
         raise

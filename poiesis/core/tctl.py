@@ -72,7 +72,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import signal
 import socket
 import time
 import uuid
@@ -96,6 +95,7 @@ from poiesis.core import tctl_metrics as metrics
 from poiesis.core.executor_logs import read_executor_streams, streams_from_pod
 from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.logging_config import task_context
+from poiesis.core.pod_status import parse_timestamp
 from poiesis.core.reconcile import (
     Action,
     DeleteJob,
@@ -104,10 +104,7 @@ from poiesis.core.reconcile import (
     WriteTerminal,
     decide,
 )
-from poiesis.core.reconcile import parse_kubelet_ts as _parse_kubelet_ts
-from poiesis.core.reconcile import (  # noqa: F401 (still importable from here)
-    terminal_system_logs as _terminal_system_logs,
-)
+from poiesis.core.shutdown import stop_on_signals
 from poiesis.core.taskpod import job_name_for
 from poiesis.db import state as state_db
 
@@ -175,7 +172,7 @@ async def run(
     """
     lease_namespace = lease_namespace or namespace
     identity = identity or f"{socket.gethostname()}-{uuid.uuid4().hex[:8]}"
-    cancelled = _install_signal_handlers()
+    cancelled = stop_on_signals()
 
     coord_v1 = CoordinationV1Api()
     core_v1 = CoreV1Api()
@@ -189,7 +186,7 @@ async def run(
     )
     try:
         while not cancelled.is_set():
-            _beat(heartbeat)
+            _touch_heartbeat(heartbeat)
             started = time.monotonic()
             acquired = await _hold_lease(coord_v1, lease_namespace, identity)
             if not acquired:
@@ -217,7 +214,7 @@ async def run(
     return 0
 
 
-def _beat(heartbeat: Path | None) -> None:
+def _touch_heartbeat(heartbeat: Path | None) -> None:
     """Touch the heartbeat file: this loop is not hung.
 
     A failed touch is logged, not raised: the liveness probe then sees an
@@ -381,7 +378,7 @@ async def _reconcile_while_leader(  # noqa: PLR0913 (one pass's inputs and the L
             ):
                 gauges_at = started
                 await _refresh_task_gauges(pool)
-            _beat(heartbeat)
+            _touch_heartbeat(heartbeat)
             await _wait_or_cancel(cancelled, _RECONCILE_INTERVAL_SECONDS)
     finally:
         metrics.IS_LEADER.set(0)
@@ -763,7 +760,7 @@ def _event_time(event: Mapping[str, Any]) -> datetime:
         event.get("event_time") or event.get("eventTime"),
         metadata.get("creation_timestamp") or metadata.get("creationTimestamp"),
     ):
-        stamp = _parse_kubelet_ts(value)
+        stamp = parse_timestamp(value)
         if stamp is not None:
             return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
     return datetime.min.replace(tzinfo=UTC)
@@ -874,10 +871,10 @@ async def _read_executor_logs(
             _ExecutorLog(
                 ordinal=ordinal,
                 exit_code=int(exit_code),
-                start_time=_parse_kubelet_ts(
+                start_time=parse_timestamp(
                     terminated.get("started_at") or terminated.get("startedAt")
                 ),
-                end_time=_parse_kubelet_ts(
+                end_time=parse_timestamp(
                     terminated.get("finished_at") or terminated.get("finishedAt")
                 ),
                 stdout=stdout,
@@ -921,12 +918,3 @@ async def _wait_or_cancel(cancelled: asyncio.Event, seconds: float) -> None:
         await asyncio.wait_for(cancelled.wait(), timeout=seconds)
     except TimeoutError:
         return
-
-
-def _install_signal_handlers() -> asyncio.Event:
-    """Wire SIGTERM/SIGINT to set an asyncio Event the reconcile loop polls."""
-    cancelled = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, cancelled.set)
-    return cancelled

@@ -134,7 +134,7 @@ def pvc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def stage(uri: str, path: str = "/in/genome.fa") -> None:
-    asyncio.run(Tif("task", [TesInput(url=uri, path=path)]).file())
+    asyncio.run(Tif("task", [TesInput(url=uri, path=path)]).transfer())
 
 
 def test_access_id_is_followed_and_its_headers_go_with_the_data(

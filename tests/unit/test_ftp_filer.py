@@ -104,7 +104,7 @@ def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 
 
 def stage(url: str, path: str, kind: TesFileType = TesFileType.FILE) -> None:
-    asyncio.run(Tif("task", [TesInput(url=url, path=path, type=kind)]).file())
+    asyncio.run(Tif("task", [TesInput(url=url, path=path, type=kind)]).transfer())
 
 
 def test_anonymous_file_is_downloaded(server: Ftp, pvc: Path) -> None:
@@ -281,7 +281,7 @@ def upload(output: TesOutput) -> list[str]:
     async def record(files) -> None:
         uploaded.extend(f.url for f in files)
 
-    asyncio.run(Tof("task", [output], record).file())
+    asyncio.run(Tof("task", [output], record).transfer())
     return uploaded
 
 
