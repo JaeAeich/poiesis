@@ -22,6 +22,7 @@ spec:
       annotations:
         # Roll the API on configmap changes so env edits take effect.
         checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+        {{- with include "poiesis.metrics.podAnnotations" . }}{{- . | nindent 8 }}{{- end }}
         {{- with .Values.api.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
     spec:
       serviceAccountName: {{ include "poiesis.serviceAccountName" (dict "role" "api" "root" .) }}
@@ -68,6 +69,7 @@ spec:
             - name: http
               containerPort: 8000
               protocol: TCP
+            {{- with include "poiesis.metrics.containerPort" . }}{{- . | nindent 12 }}{{- end }}
           {{- if .Values.api.probes.startup.enabled }}
           startupProbe:
             httpGet: { path: /startupz, port: http }

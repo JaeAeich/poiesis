@@ -178,8 +178,21 @@ taskpods:
   extraVolumes: []
   extraVolumeMounts: []
 
+metrics:
+  port: 9100
+  scrapeAnnotations: true
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+    interval: 15s
+
 networkPolicy:
   enabled: true
+  metricsFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
   databaseEgress:
     port: 6432
     to:

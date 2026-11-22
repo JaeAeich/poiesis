@@ -29,6 +29,7 @@ export default [
       { text: "Google Cloud (GKE)", link: "/docs/guides/gcp" },
       { text: "Azure (AKS)", link: "/docs/guides/azure" },
       { text: "Production checklist", link: "/docs/guides/production" },
+      { text: "Monitoring", link: "/docs/guides/monitoring" },
       { text: "Testing", link: "/docs/guides/testing" },
     ],
   },

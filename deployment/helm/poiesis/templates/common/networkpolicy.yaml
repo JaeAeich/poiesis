@@ -24,6 +24,17 @@
 {{ toYaml . }}
 {{- end }}
 {{- end }}
+{{- /* Ingress to metrics.port, from metricsFrom; empty: from any address. */}}
+{{- define "poiesis.networkPolicy.metricsIngress" -}}
+{{- if .Values.metrics.enabled -}}
+- ports:
+    - protocol: TCP
+      port: {{ .Values.metrics.port | int }}
+  {{- with .Values.networkPolicy.metricsFrom }}
+  from: {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end -}}
+{{- end }}
 {{- if .Values.networkPolicy.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -53,6 +64,9 @@ spec:
       ports:
         - protocol: TCP
           port: 8000
+    {{- with include "poiesis.networkPolicy.metricsIngress" . }}
+    {{- . | nindent 4 }}
+    {{- end }}
   egress:
     {{- include "poiesis.networkPolicy.egress" . | nindent 4 }}
 ---
@@ -67,7 +81,13 @@ spec:
   podSelector:
     matchLabels:
       {{- include "poiesis.componentSelectorLabels" (dict "component" "tctl" "root" .) | nindent 6 }}
+  {{- with include "poiesis.networkPolicy.metricsIngress" . }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- . | nindent 4 }}
+  {{- else }}
   policyTypes: [Egress]
+  {{- end }}
   egress:
     {{- include "poiesis.networkPolicy.egress" . | nindent 4 }}
 {{- end }}

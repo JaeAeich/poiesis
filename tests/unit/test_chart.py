@@ -1,4 +1,4 @@
-"""Rendered Helm chart: NetworkPolicy, values schema, rollout, TaskPod resources.
+"""Rendered Helm chart: NetworkPolicy, schema, rollout, TaskPod resources, metrics.
 
 Runs `helm template` on the chart in `deployment/helm/poiesis` with the
 `ci/` values files and checks the manifests (#168). Skipped without helm.
@@ -7,6 +7,7 @@ Runs `helm template` on the chart in `deployment/helm/poiesis` with the
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,8 +15,11 @@ from typing import Any
 
 import pytest
 import yaml
+from prometheus_client import REGISTRY
 
+from poiesis.api import metrics as api_metrics  # noqa: F401 (registers the metrics)
 from poiesis.api.settings import AuthSettings, DatabaseSettings, Settings
+from poiesis.core import tctl_metrics  # noqa: F401 (registers the metrics)
 from poiesis.core.taskpod.config import SchedulingConfig
 
 CHART = Path(__file__).parents[2] / "deployment" / "helm" / "poiesis"
@@ -439,3 +443,141 @@ def test_ftp_and_drs_values_reach_the_runtime_config(
     assert config.drs_enabled
     assert config.drs_allowed_hosts == ("drs.example.org", "other.org")
     assert config.drs_secret == "poiesis-drs"
+
+
+def containers(docs: list[dict[str, Any]], name: str) -> dict[str, Any]:
+    """The first container of Deployment `name`."""
+    return find(docs, "Deployment", name)["spec"]["template"]["spec"]["containers"][0]
+
+
+def ingress_ports(policy: dict[str, Any]) -> dict[int, list[Any] | None]:
+    """Ingress TCP port → the rule's `from` peers (None: any source)."""
+    return {
+        port["port"]: rule.get("from")
+        for rule in policy["spec"].get("ingress", [])
+        for port in rule["ports"]
+    }
+
+
+def test_metrics_are_on_by_default_on_their_own_port() -> None:
+    """Port 9090 on both Deployments and Services; the API Service is untouched."""
+    docs = render(LINT)
+    configmap = next(d for d in docs if d["kind"] == "ConfigMap")["data"]
+    assert configmap["POIESIS_METRICS_PORT"] == "9090"
+    for name in ("api", "tctl"):
+        ports = {p["name"]: p["containerPort"] for p in containers(docs, name)["ports"]}
+        assert ports["metrics"] == 9090  # noqa: PLR2004
+        service = find(docs, "Service", f"{name}-metrics")
+        assert service["spec"]["ports"] == [
+            {
+                "name": "metrics",
+                "port": 9090,
+                "targetPort": "metrics",
+                "protocol": "TCP",
+            }
+        ]
+        assert service["spec"]["selector"]["app.kubernetes.io/component"] == name
+        annotations = find(docs, "Deployment", name)["spec"]["template"]["metadata"][
+            "annotations"
+        ]
+        assert not {k for k in annotations if k.split("/")[0] == "prometheus.io"}
+    # The Ingress routes to the API Service, which has no metrics port.
+    assert [p["name"] for p in find(docs, "Service", "api")["spec"]["ports"]] == [
+        "http"
+    ]
+    kinds = {d["kind"] for d in docs}
+    assert "ServiceMonitor" not in kinds
+    assert not any(d["metadata"]["name"].endswith("-dashboard") for d in docs)
+
+
+def test_metrics_disabled_renders_none_of_it() -> None:
+    docs = render(LINT, sets=("metrics.enabled=false", "networkPolicy.enabled=true"))
+    configmap = next(d for d in docs if d["kind"] == "ConfigMap")["data"]
+    assert "POIESIS_METRICS_PORT" not in configmap
+    assert not any(d["metadata"]["name"].endswith("-metrics") for d in docs)
+    assert "ports" not in containers(docs, "tctl")
+    assert [p["name"] for p in containers(docs, "api")["ports"]] == ["http"]
+    tctl_policy = find(docs, "NetworkPolicy", "tctl")
+    assert tctl_policy["spec"]["policyTypes"] == ["Egress"]
+    api_policy = find(docs, "NetworkPolicy", "api")
+    assert 9090 not in ingress_ports(api_policy)  # noqa: PLR2004
+
+
+def test_service_monitor_scrape_annotations_and_network_policy() -> None:
+    """full-values: port 9100, a ServiceMonitor, annotations, metricsFrom."""
+    docs = render(FULL)
+    monitor = next(d for d in docs if d["kind"] == "ServiceMonitor")
+    assert monitor["metadata"]["labels"]["release"] == "kube-prometheus-stack"
+    assert monitor["spec"]["selector"]["matchLabels"]["poiesis.io/metrics"] == "true"
+    assert monitor["spec"]["endpoints"] == [
+        {
+            "port": "metrics",
+            "path": "/metrics",
+            "interval": "15s",
+            "scrapeTimeout": "10s",
+        }
+    ]
+    selected = [
+        d["metadata"]["name"]
+        for d in docs
+        if d["kind"] == "Service"
+        and all(
+            d["metadata"]["labels"].get(k) == v
+            for k, v in monitor["spec"]["selector"]["matchLabels"].items()
+        )
+    ]
+    assert sorted(selected) == ["t-poiesis-api-metrics", "t-poiesis-tctl-metrics"]
+    monitoring = [
+        {
+            "namespaceSelector": {
+                "matchLabels": {"kubernetes.io/metadata.name": "monitoring"}
+            }
+        }
+    ]
+    for name in ("api", "tctl"):
+        annotations = find(docs, "Deployment", name)["spec"]["template"]["metadata"][
+            "annotations"
+        ]
+        assert annotations["prometheus.io/scrape"] == "true"
+        assert annotations["prometheus.io/port"] == "9100"
+        assert annotations["prometheus.io/path"] == "/metrics"
+        assert ingress_ports(find(docs, "NetworkPolicy", name))[9100] == monitoring
+    assert find(docs, "NetworkPolicy", "tctl")["spec"]["policyTypes"] == [
+        "Ingress",
+        "Egress",
+    ]
+    # The TES API's own port keeps its peers.
+    assert ingress_ports(find(docs, "NetworkPolicy", "api"))[8000] != monitoring
+
+
+def test_metrics_from_empty_allows_any_source() -> None:
+    docs = render(LINT, sets=("networkPolicy.enabled=true",))
+    for name in ("api", "tctl"):
+        assert ingress_ports(find(docs, "NetworkPolicy", name))[9090] is None
+
+
+def test_dashboard_configmap_holds_the_dashboard() -> None:
+    docs = render(LINT, sets=("metrics.dashboard.enabled=true",))
+    configmap = find(docs, "ConfigMap", "dashboard")
+    assert configmap["metadata"]["labels"]["grafana_dashboard"] == "1"
+    dashboard = json.loads(configmap["data"]["poiesis.json"])
+    assert dashboard == json.loads((CHART / "dashboards" / "poiesis.json").read_text())
+
+
+def test_dashboard_queries_name_known_metrics() -> None:
+    """Every metric a dashboard panel queries is one Poiesis exports."""
+    suffixes = {"counter": ("_total",), "histogram": ("_bucket", "_count", "_sum")}
+    exported = {
+        family.name + suffix
+        for family in REGISTRY.collect()
+        for suffix in suffixes.get(family.type, ("",))
+    }
+    dashboard = json.loads((CHART / "dashboards" / "poiesis.json").read_text())
+    queried = {
+        name
+        for panel in dashboard["panels"]
+        for target in panel["targets"]
+        for name in re.findall(r"\bpoiesis_[a-z_]+", target["expr"])
+    }
+    assert queried
+    assert queried <= exported, queried - exported

@@ -52,6 +52,7 @@ from poiesis.core.constants import (
     S3_VIRTUAL_HOSTED_STYLE_ENV,
 )
 from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
+from poiesis.core.metrics import metrics_port_from_env
 from poiesis.core.services.filer.file_urls import parse_file_url_roots
 from poiesis.core.services.filer.strategy.gcs_identity import token_audience
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
@@ -1515,6 +1516,9 @@ class Settings(BaseModel):
     # Log format of the API and of trec/tif/tof; None: JSON unless stderr
     # is a terminal.
     log_format: str | None = Field(default_factory=_parse_log_format_env)
+    # Port of the Prometheus `/metrics` endpoint, apart from the TES API's;
+    # None: no endpoint.
+    metrics_port: int | None = Field(default_factory=metrics_port_from_env)
     # Defaults to poiesis_namespace via runtime_config() — operators can split
     # the control plane from the workload ns by setting POIESIS_TASKPOD_NAMESPACE.
     taskpod_namespace: str | None = Field(

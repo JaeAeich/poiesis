@@ -24,6 +24,7 @@ dependencies = [
   "joserfc",
   "kubernetes",
   "obstore",
+  "prometheus-client",
   "pydantic",
   "requests",
   "tomli",

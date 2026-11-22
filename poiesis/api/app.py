@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from poiesis.api.auth import Authenticator
     from poiesis.api.settings import AuthSettings, Settings
 
-from poiesis.api import audit, resource_metadata
+from poiesis.api import audit, metrics, resource_metadata
 from poiesis.api.access_log import AccessLogMiddleware
 from poiesis.api.apikey_auth import ApiKeyAuthenticator
 from poiesis.api.authz import Authz
@@ -43,6 +43,7 @@ from poiesis.api.routes import health as health_routes
 from poiesis.api.routes import service_info as service_info_routes
 from poiesis.api.routes import tasks as tasks_routes
 from poiesis.api.settings import load_settings
+from poiesis.core import metrics as metrics_server
 from poiesis.core.logging_config import setup_logging
 from poiesis.db import create_pool
 from poiesis.db.pool import PoolTimeoutError
@@ -97,10 +98,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.authenticators = None
         logger.warning("Auth is DISABLED; all requests will run as anonymous")
 
+    # On its own port, apart from the TES API: never through the Ingress,
+    # the auth chain or the access log.
+    metrics.observe_pool(app.state.db_pool)
+    stop_metrics = (
+        metrics_server.serve(settings.metrics_port)
+        if settings.metrics_port is not None
+        else None
+    )
+
     try:
         yield
     finally:
         await app.state.authz.aclose()
+        if stop_metrics is not None:
+            stop_metrics()
+        metrics.observe_pool(None)
         if app.state.authenticators is not None:
             await _close(app.state.authenticators)
         logger.info("Closing Postgres pool")
@@ -204,6 +217,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(AccessLogMiddleware)
     # The request id of audit and log lines, echoed in every response.
     app.add_middleware(audit.RequestIdMiddleware)
+    # Outermost: counts every request, also one a middleware inside answers.
+    app.add_middleware(metrics.MetricsMiddleware)
 
     security = _docs_security(settings.auth)
     # Mount under the TES-canonical prefix so direct callers and the

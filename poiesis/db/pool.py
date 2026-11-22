@@ -31,6 +31,8 @@ class Pool:
         """Wrap `pool`; `acquire()` waits at most `acquire_timeout` seconds."""
         self._pool = pool
         self._acquire_timeout = acquire_timeout
+        #: Callers waiting in `acquire()` for a connection.
+        self._waiters = 0
 
     @contextlib.asynccontextmanager
     async def acquire(self, *, timeout: float | None = None) -> AsyncIterator[Any]:
@@ -39,11 +41,14 @@ class Pool:
         `timeout` overrides the pool's acquire timeout for this call.
         """
         wait = self._acquire_timeout if timeout is None else timeout
+        self._waiters += 1
         try:
             conn = await self._pool.acquire(timeout=wait)
         except TimeoutError as exc:
             msg = f"no database connection free within {wait:g}s"
             raise PoolTimeoutError(msg) from exc
+        finally:
+            self._waiters -= 1
         try:
             yield conn
         finally:
@@ -55,6 +60,22 @@ class Pool:
             self._pool.get_size() >= self._pool.get_max_size()
             and self._pool.get_idle_size() == 0
         )
+
+    def size(self) -> int:
+        """Connections the pool has open."""
+        return self._pool.get_size()
+
+    def max_size(self) -> int:
+        """Connections the pool may open."""
+        return self._pool.get_max_size()
+
+    def in_use(self) -> int:
+        """Open connections lent out to callers."""
+        return self._pool.get_size() - self._pool.get_idle_size()
+
+    def waiters(self) -> int:
+        """Callers waiting in `acquire()` for a connection."""
+        return self._waiters
 
     async def close(self) -> None:
         """Close every connection, waiting for the ones in use."""

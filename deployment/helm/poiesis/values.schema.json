@@ -403,6 +403,42 @@
       }
     },
 
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":           { "type": "boolean" },
+        "port":              { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "scrapeAnnotations": { "type": "boolean" },
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "annotations": { "type": "object" }
+          }
+        },
+        "serviceMonitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled":       { "type": "boolean" },
+            "labels":        { "type": "object" },
+            "interval":      { "type": "string", "minLength": 1 },
+            "scrapeTimeout": { "type": "string", "minLength": 1 }
+          }
+        },
+        "dashboard": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled":     { "type": "boolean" },
+            "labels":      { "type": "object" },
+            "annotations": { "type": "object" }
+          }
+        }
+      }
+    },
+
     "networkPolicy": {
       "type": "object",
       "additionalProperties": false,
@@ -419,6 +455,7 @@
         },
         "ingressFrom":            { "type": "array", "items": { "type": "object" } },
         "ingressFromPodSelector": { "type": "object" },
+        "metricsFrom":            { "type": "array", "items": { "type": "object" } },
         "extraEgress":            { "type": "array", "items": { "type": "object" } }
       }
     },

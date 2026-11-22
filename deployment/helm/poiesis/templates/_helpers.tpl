@@ -152,3 +152,21 @@ seccompProfile:
 {{ toYaml . }}
 {{- end }}
 {{- end -}}
+
+{{/* The metrics port of the API and tctl containers; empty when metrics are off. */}}
+{{- define "poiesis.metrics.containerPort" -}}
+{{- if .Values.metrics.enabled -}}
+- name: metrics
+  containerPort: {{ .Values.metrics.port | int }}
+  protocol: TCP
+{{- end -}}
+{{- end -}}
+
+{{/* prometheus.io/* scrape annotations, when metrics.scrapeAnnotations is on. */}}
+{{- define "poiesis.metrics.podAnnotations" -}}
+{{- if and .Values.metrics.enabled .Values.metrics.scrapeAnnotations -}}
+prometheus.io/scrape: "true"
+prometheus.io/port: {{ .Values.metrics.port | int | quote }}
+prometheus.io/path: /metrics
+{{- end -}}
+{{- end -}}

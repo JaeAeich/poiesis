@@ -277,6 +277,26 @@ one task). The API also writes one `poiesis.access` line per request,
 without query strings or headers. The audit log keeps its own format on
 stdout.
 
+### Metrics (`metrics`)
+
+The API and tctl serve Prometheus metrics at `/metrics` on `metrics.port`,
+apart from the TES API's port: not routed by the Ingress, no auth, not
+in the access log. Labels are bounded (no task, user or owner labels).
+The metrics, a dashboard and alert rules are in the docs' Monitoring
+guide.
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `metrics.enabled` | bool | `true` | Serve `/metrics` and render the `<release>-api-metrics` and `<release>-tctl-metrics` Services. |
+| `metrics.port` | integer | `9090` | Port of `/metrics` on the API and tctl Pods. |
+| `metrics.scrapeAnnotations` | bool | `false` | `prometheus.io/scrape`, `/port`, `/path` annotations on the API and tctl Pods. |
+| `metrics.service.annotations` | object | `{}` | Annotations of the metrics Services. |
+| `metrics.serviceMonitor.enabled` | bool | `false` | Render a ServiceMonitor (needs the `monitoring.coreos.com` CRDs). |
+| `metrics.serviceMonitor.labels` | object | `{}` | Labels your Prometheus selects ServiceMonitors by. |
+| `metrics.serviceMonitor.interval`, `.scrapeTimeout` | string | `30s`, `10s` | Scrape timing. |
+| `metrics.dashboard.enabled` | bool | `false` | Render a ConfigMap with `dashboards/poiesis.json` for the Grafana sidecar. |
+| `metrics.dashboard.labels`, `.annotations` | object | `{grafana_dashboard: "1"}`, `{}` | Labels and annotations of that ConfigMap. |
+
 ### Service info (`serviceInfo`)
 
 What `GET /service-info` says about this deployment. Empty keeps the
@@ -309,7 +329,8 @@ built-in value; invalid values stop the API from starting.
 With `networkPolicy.enabled`, the API and tctl Pods may reach DNS, any
 address on TCP 443 and 6443 (Kubernetes API, S3, issuers) and Postgres.
 The API accepts traffic on 8000 from this release's Pods and the peers
-below only. The migration hook and TaskPods are not selected.
+below only; with metrics on, the API and tctl accept `metrics.port` from
+`metricsFrom`. The migration hook and TaskPods are not selected.
 
 | Path | Type | Default | Description |
 |---|---|---|---|
@@ -318,6 +339,7 @@ below only. The migration hook and TaskPods are not selected.
 | `networkPolicy.databaseEgress.to` | list | `[]` | NetworkPolicy peers (`ipBlock`, `namespaceSelector`, `podSelector`) where Postgres is. Empty: any address. `databaseEgress: null` drops the rule. |
 | `networkPolicy.ingressFrom` | list | `[]` | Peers allowed to reach the API, e.g. a `namespaceSelector` for the ingress controller's namespace. |
 | `networkPolicy.ingressFromPodSelector` | object | `{}` | Labels of further Pods in the release namespace allowed to reach the API. |
+| `networkPolicy.metricsFrom` | list | `[]` | Peers allowed to reach `metrics.port` on the API and tctl. Empty: any address. |
 | `networkPolicy.extraEgress` | list | `[]` | Extra egress rules, e.g. an issuer or S3 endpoint on another port. |
 
 ### Unschedulable timeout (`tctl.unschedulableTimeoutSeconds`)

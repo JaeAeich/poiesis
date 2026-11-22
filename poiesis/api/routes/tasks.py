@@ -20,6 +20,7 @@ from poiesis.api.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
+from poiesis.api.metrics import SubmitOutcome, count_submission
 from poiesis.api.tes.models import (
     TesCancelTaskResponse,
     TesCreateTaskResponse,
@@ -82,6 +83,7 @@ async def create_task(
     try:
         pvc, job = build_taskpod_job(task, runtime_config)
     except ValueError as exc:
+        count_submission(SubmitOutcome.REJECTED)
         raise BadRequestError(str(exc)) from exc
 
     # Acquired only after the decision, so it never waits holding one, and
@@ -129,6 +131,7 @@ async def create_task(
         )
 
     logger.info("TaskPod submitted for task %s (job=%s)", task_id, job_name)
+    count_submission(SubmitOutcome.CREATED)
     return TesCreateTaskResponse(id=task_id)
 
 
@@ -149,6 +152,7 @@ async def _on_kubernetes_submit_failure(
     with a useful reason; append the same reason to system_logs so it
     surfaces in GetTask / ListTasks output. This function always raises.
     """
+    count_submission(SubmitOutcome.SUBMIT_FAILED)
     classification = _classify_submit_exception(exc, where)
     logger.exception(
         "%s submission failed for task %s (status=%s reason=%s)",
