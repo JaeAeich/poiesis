@@ -158,7 +158,8 @@ A token from any other issuer is a `401`. Keys are only ever fetched
 from the configured issuer's discovery document or `jwksUri`, never from
 a URL the token names. The token is then verified in full against that
 issuer: signature (RS, ES or PS algorithms), `iss`, `aud` (one of the
-issuer's `audience`), `exp` with `clockSkew` of leeway, the header
+issuer's `audience`), `exp` (required), `nbf` and `iat` (when present),
+all three with `clockSkew` of leeway, the header
 `typ` (`tokenTypes`), the client (`clients`, if set) and the issuer's
 `requiredScopes`.
 
@@ -189,6 +190,27 @@ one:
 ```
 
 A plain string is one value, as before.
+
+### Shared audience
+
+Federations often can't mint a token per service: LS Login, for
+example, puts the requesting client's id into `aud`, so a portal's
+users arrive with the portal's client id as audience, and every
+service behind that portal accepts the same token. Poiesis supports
+this (list that client id in `audience`), but know the risk: **any
+service that receives such a token can replay it** against every
+other service that accepts the audience, this Poiesis included.
+Mitigate it with:
+
+- [`clients`](#clients), to accept only tokens obtained by the
+  clients you expect (this narrows who can call, but doesn't stop the
+  replay of those clients' tokens);
+- short access-token lifetimes at the IdP;
+- token exchange (RFC 8693) per hop, once the IdP and your gateway
+  support it, moving to a per-instance audience.
+
+See [OIDC federations](../guides/oidc-federations.md) for a full
+LS Login entry.
 
 ## Token type
 
@@ -319,9 +341,15 @@ into every task created by either of them; Bob stays isolated.
 
 `requiredScopes` is a per-issuer gate: a token whose `scope` (or `scp`)
 claim does not contain every listed scope is rejected with
-`403 forbidden`. This is intentionally coarse — TES is a small API
-surface and per-endpoint scopes were deferred to a later iteration.
-Leave the list empty (default) to skip the check.
+`403 forbidden` with
+`WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`
+(RFC 6750 §3.1) naming all the issuer's required scopes, plus
+`resource_metadata` when [`auth.resource`](#discovery) is set, so a
+client can get a new token with them. Scopes are therefore scope tokens
+(RFC 6749 §3.3): no spaces, quotes or backslashes. This is
+intentionally coarse — TES is a small API surface and per-endpoint
+scopes were deferred to a later iteration. Leave the list empty
+(default) to skip the check.
 
 ## Issuer outages and key rotation
 
@@ -376,6 +404,9 @@ answer on the principal, next to (not merged into) the token claims:
   is not supported.
 - A token without the principal claim is refused before the userinfo
   call, and one HTTP client per issuer is reused across calls.
+- With [API keys](./api-keys.md#deprovisioning-lag), the userinfo
+  answer at minting time is frozen in the key's snapshot: group
+  changes at the IdP reach keys only when they are re-minted.
 - The token is sent to its issuer's userinfo endpoint only, never to
   any other service. The owner is still taken from the token.
 
@@ -466,7 +497,10 @@ applies.
   `WWW-Authenticate: Bearer error="invalid_token", resource_metadata="…"`. The reason
   (signature, audience, issuer, exp, `typ`, client, …) is logged
   server-side at `WARNING` but not returned to the client.
-- **Token missing a required scope** → `403 forbidden`.
+- **Token missing a required scope** → `403 forbidden` with
+  `WWW-Authenticate: Bearer error="insufficient_scope", scope="…", resource_metadata="…"`
+  (see [Required scopes](#required-scopes)). Other `403`s carry no
+  challenge: a new token wouldn't change their answer.
 - **Delegated token without a decision service**, unless its actor is
   in the issuer's `actors` → `403 forbidden`.
 - **Issuer not reachable yet, or its keys never loaded** →
@@ -487,7 +521,7 @@ A client that knows only the URL of a Poiesis can find out where to
 get a token. With `auth.resource` (`POIESIS_AUTH_RESOURCE`) set to the
 public URL, Poiesis serves **OAuth 2.0 Protected Resource Metadata**
 ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)), and every `401`
-points to it:
+(and a `403` for a missing scope) points to it:
 
 <FlowDiagram :spec="{ title: 'Discovering the issuer', h: 230,
   nodes: { c: { x: 10, y: 92, w: 100, label: 'Client', sub: 'knows the URL' }, api: { x: 300, y: 92, w: 110, label: 'Poiesis' },
@@ -525,6 +559,7 @@ servers, so generic OAuth clients and SDKs already follow it.
 | `authorization_servers` | The issuers, except those with `jwksUri` (gateways publish only keys, clients can't log in there). |
 | `scopes_supported` | The issuers' `requiredScopes`, if any. |
 | `bearer_methods_supported` | `header`: tokens and API keys go in `Authorization`. |
+| `resource_name`, `resource_documentation` | The service-info `name` and `documentationUrl` (`serviceInfo.*`), with the same defaults. |
 
 Set `resource` to the URL clients use, scheme included: behind a TLS
 ingress, `https://…`, though Poiesis itself sees plain HTTP. Poiesis

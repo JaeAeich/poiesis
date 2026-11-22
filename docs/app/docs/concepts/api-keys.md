@@ -86,7 +86,13 @@ auth:
   without `auth_time` can't mint. Keycloak puts it in access tokens
   for browser logins (authorization code, as in the Swagger UI, and
   the device flow) through its default `basic` scope, but not for the
-  password grant; check what your IdP does before turning this on.
+  password grant. Other IdPs differ; check before turning this on, by
+  decoding a token from the client people mint with:
+
+  ```sh
+  # prints the login time, or null if the token has none
+  jq -R 'split(".")[1] | gsub("-";"+") | gsub("_";"/") | @base64d | fromjson | .auth_time' <<<"$TOKEN"
+  ```
 
 Keys live in the `api_keys` table (migration `000003`). Only the
 SHA-256 of a key is stored; the key itself is shown once, when it is
@@ -208,7 +214,9 @@ and work with `maxAuthAge`. The CLI's client id must be in the issuer's
 | `tasks:write` | `CreateTask`, `CancelTask`, and everything `tasks:read` allows |
 
 A key without the scope an operation needs gets
-`403 forbidden` (`API key lacks scope tasks:write`). Scopes only limit
+`403 forbidden` (`API key lacks scope tasks:write`), without a
+`WWW-Authenticate` challenge: key scopes aren't OAuth scopes, and the
+fix is a key minted with the scope, not a new token. Scopes only limit
 keys; they never widen what the owner may do, and they don't apply to
 access tokens. A read-only key is useful for dashboards and monitoring
 that should never submit or cancel.
@@ -313,6 +321,30 @@ keys expire or are revoked**: the deprovisioning lag is the key
 lifetime. Choose `maxTtl` with that in mind, and revoke keys when
 offboarding users (see [Offboarding](#offboarding)). Removing an issuer
 from `auth.issuers` disables all keys of its owners at once.
+
+This matters most for issuers that release group memberships at
+userinfo, such as LS Login's `eduperson_entitlement`: the snapshot
+freezes the userinfo answer too, so with the default `maxTtl` a user
+removed from a group keeps that group's access through their keys for
+up to 90 days. For such issuers:
+
+- set a short `maxTtl` (e.g. `1d`), if it suits all issuers, since it
+  applies to every key; or
+- bound the snapshot's age per issuer in the decision service, which
+  gets `snapshot_age` (seconds since minting) for every key request:
+
+  ```python
+  # refuse LS Login keys whose claims are older than a day
+  props = request["subject"]["properties"]
+  if (
+      props["via"] == "apikey"
+      and props["iss"] == "https://login.aai.lifescience-ri.eu/oidc/"
+      and props["snapshot_age"] > 86400
+  ):
+      return {"decision": False}
+  ```
+
+  The user then mints a new key, with fresh claims.
 
 ## Issuers and namespaces
 

@@ -96,6 +96,21 @@ class ForbiddenError(APIError):
     error_code = "forbidden"
 
 
+class InsufficientScopeError(ForbiddenError):
+    """The token lacks scopes its issuer requires (RFC 6750 §3.1).
+
+    Unlike other ``403``s, a new token with more scopes can fix this, so
+    the answer carries a ``WWW-Authenticate`` challenge naming them.
+    """
+
+    bearer_error = "insufficient_scope"
+
+    def __init__(self, message: str, scopes: tuple[str, ...]) -> None:
+        """Keep the issuer's required ``scopes`` for the challenge."""
+        super().__init__(message)
+        self.scopes = scopes
+
+
 class NotFoundError(APIError):
     """The requested resource was not found."""
 

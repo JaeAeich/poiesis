@@ -55,7 +55,7 @@ from joserfc.jwt import JWTClaimsRegistry
 
 from poiesis.api.auth import Actor, Principal, client_of, walk_claim_path
 from poiesis.api.exceptions import (
-    ForbiddenError,
+    InsufficientScopeError,
     ServiceUnavailableError,
     UnauthorizedError,
 )
@@ -346,7 +346,7 @@ class IssuerValidator:
 
         Raises :class:`UnauthorizedError` for any cryptographic or claim
         failure, a token type or client that isn't accepted,
-        :class:`ForbiddenError` when required scopes are
+        :class:`InsufficientScopeError` when required scopes are
         missing, and :class:`ServiceUnavailableError` while the issuer
         has no key set yet.
         """
@@ -372,8 +372,9 @@ class IssuerValidator:
         scopes = _scopes(claims)
         missing = [s for s in self.settings.required_scopes if s not in scopes]
         if missing:
-            raise ForbiddenError(
-                "token missing required scope(s): " + ", ".join(missing)
+            raise InsufficientScopeError(
+                "token missing required scope(s): " + ", ".join(missing),
+                self.settings.required_scopes,
             )
         # Resolve the owner first so a token without it never reaches userinfo.
         principal = self.principal_from(claims, scopes)
@@ -394,7 +395,9 @@ class IssuerValidator:
             return
         if isinstance(typ, str) and normalize_token_type(typ) in self._token_types:
             return
-        logger.warning(
+        # semgrep false positive: logs the issuer and a truncated header
+        # value, never the token.
+        logger.warning(  # nosemgrep
             "Token of %s refused: header typ %s is not in its tokenTypes %s; if "
             "the issuer's access tokens carry it, add it to "
             "auth.issuers[].tokenTypes",
@@ -412,7 +415,9 @@ class IssuerValidator:
         client = client_of(claims)
         if isinstance(client, str) and client in allowed:
             return
-        logger.warning(
+        # semgrep false positive: logs the issuer and a truncated client
+        # id, never the token.
+        logger.warning(  # nosemgrep
             "Token of %s refused: client %s is not in its clients",
             self.settings.issuer,
             "missing" if client is None else repr(str(client)[:100]),

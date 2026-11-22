@@ -73,7 +73,7 @@ JSON arrays, since values such as group URNs may contain commas), and
 ```yaml
 auth:
   issuers:
-    - issuer: https://login.aai.lifescience-ri.eu/oidc/
+    - issuer: https://keycloak.example.org/realms/poiesis
       audience: poiesis
       requiredClaim:     # optional, per issuer; see "Claim rule" below
         name: eduperson_entitlement
@@ -114,17 +114,22 @@ empty value or prefix.
 
 Prefixes are compared as raw strings, so include the delimiter. For
 LS Login groups, admit a group and its subgroups with the group as an
-exact value and its subgroup prefix ending in `:`:
+exact value and its subgroup prefix ending in `:`. LS Login releases
+`eduperson_entitlement` at userinfo only, so turn userinfo on, and its
+access tokens carry your client id as `aud` (see
+[OIDC federations](../guides/oidc-federations.md)):
 
 ```yaml
 auth:
   issuers:
     - issuer: https://login.aai.lifescience-ri.eu/oidc/
-      audience: poiesis
+      audience: my-poiesis-client   # your LS Login client id
+      userinfo:
+        enabled: true
       requiredClaim:
         name: eduperson_entitlement
         values:
-          - "urn:geant:lifescience-ri.eu:group:example-vo#login.aai.lifescience-ri.eu"
+          - "urn:geant:lifescience-ri.eu:group:example-vo#aai.lifescience-ri.eu"
         prefixes:
           - "urn:geant:lifescience-ri.eu:group:example-vo:"
 ```
@@ -133,12 +138,15 @@ Without the trailing `:`, the prefix would also admit
 `…:group:example-vo2#…`.
 
 Every caller of the issuer needs the claim, including its service
-clients (client-credentials tokens) and callers behind a gateway such
-as proTES, which Poiesis sees as the caller. Their tokens usually carry
-no user entitlements, so they get `403`. For such deployments, leave
-the rule unset and express "entitled users or client X" in the decision
-service (e.g. by `subject.properties.client_id`), or give the gateway
-an issuer entry of its own.
+clients (client-credentials tokens), which usually carry no user
+entitlements and so get `403`. What a gateway such as proTES needs
+depends on the token it sends:
+
+| Gateway sends | Poiesis sees | What to configure |
+| --- | --- | --- |
+| The user's token, forwarded | The user | Nothing: the claim rule applies as for a direct call. The token's `aud` must hold this instance's audience. |
+| Its own client-credentials token | The gateway, without entitlements | Leave the rule unset and express "entitled users or client X" in the decision service (e.g. by `subject.properties.client_id`), or give the gateway an issuer entry of its own. Every task is owned by the gateway. |
+| An exchanged token (RFC 8693) | The user, with `act` naming the gateway | The claim rule applies to the user. Without a decision service, list the gateway in the issuer's [`actors`](./authentication.md#trusted-actors); with one, it decides on `subject.properties.actor`. |
 
 The global `authz.requiredClaim` of earlier versions matched the value
 whichever issuer the token came from, and is refused: the chart fails
@@ -215,7 +223,10 @@ Poiesis asks one question per decision (`POST`, one attempt, no
 retries) in the `tes-authzen/2` profile, and allows only on `200` with
 `{"decision": true}` and no obligations. The profile is TES-wide: its
 keys live under `context.tes`, so one decision service can serve
-Poiesis, TESK, Funnel and other TES implementations alike.
+Poiesis, TESK, Funnel and other TES implementations alike. Its
+canonical, versioned specification lives with `tes-authzen/1` in
+[elixir-cloud-aai/tes-authz](https://github.com/elixir-cloud-aai/tes-authz);
+this page describes what Poiesis sends.
 
 ### Request
 
@@ -465,7 +476,11 @@ which knows what its policy depends on.
 
 ### Migrating from `tes-authzen/1`
 
-`tes-authzen/1` is replaced, without a compatibility mode:
+Poiesis sends `tes-authzen/2` only, without a compatibility mode. Other
+TES implementations (TESK, Funnel) may still send `tes-authzen/1`, so a
+decision service shared between them should accept both side by side,
+telling them apart by `context.tes.profile`. Moving a service from `/1`
+to `/2`:
 
 - `context.tes.profile` is `tes-authzen/2`; accept it (or stop checking
   it) in your decision service.
@@ -507,7 +522,7 @@ restart the API pods.
 | ------------------------------------------------ | ---------------------------- |
 | No or invalid token, userinfo failure            | `401`                        |
 | Token type or client not accepted by the issuer  | `401`                        |
-| Missing required scope                           | `403`                        |
+| Missing required scope                           | `403`, `insufficient_scope` challenge |
 | API key without the operation's scope            | `403`                        |
 | Delegated token, no decision service, actor not in `actors` | `403`             |
 | The issuer's claim rule fails                    | `403` on every action        |

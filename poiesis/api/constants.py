@@ -18,12 +18,18 @@ class PoiesisApiConstants:
         SERVICE_ID: The default service-info ``id``, also sent to the
             decision service as ``context.tes.service_id``; a deployment
             sets its own with ``POIESIS_SERVICE_INFO_ID``.
+        SERVICE_NAME: The default service-info ``name``, also the RFC 9728
+            ``resource_name``.
+        DOCUMENTATION_URL: The default service-info ``documentationUrl``,
+            also the RFC 9728 ``resource_documentation``.
     """
 
     SPEC_GIT_HASH = "c4c17c9"
     TES_VERSION = "v1.1.0"
     BASE_PATH = "ga4gh/tes/v1"
     SERVICE_ID = "org.ga4gh.poiesis"
+    SERVICE_NAME = "Poiesis"
+    DOCUMENTATION_URL = "https://poiesis.jaeaeich.com"
 
 
 @lru_cache

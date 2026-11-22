@@ -558,7 +558,7 @@
         "principalClaim": { "type": "string", "minLength": 1 },
         "requiredScopes": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "type": "string", "pattern": "^[\\x21\\x23-\\x5b\\x5d-\\x7e]+$" }
         },
         "requiredClaim": { "$ref": "#/$defs/claimRule" },
         "admin":          { "$ref": "#/$defs/claimRule" },
