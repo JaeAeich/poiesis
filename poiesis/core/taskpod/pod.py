@@ -10,6 +10,10 @@ task's TES ``resources`` and the operator's `SchedulingConfig` meet here:
     backend_parameters  → GPUs, a PriorityClass, a node pool (only the
                             keys the operator allows)
 
+The Pod-level security context and the executors' come from the
+operator's ``executor_security_enforce`` profile and overrides
+(`pod_security_context`, `executor_security_context`).
+
 Executors run one after another as init containers, so each gets the
 task's full cpu and memory; Kubernetes schedules the Pod on the largest
 init container request, not on their sum.
@@ -21,11 +25,19 @@ import copy
 import math
 from typing import TYPE_CHECKING, Any
 
-from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
+from kubernetes.client import (
+    V1LocalObjectReference,
+    V1PodSecurityContext,
+    V1ResourceRequirements,
+    V1SecurityContext,
+)
 
-from poiesis.core.taskpod.config import ZONE_LABEL
+from poiesis.core.k8s_json import from_json
+from poiesis.core.taskpod.config import ZONE_LABEL, PodSecurityEnforce
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from poiesis.api.tes.models import TesExecutor, TesTask
     from poiesis.core.taskpod.config import (
         NodePlacement,
@@ -65,7 +77,91 @@ def pod_settings(task: TesTask, config: RuntimeConfig) -> dict[str, Any]:
             priority_class(params, scheduling) or scheduling.priority_class_name
         ),
         "runtime_class_name": scheduling.runtime_class_name,
+        "security_context": pod_security_context(config),
     }
+
+
+#: Pod-level security context per executor profile. `restricted` fixes a
+#: numeric non-root user, the poiesis image's 65532, so that images whose
+#: ``USER`` is root or a name still start, and every container owns the
+#: task volume alike (``fsGroup``).
+_POD_PROFILES: dict[PodSecurityEnforce, dict[str, Any]] = {
+    PodSecurityEnforce.RESTRICTED: {
+        "runAsNonRoot": True,
+        "runAsUser": 65532,
+        "runAsGroup": 65532,
+        "fsGroup": 65532,
+        "fsGroupChangePolicy": "OnRootMismatch",
+        "seccompProfile": {"type": "RuntimeDefault"},
+    },
+}
+
+#: Executor container security context per profile. No
+#: ``readOnlyRootFilesystem``: user images expect to write where they like.
+_EXECUTOR_PROFILES: dict[PodSecurityEnforce, dict[str, Any]] = {
+    PodSecurityEnforce.RESTRICTED: {
+        "runAsNonRoot": True,
+        "allowPrivilegeEscalation": False,
+        "capabilities": {"drop": ["ALL"]},
+        "seccompProfile": {"type": "RuntimeDefault"},
+    },
+    # Capabilities stay: root images may need them (chown, writing into
+    # directories tif created), and Pod Security baseline allows them.
+    PodSecurityEnforce.BASELINE: {"allowPrivilegeEscalation": False},
+}
+
+
+def pod_security_context(config: RuntimeConfig) -> V1PodSecurityContext | None:
+    """The TaskPod's Pod-level securityContext.
+
+    The ``executor_security_enforce`` profile with the operator's
+    ``pod_security_context`` keys over it. None when both are empty.
+
+    Raises:
+        ValueError: A key that ``V1PodSecurityContext`` doesn't have.
+        TypeError: A value of the wrong JSON type.
+    """
+    merged = _merged(
+        _POD_PROFILES.get(config.executor_security_enforce, {}),
+        config.pod_security_context,
+    )
+    return None if merged is None else from_json(V1PodSecurityContext, merged)
+
+
+def executor_security_context(config: RuntimeConfig) -> V1SecurityContext | None:
+    """An executor container's securityContext.
+
+    The ``executor_security_enforce`` profile with the operator's
+    ``executor_security_context`` keys over it. None when both are empty.
+
+    Raises:
+        ValueError: A key that ``V1SecurityContext`` doesn't have.
+        TypeError: A value of the wrong JSON type.
+    """
+    merged = _merged(
+        _EXECUTOR_PROFILES.get(config.executor_security_enforce, {}),
+        config.executor_security_context,
+    )
+    return None if merged is None else from_json(V1SecurityContext, merged)
+
+
+def _merged(
+    profile: Mapping[str, Any], overrides: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """``overrides`` deep-merged over a copy of ``profile``; None if empty.
+
+    Objects merge key by key, so ``{capabilities: {add: [X]}}`` keeps the
+    profile's ``drop``; any other value, lists included, replaces the
+    profile's.
+    """
+    merged = copy.deepcopy(dict(profile))
+    for key, value in overrides.items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = _merged(current, value) or {}
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged or None
 
 
 def executor_resources(

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from kubernetes.client import V1Container, V1EnvVar
 
 from poiesis.core import executor_shell, ignore_error
-from poiesis.core.taskpod.pod import executor_resources
+from poiesis.core.taskpod.pod import executor_resources, executor_security_context
 from poiesis.core.taskpod.volumes import executor_mounts
 
 if TYPE_CHECKING:
@@ -33,7 +33,8 @@ def build_executor(
     files and, with ``ignore_error``, records the exit code in the
     termination message and exits 0 (see ``executor_shell``). The
     container's own stdin stays closed (``stdin: false``). Requests and
-    limits come from `pod.executor_resources`.
+    limits come from `pod.executor_resources`, the security context from
+    `pod.executor_security_context`.
     """
     env = [V1EnvVar(name=k, value=v) for k, v in (executor.env or {}).items()]
     container = V1Container(
@@ -46,6 +47,7 @@ def build_executor(
         volume_mounts=executor_mounts(config, path_mounts),
         stdin=False,
         resources=executor_resources(executor, task, config),
+        security_context=executor_security_context(config),
     )
     if executor.ignore_error:
         container.termination_message_path = ignore_error.TERMINATION_MESSAGE_PATH

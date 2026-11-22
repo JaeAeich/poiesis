@@ -180,6 +180,20 @@ subject `system:serviceaccount:<taskpod namespace>:<taskpod ServiceAccount>`.
 | `taskpods.drs.allowedHosts` | list of strings | `[]` | DRS hosts tasks may name. Empty allows any host. |
 | `taskpods.drs.existingSecret` | string | `""` | Secret in the TaskPod namespace with key `DRS_BEARER_TOKEN`, sent by TIF to DRS servers only (never to the data URL, never to executors). |
 
+### Executor security (`taskpods.executorSecurityEnforce`)
+
+| Path | Type | Default | Description |
+|---|---|---|---|
+| `taskpods.executorSecurityEnforce` | string | `"off"` | Profile of the executor containers and the TaskPod's Pod-level `securityContext`: `restricted` / `baseline` / `off`. `restricted` is needed in namespaces that enforce Pod Security `restricted`; it also sets the Pod's `runAsUser`/`runAsGroup`/`fsGroup` to 65532, for every container (trec/tif/tof/ack too). Quote `"off"`. |
+| `taskpods.podSecurityContext` | object | `{}` | Pod-level `securityContext` keys over the profile's (objects merge key by key), e.g. `{runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}`. |
+| `taskpods.executorSecurityContext` | object | `{}` | `securityContext` keys of every executor container over the profile's (objects merge key by key). |
+
+Rendered as `POIESIS_EXECUTOR_SECURITY_ENFORCE`,
+`POIESIS_TASKPOD_POD_SECURITY_CONTEXT` and
+`POIESIS_EXECUTOR_SECURITY_CONTEXT` (JSON); an unknown profile or key,
+a value of the wrong type, or `restricted` with `podSecurityEnforce: off`
+stops the API at startup. On OpenShift keep `off`.
+
 ### System-container resources (`taskpods.systemResources`)
 
 | Path | Type | Default | Description |
@@ -324,7 +338,7 @@ built-in value; invalid values stop the API from starting.
 
 | Path | Type | Default | Description |
 |---|---|---|---|
-| `podSecurityEnforce` | string | `restricted` | PSS profile for poiesis-owned containers. `restricted` / `baseline` / `off`. Executors are exempt. |
+| `podSecurityEnforce` | string | `restricted` | PSS profile for poiesis-owned containers. `restricted` / `baseline` / `off`. Executors follow `taskpods.executorSecurityEnforce`. |
 | `imagePullSecrets`   | list   | `[]`         | Propagated to every chart component and every TaskPod. |
 | `database.caConfigmap` | string | `""`       | ConfigMap (key `ca.crt`) mounted at `/etc/ssl/poiesis` for Postgres TLS. |
 

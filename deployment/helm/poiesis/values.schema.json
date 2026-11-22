@@ -398,6 +398,12 @@
           }
         },
         "activeDeadlineSeconds": { "type": ["integer", "null"], "minimum": 1 },
+        "executorSecurityEnforce": {
+          "type": "string",
+          "enum": ["restricted", "baseline", "off"]
+        },
+        "podSecurityContext": { "type": "object" },
+        "executorSecurityContext": { "type": "object" },
         "systemResources": {
           "type": "object",
           "additionalProperties": false,

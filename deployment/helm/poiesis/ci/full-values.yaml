@@ -135,6 +135,11 @@ taskpods:
     accessModes:
       - ReadWriteOnce
   activeDeadlineSeconds: 86400
+  executorSecurityEnforce: restricted
+  podSecurityContext:
+    supplementalGroups: [2000]
+  executorSecurityContext:
+    readOnlyRootFilesystem: false
   systemResources:
     recorder:
       requests:

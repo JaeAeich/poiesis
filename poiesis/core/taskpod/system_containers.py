@@ -284,7 +284,7 @@ def build_ack_container(task: TesTask, config: RuntimeConfig) -> V1Container:
 def poiesis_security_context(config: RuntimeConfig) -> V1SecurityContext | None:
     """SecurityContext applied to poiesis-owned containers (trec/tif/tof/ack).
 
-    Executor containers run user-supplied images and are deliberately exempt.
+    Executor containers follow `pod.executor_security_context` instead.
 
     - `RESTRICTED`: full PSS-restricted (runAsNonRoot, drop ALL, no privesc,
     seccomp RuntimeDefault, readOnlyRootFilesystem). The poiesis image is

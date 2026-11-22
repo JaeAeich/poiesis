@@ -33,12 +33,11 @@ ZONE_LABEL = "topology.kubernetes.io/zone"
 
 
 class PodSecurityEnforce(StrEnum):
-    """How strictly to lock down poiesis-owned TaskPod containers.
+    """A Pod Security profile for TaskPod containers.
 
-    Executor containers run user-supplied images and are always exempt;
-    operators that need them constrained must run TaskPods in a namespace
-    with the PodSecurity admission controller configured at the cluster
-    level.
+    `RuntimeConfig.pod_security_enforce` applies it to poiesis-owned
+    containers, `RuntimeConfig.executor_security_enforce` to the executors
+    (user images) and the Pod-level security context.
     """
 
     RESTRICTED = "restricted"
@@ -161,8 +160,20 @@ class RuntimeConfig:
             no limit. Sourced from ``taskpods.activeDeadlineSeconds``.
         grace_period_seconds: terminationGracePeriodSeconds on the Pod.
         pod_security_enforce: `restricted` | `baseline` | `off`. Applies to
-            poiesis-owned containers only; executor containers run user
-            images and are deliberately exempt.
+            poiesis-owned containers only; executors follow
+            ``executor_security_enforce``.
+        executor_security_enforce: `restricted` | `baseline` | `off`: the
+            profile of the executor containers and of the Pod-level
+            security context (`pod.executor_security_context`,
+            `pod.pod_security_context`). `off` (the default) leaves them
+            as the images say. Sourced from
+            ``taskpods.executorSecurityEnforce``.
+        pod_security_context: Pod-level securityContext keys (Kubernetes
+            JSON, camelCase) merged over the profile's. Sourced from
+            ``taskpods.podSecurityContext``.
+        executor_security_context: securityContext keys of every executor
+            container, merged over the profile's. Sourced from
+            ``taskpods.executorSecurityContext``.
         image_pull_secrets: Secret names attached to every TaskPod for
             pulling images from private registries.
         postgres_ca_configmap: ConfigMap name (key `ca.crt`) mounted at
@@ -243,6 +254,9 @@ class RuntimeConfig:
     active_deadline_seconds: int | None = 3600
     grace_period_seconds: int = 30
     pod_security_enforce: PodSecurityEnforce = PodSecurityEnforce.RESTRICTED
+    executor_security_enforce: PodSecurityEnforce = PodSecurityEnforce.OFF
+    pod_security_context: Mapping[str, Any] = field(default_factory=dict)
+    executor_security_context: Mapping[str, Any] = field(default_factory=dict)
     image_pull_secrets: tuple[str, ...] = ()
     # Name of a ConfigMap holding the Postgres CA bundle (key `ca.crt`).
     # When set, the ConfigMap is mounted read-only at /etc/ssl/poiesis on
@@ -270,6 +284,28 @@ class RuntimeConfig:
     filer_env: list[V1EnvVar] = field(default_factory=list)
     filer_identity_audiences: Mapping[str, str] = field(default_factory=dict)
     scheduling: SchedulingConfig = field(default_factory=SchedulingConfig)
+
+    def __post_init__(self) -> None:
+        """Refuse restricted executors next to unrestricted poiesis containers.
+
+        Only containers can set ``allowPrivilegeEscalation`` and
+        ``capabilities``: with ``pod_security_enforce`` off, trec, tif, tof
+        and ack lack them, and a namespace enforcing Pod Security
+        restricted would refuse every TaskPod.
+
+        Raises:
+            ValueError: ``executor_security_enforce`` is restricted and
+                ``pod_security_enforce`` is off.
+        """
+        if (
+            self.executor_security_enforce is PodSecurityEnforce.RESTRICTED
+            and self.pod_security_enforce is PodSecurityEnforce.OFF
+        ):
+            msg = (
+                "executor_security_enforce restricted needs pod_security_enforce "
+                "restricted or baseline, not off"
+            )
+            raise ValueError(msg)
 
     def storage_enabled(self, scheme: str) -> bool:
         """False for an object-store scheme with no store at all."""
