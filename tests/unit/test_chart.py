@@ -233,6 +233,74 @@ def test_system_resources_null_is_omitted() -> None:
     }
 
 
+def security_config(*sets: str) -> tuple[dict[str, str], Any]:
+    """The rendered ConfigMap's data, and the RuntimeConfig its security env gives."""
+    configmap = next(d for d in render(LINT, sets=sets) if d["kind"] == "ConfigMap")[
+        "data"
+    ]
+    names = (
+        "POIESIS_EXECUTOR_SECURITY_ENFORCE",
+        "POIESIS_TASKPOD_POD_SECURITY_CONTEXT",
+        "POIESIS_EXECUTOR_SECURITY_CONTEXT",
+    )
+    with pytest.MonkeyPatch.context() as env:
+        for name in names:
+            env.delenv(name, raising=False)
+            if name in configmap:
+                env.setenv(name, configmap[name])
+        config = Settings(auth=AuthSettings(enabled=False)).runtime_config()
+    return configmap, config
+
+
+def test_executor_security_defaults_to_off() -> None:
+    """By default executors keep no security context; no override env is rendered."""
+    configmap, config = security_config()
+    assert configmap["POIESIS_EXECUTOR_SECURITY_ENFORCE"] == "off"
+    assert "POIESIS_TASKPOD_POD_SECURITY_CONTEXT" not in configmap
+    assert "POIESIS_EXECUTOR_SECURITY_CONTEXT" not in configmap
+    assert config.executor_security_enforce == "off"
+    assert config.pod_security_context == {}
+    assert config.executor_security_context == {}
+
+
+def test_executor_security_reaches_the_runtime_config() -> None:
+    """The profile and both overrides reach the RuntimeConfig."""
+    _, config = security_config(
+        "taskpods.executorSecurityEnforce=restricted",
+        "taskpods.podSecurityContext.runAsUser=1000",
+        "taskpods.executorSecurityContext.readOnlyRootFilesystem=true",
+    )
+    assert config.executor_security_enforce == "restricted"
+    assert config.pod_security_context == {"runAsUser": 1000}
+    assert config.executor_security_context == {"readOnlyRootFilesystem": True}
+
+
+def test_schema_refuses_unknown_executor_profile() -> None:
+    """Only the three profiles pass `helm lint`."""
+    result = helm(
+        "lint", str(CHART), "-f", LINT, "--set", "taskpods.executorSecurityEnforce=on"
+    )
+    assert result.returncode != 0
+    assert "executorSecurityEnforce" in result.stdout + result.stderr
+
+
+def test_restricted_executors_with_unrestricted_poiesis_fail_the_install() -> None:
+    """The API would refuse to start: `helm template` fails first, with the reason."""
+    result = helm(
+        "template",
+        "t",
+        str(CHART),
+        "-f",
+        LINT,
+        "--set",
+        "taskpods.executorSecurityEnforce=restricted",
+        "--set",
+        "podSecurityEnforce=off",
+    )
+    assert result.returncode != 0
+    assert "needs podSecurityEnforce restricted or baseline" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("sets", "expected"),
     [((), "json"), (("logging.format=text",), "text"), (("logging.format=",), None)],
