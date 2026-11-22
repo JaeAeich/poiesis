@@ -186,8 +186,9 @@ def api_token_mount() -> V1VolumeMount:
 def identity_token_volume(provider: str, audience: str) -> V1Volume:
     """A ServiceAccount token for `audience`, which TIF/TOF trade for cloud keys.
 
-    The provider's STS (AWS) or identity platform (Azure) accepts it from
-    the cluster's OIDC issuer in exchange for the role the operator named.
+    The provider's STS (AWS, Google) or identity platform (Azure) accepts
+    it from the cluster's OIDC issuer in exchange for the role, identity
+    or service account the operator named.
     Only TIF and TOF mount it (`identity_token_mounts`): executors run user
     images and never get it, nor the Pod's automounted token.
     """

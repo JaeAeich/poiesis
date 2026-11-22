@@ -37,7 +37,7 @@ after they finish.
 - `drs://` (GA4GH DRS) for inputs, only where the operator turns it on
   (see [DRS](#drs)).
 - `gs://` (Google Cloud Storage) and `az://` (Azure Blob Storage) for
-  both, only where the operator turns them on. Both are experimental
+  both, only where the operator turns them on
   (see [Object stores](#object-stores)).
 - `file://` for both, only where the operator turns it on
   (see [Local paths](#local-paths)).
@@ -69,11 +69,17 @@ through one code path, built on
 [obstore](https://developmentseed.org/obstore/). A URL names a bucket
 (for Azure, a container) and a key:
 
-| Scheme | URL | Status |
-| --- | --- | --- |
-| `s3://` | `s3://bucket/key` | Covered by the end-to-end tests (SeaweedFS on kind). |
-| `gs://` | `gs://bucket/key` | Experimental: unit tests only. |
-| `az://` | `az://container/blob` | Experimental: unit tests only. |
+| Scheme  | URL                   | Tested end to end (kind, in CI)                                                                                |
+| ------- | --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `s3://` | `s3://bucket/key`     | SeaweedFS: `FILE` and `DIRECTORY` in and out, a 20 MiB upload in parts.                                        |
+| `gs://` | `gs://bucket/key`     | fake-gcs-server: `FILE` and `DIRECTORY` in and out. Uploads in parts are not covered: the emulator lacks them. |
+| `az://` | `az://container/blob` | Azurite: `FILE` and `DIRECTORY` in and out, a 20 MiB upload in parts.                                          |
+
+These are emulators. CI does not run against AWS, Google Cloud or Azure,
+and workload identity is tested with unit tests only (against a mocked
+token service for Google). The per-cloud guides
+([AWS](../guides/aws.md), [Google Cloud](../guides/gcp.md),
+[Azure](../guides/azure.md)) list the setup.
 
 A provider is off until the operator turns it on. While it is off, its
 scheme is refused at submit with `400` and isn't listed in
@@ -105,20 +111,20 @@ MinIO):
 
 ```yaml
 s3:
-  endpoint: ""            # AWS_ENDPOINT_URL; empty for AWS
-  region: eu-central-1    # AWS_REGION
+  endpoint: "" # AWS_ENDPOINT_URL; empty for AWS
+  region: eu-central-1 # AWS_REGION
   existingSecret: poiesis-s3
 ```
 
 S3 is on when any of `existingSecret`, `roleArn` or `enabled: true` is
 set. Other settings:
 
-| Value | Default | Meaning |
-| --- | --- | --- |
-| `s3.virtualHostedStyle` | `false` | `true` sends `https://<bucket>.<endpoint>/<key>`. `false` sends path-style `https://<endpoint>/<bucket>/<key>`, which SeaweedFS and MinIO need. |
-| `s3.serverSideEncryption` | `""` | `AES256` (SSE-S3), `aws:kms` (SSE-KMS) or `aws:kms:dsse`, for every upload. |
-| `s3.kmsKeyId` | `""` | KMS key for `aws:kms`; empty uses the bucket's default key. |
-| `s3.requesterPays` | `false` | Pay for requests to requester-pays buckets. |
+| Value                     | Default | Meaning                                                                                                                                         |
+| ------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `s3.virtualHostedStyle`   | `false` | `true` sends `https://<bucket>.<endpoint>/<key>`. `false` sends path-style `https://<endpoint>/<bucket>/<key>`, which SeaweedFS and MinIO need. |
+| `s3.serverSideEncryption` | `""`    | `AES256` (SSE-S3), `aws:kms` (SSE-KMS) or `aws:kms:dsse`, for every upload.                                                                     |
+| `s3.kmsKeyId`             | `""`    | KMS key for `aws:kms`; empty uses the bucket's default key.                                                                                     |
+| `s3.requesterPays`        | `false` | Pay for requests to requester-pays buckets.                                                                                                     |
 
 An `http://` endpoint is allowed; use `https://` outside a trusted
 network.
@@ -189,12 +195,18 @@ role, `tif` and `tof` use the default chain: the EC2 instance role through
 IMDS, or EKS Pod Identity if its agent injects credentials. Executors on
 the same node can usually reach IMDS too, so prefer `roleArn`.
 
-### Google Cloud Storage (experimental)
+### Google Cloud Storage
+
+GCS needs a key or Workload Identity Federation. With neither, `tif` and
+`tof` would ask the node's metadata server, which executors can reach
+too, so the chart refuses it.
+
+**Service account key.**
 
 ```yaml
 gcs:
   enabled: true
-  existingSecret: poiesis-gcs   # in the TaskPod namespace
+  existingSecret: poiesis-gcs # in the TaskPod namespace
 ```
 
 The Secret holds a service account's JSON key under
@@ -206,22 +218,64 @@ kubectl -n <taskpod namespace> create secret generic poiesis-gcs \
   --from-file=GOOGLE_SERVICE_ACCOUNT_KEY=key.json
 ```
 
-GKE Workload Identity is not offered. It serves tokens from the node's
-metadata server to every container of the Pod, executors included, and
-obstore can't read a token file in its place. GCS also works through its
-S3-compatible API with HMAC keys as `s3:` settings.
+**Workload Identity Federation.** Name a workload identity pool provider
+that trusts the cluster's OIDC issuer, and leave `existingSecret` empty:
 
-### Azure Blob Storage (experimental)
+```yaml
+gcs:
+  enabled: true
+  workloadIdentityProvider: //iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/poiesis/providers/cluster
+  serviceAccount: poiesis-filer@my-project.iam.gserviceaccount.com # optional
+```
+
+The API adds a ServiceAccount token for the audience
+`https:<workloadIdentityProvider>` to each TaskPod and mounts it into
+`tif` and `tof` only. They send it to Google STS
+(`sts.googleapis.com`) for a federated token and, when `serviceAccount`
+is set, trade that for the service account's token
+(`iamcredentials.googleapis.com`, scope `devstorage.read_write`). Tokens
+are renewed 5 minutes before they expire. Without `serviceAccount`,
+grant the bucket roles to the federated principal itself.
+
+This does not use GKE's built-in Workload Identity (the
+`iam.gke.io/gcp-service-account` annotation): that serves tokens from the
+node's metadata server to every container of the Pod, executors
+included. Don't annotate the TaskPod ServiceAccount with it. See
+[Google Cloud](../guides/gcp.md) for the pool and provider setup.
+
+**Endpoint.** `gcs.endpoint` replaces `https://storage.googleapis.com`,
+for Private Service Connect or an emulator. An `http://` endpoint is
+allowed. STS and IAM Credentials are always the public Google endpoints.
+
+GCS also works through its S3-compatible API with HMAC keys as `s3:`
+settings.
+
+### Azure Blob Storage
 
 ```yaml
 azure:
   enabled: true
   accountName: poiesisdata
-  existingSecret: poiesis-azure   # or the workload identity below
+  existingSecret: poiesis-azure # or the workload identity below
 ```
 
 `az://container/blob` names a blob in that account. The Secret, in the
-TaskPod namespace, holds `AZURE_STORAGE_ACCOUNT_KEY`.
+TaskPod namespace, holds `AZURE_STORAGE_ACCOUNT_KEY` or
+`AZURE_STORAGE_SAS_TOKEN`. Both keys are optional in the Secret; put in
+the one you have. A SAS token can be pasted with or without its leading
+`?`; it needs read, write and list permissions on the containers tasks
+use, and tasks fail once it expires.
+
+```bash
+kubectl -n <taskpod namespace> create secret generic poiesis-azure \
+  --from-literal=AZURE_STORAGE_SAS_TOKEN='sv=…&sig=…'
+```
+
+`azure.endpoint` replaces `https://<accountName>.blob.core.windows.net`,
+for a private endpoint with a custom DNS name, a sovereign cloud (for
+example `https://<account>.blob.core.chinacloudapi.cn`), Azure Stack Hub
+or Azurite (`http://azurite:10000/<account>`). An `http://` endpoint is
+allowed.
 
 **Workload identity on AKS.** Set the managed identity's client ID and
 its tenant, and leave `existingSecret` empty:
@@ -253,9 +307,9 @@ inject the token into every container, executors included.
 
 <Callout type="info">
 
-GCS and Azure share the S3 code path, which is tested on a cluster, but
-they have not been run against the real services. SFTP is not
-supported. FUSE mounts are planned
+All three stores share one code path. The end-to-end tests run it against
+emulators, not the real cloud services. SFTP is not supported. FUSE
+mounts are planned
 ([#27](https://github.com/jaeaeich/poiesis/issues/27)).
 
 </Callout>
@@ -394,12 +448,12 @@ stages the input only from a `2xx` response. The body goes to a temporary
 file next to the input's path and is renamed into place once it is
 complete, so a failed download leaves no file at the input's path.
 
-| Response | What `tif` does |
-| --- | --- |
-| `2xx` | Stages the body as the input. |
-| `301`, `302`, `303`, `307`, `308` | Follows up to 10 redirects, unless the request has reached an `https://` URL and the new one isn't. |
-| `429`, `500`, `502`, `503`, `504`, connection error, timeout, body cut short | Retries twice, after 1 s and 2 s, each time from the input URL. |
-| Anything else | Fails the task; nothing is staged. An expired presigned URL answers `403`. |
+| Response                                                                     | What `tif` does                                                                                     |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `2xx`                                                                        | Stages the body as the input.                                                                       |
+| `301`, `302`, `303`, `307`, `308`                                            | Follows up to 10 redirects, unless the request has reached an `https://` URL and the new one isn't. |
+| `429`, `500`, `502`, `503`, `504`, connection error, timeout, body cut short | Retries twice, after 1 s and 2 s, each time from the input URL.                                     |
+| Anything else                                                                | Fails the task; nothing is staged. An expired presigned URL answers `403`.                          |
 
 A failed download ends the task in `SYSTEM_ERROR` (see
 [Staging failures](#staging-failures)). Directories can't be downloaded
@@ -427,13 +481,13 @@ Cloud Storage, so `tof` needs no credentials for the client's storage.
 
 Responses:
 
-| Response | What `tof` does |
-| --- | --- |
-| `2xx` | Done. |
-| `307`, `308` | Sends the file again to the new URL, unless the request has reached an `https://` URL and the new one isn't. The first request carries the file too, so up to the whole file reaches a redirecting server. |
-| `301`, `302`, `303` | Fails: following would turn the `PUT` into a `GET`. |
-| `429`, `500`, `502`, `503`, `504`, connection error, timeout | Retries twice, after 1 s and 2 s, each time from the output URL. |
-| Anything else | Fails; the task's `system_logs` and the `tof` log show the start of the response body. |
+| Response                                                     | What `tof` does                                                                                                                                                                                            |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `2xx`                                                        | Done.                                                                                                                                                                                                      |
+| `307`, `308`                                                 | Sends the file again to the new URL, unless the request has reached an `https://` URL and the new one isn't. The first request carries the file too, so up to the whole file reaches a redirecting server. |
+| `301`, `302`, `303`                                          | Fails: following would turn the `PUT` into a `GET`.                                                                                                                                                        |
+| `429`, `500`, `502`, `503`, `504`, connection error, timeout | Retries twice, after 1 s and 2 s, each time from the output URL.                                                                                                                                           |
+| Anything else                                                | Fails; the task's `system_logs` and the `tof` log show the start of the response body.                                                                                                                     |
 
 - `tof` sets no size limit, but providers cap a single `PUT`: 5 GB on
   Amazon S3.
@@ -450,11 +504,11 @@ Responses:
 Once every output is uploaded, `tof` stores one entry per uploaded file
 in the task's `logs[].outputs`, shown in the `BASIC` and `FULL` views:
 
-| Field | Value |
-| --- | --- |
-| `path` | The file's path in the executor, e.g. `/outputs/dir/a.txt`. |
-| `size_bytes` | The file's size, as a string. |
-| `url` | Where the file was uploaded, without the URL's query string or fragment. |
+| Field        | Value                                                                    |
+| ------------ | ------------------------------------------------------------------------ |
+| `path`       | The file's path in the executor, e.g. `/outputs/dir/a.txt`.              |
+| `size_bytes` | The file's size, as a string.                                            |
+| `url`        | Where the file was uploaded, without the URL's query string or fragment. |
 
 - A `DIRECTORY` or glob output gives one entry per file under it, each
   with the URL that file went to.
@@ -478,12 +532,12 @@ container tif exited with code 1: input /inputs/reads.fq: HTTPError: GET https:/
 The line is at most 1 KiB. Query strings and the credentials of a URL
 are cut from it, since the query of a presigned URL is its signature.
 
-| What failed | Task state |
-| --- | --- |
-| Storage unreachable, a `5xx`, a timeout | `SYSTEM_ERROR` |
-| Access denied, an expired or rejected URL, a missing input | `SYSTEM_ERROR` |
-| A full task volume, or the task can't be read from or its output file logs written to the database | `SYSTEM_ERROR` |
-| A declared output the executors didn't produce | `EXECUTOR_ERROR` |
+| What failed                                                                                        | Task state       |
+| -------------------------------------------------------------------------------------------------- | ---------------- |
+| Storage unreachable, a `5xx`, a timeout                                                            | `SYSTEM_ERROR`   |
+| Access denied, an expired or rejected URL, a missing input                                         | `SYSTEM_ERROR`   |
+| A full task volume, or the task can't be read from or its output file logs written to the database | `SYSTEM_ERROR`   |
+| A declared output the executors didn't produce                                                     | `EXECUTOR_ERROR` |
 
 The rule: a failed filer is `SYSTEM_ERROR`, because no executor failed.
 The one exception is an output whose `path` isn't on the task's volume

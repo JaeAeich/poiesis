@@ -45,9 +45,10 @@ deployment and check their final state, logs and staged files. They need
 `docker`, `kind`, `kubectl` and `helm`.
 
 `tests/e2e/setup.sh` creates a kind cluster named `poiesis-e2e`, builds
-the images from the checkout, deploys Postgres and SeaweedFS
-(`tests/e2e/deps.yaml`) and installs the chart with auth off
-(`tests/e2e/values.yaml`):
+the images from the checkout, deploys Postgres and one emulator per
+object store (SeaweedFS for S3, fake-gcs-server for GCS, Azurite for
+Azure; `tests/e2e/deps.yaml`) and installs the chart with auth off and
+all three stores on (`tests/e2e/values.yaml`):
 
 ```sh
 tests/e2e/setup.sh
@@ -55,6 +56,12 @@ kubectl --context kind-poiesis-e2e -n poiesis port-forward svc/poiesis-api 8000:
 POIESIS_E2E_URL=http://localhost:8000 uv run pytest tests/e2e
 ```
 
+- The tests reach fake-gcs-server and Azurite through their own
+  `kubectl port-forward` (local ports 14443 and 20000), unless
+  `POIESIS_E2E_GCS_URL` and `POIESIS_E2E_AZURE_URL` name them.
+- The GCS emulator is `tustvold/fake-gcs-server`, a fork of
+  fake-gcs-server with the XML API obstore uses. It has no uploads in
+  parts, so the GCS case keeps its files small.
 - Run `setup.sh` again after a change: it rebuilds the images and
   upgrades the release. `SKIP_BUILD=1` reuses the images.
 - The test of an image that doesn't exist waits for the 5-minute pending

@@ -2,8 +2,10 @@
 # Stand up Poiesis for the end-to-end tests on a kind cluster:
 #   1. create the cluster (unless it exists),
 #   2. build the API and migrations images from this checkout, load them,
-#   3. deploy Postgres, SeaweedFS and their Secrets (deps.yaml),
-#   4. make the test bucket, install the chart (values.yaml).
+#   3. deploy Postgres, the S3, GCS and Azure emulators and their Secrets
+#      (deps.yaml),
+#   4. make the S3 test bucket, install the chart (values.yaml). The tests
+#      make the GCS bucket and the Azure container themselves.
 # Then port-forward the API and run the tests:
 #   kubectl --context kind-poiesis-e2e -n poiesis port-forward svc/poiesis-api 8000:8000 &
 #   POIESIS_E2E_URL=http://localhost:8000 uv run pytest tests/e2e
@@ -38,7 +40,7 @@ kind load docker-image --name "$CLUSTER" "poiesis:$api_tag" "poiesis-migrations:
 kubectl --context "kind-$CLUSTER" create namespace "$NS" --dry-run=client -o yaml \
   | kubectl --context "kind-$CLUSTER" apply -f -
 "${kc[@]}" apply -f "$here/deps.yaml"
-"${kc[@]}" rollout status deploy/postgres deploy/s3 --timeout=180s
+"${kc[@]}" rollout status deploy/postgres deploy/s3 deploy/gcs deploy/azurite --timeout=180s
 
 # SeaweedFS doesn't create buckets on first write.
 for _ in $(seq 30); do

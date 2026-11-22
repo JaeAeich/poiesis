@@ -23,6 +23,11 @@ from poiesis.core.taskpod import build_taskpod_job
 ROLE = "arn:aws:iam::123456789012:role/poiesis-filer"
 AZURE_CLIENT = "00000000-0000-0000-0000-00000000c1d"
 AZURE_TENANT = "00000000-0000-0000-0000-0000000007e7"
+GCS_PROVIDER = (
+    "//iam.googleapis.com/projects/123/locations/global/"
+    "workloadIdentityPools/poiesis/providers/cluster"
+)
+PROVIDER_ENV = "POIESIS_GCS_WORKLOAD_IDENTITY_PROVIDER"
 
 #: Every variable these tests read; cleared before each.
 STORAGE_ENV = (
@@ -41,7 +46,11 @@ STORAGE_ENV = (
     "POIESIS_S3_REQUESTER_PAYS",
     "POIESIS_GCS_ENABLED",
     "POIESIS_TASKPOD_GCS_SECRET",
+    "POIESIS_GCS_ENDPOINT",
+    "POIESIS_GCS_WORKLOAD_IDENTITY_PROVIDER",
+    "POIESIS_GCS_SERVICE_ACCOUNT",
     "POIESIS_AZURE_ENABLED",
+    "POIESIS_AZURE_ENDPOINT",
     "POIESIS_AZURE_ACCOUNT_NAME",
     "POIESIS_AZURE_CLIENT_ID",
     "POIESIS_AZURE_TENANT_ID",
@@ -177,11 +186,75 @@ def test_bad_sse_settings_are_refused(monkeypatch, values, match):
 # --- Google Cloud Storage ----------------------------------------------------
 
 
-def test_gcs_needs_a_key_secret(monkeypatch):
-    """Without a key it would use the metadata server, which executors reach too."""
+def test_gcs_needs_a_key_secret_or_a_pool_provider(monkeypatch):
+    """Without either it would use the metadata server, which executors reach."""
     monkeypatch.setenv("POIESIS_GCS_ENABLED", "true")
-    with pytest.raises(ValidationError, match="POIESIS_TASKPOD_GCS_SECRET"):
+    with pytest.raises(ValidationError, match="metadata server"):
         StorageSettings()
+
+
+@pytest.mark.parametrize(
+    ("values", "match"),
+    [
+        (
+            {"POIESIS_TASKPOD_GCS_SECRET": "k", PROVIDER_ENV: GCS_PROVIDER},
+            "not both",
+        ),
+        ({PROVIDER_ENV: "projects/1/providers/x"}, "full name"),
+        (
+            {"POIESIS_TASKPOD_GCS_SECRET": "k", "POIESIS_GCS_SERVICE_ACCOUNT": "a@b"},
+            "POIESIS_GCS_SERVICE_ACCOUNT needs",
+        ),
+        ({"POIESIS_GCS_ENDPOINT": "storage.example"}, "http"),
+        ({"POIESIS_AZURE_ENDPOINT": "blob.example"}, "http"),
+    ],
+)
+def test_bad_gcs_and_azure_settings_are_refused(monkeypatch, values, match):
+    """Settings tif/tof could not use stop the API at startup."""
+    monkeypatch.setenv("POIESIS_GCS_ENABLED", "true")
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    if "POIESIS_TASKPOD_GCS_SECRET" not in values and PROVIDER_ENV not in values:
+        monkeypatch.setenv("POIESIS_TASKPOD_GCS_SECRET", "k")
+    with pytest.raises(ValidationError, match=match):
+        StorageSettings()
+
+
+def test_gcs_workload_identity_token_reaches_the_filers_only(monkeypatch):
+    """The pool provider's token and settings are on tif/tof, no key."""
+    monkeypatch.setenv("POIESIS_GCS_ENABLED", "true")
+    monkeypatch.setenv(PROVIDER_ENV, GCS_PROVIDER)
+    monkeypatch.setenv("POIESIS_GCS_SERVICE_ACCOUNT", "filer@p.iam.gserviceaccount.com")
+    spec = pod("gs://bucket/key")
+    [volume] = [v for v in spec["volumes"] if v["name"] == "gcp-identity-token"]
+    [source] = volume["projected"]["sources"]
+    assert source["serviceAccountToken"]["audience"] == f"https:{GCS_PROVIDER}"
+    found = containers(spec)
+    token_dir = f"{IDENTITY_TOKEN_DIR}/gcp"
+    for name in ("tif", "tof"):
+        values = {k: v.get("value") for k, v in env(found[name]).items()}
+        assert values[PROVIDER_ENV] == GCS_PROVIDER
+        assert values["POIESIS_GCS_SERVICE_ACCOUNT"] == (
+            "filer@p.iam.gserviceaccount.com"
+        )
+        assert values["POIESIS_GCS_IDENTITY_TOKEN_FILE"] == f"{token_dir}/token"
+        assert "GOOGLE_SERVICE_ACCOUNT_KEY" not in values
+        assert token_dir in mounts(found[name])
+    for name, container in found.items():
+        if name not in ("tif", "tof"):
+            assert token_dir not in mounts(container), name
+            assert PROVIDER_ENV not in env(container), name
+
+
+def test_gcs_endpoint_reaches_the_filers_only(monkeypatch):
+    """`gcs.endpoint` is the filers' GOOGLE_BASE_URL."""
+    monkeypatch.setenv("POIESIS_GCS_ENABLED", "true")
+    monkeypatch.setenv("POIESIS_TASKPOD_GCS_SECRET", "poiesis-gcs")
+    monkeypatch.setenv("POIESIS_GCS_ENDPOINT", "http://gcs:4443")
+    found = containers(pod("gs://bucket/key"))
+    for name, container in found.items():
+        value = env(container).get("GOOGLE_BASE_URL", {}).get("value")
+        assert value == ("http://gcs:4443" if name in ("tif", "tof") else None), name
 
 
 def test_gcs_key_is_a_secret_reference_on_the_filers(monkeypatch):
@@ -241,15 +314,24 @@ def test_azure_workload_identity_token_reaches_the_filers_only(monkeypatch):
             assert token_dir not in mounts(container), name
 
 
-def test_azure_account_key_is_a_secret_reference(monkeypatch):
-    """A static account key comes from the Secret."""
+def test_azure_account_key_or_sas_is_a_secret_reference(monkeypatch):
+    """An account key or a SAS token comes from the Secret; either may be absent."""
     monkeypatch.setenv("POIESIS_AZURE_ENABLED", "true")
     monkeypatch.setenv("POIESIS_AZURE_ACCOUNT_NAME", "poiesisdata")
     monkeypatch.setenv("POIESIS_TASKPOD_AZURE_SECRET", "poiesis-azure")
+    monkeypatch.setenv("POIESIS_AZURE_ENDPOINT", "https://poiesisdata.privatelink")
     spec = pod("az://container/blob")
-    tif = containers(spec)["tif"]
-    ref = env(tif)["AZURE_STORAGE_ACCOUNT_KEY"]["valueFrom"]["secretKeyRef"]
-    assert ref == {"name": "poiesis-azure", "key": "AZURE_STORAGE_ACCOUNT_KEY"}
+    found = containers(spec)
+    for key in ("AZURE_STORAGE_ACCOUNT_KEY", "AZURE_STORAGE_SAS_TOKEN"):
+        ref = env(found["tif"])[key]["valueFrom"]["secretKeyRef"]
+        assert ref == {"name": "poiesis-azure", "key": key, "optional": True}
+    assert env(found["tof"])["AZURE_STORAGE_ENDPOINT"]["value"] == (
+        "https://poiesisdata.privatelink"
+    )
+    for name, container in found.items():
+        if name not in ("tif", "tof"):
+            assert "AZURE_STORAGE_SAS_TOKEN" not in env(container), name
+            assert "AZURE_STORAGE_ENDPOINT" not in env(container), name
     assert not [v for v in spec["volumes"] if v["name"] == "azure-identity-token"]
 
 

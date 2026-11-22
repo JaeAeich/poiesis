@@ -54,3 +54,12 @@ S3_REQUESTER_PAYS_ENV: str = "POIESIS_S3_REQUESTER_PAYS"
 #: ServiceAccount token they trade for cloud credentials: one subdirectory
 #: per provider, holding ``token``.
 IDENTITY_TOKEN_DIR: str = "/var/run/secrets/poiesis/identity"  # noqa: S105 - a path
+
+#: Env vars the API sets on TIF/TOF for Google Cloud Storage through
+#: Workload Identity Federation (``gcs.workloadIdentityProvider``,
+#: ``gcs.serviceAccount``): the pool provider that accepts the
+#: ServiceAccount token, the service account to impersonate (optional) and
+#: where the token is mounted.
+GCS_WORKLOAD_IDENTITY_PROVIDER_ENV: str = "POIESIS_GCS_WORKLOAD_IDENTITY_PROVIDER"
+GCS_SERVICE_ACCOUNT_ENV: str = "POIESIS_GCS_SERVICE_ACCOUNT"
+GCS_IDENTITY_TOKEN_FILE_ENV: str = "POIESIS_GCS_IDENTITY_TOKEN_FILE"  # noqa: S105

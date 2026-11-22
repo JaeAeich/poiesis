@@ -291,7 +291,12 @@ def no_storage_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "POIESIS_S3_ENABLED",
         "POIESIS_S3_ROLE_ARN",
         "POIESIS_GCS_ENABLED",
+        "POIESIS_GCS_ENDPOINT",
+        "POIESIS_GCS_WORKLOAD_IDENTITY_PROVIDER",
+        "POIESIS_GCS_SERVICE_ACCOUNT",
+        "POIESIS_TASKPOD_GCS_SECRET",
         "POIESIS_AZURE_ENABLED",
+        "POIESIS_AZURE_ENDPOINT",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -323,10 +328,62 @@ def test_s3_role_reaches_the_runtime_config(monkeypatch: pytest.MonkeyPatch) -> 
     assert config.filer_identity_audiences == {"aws": "sts.amazonaws.com"}
 
 
+@pytest.mark.usefixtures("no_storage_env")
+def test_gcs_workload_identity_reaches_the_runtime_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`gcs.workloadIdentityProvider` gives a token for the provider, no Secret."""
+    provider = (
+        "//iam.googleapis.com/projects/1/locations/global/"
+        "workloadIdentityPools/pool/providers/k8s"
+    )
+    configmap, config = storage_config(
+        monkeypatch,
+        "gcs.enabled=true",
+        f"gcs.workloadIdentityProvider={provider}",
+        "gcs.serviceAccount=filer@p.iam.gserviceaccount.com",
+        "gcs.endpoint=https://storage.example",
+    )
+    assert "POIESIS_TASKPOD_GCS_SECRET" not in configmap
+    assert config.gcs_configured
+    assert config.filer_identity_audiences == {"gcp": f"https:{provider}"}
+    env = {e.name: e.value for e in config.filer_env}
+    assert env["POIESIS_GCS_SERVICE_ACCOUNT"] == "filer@p.iam.gserviceaccount.com"
+    assert env["GOOGLE_BASE_URL"] == "https://storage.example"
+
+
+@pytest.mark.usefixtures("no_storage_env")
+def test_azure_endpoint_reaches_the_filers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`azure.endpoint` becomes the filers' AZURE_STORAGE_ENDPOINT."""
+    _, config = storage_config(
+        monkeypatch,
+        "azure.enabled=true",
+        "azure.accountName=acct",
+        "azure.endpoint=http://azurite:10000/acct",
+    )
+    env = {e.name: e.value for e in config.filer_env}
+    assert env["AZURE_STORAGE_ENDPOINT"] == "http://azurite:10000/acct"
+
+
 @pytest.mark.parametrize(
     ("sets", "error"),
     [
-        (("gcs.enabled=true",), "gcs.enabled needs gcs.existingSecret"),
+        (("gcs.enabled=true",), "gcs.enabled needs one of gcs.existingSecret"),
+        (
+            (
+                "gcs.enabled=true",
+                "gcs.existingSecret=k",
+                "gcs.workloadIdentityProvider=//iam.googleapis.com/p",
+            ),
+            "gcs.enabled needs one of",
+        ),
+        (
+            ("gcs.enabled=true", "gcs.existingSecret=k", "gcs.serviceAccount=a@b"),
+            "gcs.serviceAccount needs gcs.workloadIdentityProvider",
+        ),
+        (("gcs.workloadIdentityProvider=projects/1",), "does not match pattern"),
+        (("gcs.endpoint=storage.example",), "does not match pattern"),
+        (("azure.endpoint=blob.example",), "does not match pattern"),
         (("azure.enabled=true",), "azure.enabled needs azure.accountName"),
         (
             ("azure.enabled=true", "azure.accountName=a", "azure.clientId=c"),

@@ -1,5 +1,6 @@
 # Chart values for the end-to-end tests (tests/e2e/setup.sh): the images
-# built from this checkout, the dependencies of tests/e2e/deps.yaml, auth
+# built from this checkout, the dependencies of tests/e2e/deps.yaml (S3,
+# GCS and Azure on emulators), auth
 # off (every request is the anonymous principal), small task volumes.
 # setup.sh sets the image tags.
 image:
@@ -20,6 +21,17 @@ s3:
   endpoint: http://s3:9000
   region: us-east-1
   existingSecret: poiesis-s3
+
+gcs:
+  enabled: true
+  endpoint: http://gcs:4443
+  existingSecret: poiesis-gcs
+
+azure:
+  enabled: true
+  accountName: devstoreaccount1
+  endpoint: http://azurite:10000/devstoreaccount1
+  existingSecret: poiesis-azure
 
 auth:
   enabled: false

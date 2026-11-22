@@ -82,12 +82,15 @@ checkout: `helm install poiesis ./deployment/helm/poiesis -n poiesis -f values.y
 
 - Object storage reachable from the task namespace, with credentials
   in a Secret or through workload identity (`s3.roleArn` on EKS,
-  `azure.clientId` on AKS). The token goes to `tif` and `tof` only; don't
-  annotate the TaskPod ServiceAccount for the EKS or AKS webhooks, which
-  would give it to executors too. See
-  [Storage and staging](../concepts/storage.md#object-stores).
-- `gs://` and `az://` are experimental: they have unit tests but have not
-  been run against Google Cloud or Azure.
+  `azure.clientId` on AKS, `gcs.workloadIdentityProvider` on GKE or any
+  cluster). The token goes to `tif` and `tof` only; don't annotate the
+  TaskPod ServiceAccount for the EKS or AKS webhooks or GKE Workload
+  Identity, which would give credentials to executors too. See
+  [Storage and staging](../concepts/storage.md#object-stores) and the
+  [AWS](./aws.md), [Google Cloud](./gcp.md) and [Azure](./azure.md) guides.
+- CI runs `s3://`, `gs://` and `az://` end to end against emulators
+  (SeaweedFS, fake-gcs-server, Azurite), not against the real clouds. Try
+  a task on your own bucket before you rely on it.
 - `taskpods.persistence.maxSizeGi` set to the largest volume a task
   may ask for (the schema refuses an install without it).
 - A StorageClass with `ReadWriteOnce` volumes, and

@@ -4,7 +4,7 @@ import time
 import uuid
 
 import pytest
-from e2e import IMAGE, Tes, kubectl, s3_get, s3_put
+from e2e import IMAGE, S3, Azure, Gcs, Tes, kubectl, s3_get, s3_put
 
 
 def executor(*command: str, **extra: object) -> dict[str, object]:
@@ -112,6 +112,76 @@ def test_output_log_lists_uploaded_files(tes: Tes) -> None:
     outputs = task["logs"][-1]["outputs"]
     assert [o["url"] for o in outputs] == [url_out]
     assert [(o["path"], o["size_bytes"]) for o in outputs] == [("/data/out.txt", "8")]
+
+
+#: Bigger than one 8 MiB part, so tof uploads it in parts.
+BIG_BYTES = 20 * 1024 * 1024
+
+
+@pytest.mark.parametrize("scheme", ["s3", "gs", "az"])
+def test_object_store_file_and_directory_round_trip(
+    tes: Tes, stores: dict[str, S3 | Gcs | Azure], scheme: str
+) -> None:
+    """FILE and DIRECTORY inputs are staged in and outputs uploaded, per store.
+
+    S3 on SeaweedFS, GCS on fake-gcs-server, Azure on Azurite. The
+    DIRECTORY output holds a nested key and a key with a space. On S3 and
+    Azure it also holds a file uploaded in parts; the GCS emulator has no
+    multipart upload (XML API), so on GCS every file is one request.
+    """
+    store = stores[scheme]
+    prefix = f"round-trip-{scheme}/{uuid.uuid4().hex}"
+    file_in = store.put(f"{prefix}/in/one.txt", "file input\n")
+    store.put(f"{prefix}/dir/a.txt", "a\n")
+    store.put(f"{prefix}/dir/sub/b c.txt", "b\n")
+    big = (
+        f"head -c {BIG_BYTES} /dev/urandom > /data/outdir/big.bin"
+        if scheme != "gs"
+        else "true"
+    )
+    script = (
+        "set -e; tr a-z A-Z < /data/one.txt > /data/one-out.txt;"
+        " mkdir -p '/data/outdir/sub dir';"
+        " cat /data/indir/a.txt '/data/indir/sub/b c.txt' > /data/outdir/ab.txt;"
+        " cp '/data/indir/sub/b c.txt' '/data/outdir/sub dir/b c.txt';"
+        f" {big}"
+    )
+    directory = {"type": "DIRECTORY"}
+    task = tes.run(
+        {
+            "inputs": [
+                {"url": file_in, "path": "/data/one.txt"},
+                {"url": store.url(f"{prefix}/dir"), "path": "/data/indir", **directory},
+            ],
+            "outputs": [
+                {
+                    "url": store.url(f"{prefix}/out/one.txt"),
+                    "path": "/data/one-out.txt",
+                },
+                {
+                    "url": store.url(f"{prefix}/out/dir"),
+                    "path": "/data/outdir",
+                    **directory,
+                },
+            ],
+            "executors": [executor("sh", "-c", script)],
+        }
+    )
+
+    assert task["state"] == "COMPLETE", task["logs"][-1].get("system_logs")
+    assert store.get(f"{prefix}/out/one.txt") == "FILE INPUT\n"
+    assert store.get(f"{prefix}/out/dir/ab.txt") == "a\nb\n"
+    assert store.get(f"{prefix}/out/dir/sub dir/b c.txt") == "b\n"
+    uploaded = {o["url"] for o in task["logs"][-1]["outputs"]}
+    expected = {
+        store.url(f"{prefix}/out/one.txt"),
+        store.url(f"{prefix}/out/dir/ab.txt"),
+        store.url(f"{prefix}/out/dir/sub dir/b c.txt"),
+    }
+    if scheme != "gs":
+        assert store.size(f"{prefix}/out/dir/big.bin") == BIG_BYTES
+        expected.add(store.url(f"{prefix}/out/dir/big.bin"))
+    assert uploaded == expected
 
 
 def test_list_paginates_and_filters_by_tag(tes: Tes) -> None:
