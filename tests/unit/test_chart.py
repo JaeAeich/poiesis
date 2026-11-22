@@ -480,7 +480,7 @@ def test_metrics_are_on_by_default_on_their_own_port() -> None:
         annotations = find(docs, "Deployment", name)["spec"]["template"]["metadata"][
             "annotations"
         ]
-        assert not any(k.startswith("prometheus.io/") for k in annotations)
+        assert not {k for k in annotations if k.split("/")[0] == "prometheus.io"}
     # The Ingress routes to the API Service, which has no metrics port.
     assert [p["name"] for p in find(docs, "Service", "api")["spec"]["ports"]] == [
         "http"
