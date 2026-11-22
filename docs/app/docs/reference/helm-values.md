@@ -43,13 +43,13 @@ chart references them by name.
 
 ## Service accounts
 
-| Key                              | Default | What it does                                                                                                                                                                                            |
-| -------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `serviceAccount.api.create`      | `true`  | Create the API's ServiceAccount; `false` with `name` binds an existing one (IRSA, Workload Identity).                                                                                                   |
-| `serviceAccount.api.name`        | `""`    | Name of the ServiceAccount.                                                                                                                                                                             |
-| `serviceAccount.api.annotations` | `{}`    | e.g. `eks.amazonaws.com/role-arn`.                                                                                                                                                                      |
-| `serviceAccount.tctl.*`          | same    | The same for TCtl.                                                                                                                                                                                      |
-| `serviceAccount.taskpod.*`       | same    | The same for TaskPods (used by `trec`, and by `tif` and `tof` for workload identity; executors don't get its tokens). Use `s3.roleArn` or `azure.clientId` rather than cloud-identity annotations here. |
+| Key                              | Default | What it does                                                                                                                                                                                                                            |
+| -------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `serviceAccount.api.create`      | `true`  | Create the API's ServiceAccount; `false` with `name` binds an existing one (IRSA, Workload Identity).                                                                                                                                   |
+| `serviceAccount.api.name`        | `""`    | Name of the ServiceAccount.                                                                                                                                                                                                             |
+| `serviceAccount.api.annotations` | `{}`    | e.g. `eks.amazonaws.com/role-arn`.                                                                                                                                                                                                      |
+| `serviceAccount.tctl.*`          | same    | The same for TCtl.                                                                                                                                                                                                                      |
+| `serviceAccount.taskpod.*`       | same    | The same for TaskPods (used by `trec`, and by `tif` and `tof` for workload identity; executors don't get its tokens). Use `s3.roleArn`, `azure.clientId` or `gcs.workloadIdentityProvider` rather than cloud-identity annotations here. |
 
 ## Database
 
@@ -86,24 +86,28 @@ Needed only when inputs or outputs use `s3://`. While S3 is off, an
 `s3://` URL is refused at submit. See
 [Storage and staging](../concepts/storage.md#s3).
 
-## gcs (experimental)
+## gcs
 
-| Key                  | Default | What it does                                                                                     |
-| -------------------- | ------- | ------------------------------------------------------------------------------------------------ |
-| `gcs.enabled`        | `false` | Offer `gs://`. Needs `gcs.existingSecret`.                                                       |
-| `gcs.existingSecret` | `""`    | Secret in the TaskPod namespace with `GOOGLE_SERVICE_ACCOUNT_KEY`, a service account's JSON key. |
+| Key                            | Default | What it does                                                                                                                                                                                                                                                              |
+| ------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gcs.enabled`                  | `false` | Offer `gs://`. Needs `gcs.existingSecret` or `gcs.workloadIdentityProvider`, not both.                                                                                                                                                                                    |
+| `gcs.existingSecret`           | `""`    | Secret in the TaskPod namespace with `GOOGLE_SERVICE_ACCOUNT_KEY`, a service account's JSON key.                                                                                                                                                                          |
+| `gcs.workloadIdentityProvider` | `""`    | Workload Identity Federation: full name of the pool provider, `//iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`. `tif` and `tof` get a ServiceAccount token for `https:<that name>` and trade it at Google STS. |
+| `gcs.serviceAccount`           | `""`    | Service account to impersonate with the federated token. Needs `gcs.workloadIdentityProvider`. Empty uses the federated principal.                                                                                                                                        |
+| `gcs.endpoint`                 | `""`    | Base URL of the GCS API; empty for `https://storage.googleapis.com`. `http://` is allowed.                                                                                                                                                                                |
 
-## azure (experimental)
+## azure
 
-| Key                                | Default | What it does                                                                                                                                       |
-| ---------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `azure.enabled`                    | `false` | Offer `az://container/blob`. Needs `azure.accountName`.                                                                                            |
-| `azure.accountName`                | `""`    | Storage account.                                                                                                                                   |
-| `azure.existingSecret`             | `""`    | Secret in the TaskPod namespace with `AZURE_STORAGE_ACCOUNT_KEY`.                                                                                  |
-| `azure.clientId`, `azure.tenantId` | `""`    | Workload identity: the managed identity `tif` and `tof` act as, with a ServiceAccount token for `api://AzureADTokenExchange`. Set both or neither. |
+| Key                                | Default | What it does                                                                                                                                                         |
+| ---------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `azure.enabled`                    | `false` | Offer `az://container/blob`. Needs `azure.accountName`.                                                                                                              |
+| `azure.accountName`                | `""`    | Storage account.                                                                                                                                                     |
+| `azure.existingSecret`             | `""`    | Secret in the TaskPod namespace with `AZURE_STORAGE_ACCOUNT_KEY` or `AZURE_STORAGE_SAS_TOKEN`.                                                                       |
+| `azure.clientId`, `azure.tenantId` | `""`    | Workload identity: the managed identity `tif` and `tof` act as, with a ServiceAccount token for `api://AzureADTokenExchange`. Set both or neither.                   |
+| `azure.endpoint`                   | `""`    | Blob endpoint; empty for `https://<accountName>.blob.core.windows.net`. For a private endpoint, a sovereign cloud, Azure Stack Hub or Azurite. `http://` is allowed. |
 
-`gs://` and `az://` have unit tests but have not been run against Google
-Cloud or Azure. See
+CI runs `s3://`, `gs://` and `az://` end to end against emulators, not
+the real clouds. See
 [Storage and staging](../concepts/storage.md#object-stores).
 
 ## auth

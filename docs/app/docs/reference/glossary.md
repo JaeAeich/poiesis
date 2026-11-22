@@ -18,15 +18,13 @@ that records progress to PostgreSQL. See [Tasks and TaskPods](../concepts/tasks.
 
 Init container that stages `inputs` onto the [task volume](#task-volume).
 Supports `s3://`, `http(s)://`, `ftp(s)://`, inline `content` and, where
-the operator allows it, `drs://`, `file://`, `gs://` and `az://` (the
-last two experimental).
+the operator allows it, `drs://`, `file://`, `gs://` and `az://`.
 
 ### Task Output Filer (TOF)
 
 Init container that uploads `outputs` from the volume after the last
 executor finishes. Supports `s3://`, `http(s)://`, `ftp(s)://` and, where
-the operator allows it, `file://`, `gs://` and `az://` (the last two
-experimental).
+the operator allows it, `file://`, `gs://` and `az://`.
 
 ### Executor
 

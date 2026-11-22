@@ -12,8 +12,8 @@ defineProps({ step: { type: Number, required: true } });
 
 const STORES = [
   { id: "s3", logo: "s3", name: "S3-compatible", note: "AWS, MinIO, Ceph, SeaweedFS" },
-  { id: "gcs", logo: "gcs", name: "Google Cloud", note: "gs:// · experimental" },
-  { id: "azure", logo: "az", name: "Azure Blob", note: "az:// · experimental" },
+  { id: "gcs", logo: "gcs", name: "Google Cloud", note: "gs:// · GCS" },
+  { id: "azure", logo: "az", name: "Azure Blob", note: "az:// · Blob Storage" },
 ];
 // Planned backends: a short text mark and the tracking issue.
 const PLANNED = [
