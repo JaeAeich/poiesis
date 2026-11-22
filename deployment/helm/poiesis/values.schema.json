@@ -338,6 +338,25 @@
           "type": "array",
           "items": { "type": "string", "pattern": "^/[^,]+$" }
         },
+        "ftp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "drs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "allowedHosts": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[^,:/\\s]+$" }
+            },
+            "existingSecret": { "type": "string" }
+          }
+        },
         "activeDeadlineSeconds": { "type": ["integer", "null"], "minimum": 1 },
         "systemResources": {
           "type": "object",

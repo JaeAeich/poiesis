@@ -286,8 +286,8 @@ def service_storage(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def test_service_info_lists_only_enabled_object_stores(monkeypatch):
-    """No provider on: HTTP(S) only."""
-    assert service_storage(monkeypatch) == ["http://", "https://"]
+    """No provider on: FTP(S) and HTTP(S) only."""
+    assert service_storage(monkeypatch) == ["ftp://", "ftps://", "http://", "https://"]
 
 
 def test_service_info_lists_each_enabled_provider(monkeypatch):
@@ -299,6 +299,8 @@ def test_service_info_lists_each_enabled_provider(monkeypatch):
     monkeypatch.setenv("POIESIS_AZURE_ACCOUNT_NAME", "poiesisdata")
     assert service_storage(monkeypatch) == [
         "az://",
+        "ftp://",
+        "ftps://",
         "gs://",
         "http://",
         "https://",

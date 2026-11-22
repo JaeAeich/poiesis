@@ -37,7 +37,11 @@ from pydantic.alias_generators import to_camel
 
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.core.constants import (
+    DRS_ALLOWED_HOSTS_ENV,
+    DRS_BEARER_TOKEN_ENV,
+    DRS_ENABLED_ENV,
     FILE_URL_ROOTS_ENV,
+    FTP_ENABLED_ENV,
     OUTPUT_GLOB_FALLBACK_ENV,
     S3_REQUESTER_PAYS_ENV,
     S3_SERVER_SIDE_ENCRYPTION_ENV,
@@ -294,6 +298,8 @@ _RESERVED_ENV_NAMES: frozenset[str] = frozenset(
         "AZURE_FEDERATED_TOKEN_FILE",
         "POIESIS_POD_NAME",
         "POIESIS_POD_NAMESPACE",
+        # TIF only, from taskpods.drs.existingSecret.
+        DRS_BEARER_TOKEN_ENV,
     }
 )
 _RESERVED_ENV_PREFIXES: tuple[str, ...] = ("POIESIS_",)
@@ -1548,6 +1554,25 @@ class Settings(BaseModel):
             os.environ.get(FILE_URL_ROOTS_ENV)
         ),
     )
+    # `ftp://` and `ftps://` inputs and outputs; on by default (no operator
+    # credentials needed). Strict: a typo must not change which URLs work.
+    ftp_enabled: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(FTP_ENABLED_ENV, default=True),
+    )
+    # `drs://` inputs; off by default. Empty allowed hosts with the scheme on
+    # allows any host.
+    drs_enabled: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(DRS_ENABLED_ENV, default=False),
+    )
+    drs_allowed_hosts: tuple[str, ...] = Field(
+        default_factory=lambda: tuple(
+            h.lower() for h in _parse_csv_env(DRS_ALLOWED_HOSTS_ENV)
+        ),
+    )
+    # Secret in the TaskPod namespace with DRS_BEARER_TOKEN, for TIF only.
+    taskpod_drs_secret: str | None = Field(
+        default_factory=lambda: _env_or_none("POIESIS_TASKPOD_DRS_SECRET"),
+    )
     # Resources of the poiesis-owned TaskPod containers (JSON resources
     # blocks); unset leaves them without requests or limits.
     recorder_resources: dict[str, dict[str, str]] | None = Field(
@@ -1629,6 +1654,10 @@ class Settings(BaseModel):
             taskpod_extra_volume_mounts=self.taskpod_extra_volume_mounts,
             output_glob_fallback=self.output_glob_fallback,
             file_url_roots=self.file_url_roots,
+            ftp_enabled=self.ftp_enabled,
+            drs_enabled=self.drs_enabled,
+            drs_allowed_hosts=self.drs_allowed_hosts,
+            drs_secret=self.taskpod_drs_secret if self.drs_enabled else None,
             log_format=self.log_format,
             recorder_resources=_resources(self.recorder_resources),
             filer_resources=_resources(self.filer_resources),

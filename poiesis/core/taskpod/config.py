@@ -194,6 +194,16 @@ class RuntimeConfig:
         file_url_roots: Directories `file://` URLs may point into, passed
             to TIF/TOF. Sourced from ``taskpods.fileUrlRoots``; empty turns
             the scheme off.
+        ftp_enabled: Whether `ftp://` and `ftps://` URLs may be used.
+            Sourced from ``taskpods.ftp.enabled``; on by default. False
+            sets ``POIESIS_FTP_ENABLED=false`` on TIF/TOF.
+        drs_enabled: Whether `drs://` inputs may be used. Sourced from
+            ``taskpods.drs.enabled``; off by default.
+        drs_allowed_hosts: Hosts `drs://` URIs may name
+            (``taskpods.drs.allowedHosts``); empty allows any host.
+        drs_secret: Secret in the TaskPod namespace whose
+            ``DRS_BEARER_TOKEN`` key TIF, and no other container, sends to
+            DRS servers. Sourced from ``taskpods.drs.existingSecret``.
         s3_configured: Whether the operator enabled S3 (``s3.enabled``,
             a Secret with keys, or a role for workload identity). False
             makes submit refuse `s3://` inputs and outputs, which would
@@ -242,6 +252,10 @@ class RuntimeConfig:
     taskpod_extra_volume_mounts: list[dict[str, Any]] = field(default_factory=list)
     output_glob_fallback: bool = False
     file_url_roots: tuple[str, ...] = ()
+    ftp_enabled: bool = True
+    drs_enabled: bool = False
+    drs_allowed_hosts: tuple[str, ...] = ()
+    drs_secret: str | None = None
     s3_configured: bool = True
     log_format: str | None = None
     gcs_configured: bool = False

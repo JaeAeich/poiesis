@@ -20,13 +20,13 @@ happens.
 
 ## The containers
 
-| Container           | Kind           | Does                                                                                                                                                                                                                            |
-| ------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `trec`              | Native sidecar | Watches its own Pod, marks the task `INITIALIZING`, then `RUNNING` when the first executor starts, and writes executor logs to Postgres.                                                                                        |
-| `tif`               | Init           | Stages `inputs` onto the volume: `s3://`, `http(s)://`, inline `content`, then creates the task's [directories](./task-volumes.md#task-paths) that have no mount of their own. Only if the task has inputs or such directories. |
-| `exec-0` … `exec-N` | Init           | Your executors, in order, in your images.                                                                                                                                                                                       |
-| `tof`               | Init           | Uploads `outputs` from the volume: `s3://`, `http(s)://`. Only if the task has outputs.                                                                                                                                         |
-| `ack`               | Main           | Exits 0 so the Pod reaches `Succeeded`. Reuses the Poiesis image, so no second image pull.                                                                                                                                      |
+| Container           | Kind           | Does                                                                                                                                                                                                                                                            |
+| ------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trec`              | Native sidecar | Watches its own Pod, marks the task `INITIALIZING`, then `RUNNING` when the first executor starts, and writes executor logs to Postgres.                                                                                                                        |
+| `tif`               | Init           | Stages `inputs` onto the volume: `s3://`, `http(s)://`, `ftp(s)://`, `drs://` where on, inline `content`, then creates the task's [directories](./task-volumes.md#task-paths) that have no mount of their own. Only if the task has inputs or such directories. |
+| `exec-0` … `exec-N` | Init           | Your executors, in order, in your images.                                                                                                                                                                                                                       |
+| `tof`               | Init           | Uploads `outputs` from the volume: `s3://`, `http(s)://`, `ftp(s)://`. Only if the task has outputs.                                                                                                                                                            |
+| `ack`               | Main           | Exits 0 so the Pod reaches `Succeeded`. Reuses the Poiesis image, so no second image pull.                                                                                                                                                                      |
 
 `trec` is a native sidecar: an init container with
 `restartPolicy: Always`, a Kubernetes 1.29 feature. It starts before the

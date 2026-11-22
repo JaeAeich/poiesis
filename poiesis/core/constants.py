@@ -24,6 +24,25 @@ EXECUTOR_STREAMS_ENV: str = "POIESIS_EXECUTOR_STREAMS"
 #: Unset or empty turns the `file://` scheme off.
 FILE_URL_ROOTS_ENV: str = "POIESIS_FILE_URL_ROOTS"
 
+#: Env var that turns the `ftp://` and `ftps://` schemes off when set to
+#: ``false``. Sourced from ``taskpods.ftp.enabled``; on when unset. The API
+#: reads it to accept or refuse a task, TIF/TOF read it again.
+FTP_ENABLED_ENV: str = "POIESIS_FTP_ENABLED"
+
+#: Env vars for `drs://` inputs, sourced from ``taskpods.drs``. The scheme
+#: is on only when ``POIESIS_DRS_ENABLED`` is ``true``. The allowed hosts
+#: are comma separated; empty allows any host. The API reads both to accept
+#: or refuse a task, TIF reads them again.
+DRS_ENABLED_ENV: str = "POIESIS_DRS_ENABLED"
+DRS_ALLOWED_HOSTS_ENV: str = "POIESIS_DRS_ALLOWED_HOSTS"
+#: Env var the API sets on TIF only: the object-store schemes this
+#: deployment can stage (comma separated), which a DRS access method may
+#: resolve to.
+DRS_OBJECT_STORES_ENV: str = "POIESIS_DRS_OBJECT_STORES"
+#: Env var holding the bearer token TIF sends to DRS servers, and only to
+#: them; read from the key of the same name in ``taskpods.drs.existingSecret``.
+DRS_BEARER_TOKEN_ENV: str = "DRS_BEARER_TOKEN"  # noqa: S105 - a variable name
+
 #: Env vars the API sets on TIF/TOF for S3 options the AWS SDKs have no
 #: standard variable for (``s3.*`` chart values). Unset keeps the default.
 S3_VIRTUAL_HOSTED_STYLE_ENV: str = "POIESIS_S3_VIRTUAL_HOSTED_STYLE"
