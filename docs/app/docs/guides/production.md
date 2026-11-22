@@ -168,14 +168,22 @@ What that means for task images:
   directory that user can't write. Tasks that need a writable home set
   `HOME` in the executor's `env`, e.g. to a path on the task volume.
 - For another fixed user, set `taskpods.podSecurityContext`, e.g.
-  `{runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}`; its keys replace
-  the profile's. `taskpods.executorSecurityContext` does the same for
-  the executor containers.
+  `{runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}`.
+  `taskpods.executorSecurityContext` does the same for the executor
+  containers. Objects merge with the profile's key by key (e.g.
+  `{capabilities: {add: [NET_BIND_SERVICE]}}` keeps `drop: [ALL]`);
+  other values replace the profile's. Unknown keys and wrong value
+  types stop the API at startup.
 
-`baseline` only drops capabilities and privilege escalation; namespaces
-that enforce Pod Security `baseline` admit TaskPods with any of the
-three profiles. On OpenShift keep `off`: its SecurityContextConstraints
-assign users and seccomp profiles and may refuse fixed ones.
+`restricted` executors need `podSecurityEnforce` `restricted` or
+`baseline`: `trec`, `tif`, `tof` and `ack` must drop their capabilities
+themselves, so with `off` the API refuses to start.
+
+`baseline` only sets `allowPrivilegeEscalation: false`; executors keep
+their user and capabilities, so root images still work. Namespaces that
+enforce Pod Security `baseline` admit TaskPods with any of the three
+profiles. On OpenShift keep `off`: its SecurityContextConstraints assign
+users and seccomp profiles and may refuse fixed ones.
 
 A namespace with a `ResourceQuota` on `limits.cpu` or `limits.memory`
 and no `LimitRange` also needs limits on every container: set

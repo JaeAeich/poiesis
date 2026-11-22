@@ -185,12 +185,13 @@ subject `system:serviceaccount:<taskpod namespace>:<taskpod ServiceAccount>`.
 | Path | Type | Default | Description |
 |---|---|---|---|
 | `taskpods.executorSecurityEnforce` | string | `"off"` | Profile of the executor containers and the TaskPod's Pod-level `securityContext`: `restricted` / `baseline` / `off`. `restricted` is needed in namespaces that enforce Pod Security `restricted`; it also sets the Pod's `runAsUser`/`runAsGroup`/`fsGroup` to 65532, for every container (trec/tif/tof/ack too). Quote `"off"`. |
-| `taskpods.podSecurityContext` | object | `{}` | Pod-level `securityContext` keys over the profile's, e.g. `{runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}`. |
-| `taskpods.executorSecurityContext` | object | `{}` | `securityContext` keys of every executor container over the profile's. |
+| `taskpods.podSecurityContext` | object | `{}` | Pod-level `securityContext` keys over the profile's (objects merge key by key), e.g. `{runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}`. |
+| `taskpods.executorSecurityContext` | object | `{}` | `securityContext` keys of every executor container over the profile's (objects merge key by key). |
 
 Rendered as `POIESIS_EXECUTOR_SECURITY_ENFORCE`,
 `POIESIS_TASKPOD_POD_SECURITY_CONTEXT` and
-`POIESIS_EXECUTOR_SECURITY_CONTEXT` (JSON); an unknown profile or key
+`POIESIS_EXECUTOR_SECURITY_CONTEXT` (JSON); an unknown profile or key,
+a value of the wrong type, or `restricted` with `podSecurityEnforce: off`
 stops the API at startup. On OpenShift keep `off`.
 
 ### System-container resources (`taskpods.systemResources`)

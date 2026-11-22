@@ -47,10 +47,7 @@ RESTRICTED_EXECUTOR = {
     "capabilities": {"drop": ["ALL"]},
     "seccompProfile": {"type": "RuntimeDefault"},
 }
-BASELINE_EXECUTOR = {
-    "allowPrivilegeEscalation": False,
-    "capabilities": {"drop": ["ALL"]},
-}
+BASELINE_EXECUTOR = {"allowPrivilegeEscalation": False}
 
 
 def pod_spec(config: RuntimeConfig) -> dict[str, Any]:
@@ -113,7 +110,7 @@ def test_restricted_profile(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_baseline_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`baseline` drops capabilities and privilege escalation, sets no user."""
+    """`baseline` only stops privilege escalation: root images keep their capabilities."""
     config = settings(
         monkeypatch, **{EXECUTOR_SECURITY_ENFORCE_ENV: "baseline"}
     ).runtime_config()
@@ -148,6 +145,33 @@ def test_overrides_merge_over_the_profile(monkeypatch: pytest.MonkeyPatch) -> No
         }
 
 
+def test_nested_overrides_keep_the_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An object in an override merges with the profile's object of that name."""
+    config = settings(
+        monkeypatch,
+        **{
+            EXECUTOR_SECURITY_ENFORCE_ENV: "restricted",
+            EXECUTOR_SECURITY_CONTEXT_ENV: json.dumps(
+                {"capabilities": {"add": ["NET_BIND_SERVICE"]}}
+            ),
+        },
+    ).runtime_config()
+    for executor in executors(pod_spec(config)):
+        assert executor["securityContext"]["capabilities"] == {
+            "add": ["NET_BIND_SERVICE"],
+            "drop": ["ALL"],
+        }
+
+
+def test_restricted_executors_need_restricted_poiesis_containers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With podSecurityEnforce off, trec/tif/tof/ack would fail restricted: refused."""
+    monkeypatch.setenv("POIESIS_POD_SECURITY_ENFORCE", "off")
+    with pytest.raises(ValueError, match="not off"):
+        settings(monkeypatch, **{EXECUTOR_SECURITY_ENFORCE_ENV: "restricted"})
+
+
 def test_overrides_apply_without_a_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     """With `off`, the operator's contexts are used as they are."""
     config = settings(
@@ -180,8 +204,9 @@ def test_poiesis_containers_keep_their_own_profile(
         )
 
 
+@pytest.mark.parametrize("poiesis_profile", ["restricted", "baseline"])
 def test_restricted_taskpod_meets_pod_security_restricted(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, poiesis_profile: str
 ) -> None:
     """Every container of a `restricted` TaskPod passes the restricted checks.
 
@@ -189,7 +214,7 @@ def test_restricted_taskpod_meets_pod_security_restricted(
     fail: privilege escalation, capabilities, non-root and seccomp, each
     from the container or, where Kubernetes allows it, the Pod.
     """
-    monkeypatch.setenv("POIESIS_POD_SECURITY_ENFORCE", "restricted")
+    monkeypatch.setenv("POIESIS_POD_SECURITY_ENFORCE", poiesis_profile)
     config = settings(
         monkeypatch, **{EXECUTOR_SECURITY_ENFORCE_ENV: "restricted"}
     ).runtime_config()
@@ -269,6 +294,31 @@ def test_dict_fields_pass_unconverted() -> None:
             "no field 'drops'",
         ),
         (EXECUTOR_SECURITY_CONTEXT_ENV, '{"capabilities": "ALL"}', "must be an object"),
+        (
+            EXECUTOR_SECURITY_CONTEXT_ENV,
+            '{"capabilities": {"drop": "ALL"}}',
+            "V1Capabilities.drop must be a list",
+        ),
+        (
+            TASKPOD_POD_SECURITY_CONTEXT_ENV,
+            '{"runAsUser": "1000"}',
+            "V1PodSecurityContext.runAsUser must be int",
+        ),
+        (
+            TASKPOD_POD_SECURITY_CONTEXT_ENV,
+            '{"runAsUser": true}',
+            "V1PodSecurityContext.runAsUser must be int",
+        ),
+        (
+            TASKPOD_POD_SECURITY_CONTEXT_ENV,
+            '{"sysctls": {"name": "x"}}',
+            "V1PodSecurityContext.sysctls must be a list",
+        ),
+        (
+            EXECUTOR_SECURITY_CONTEXT_ENV,
+            '{"privileged": "no"}',
+            "V1SecurityContext.privileged must be bool",
+        ),
     ],
 )
 def test_bad_value_refused(

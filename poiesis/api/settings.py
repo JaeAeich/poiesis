@@ -1843,6 +1843,24 @@ class Settings(BaseModel):
     scheduling: SchedulingSettings = Field(default_factory=SchedulingSettings.from_env)
 
     @model_validator(mode="after")
+    def _check_executor_security(self) -> Settings:
+        """Refuse restricted executors next to unrestricted poiesis containers.
+
+        Only the containers themselves can set ``allowPrivilegeEscalation``
+        and ``capabilities``: with ``off``, trec, tif, tof and ack lack them,
+        and a namespace enforcing restricted would refuse every TaskPod.
+        """
+        if (
+            self.executor_security_enforce is PodSecurityEnforce.RESTRICTED
+            and self.pod_security_enforce is PodSecurityEnforce.OFF
+        ):
+            raise ValueError(
+                f"{EXECUTOR_SECURITY_ENFORCE_ENV}=restricted needs "
+                "POIESIS_POD_SECURITY_ENFORCE restricted or baseline, not off"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _check_storage(self) -> Settings:
         """Refuse keys for an anonymous S3 store, and volumes named like a token."""
         if self.storage.s3_anonymous and self.taskpod_s3_secret:

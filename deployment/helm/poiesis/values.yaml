@@ -705,24 +705,28 @@ taskpods:
   # Security `restricted` refuses every TaskPod unless this is `restricted`.
   #   off        → no securityContext: executors run as their images say,
   #                root included (the default).
-  #   baseline   → executors: allowPrivilegeEscalation false, drop ALL
-  #                capabilities.
-  #   restricted → baseline, plus runAsNonRoot and seccomp RuntimeDefault on
-  #                executors, and on the Pod runAsUser/runAsGroup/fsGroup
+  #   baseline   → executors: allowPrivilegeEscalation false (capabilities
+  #                stay, so root images still work).
+  #   restricted → executors: allowPrivilegeEscalation false, drop ALL
+  #                capabilities, runAsNonRoot, seccomp RuntimeDefault; on
+  #                the Pod runAsUser/runAsGroup/fsGroup
   #                65532 (the poiesis image's user) with fsGroupChangePolicy
   #                OnRootMismatch. Every container then runs as uid 65532, so
   #                images that need root, or a user of their own, fail.
+  # `restricted` needs podSecurityEnforce restricted or baseline (else the API
+  # refuses to start): only containers can drop their own capabilities.
   # On OpenShift, keep `off`: its SecurityContextConstraints assign users.
   # Quote "off": unquoted, YAML reads it as false and the schema refuses it.
   executorSecurityEnforce: "off"
-  # Pod-level securityContext keys merged over the profile (keys you set
-  # replace the profile's), e.g. {runAsUser: 1000, runAsGroup: 1000,
-  # fsGroup: 1000} for another fixed user. Applies to every TaskPod
-  # container, trec/tif/tof/ack included.
+  # Pod-level securityContext keys merged over the profile (objects merge key
+  # by key, other values replace the profile's), e.g. {runAsUser: 1000,
+  # runAsGroup: 1000, fsGroup: 1000} for another fixed user. Applies to every
+  # TaskPod container, trec/tif/tof/ack included.
   podSecurityContext: {}
   # securityContext keys of every executor container, merged over the
-  # profile the same way, e.g. {readOnlyRootFilesystem: true}. Keys of both
-  # are checked at API startup: an unknown one stops the API.
+  # profile the same way, e.g. {capabilities: {add: [NET_BIND_SERVICE]}}
+  # keeps the profile's drop: [ALL]. Keys and value types of both are
+  # checked at API startup: an unknown key or a wrong type stops the API.
   executorSecurityContext: {}
 
   # Requests and limits of the poiesis-owned TaskPod containers. Needed when

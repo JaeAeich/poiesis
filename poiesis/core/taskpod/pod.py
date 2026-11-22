@@ -105,10 +105,9 @@ _EXECUTOR_PROFILES: dict[PodSecurityEnforce, dict[str, Any]] = {
         "capabilities": {"drop": ["ALL"]},
         "seccompProfile": {"type": "RuntimeDefault"},
     },
-    PodSecurityEnforce.BASELINE: {
-        "allowPrivilegeEscalation": False,
-        "capabilities": {"drop": ["ALL"]},
-    },
+    # Capabilities stay: root images may need them (chown, writing into
+    # directories tif created), and Pod Security baseline allows them.
+    PodSecurityEnforce.BASELINE: {"allowPrivilegeEscalation": False},
 }
 
 
@@ -147,8 +146,19 @@ def executor_security_context(config: RuntimeConfig) -> V1SecurityContext | None
 def _merged(
     profile: Mapping[str, Any], overrides: Mapping[str, Any]
 ) -> dict[str, Any] | None:
-    """``overrides`` over a copy of ``profile`` (top-level keys); None if empty."""
-    merged = copy.deepcopy({**profile, **overrides})
+    """``overrides`` deep-merged over a copy of ``profile``; None if empty.
+
+    Objects merge key by key, so ``{capabilities: {add: [X]}}`` keeps the
+    profile's ``drop``; any other value, lists included, replaces the
+    profile's.
+    """
+    merged = copy.deepcopy(dict(profile))
+    for key, value in overrides.items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = _merged(current, value) or {}
+        else:
+            merged[key] = copy.deepcopy(value)
     return merged or None
 
 
