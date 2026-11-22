@@ -3,8 +3,8 @@
 GA4GH TES (Task Execution Service) on Kubernetes. Single-Pod task
 architecture, Postgres-backed, leader-elected backstop reconciler. This
 chart deploys only the poiesis control plane — Postgres and (optional)
-object storage (S3 or S3-compatible; Google Cloud Storage and Azure Blob,
-experimental) are operator-supplied.
+object storage (S3 or S3-compatible, Google Cloud Storage, Azure Blob)
+are operator-supplied.
 
 ## Quick start
 
@@ -94,8 +94,9 @@ kubectl -n poiesis-tasks create secret generic poiesis-s3 \
 
 tif and tof stage inputs from and upload outputs to `s3://`, `gs://` and
 `az://` URLs. A scheme is accepted at submit, and listed in service-info,
-only when its provider is on. `gcs` and `azure` are experimental: they
-are covered by unit tests only, not run against the real services.
+only when its provider is on. The end-to-end tests run all three on kind
+against SeaweedFS (S3), fake-gcs-server (GCS) and Azurite (Azure); none
+is run against the real cloud service in CI.
 
 | Path | Type | Default | Description |
 |---|---|---|---|
@@ -108,23 +109,28 @@ are covered by unit tests only, not run against the real services.
 | `s3.serverSideEncryption` | string | `""`    | `AES256`, `aws:kms` or `aws:kms:dsse`. |
 | `s3.kmsKeyId`             | string | `""`    | KMS key for `aws:kms` / `aws:kms:dsse`. |
 | `s3.requesterPays`        | bool   | `false` | Pay for requests to requester-pays buckets. |
-| `gcs.enabled`             | bool   | `false` | Offer `gs://`. Needs `gcs.existingSecret`. |
+| `gcs.enabled`             | bool   | `false` | Offer `gs://`. Needs `gcs.existingSecret` or `gcs.workloadIdentityProvider`, not both. |
 | `gcs.existingSecret`      | string | `""`    | Secret in the TaskPod namespace with `GOOGLE_SERVICE_ACCOUNT_KEY` (a JSON key). |
+| `gcs.workloadIdentityProvider` | string | `""` | Workload Identity Federation: full name of the pool provider (`//iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`). tif/tof get a ServiceAccount token for `https:<that name>` and trade it at Google STS. |
+| `gcs.serviceAccount`      | string | `""`    | Service account to impersonate with the federated token. Empty: the federated principal is used directly. |
+| `gcs.endpoint`            | string | `""`    | Base URL of the GCS API; empty for `https://storage.googleapis.com`. An `http://` endpoint is allowed. |
 | `azure.enabled`           | bool   | `false` | Offer `az://container/blob`. Needs `azure.accountName`. |
 | `azure.accountName`       | string | `""`    | Storage account. |
-| `azure.existingSecret`    | string | `""`    | Secret in the TaskPod namespace with `AZURE_STORAGE_ACCOUNT_KEY`. |
+| `azure.existingSecret`    | string | `""`    | Secret in the TaskPod namespace with `AZURE_STORAGE_ACCOUNT_KEY` or `AZURE_STORAGE_SAS_TOKEN`. |
 | `azure.clientId`, `azure.tenantId` | string | `""` | Workload identity: tif/tof get a ServiceAccount token for `api://AzureADTokenExchange`. Set both or neither. |
+| `azure.endpoint`          | string | `""`    | Blob endpoint; empty for `https://<accountName>.blob.core.windows.net`. An `http://` endpoint is allowed. |
 
-With `s3.roleArn` or `azure.clientId`, the API projects a ServiceAccount
-token for the provider into tif and tof only, at
-`/var/run/secrets/poiesis/identity/<aws|azure>/token`. Executors never
-get it: the TaskPod does not automount a token, and only trec gets the
-Kubernetes API token. Do not annotate the TaskPod ServiceAccount for the
-EKS or AKS webhooks (`eks.amazonaws.com/role-arn`,
-`azure.workload.identity/client-id`): they inject the token into every
-container, executors included. The trust policy (AWS) or federated
-credential (Azure) names the subject
-`system:serviceaccount:<taskpod namespace>:<taskpod ServiceAccount>`.
+With `s3.roleArn`, `azure.clientId` or `gcs.workloadIdentityProvider`,
+the API projects a ServiceAccount token for the provider into tif and tof
+only, at `/var/run/secrets/poiesis/identity/<aws|azure|gcp>/token`.
+Executors never get it: the TaskPod does not automount a token, and only
+trec gets the Kubernetes API token. Do not annotate the TaskPod
+ServiceAccount for the EKS or AKS webhooks (`eks.amazonaws.com/role-arn`,
+`azure.workload.identity/client-id`) or for GKE Workload Identity
+(`iam.gke.io/gcp-service-account`): they hand credentials to every
+container, executors included. The trust policy (AWS), federated
+credential (Azure) or pool provider's principal (Google) names the
+subject `system:serviceaccount:<taskpod namespace>:<taskpod ServiceAccount>`.
 
 ### Storage (`taskpods.persistence`)
 

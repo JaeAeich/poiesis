@@ -7,9 +7,11 @@ The key is taken as written: ``?``, ``#`` and glob characters are part of
 it, not a query, a fragment or a pattern.
 
 Credentials come from each provider's default chain, which obstore reads
-from the environment: static keys, a web-identity token file (IRSA, Azure
-workload identity), instance metadata. The API sets that environment on
-TIF and TOF only; see the "Storage" docs page.
+from the environment: static keys, a SAS token (Azure), a web-identity
+token file (IRSA, Azure workload identity), instance metadata. For Google
+Workload Identity Federation, `GcsWorkloadIdentity` trades the mounted
+token for an access token. The API sets that environment on TIF and TOF
+only; see the "Storage" docs page.
 
 Transfers stream: a download is written to the volume as it arrives, an
 upload is sent in parts read from the file. A DIRECTORY or glob moves up
@@ -32,6 +34,9 @@ from obstore.exceptions import BaseError
 from obstore.store import AzureStore, GCSStore, S3Store
 
 from poiesis.core.constants import (
+    GCS_IDENTITY_TOKEN_FILE_ENV,
+    GCS_SERVICE_ACCOUNT_ENV,
+    GCS_WORKLOAD_IDENTITY_PROVIDER_ENV,
     S3_REQUESTER_PAYS_ENV,
     S3_SERVER_SIDE_ENCRYPTION_ENV,
     S3_SSE_KMS_KEY_ID_ENV,
@@ -41,6 +46,7 @@ from poiesis.core.services.filer.strategy.filer_strategy import (
     InputFilerStrategy,
     OutputFilerStrategy,
 )
+from poiesis.core.services.filer.strategy.gcs_identity import GcsWorkloadIdentity
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Iterable
@@ -112,22 +118,48 @@ def parse_object_url(url: str) -> ObjectUrl:
 def make_store(location: ObjectUrl) -> ObjectStore:
     """The obstore store for `location`'s bucket, configured from the env."""
     if location.scheme == "s3":
-        endpoint = os.environ.get("AWS_ENDPOINT_URL", "")
-        client: ClientConfig = {**_CLIENT}
-        if endpoint.startswith("http://"):
-            client["allow_http"] = True
         return S3Store(
             location.bucket,
             config=s3_options(),
-            client_options=client,
+            client_options=_client_for(os.environ.get("AWS_ENDPOINT_URL", "")),
             retry_config=_RETRY,
         )
     if location.scheme == "gs":
-        return GCSStore(location.bucket, client_options=_CLIENT, retry_config=_RETRY)
+        return GCSStore(
+            location.bucket,
+            client_options=_client_for(os.environ.get("GOOGLE_BASE_URL", "")),
+            retry_config=_RETRY,
+            credential_provider=gcs_credential_provider(),
+        )
     return AzureStore(
         container_name=location.bucket,
-        client_options=_CLIENT,
+        client_options=_client_for(os.environ.get("AZURE_STORAGE_ENDPOINT", "")),
         retry_config=_RETRY,
+    )
+
+
+def _client_for(endpoint: str) -> ClientConfig:
+    """Client options; plain HTTP only when the endpoint is ``http://``."""
+    client: ClientConfig = {**_CLIENT}
+    if endpoint.startswith("http://"):
+        client["allow_http"] = True
+    return client
+
+
+def gcs_credential_provider() -> GcsWorkloadIdentity | None:
+    """The Workload Identity Federation provider, when the API set one up.
+
+    None leaves obstore to its own chain: ``GOOGLE_SERVICE_ACCOUNT_KEY``
+    from the Secret.
+    """
+    provider = os.environ.get(GCS_WORKLOAD_IDENTITY_PROVIDER_ENV)
+    token_file = os.environ.get(GCS_IDENTITY_TOKEN_FILE_ENV)
+    if not provider or not token_file:
+        return None
+    return GcsWorkloadIdentity(
+        provider,
+        token_file,
+        os.environ.get(GCS_SERVICE_ACCOUNT_ENV) or None,
     )
 
 

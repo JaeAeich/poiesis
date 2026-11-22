@@ -109,9 +109,10 @@ serviceAccount:
     create: true
     name: ""
     annotations: {}
-  # For object-store access set s3.roleArn or azure.clientId instead of
-  # cloud-identity annotations here: the EKS/AKS webhooks would give the
-  # token to every container of the TaskPod, executors included.
+  # For object-store access set s3.roleArn, azure.clientId or
+  # gcs.workloadIdentityProvider instead of cloud-identity annotations
+  # here: the EKS/AKS webhooks and the GKE metadata server would give
+  # credentials to every container of the TaskPod, executors included.
   taskpod:
     create: true
     name: ""
@@ -373,29 +374,44 @@ s3:
   # Send x-amz-request-payer: requester, for requester-pays buckets.
   requesterPays: false
 
-# Google Cloud Storage (gs://). Experimental: covered by unit tests only.
+# Google Cloud Storage (gs://). Needs existingSecret or
+# workloadIdentityProvider: without either, tif/tof would use the node's
+# metadata server, which executors reach too.
 gcs:
   enabled: false
   # Secret in the TaskPod namespace with key GOOGLE_SERVICE_ACCOUNT_KEY
-  # (the service account's JSON key). Required: GKE Workload Identity
-  # answers every container in the Pod, executors included, so it isn't
-  # offered.
+  # (the service account's JSON key).
   existingSecret: ""
+  # Workload Identity Federation: the pool provider's full name,
+  # //iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>.
+  # tif/tof get a ServiceAccount token for https:<that name>, mounted into
+  # tif and tof only, and trade it at Google STS. Leave existingSecret
+  # empty.
+  workloadIdentityProvider: ""
+  # Service account to impersonate with the federated token; empty uses
+  # the federated principal directly.
+  serviceAccount: ""
+  # Base URL of the GCS API; empty for https://storage.googleapis.com.
+  # For Private Service Connect, a sovereign cloud or an emulator.
+  endpoint: ""
 
-# Azure Blob Storage (az://container/blob). Experimental: covered by unit
-# tests only.
+# Azure Blob Storage (az://container/blob).
 azure:
   enabled: false
   # Storage account the containers belong to. Required when enabled.
   accountName: ""
-  # Secret in the TaskPod namespace with key AZURE_STORAGE_ACCOUNT_KEY.
-  # Empty when using workload identity.
+  # Secret in the TaskPod namespace with key AZURE_STORAGE_ACCOUNT_KEY or
+  # AZURE_STORAGE_SAS_TOKEN. Empty when using workload identity.
   existingSecret: ""
   # Workload identity: the managed identity's client ID and its tenant.
   # tif/tof get a ServiceAccount token for api://AzureADTokenExchange,
   # mounted into tif and tof only. Set both or neither.
   clientId: ""
   tenantId: ""
+  # Blob endpoint; empty for https://<accountName>.blob.core.windows.net.
+  # For a private endpoint, a sovereign cloud, Azure Stack or Azurite
+  # (http://azurite:10000/<account>).
+  endpoint: ""
 
 # -----------------------------------------------------------------------------
 # API (TES HTTP endpoint)

@@ -189,8 +189,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled":        { "type": "boolean" },
-        "existingSecret": { "type": "string" }
+        "enabled":                  { "type": "boolean" },
+        "existingSecret":           { "type": "string" },
+        "workloadIdentityProvider": { "type": "string", "pattern": "^(//.+)?$" },
+        "serviceAccount":           { "type": "string" },
+        "endpoint":                 { "type": "string", "pattern": "^(https?://.+)?$" }
       }
     },
 
@@ -202,7 +205,8 @@
         "accountName":    { "type": "string" },
         "existingSecret": { "type": "string" },
         "clientId":       { "type": "string" },
-        "tenantId":       { "type": "string" }
+        "tenantId":       { "type": "string" },
+        "endpoint":       { "type": "string", "pattern": "^(https?://.+)?$" }
       }
     },
 

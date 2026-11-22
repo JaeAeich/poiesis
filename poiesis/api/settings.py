@@ -42,6 +42,9 @@ from poiesis.core.constants import (
     DRS_ENABLED_ENV,
     FILE_URL_ROOTS_ENV,
     FTP_ENABLED_ENV,
+    GCS_IDENTITY_TOKEN_FILE_ENV,
+    GCS_SERVICE_ACCOUNT_ENV,
+    GCS_WORKLOAD_IDENTITY_PROVIDER_ENV,
     OUTPUT_GLOB_FALLBACK_ENV,
     S3_REQUESTER_PAYS_ENV,
     S3_SERVER_SIDE_ENCRYPTION_ENV,
@@ -50,6 +53,7 @@ from poiesis.core.constants import (
 )
 from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
 from poiesis.core.services.filer.file_urls import parse_file_url_roots
+from poiesis.core.services.filer.strategy.gcs_identity import token_audience
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 from poiesis.core.taskpod.config import (
     BACKEND_PARAMETERS,
@@ -291,8 +295,11 @@ _RESERVED_ENV_NAMES: frozenset[str] = frozenset(
         "AWS_ROLE_ARN",
         "AWS_WEB_IDENTITY_TOKEN_FILE",
         "GOOGLE_SERVICE_ACCOUNT_KEY",
+        "GOOGLE_BASE_URL",
         "AZURE_STORAGE_ACCOUNT_NAME",
         "AZURE_STORAGE_ACCOUNT_KEY",
+        "AZURE_STORAGE_SAS_TOKEN",
+        "AZURE_STORAGE_ENDPOINT",
         "AZURE_CLIENT_ID",
         "AZURE_TENANT_ID",
         "AZURE_FEDERATED_TOKEN_FILE",
@@ -312,6 +319,7 @@ _RESERVED_VOLUME_NAMES: frozenset[str] = frozenset(
         "tmp",
         identity_token_volume_name("aws"),
         identity_token_volume_name("azure"),
+        identity_token_volume_name("gcp"),
     }
 )
 
@@ -1156,10 +1164,11 @@ class StorageSettings(BaseModel):
     for S3, by any source of keys (see `Settings.runtime_config`). Its
     scheme is then accepted at submit and listed in service-info.
 
-    Workload identity: with ``POIESIS_S3_ROLE_ARN``, or the Azure client and
-    tenant IDs, the TaskPod gets a ServiceAccount token for the provider's
-    audience, mounted into TIF and TOF only, and the variables the
-    provider's SDK reads to trade it for credentials.
+    Workload identity: with ``POIESIS_S3_ROLE_ARN``, the Azure client and
+    tenant IDs, or a Google workload identity pool provider, the TaskPod
+    gets a ServiceAccount token for the provider's audience, mounted into
+    TIF and TOF only, and the variables TIF and TOF read to trade it for
+    credentials.
     """
 
     s3_enabled: bool = Field(
@@ -1195,6 +1204,18 @@ class StorageSettings(BaseModel):
     taskpod_gcs_secret: str | None = Field(
         default_factory=lambda: _env_or_none("POIESIS_TASKPOD_GCS_SECRET"),
     )
+    # Base URL of the GCS API; None: https://storage.googleapis.com.
+    gcs_endpoint: str | None = Field(
+        default_factory=lambda: _env_or_none("POIESIS_GCS_ENDPOINT"),
+    )
+    # Full name of the workload identity pool provider that accepts the
+    # TaskPod's ServiceAccount token, and the service account to act as.
+    gcs_workload_identity_provider: str | None = Field(
+        default_factory=lambda: _env_or_none(GCS_WORKLOAD_IDENTITY_PROVIDER_ENV),
+    )
+    gcs_service_account: str | None = Field(
+        default_factory=lambda: _env_or_none(GCS_SERVICE_ACCOUNT_ENV),
+    )
     azure_enabled: bool = Field(
         default_factory=lambda: _parse_strict_bool_env(
             "POIESIS_AZURE_ENABLED", default=False
@@ -1209,7 +1230,12 @@ class StorageSettings(BaseModel):
     azure_tenant_id: str | None = Field(
         default_factory=lambda: _env_or_none("POIESIS_AZURE_TENANT_ID"),
     )
-    # Secret in the TaskPod namespace with AZURE_STORAGE_ACCOUNT_KEY.
+    # Blob endpoint; None: https://<account>.blob.core.windows.net.
+    azure_endpoint: str | None = Field(
+        default_factory=lambda: _env_or_none("POIESIS_AZURE_ENDPOINT"),
+    )
+    # Secret in the TaskPod namespace with AZURE_STORAGE_ACCOUNT_KEY or
+    # AZURE_STORAGE_SAS_TOKEN.
     taskpod_azure_secret: str | None = Field(
         default_factory=lambda: _env_or_none("POIESIS_TASKPOD_AZURE_SECRET"),
     )
@@ -1228,12 +1254,13 @@ class StorageSettings(BaseModel):
                 f"{S3_SSE_KMS_KEY_ID_ENV} needs {S3_SERVER_SIDE_ENCRYPTION_ENV}"
                 "=aws:kms or aws:kms:dsse"
             )
-        if self.gcs_enabled and not self.taskpod_gcs_secret:
-            raise ValueError(
-                "POIESIS_GCS_ENABLED needs POIESIS_TASKPOD_GCS_SECRET: Google "
-                "Cloud Storage takes a service-account key only (see the "
-                "Storage docs page for why not workload identity)"
-            )
+        self._check_gcs()
+        for name, url in (
+            ("POIESIS_GCS_ENDPOINT", self.gcs_endpoint),
+            ("POIESIS_AZURE_ENDPOINT", self.azure_endpoint),
+        ):
+            if url is not None and not url.startswith(("http://", "https://")):
+                raise ValueError(f"{name} must be an http(s):// URL, got {url!r}")
         if self.azure_enabled and not self.azure_account_name:
             raise ValueError("POIESIS_AZURE_ENABLED needs POIESIS_AZURE_ACCOUNT_NAME")
         if bool(self.azure_client_id) != bool(self.azure_tenant_id):
@@ -1241,6 +1268,34 @@ class StorageSettings(BaseModel):
                 "POIESIS_AZURE_CLIENT_ID and POIESIS_AZURE_TENANT_ID are set together"
             )
         return self
+
+    def _check_gcs(self) -> None:
+        """Refuse GCS credentials that are missing, doubled or malformed."""
+        if self.gcs_enabled and not (
+            self.taskpod_gcs_secret or self.gcs_workload_identity_provider
+        ):
+            raise ValueError(
+                "POIESIS_GCS_ENABLED needs POIESIS_TASKPOD_GCS_SECRET or "
+                f"{GCS_WORKLOAD_IDENTITY_PROVIDER_ENV}: without either, TIF and "
+                "TOF would use the node's metadata server, which executors "
+                "reach too"
+            )
+        provider = self.gcs_workload_identity_provider
+        if provider is not None and not provider.startswith("//"):
+            raise ValueError(
+                f"{GCS_WORKLOAD_IDENTITY_PROVIDER_ENV} is the provider's full "
+                "name, //iam.googleapis.com/projects/<number>/locations/global/"
+                f"workloadIdentityPools/<pool>/providers/<provider>; got {provider!r}"
+            )
+        if provider and self.taskpod_gcs_secret:
+            raise ValueError(
+                f"Set {GCS_WORKLOAD_IDENTITY_PROVIDER_ENV} or "
+                "POIESIS_TASKPOD_GCS_SECRET, not both"
+            )
+        if self.gcs_service_account and not provider:
+            raise ValueError(
+                f"{GCS_SERVICE_ACCOUNT_ENV} needs {GCS_WORKLOAD_IDENTITY_PROVIDER_ENV}"
+            )
 
     def filer_env(self) -> list[V1EnvVar]:
         """Env vars for TIF/TOF only: options and identity, no secret values."""
@@ -1257,23 +1312,31 @@ class StorageSettings(BaseModel):
         if self.s3_role_arn:
             literal("AWS_ROLE_ARN", self.s3_role_arn)
             literal("AWS_WEB_IDENTITY_TOKEN_FILE", identity_token_path("aws"))
-        if self.gcs_enabled and self.taskpod_gcs_secret:
-            env.append(
-                _secret_env(
-                    "GOOGLE_SERVICE_ACCOUNT_KEY",
-                    self.taskpod_gcs_secret,
-                    "GOOGLE_SERVICE_ACCOUNT_KEY",
+        if self.gcs_enabled:
+            literal("GOOGLE_BASE_URL", self.gcs_endpoint)
+            if self.gcs_workload_identity_provider:
+                literal(
+                    GCS_WORKLOAD_IDENTITY_PROVIDER_ENV,
+                    self.gcs_workload_identity_provider,
                 )
-            )
-        if self.azure_enabled:
-            literal("AZURE_STORAGE_ACCOUNT_NAME", self.azure_account_name)
-            if self.taskpod_azure_secret:
+                literal(GCS_SERVICE_ACCOUNT_ENV, self.gcs_service_account)
+                literal(GCS_IDENTITY_TOKEN_FILE_ENV, identity_token_path("gcp"))
+            elif self.taskpod_gcs_secret:
                 env.append(
                     _secret_env(
-                        "AZURE_STORAGE_ACCOUNT_KEY",
-                        self.taskpod_azure_secret,
-                        "AZURE_STORAGE_ACCOUNT_KEY",
+                        "GOOGLE_SERVICE_ACCOUNT_KEY",
+                        self.taskpod_gcs_secret,
+                        "GOOGLE_SERVICE_ACCOUNT_KEY",
                     )
+                )
+        if self.azure_enabled:
+            literal("AZURE_STORAGE_ACCOUNT_NAME", self.azure_account_name)
+            literal("AZURE_STORAGE_ENDPOINT", self.azure_endpoint)
+            if self.taskpod_azure_secret:
+                # One of the two keys, so each is optional.
+                env.extend(
+                    _secret_env(name, self.taskpod_azure_secret, name, optional=True)
+                    for name in ("AZURE_STORAGE_ACCOUNT_KEY", "AZURE_STORAGE_SAS_TOKEN")
                 )
             if self.azure_client_id:
                 literal("AZURE_CLIENT_ID", self.azure_client_id)
@@ -1288,6 +1351,8 @@ class StorageSettings(BaseModel):
             audiences["aws"] = _AWS_TOKEN_AUDIENCE
         if self.azure_enabled and self.azure_client_id:
             audiences["azure"] = _AZURE_TOKEN_AUDIENCE
+        if self.gcs_enabled and self.gcs_workload_identity_provider:
+            audiences["gcp"] = token_audience(self.gcs_workload_identity_provider)
         return audiences
 
 

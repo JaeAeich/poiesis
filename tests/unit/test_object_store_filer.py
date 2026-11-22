@@ -483,3 +483,22 @@ def test_gcs_and_azure_stores(monkeypatch) -> None:
     azure = make_store(ObjectUrl("az", "container", "k"))
     assert isinstance(azure, AzureStore)
     assert azure.config == {"container_name": "container"}
+
+
+def test_gcs_and_azure_endpoints_allow_http_only_when_they_are_http(
+    monkeypatch,
+) -> None:
+    """An ``http://`` endpoint (an emulator) needs plain HTTP; https doesn't."""
+    for name in ("GOOGLE_SERVICE_ACCOUNT_KEY", "GOOGLE_APPLICATION_CREDENTIALS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "account")
+    for scheme, name in (("gs", "GOOGLE_BASE_URL"), ("az", "AZURE_STORAGE_ENDPOINT")):
+        monkeypatch.setenv(name, "http://emulator:10000")
+        store = make_store(ObjectUrl(scheme, "bucket", "k"))
+        assert store.client_options is not None
+        assert store.client_options.get("allow_http") == "true", scheme
+        monkeypatch.setenv(name, "https://private.example")
+        store = make_store(ObjectUrl(scheme, "bucket", "k"))
+        assert store.client_options is not None
+        assert "allow_http" not in store.client_options, scheme
+

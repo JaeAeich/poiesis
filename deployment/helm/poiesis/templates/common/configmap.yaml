@@ -159,11 +159,25 @@ data:
   {{- end }}
   {{- $gcs := .Values.gcs }}
   {{- if $gcs.enabled }}
-  {{- if not $gcs.existingSecret }}
-  {{- fail "gcs.enabled needs gcs.existingSecret (a service-account key): GKE Workload Identity would reach executors too" }}
+  {{- if eq (empty $gcs.existingSecret) (empty $gcs.workloadIdentityProvider) }}
+  {{- fail "gcs.enabled needs one of gcs.existingSecret (a service-account key) or gcs.workloadIdentityProvider: the node's metadata server would reach executors too" }}
+  {{- end }}
+  {{- if and $gcs.serviceAccount (not $gcs.workloadIdentityProvider) }}
+  {{- fail "gcs.serviceAccount needs gcs.workloadIdentityProvider" }}
   {{- end }}
   POIESIS_GCS_ENABLED: "true"
-  POIESIS_TASKPOD_GCS_SECRET: {{ $gcs.existingSecret | quote }}
+  {{- with $gcs.existingSecret }}
+  POIESIS_TASKPOD_GCS_SECRET: {{ . | quote }}
+  {{- end }}
+  {{- with $gcs.workloadIdentityProvider }}
+  POIESIS_GCS_WORKLOAD_IDENTITY_PROVIDER: {{ . | quote }}
+  {{- end }}
+  {{- with $gcs.serviceAccount }}
+  POIESIS_GCS_SERVICE_ACCOUNT: {{ . | quote }}
+  {{- end }}
+  {{- with $gcs.endpoint }}
+  POIESIS_GCS_ENDPOINT: {{ . | quote }}
+  {{- end }}
   {{- end }}
   {{- $azure := .Values.azure }}
   {{- if $azure.enabled }}
@@ -181,6 +195,9 @@ data:
   {{- with $azure.clientId }}
   POIESIS_AZURE_CLIENT_ID: {{ . | quote }}
   POIESIS_AZURE_TENANT_ID: {{ $azure.tenantId | quote }}
+  {{- end }}
+  {{- with $azure.endpoint }}
+  POIESIS_AZURE_ENDPOINT: {{ . | quote }}
   {{- end }}
   {{- end }}
 

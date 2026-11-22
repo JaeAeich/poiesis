@@ -134,7 +134,8 @@ jobs:
       - uses: helm/kind-action@v1
         with:
           cluster_name: poiesis-e2e
-      # Postgres, SeaweedFS, the chart with auth off (tests/e2e/values.yaml).
+      # Postgres, the S3/GCS/Azure emulators, the chart with auth off
+      # (tests/e2e/values.yaml).
       - run: tests/e2e/setup.sh
         env:
           SKIP_BUILD: "1"
@@ -156,6 +157,8 @@ jobs:
           $k get events --sort-by=.lastTimestamp | tail -50
           $k logs deploy/poiesis-api --tail=200
           $k logs deploy/poiesis-tctl --tail=200
+          $k logs deploy/gcs --tail=100
+          $k logs deploy/azurite --tail=100
           cat port-forward.log
 
   typos:
