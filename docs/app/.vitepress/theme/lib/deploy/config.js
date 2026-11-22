@@ -4,6 +4,7 @@
 /** @typedef {"s3" | "gcs" | "azure"} StorageProvider */
 /** @typedef {"secret" | "irsa"} S3Credentials */
 /** @typedef {"secret" | "identity"} AzureCredentials */
+/** @typedef {"secret" | "identity"} GcsCredentials */
 /** @typedef {"owner" | "decision-service"} AuthzMode */
 /** @typedef {"oidc" | "gateway"} IssuerType */
 
@@ -34,7 +35,10 @@
  * @property {S3Credentials} s3Credentials
  * @property {string} s3Secret
  * @property {string} s3RoleArn
+ * @property {GcsCredentials} gcsCredentials
  * @property {string} gcsSecret
+ * @property {string} gcsWorkloadIdentityProvider
+ * @property {string} gcsServiceAccount
  * @property {string} azureAccount
  * @property {AzureCredentials} azureCredentials
  * @property {string} azureSecret
@@ -64,6 +68,11 @@ export const TLS_MODES = /** @type {const} */ ([
 export const S3_CREDENTIAL_MODES = /** @type {const} */ ([
   ["secret", "Access key Secret"],
   ["irsa", "Workload identity"],
+]);
+
+export const GCS_CREDENTIAL_MODES = /** @type {const} */ ([
+  ["secret", "Key Secret"],
+  ["identity", "Workload identity"],
 ]);
 
 export const AZURE_CREDENTIAL_MODES = /** @type {const} */ ([
@@ -123,7 +132,10 @@ export function createConfig() {
     s3Credentials: "secret",
     s3Secret: "",
     s3RoleArn: "",
+    gcsCredentials: "secret",
     gcsSecret: "",
+    gcsWorkloadIdentityProvider: "",
+    gcsServiceAccount: "",
     azureAccount: "",
     azureCredentials: "secret",
     azureSecret: "",
@@ -176,7 +188,9 @@ export function firstOidcIndex(config) {
  * @returns {{ name: string, key: string } | null} `key` is the config key of the name field.
  */
 export function storageSecret(config) {
-  if (config.storage === "gcs") return { name: config.gcsSecret, key: "gcsSecret" };
+  if (config.storage === "gcs") {
+    return config.gcsCredentials === "secret" ? { name: config.gcsSecret, key: "gcsSecret" } : null;
+  }
   if (config.storage === "azure") {
     return config.azureCredentials === "secret"
       ? { name: config.azureSecret, key: "azureSecret" }

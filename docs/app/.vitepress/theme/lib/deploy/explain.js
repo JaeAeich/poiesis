@@ -310,7 +310,8 @@ function storeView(config) {
       scheme: "gs",
       name: "GCS",
       env: "GOOGLE_*",
-      credentials: config.gcsSecret || "Secret",
+      credentials:
+        config.gcsCredentials === "secret" ? config.gcsSecret || "Secret" : "Workload identity",
     };
   }
   if (config.storage === "azure") {

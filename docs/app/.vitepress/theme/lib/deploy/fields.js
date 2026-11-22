@@ -130,6 +130,27 @@ export const FIELDS = {
     placeholder: "poiesis-gcs",
     help: "A Secret with a service account's JSON key under GOOGLE_SERVICE_ACCOUNT_KEY.",
   },
+  gcsWorkloadIdentityProvider: {
+    key: "gcsWorkloadIdentityProvider",
+    domId: "gcsProvider",
+    label: "Pool provider",
+    chartKey: "gcs.workloadIdentityProvider",
+    required: true,
+    placeholder:
+      "//iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/poiesis/providers/cluster",
+    hintHtml: "Workload Identity Federation. The provider must trust the cluster's OIDC issuer.",
+    help:
+      "tif and tof get a service account token and trade it at Google STS. " +
+      "Executors never see the token.",
+  },
+  gcsServiceAccount: {
+    key: "gcsServiceAccount",
+    domId: "gcsServiceAccount",
+    label: "Service account",
+    chartKey: "gcs.serviceAccount",
+    placeholder: "poiesis-filer@my-project.iam.gserviceaccount.com",
+    help: "Optional. Empty uses the federated principal directly.",
+  },
   azureAccount: {
     key: "azureAccount",
     domId: "azureAccount",

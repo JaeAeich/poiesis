@@ -83,7 +83,9 @@ token service for Google). The per-cloud guides
 
 A provider is off until the operator turns it on. While it is off, its
 scheme is refused at submit with `400` and isn't listed in
-`GET /service-info`.
+`GET /service-info`. Each provider has one default store (the `s3`, `gcs`
+and `azure` blocks below); [several stores](#several-stores) can serve
+different buckets with different endpoints and credentials.
 
 How `tif` and `tof` handle keys:
 
@@ -116,8 +118,8 @@ s3:
   existingSecret: poiesis-s3
 ```
 
-S3 is on when any of `existingSecret`, `roleArn` or `enabled: true` is
-set. Other settings:
+S3 is on when any of `existingSecret`, `roleArn`, `anonymous: true` or
+`enabled: true` is set. Other settings:
 
 | Value                     | Default | Meaning                                                                                                                                         |
 | ------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -125,6 +127,7 @@ set. Other settings:
 | `s3.serverSideEncryption` | `""`    | `AES256` (SSE-S3), `aws:kms` (SSE-KMS) or `aws:kms:dsse`, for every upload.                                                                     |
 | `s3.kmsKeyId`             | `""`    | KMS key for `aws:kms`; empty uses the bucket's default key.                                                                                     |
 | `s3.requesterPays`        | `false` | Pay for requests to requester-pays buckets.                                                                                                     |
+| `s3.anonymous`            | `false` | Unsigned requests, for public buckets. No keys or role.                                                                                         |
 
 An `http://` endpoint is allowed; use `https://` outside a trusted
 network.
@@ -197,9 +200,10 @@ the same node can usually reach IMDS too, so prefer `roleArn`.
 
 ### Google Cloud Storage
 
-GCS needs a key or Workload Identity Federation. With neither, `tif` and
-`tof` would ask the node's metadata server, which executors can reach
-too, so the chart refuses it.
+GCS needs a key, Workload Identity Federation or `anonymous: true`
+(unsigned requests, public buckets only). With none, `tif` and `tof`
+would ask the node's metadata server, which executors can reach too, so
+the chart refuses it.
 
 **Service account key.**
 
@@ -271,6 +275,9 @@ kubectl -n <taskpod namespace> create secret generic poiesis-azure \
   --from-literal=AZURE_STORAGE_SAS_TOKEN='sv=…&sig=…'
 ```
 
+`azure.anonymous: true` sends unsigned requests, for containers with
+public read access; leave `existingSecret` and `clientId` empty.
+
 `azure.endpoint` replaces `https://<accountName>.blob.core.windows.net`,
 for a private endpoint with a custom DNS name, a sovereign cloud (for
 example `https://<account>.blob.core.chinacloudapi.cn`), Azure Stack Hub
@@ -305,6 +312,74 @@ Don't add the `azure.workload.identity/use` label or the
 `azure.workload.identity/client-id` annotation: the AKS webhook would
 inject the token into every container, executors included.
 
+### Several stores
+
+`objectStores` adds named stores next to the default ones. Each has a
+provider, the buckets it serves (containers, for Azure), and the same
+options as that provider's default block, without `enabled`. For
+example, public data on AWS, a lab's Ceph with its own keys, and
+everything else on the default S3 store:
+
+```yaml
+s3:
+  region: eu-central-1
+  existingSecret: poiesis-s3 # the default store
+objectStores:
+  - name: aws-open-data
+    provider: s3
+    buckets: ["1000genomes", "gnomad-public-*"]
+    region: us-east-1
+    anonymous: true
+  - name: ceph
+    provider: s3
+    buckets: ["lab-*"]
+    endpoint: https://ceph.example.org
+    existingSecret: poiesis-ceph
+```
+
+| URL                       | Store           | Credentials              |
+| ------------------------- | --------------- | ------------------------ |
+| `s3://1000genomes/…`      | `aws-open-data` | none (unsigned requests) |
+| `s3://gnomad-public-v4/…` | `aws-open-data` | none (unsigned requests) |
+| `s3://lab-results/…`      | `ceph`          | Secret `poiesis-ceph`    |
+| `s3://anything-else/…`    | default `s3`    | Secret `poiesis-s3`      |
+
+How a URL finds its store:
+
+- A pattern is a bucket name, or a prefix ending in `*` (`*` alone takes
+  every bucket). Matching is case sensitive.
+- The named store of the URL's provider whose patterns match the bucket
+  serves it. Otherwise the provider's default store does, if it is on.
+  Otherwise the task is refused at submit with `400` naming the bucket.
+- Patterns of two stores of one provider may not overlap (`lab-*` and
+  `lab-archive`, say). The API refuses to start and names both stores.
+  The same bucket name under two providers is fine.
+- The URL stays `s3://bucket/key`: TES requests don't name a store, and
+  `GET /service-info` lists schemes only, not store names.
+- `drs://` inputs that resolve to an object-store URL go through the same
+  lookup. An access method whose bucket no store serves is skipped.
+
+Credentials stay as for the default stores, per store:
+
+- `existingSecret` is a Secret in the TaskPod namespace with the
+  provider's usual keys (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`,
+  `GOOGLE_SERVICE_ACCOUNT_KEY`, or `AZURE_STORAGE_ACCOUNT_KEY` /
+  `AZURE_STORAGE_SAS_TOKEN`). `tif` and `tof` read them by reference, as
+  `POIESIS_STORE_<NAME>_<KEY>`; `trec` and executors get nothing.
+- `roleArn` (S3), `clientId` and `tenantId` (Azure) and
+  `workloadIdentityProvider` (GCS) use workload identity, as above. One
+  ServiceAccount token is mounted per audience: every AWS role shares
+  one, every Azure identity shares one, each Google pool provider gets
+  its own.
+- `anonymous: true` sends unsigned requests and takes no credentials.
+  A store sets one credential source at most. A named S3 store with none
+  uses the node's instance credentials, as `s3.enabled: true` does.
+- A named store never sees the default store's settings: its endpoint,
+  region and keys are only its own.
+
+The store table (no secret values) reaches `tif` and `tof` as one JSON
+value, `POIESIS_OBJECT_STORES`.
+
 <Callout type="info">
 
 All three stores share one code path. The end-to-end tests run it against
@@ -321,7 +396,7 @@ outputs (`FILE`, `DIRECTORY` and glob), for public archives such as EBI,
 ENA and NCBI:
 
 ```json
-{"url": "ftp://ftp.ebi.ac.uk/pub/databases/…/genome.fa.gz", "path": "/data/genome.fa.gz"}
+{ "url": "ftp://ftp.ebi.ac.uk/pub/databases/…/genome.fa.gz", "path": "/data/genome.fa.gz" }
 ```
 
 - Passive mode, binary transfers. `ftps://` is explicit TLS (`AUTH TLS`),
@@ -366,16 +441,17 @@ off by default:
 taskpods:
   drs:
     enabled: true
-    allowedHosts: ["drs.example.org"]   # empty: any host
-    existingSecret: poiesis-drs         # optional, key DRS_BEARER_TOKEN
+    allowedHosts: ["drs.example.org"] # empty: any host
+    existingSecret: poiesis-drs # optional, key DRS_BEARER_TOKEN
 ```
 
 `tif` resolves the URI, then stages the URL it gets like any other input:
 
 1. `GET https://<host>/ga4gh/drs/v1/objects/<object_id>`.
 2. It picks the first access method whose URL this deployment can stage:
-   `https`, then `s3`, `gs` or `az` where the operator turned that store
-   on, then `ftps`, `ftp` and `http`.
+   `https`, then `s3`, `gs` or `az` where a store of this deployment
+   serves the bucket ([several stores](#several-stores)), then `ftps`,
+   `ftp` and `http`.
 3. For an `access_id`, it gets the URL from
    `/objects/<object_id>/access/<access_id>`. Headers in that answer go
    with the data request (not to another host after a redirect). An

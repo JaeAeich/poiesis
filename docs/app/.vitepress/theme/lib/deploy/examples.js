@@ -10,6 +10,8 @@ export const EXAMPLE_VALUES = Object.freeze({
   s3Secret: "poiesis-s3",
   s3RoleArn: "arn:aws:iam::123456789012:role/poiesis",
   gcsSecret: "poiesis-gcs",
+  gcsWorkloadIdentityProvider:
+    "//iam.googleapis.com/projects/123456789/locations/global/workloadIdentityPools/poiesis/providers/cluster",
   azureAccount: "poiesisdata",
   azureSecret: "poiesis-azure",
   azureClientId: "11111111-2222-3333-4444-555555555555",
@@ -51,7 +53,10 @@ export function fillStepExample(config, step) {
 
 function fillStorageExample(config) {
   if (config.storage === "gcs") {
-    setExample(config, "gcsSecret");
+    setExample(
+      config,
+      config.gcsCredentials === "secret" ? "gcsSecret" : "gcsWorkloadIdentityProvider",
+    );
   } else if (config.storage === "azure") {
     setExample(config, "azureAccount");
     if (config.azureCredentials === "secret") {

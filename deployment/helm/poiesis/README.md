@@ -109,16 +109,20 @@ is run against the real cloud service in CI.
 | `s3.serverSideEncryption` | string | `""`    | `AES256`, `aws:kms` or `aws:kms:dsse`. |
 | `s3.kmsKeyId`             | string | `""`    | KMS key for `aws:kms` / `aws:kms:dsse`. |
 | `s3.requesterPays`        | bool   | `false` | Pay for requests to requester-pays buckets. |
+| `s3.anonymous`            | bool   | `false` | Unsigned requests, for public buckets; turns S3 on. No `existingSecret` or `roleArn` with it. |
 | `gcs.enabled`             | bool   | `false` | Offer `gs://`. Needs `gcs.existingSecret` or `gcs.workloadIdentityProvider`, not both. |
 | `gcs.existingSecret`      | string | `""`    | Secret in the TaskPod namespace with `GOOGLE_SERVICE_ACCOUNT_KEY` (a JSON key). |
 | `gcs.workloadIdentityProvider` | string | `""` | Workload Identity Federation: full name of the pool provider (`//iam.googleapis.com/projects/<number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`). tif/tof get a ServiceAccount token for `https:<that name>` and trade it at Google STS. |
 | `gcs.serviceAccount`      | string | `""`    | Service account to impersonate with the federated token. Empty: the federated principal is used directly. |
 | `gcs.endpoint`            | string | `""`    | Base URL of the GCS API; empty for `https://storage.googleapis.com`. An `http://` endpoint is allowed. |
+| `gcs.anonymous`           | bool   | `false` | Unsigned requests, for public buckets, in place of a key or `workloadIdentityProvider`. |
 | `azure.enabled`           | bool   | `false` | Offer `az://container/blob`. Needs `azure.accountName`. |
 | `azure.accountName`       | string | `""`    | Storage account. |
 | `azure.existingSecret`    | string | `""`    | Secret in the TaskPod namespace with `AZURE_STORAGE_ACCOUNT_KEY` or `AZURE_STORAGE_SAS_TOKEN`. |
 | `azure.clientId`, `azure.tenantId` | string | `""` | Workload identity: tif/tof get a ServiceAccount token for `api://AzureADTokenExchange`. Set both or neither. |
 | `azure.endpoint`          | string | `""`    | Blob endpoint; empty for `https://<accountName>.blob.core.windows.net`. An `http://` endpoint is allowed. |
+| `azure.anonymous`         | bool   | `false` | Unsigned requests, for public containers. No `existingSecret` or `clientId` with it. |
+| `objectStores`            | list   | `[]`    | Named stores: `name`, `provider` (`s3`, `gcs`, `azure`), `buckets` (names and `prefix*` patterns), `anonymous`, and the provider's options above (without `enabled`). A URL goes to the store whose patterns match its bucket, else to the provider's default store. Overlapping patterns stop the API at startup. `existingSecret` is in the TaskPod namespace; keys reach tif/tof only. |
 
 With `s3.roleArn`, `azure.clientId` or `gcs.workloadIdentityProvider`,
 the API projects a ServiceAccount token for the provider into tif and tof

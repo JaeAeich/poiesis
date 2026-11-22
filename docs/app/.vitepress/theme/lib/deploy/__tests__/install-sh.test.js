@@ -70,6 +70,11 @@ describe("installShLines", () => {
       config.azureCredentials = "identity";
     });
     expect(identity).not.toContain("AZURE_STORAGE_ACCOUNT_KEY");
+    const gcsIdentity = installSh((config) => {
+      config.storage = "gcs";
+      config.gcsCredentials = "identity";
+    });
+    expect(gcsIdentity).not.toContain("GOOGLE_SERVICE_ACCOUNT_KEY");
   });
 
   it("creates a separate task namespace only when it differs", () => {

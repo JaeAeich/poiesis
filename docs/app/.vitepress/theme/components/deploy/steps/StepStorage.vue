@@ -1,5 +1,9 @@
 <script setup>
-import { AZURE_CREDENTIAL_MODES, S3_CREDENTIAL_MODES } from "../../../lib/deploy/config.js";
+import {
+  AZURE_CREDENTIAL_MODES,
+  GCS_CREDENTIAL_MODES,
+  S3_CREDENTIAL_MODES,
+} from "../../../lib/deploy/config.js";
 import { FIELDS } from "../../../lib/deploy/fields.js";
 import { useDeploy } from "../../../lib/deploy/store.js";
 import ConfigField from "../ConfigField.vue";
@@ -59,7 +63,18 @@ const { config } = useDeploy();
     <ConfigField v-if="config.s3Credentials === 'secret'" :field="FIELDS.s3Secret" />
     <ConfigField v-else :field="FIELDS.s3RoleArn" />
   </template>
-  <ConfigField v-else-if="config.storage === 'gcs'" :field="FIELDS.gcsSecret" />
+  <template v-else-if="config.storage === 'gcs'">
+    <SegmentedControl
+      v-model="config.gcsCredentials"
+      label="Credentials"
+      :options="GCS_CREDENTIAL_MODES"
+    />
+    <ConfigField v-if="config.gcsCredentials === 'secret'" :field="FIELDS.gcsSecret" />
+    <template v-else>
+      <ConfigField :field="FIELDS.gcsWorkloadIdentityProvider" />
+      <ConfigField :field="FIELDS.gcsServiceAccount" />
+    </template>
+  </template>
   <template v-else>
     <ConfigField :field="FIELDS.azureAccount" />
     <SegmentedControl
