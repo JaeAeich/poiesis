@@ -183,6 +183,29 @@ async def list_non_terminal_task_ids(
     return [r["id"] for r in rows]
 
 
+async def count_tasks_by_state(
+    conn: asyncpg.Connection,
+) -> dict[str, tuple[int, float | None]]:
+    """Count the tasks in each state, with the age of the oldest.
+
+    One grouped query, for tctl's task gauges: ``{state: (count, seconds
+    since the oldest task's creation_time)}``; states without a task are
+    left out. The age is by the database's clock against ``creation_time``,
+    which the API Pod stamps.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT
+            state::text AS state,
+            count(*) AS n,
+            extract(epoch FROM now() - min(creation_time))::float8 AS oldest
+        FROM tasks
+        GROUP BY state
+        """
+    )
+    return {r["state"]: (r["n"], r["oldest"]) for r in rows}
+
+
 async def list_canceling_task_ids(conn: asyncpg.Connection) -> list[str]:
     """List the ids of the tasks in `CANCELING`.
 

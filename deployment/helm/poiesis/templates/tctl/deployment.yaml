@@ -21,6 +21,7 @@ spec:
         {{- with .Values.tctl.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+        {{- with include "poiesis.metrics.podAnnotations" . }}{{- . | nindent 8 }}{{- end }}
         {{- with .Values.tctl.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
     spec:
       serviceAccountName: {{ include "poiesis.serviceAccountName" (dict "role" "tctl" "root" .) }}
@@ -63,6 +64,10 @@ spec:
             {{- with include "poiesis.extraEnv" $args }}
             {{- . | nindent 12 }}
             {{- end }}
+          {{- with include "poiesis.metrics.containerPort" . }}
+          ports:
+            {{- . | nindent 12 }}
+          {{- end }}
           {{- if $liveness.enabled }}
           {{- /* Fails when the heartbeat is missing or older than the limit. */}}
           {{- /* /tmp is the chart's writable emptyDir (poiesis.volumeMounts). */}}

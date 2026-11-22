@@ -284,6 +284,22 @@ The image pull Secrets of TaskPods are the top-level `imagePullSecrets`.
 The serialised TaskPod extras are capped at about 32 KiB (the
 Kubernetes env-var limit); use a mounted ConfigMap for very large sets.
 
+## metrics
+
+See [Monitoring](../guides/monitoring.md).
+
+| Key                                                 | Default                          | What it does                                                                                                                                                |
+| --------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metrics.enabled`                                   | `true`                           | Serve Prometheus metrics at `/metrics` on the API and TCtl Pods, and render a metrics Service for each (`<release>-api-metrics`, `<release>-tctl-metrics`). |
+| `metrics.port`                                      | `9090`                           | Port of `/metrics`, apart from the TES API's. Not routed by the Ingress; no auth.                                                                           |
+| `metrics.scrapeAnnotations`                         | `false`                          | `prometheus.io/scrape`, `/port` and `/path` annotations on the API and TCtl Pods.                                                                           |
+| `metrics.service.annotations`                       | `{}`                             | Annotations of the two metrics Services.                                                                                                                    |
+| `metrics.serviceMonitor.enabled`                    | `false`                          | Render a Prometheus Operator ServiceMonitor for both Services. Needs the `monitoring.coreos.com` CRDs.                                                      |
+| `metrics.serviceMonitor.labels`                     | `{}`                             | Labels your Prometheus selects ServiceMonitors by.                                                                                                          |
+| `metrics.serviceMonitor.interval`, `.scrapeTimeout` | `30s`, `10s`                     | Scrape timing.                                                                                                                                              |
+| `metrics.dashboard.enabled`                         | `false`                          | Render a ConfigMap with the Grafana dashboard (`dashboards/poiesis.json`) for the Grafana sidecar.                                                          |
+| `metrics.dashboard.labels`, `.annotations`          | `{grafana_dashboard: "1"}`, `{}` | Labels and annotations of that ConfigMap.                                                                                                                   |
+
 ## networkPolicy
 
 | Key                                    | Default | What it does                                                                                                                                                                                     |
@@ -293,6 +309,7 @@ Kubernetes env-var limit); use a mounted ConfigMap for very large sets.
 | `networkPolicy.databaseEgress.to`      | `[]`    | NetworkPolicy peers where Postgres is (`ipBlock`, `namespaceSelector`, `podSelector`); empty is any address. `databaseEgress: null` drops the rule.                                              |
 | `networkPolicy.ingressFrom`            | `[]`    | Peers allowed to reach the API, e.g. the ingress controller's namespace.                                                                                                                         |
 | `networkPolicy.ingressFromPodSelector` | `{}`    | Labels of further Pods in the release namespace allowed to reach the API.                                                                                                                        |
+| `networkPolicy.metricsFrom`            | `[]`    | Peers allowed to reach `metrics.port` on the API and TCtl; empty is any address.                                                                                                                 |
 | `networkPolicy.extraEgress`            | `[]`    | Extra egress rules for the API and TCtl, e.g. an issuer or S3 endpoint on another port.                                                                                                          |
 
 ## migrations

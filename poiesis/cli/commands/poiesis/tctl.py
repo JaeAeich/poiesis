@@ -10,6 +10,7 @@ from typing import Any
 import click
 
 from poiesis.cli.commands.poiesis.base import BaseCommand, configure_logging
+from poiesis.core.metrics import metrics_port_from_env
 from poiesis.core.tctl import run
 from poiesis.k8s.client import load_config
 
@@ -53,16 +54,22 @@ class TctlCommand(BaseCommand):
             command_timeout = (
                 _timeout_env(_COMMAND_TIMEOUT_ENV) or _DEFAULT_COMMAND_TIMEOUT_SECONDS
             )
+            try:
+                metrics_port = metrics_port_from_env()
+            except ValueError as exc:
+                raise click.ClickException(str(exc)) from exc
             load_config()
             logger.info(
                 "tctl: starting; namespace=%s lease-namespace=%s identity=%s "
-                "unschedulable-timeout=%s heartbeat=%s db-command-timeout=%ss",
+                "unschedulable-timeout=%s heartbeat=%s db-command-timeout=%ss "
+                "metrics-port=%s",
                 namespace,
                 lease_namespace,
                 identity or "auto",
                 unschedulable_timeout or "none",
                 heartbeat or "none",
                 command_timeout,
+                metrics_port or "none",
             )
             sys.exit(
                 asyncio.run(
@@ -74,6 +81,7 @@ class TctlCommand(BaseCommand):
                         unschedulable_timeout=unschedulable_timeout,
                         heartbeat=heartbeat,
                         command_timeout=command_timeout,
+                        metrics_port=metrics_port,
                     )
                 )
             )

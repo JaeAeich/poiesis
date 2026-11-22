@@ -89,9 +89,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
 
-    from poiesis.api.tes.models import TesState
-
+from poiesis.api.tes.models import TesState
 from poiesis.core import ignore_error
+from poiesis.core import metrics as metrics_server
+from poiesis.core import tctl_metrics as metrics
 from poiesis.core.executor_logs import read_executor_streams, streams_from_pod
 from poiesis.core.leases import try_acquire_or_renew
 from poiesis.core.logging_config import task_context
@@ -157,6 +158,7 @@ async def run(
     unschedulable_timeout: float | None = None,
     heartbeat: Path | None = None,
     command_timeout: float = 30,
+    metrics_port: int | None = None,
 ) -> int:
     """Run the TCtl reconciliation loop until SIGTERM/SIGINT.
 
@@ -167,7 +169,8 @@ async def run(
     is a file touched at startup and after each loop iteration, leader or
     standby, for a liveness probe to check its age. `command_timeout` bounds
     every database statement, so a hung connection fails the pass instead
-    of hanging it until the liveness probe restarts tctl. Holds the Lease while
+    of hanging it until the liveness probe restarts tctl. `metrics_port`, if
+    set, is where Prometheus metrics are served. Holds the Lease while
     reconciling; gives it up cleanly on signal. Returns 0 on clean shutdown.
     """
     lease_namespace = lease_namespace or namespace
@@ -179,6 +182,10 @@ async def run(
     batch_v1 = BatchV1Api()
     pool = await asyncpg.create_pool(
         dsn, min_size=1, max_size=4, command_timeout=command_timeout
+    )
+    metrics.IS_LEADER.set(0)
+    stop_metrics = (
+        metrics_server.serve(metrics_port) if metrics_port is not None else None
     )
     try:
         while not cancelled.is_set():
@@ -204,6 +211,8 @@ async def run(
                 heartbeat=heartbeat,
             )
     finally:
+        if stop_metrics is not None:
+            stop_metrics()
         await pool.close()
     return 0
 
@@ -241,6 +250,7 @@ async def _hold_lease(
             request_timeout=_LEASE_REQUEST_TIMEOUT_SECONDS,
         )
     except ApiException as exc:
+        metrics.count_k8s_error(metrics.K8sOperation.LEASE)
         logger.error(
             "tctl: lease %s/%s unavailable (%s %s); will retry",
             lease_namespace,
@@ -250,6 +260,7 @@ async def _hold_lease(
         )
         return False
     except Exception as exc:  # noqa: BLE001 - a timeout or a dropped connection
+        metrics.count_k8s_error(metrics.K8sOperation.LEASE)
         logger.error(
             "tctl: lease %s/%s unavailable (%s); will retry",
             lease_namespace,
@@ -306,6 +317,7 @@ async def _keep_lease(
             return
         started = time.monotonic()
         if not await _hold_lease(coord_v1, lease_namespace, identity):
+            metrics.LEASE_RENEW_FAILURES.inc()
             leadership.lose()
             return
         leadership.renewed(started)
@@ -337,11 +349,14 @@ async def _reconcile_while_leader(  # noqa: PLR0913 (one pass's inputs and the L
     renewer = asyncio.create_task(
         _keep_lease(coord_v1, lease_namespace, identity, leadership, cancelled)
     )
+    metrics.IS_LEADER.set(1)
+    gauges_at: float | None = None
     try:
         while not cancelled.is_set():
             if not leadership.held():
                 logger.warning("tctl: lost lease; standing down")
                 return
+            started = time.monotonic()
             try:
                 await _reconcile_once(
                     core_v1,
@@ -353,15 +368,40 @@ async def _reconcile_while_leader(  # noqa: PLR0913 (one pass's inputs and the L
                     still_leader=leadership.held,
                 )
             except Exception:
+                metrics.RECONCILE_ERRORS.inc()
                 logger.exception(
                     "tctl: reconcile tick raised; will retry next interval"
                 )
+            else:
+                metrics.RECONCILE_LAST_SUCCESS.set_to_current_time()
+            metrics.RECONCILE_DURATION.observe(time.monotonic() - started)
+            if (
+                gauges_at is None
+                or started - gauges_at >= metrics.TASK_GAUGE_INTERVAL_SECONDS
+            ):
+                gauges_at = started
+                await _refresh_task_gauges(pool)
             _beat(heartbeat)
             await _wait_or_cancel(cancelled, _RECONCILE_INTERVAL_SECONDS)
     finally:
+        metrics.IS_LEADER.set(0)
+        metrics.clear_task_gauges()
         renewer.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await renewer
+
+
+async def _refresh_task_gauges(pool: asyncpg.Pool) -> None:
+    """Set the task gauges from one grouped query; a failure is logged."""
+    try:
+        async with pool.acquire() as conn:
+            counts = await state_db.count_tasks_by_state(
+                cast("asyncpg.Connection", conn)
+            )
+    except Exception:  # noqa: BLE001 - the gauges wait for the next refresh
+        logger.warning("tctl: could not count the tasks by state", exc_info=True)
+        return
+    metrics.set_task_gauges(counts)
 
 
 @dataclass(frozen=True)
@@ -491,11 +531,11 @@ async def _gather(
     for task_id in non_terminal:
         first_seen.setdefault(task_id, observed)
 
-    job_items = await asyncio.to_thread(
-        _list_all, batch_v1.list_namespaced_job, namespace
+    job_items = await _list_counted(
+        batch_v1.list_namespaced_job, namespace, metrics.K8sOperation.LIST_JOBS
     )
-    pod_items = await asyncio.to_thread(
-        _list_all, core_v1.list_namespaced_pod, namespace
+    pod_items = await _list_counted(
+        core_v1.list_namespaced_pod, namespace, metrics.K8sOperation.LIST_PODS
     )
 
     pods: dict[str, list[Mapping[str, Any]]] = {}
@@ -513,6 +553,17 @@ async def _gather(
         pods=pods,
         now=datetime.now(UTC),
     )
+
+
+async def _list_counted(
+    list_page: Callable[..., Any], namespace: str, operation: metrics.K8sOperation
+) -> list[Any]:
+    """`_list_all` in a thread; a list that fails is counted, then raised."""
+    try:
+        return await asyncio.to_thread(_list_all, list_page, namespace)
+    except Exception:
+        metrics.count_k8s_error(operation)
+        raise
 
 
 def _list_all(list_page: Callable[..., Any], namespace: str) -> list[Any]:
@@ -651,6 +702,12 @@ async def _apply_terminal(
                 for line in system_logs:
                     await state_db.append_system_log(c, task_id, line)
 
+    metrics.count_transition(
+        TesState.CANCELED
+        if result is state_db.TerminalWriteResult.CANCELED_INSTEAD
+        else proposed,
+        source,
+    )
     logger.info(
         "tctl: %s reconciled task=%s as %s (write=%s, reason=%s)",
         source,
@@ -683,6 +740,7 @@ async def _job_warning(core_v1: CoreV1Api, namespace: str, task_id: str) -> list
             _request_timeout=_REQUEST_TIMEOUT_SECONDS,
         )
     except Exception as exc:  # noqa: BLE001 - the cause is optional detail
+        metrics.count_k8s_error(metrics.K8sOperation.LIST_EVENTS)
         logger.warning(
             "tctl: could not read the events of the Job of task=%s: %s", task_id, exc
         )
@@ -731,6 +789,7 @@ async def _delete_job(batch_v1: BatchV1Api, namespace: str, task_id: str) -> Non
         )
     except ApiException as exc:
         if exc.status != HTTPStatus.NOT_FOUND:
+            metrics.count_k8s_error(metrics.K8sOperation.DELETE_JOB)
             logger.warning(
                 "tctl: could not delete the Job of task=%s (%s %s)",
                 task_id,
@@ -738,6 +797,10 @@ async def _delete_job(batch_v1: BatchV1Api, namespace: str, task_id: str) -> Non
                 exc.reason,
             )
         return
+    except Exception:
+        # No answer (a timeout, a dropped connection): the pass logs it.
+        metrics.count_k8s_error(metrics.K8sOperation.DELETE_JOB)
+        raise
     logger.info("tctl: deleted the Job of task=%s", task_id)
 
 

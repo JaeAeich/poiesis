@@ -37,6 +37,10 @@ data:
   POIESIS_DATABASE_POOL_MAX_SIZE: {{ .Values.database.pool.maxSize | int | quote }}
   POIESIS_DATABASE_POOL_ACQUIRE_TIMEOUT_SECONDS: {{ .Values.database.pool.acquireTimeoutSeconds | int | quote }}
   POIESIS_DATABASE_COMMAND_TIMEOUT_SECONDS: {{ .Values.database.commandTimeoutSeconds | int | quote }}
+  {{- if .Values.metrics.enabled }}
+  # Port of /metrics (API and tctl), apart from the TES API's.
+  POIESIS_METRICS_PORT: {{ .Values.metrics.port | int | quote }}
+  {{- end }}
 
   # ---- Per-task PVC contract -------------------------------------------------
   # storageClass: the kubectl "-" sentinel for "no provisioning" maps to the

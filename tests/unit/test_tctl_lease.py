@@ -264,6 +264,7 @@ def test_cli_passes_both_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("POIESIS_POD_NAME", raising=False)
     monkeypatch.delenv("POIESIS_TCTL_HEARTBEAT_FILE", raising=False)
     monkeypatch.delenv("POIESIS_DATABASE_COMMAND_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("POIESIS_METRICS_PORT", raising=False)
 
     result = CliRunner().invoke(tctl_cli.TctlCommand().create_command(), ["run"])
 
@@ -276,6 +277,7 @@ def test_cli_passes_both_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:
         "unschedulable_timeout": None,
         "heartbeat": None,
         "command_timeout": 30,
+        "metrics_port": None,
     }
 
 

@@ -1,0 +1,74 @@
+{{- /*
+Metrics: one Service per component on metrics.port (not the API Service,
+so the Ingress never routes to /metrics), an optional ServiceMonitor for
+both, and an optional ConfigMap with the Grafana dashboard.
+*/}}
+{{- if .Values.metrics.enabled }}
+{{- range $component := list "api" "tctl" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "poiesis.fullname" $ }}-{{ $component }}-metrics
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "poiesis.componentLabels" (dict "component" $component "root" $) | nindent 4 }}
+    poiesis.io/metrics: "true"
+  {{- with $.Values.metrics.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "poiesis.componentSelectorLabels" (dict "component" $component "root" $) | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ $.Values.metrics.port | int }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}
+{{- with .Values.metrics.serviceMonitor }}
+{{- if .enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "poiesis.fullname" $ }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "poiesis.labels" $ | nindent 4 }}
+    {{- with .labels }}{{- toYaml . | nindent 4 }}{{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "poiesis.selectorLabels" $ | nindent 6 }}
+      poiesis.io/metrics: "true"
+  namespaceSelector:
+    matchNames: [{{ $.Release.Namespace | quote }}]
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .interval }}
+      scrapeTimeout: {{ .scrapeTimeout }}
+{{- end }}
+{{- end }}
+{{- with .Values.metrics.dashboard }}
+{{- if .enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "poiesis.fullname" $ }}-dashboard
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "poiesis.labels" $ | nindent 4 }}
+    {{- with .labels }}{{- toYaml . | nindent 4 }}{{- end }}
+  {{- with .annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  poiesis.json: |-
+    {{- $.Files.Get "dashboards/poiesis.json" | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}

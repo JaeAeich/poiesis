@@ -789,13 +789,49 @@ taskpods:
   #   readOnly: true
 
 # -----------------------------------------------------------------------------
+# Metrics (Prometheus)
+# -----------------------------------------------------------------------------
+
+# The API and tctl serve Prometheus metrics at /metrics on `port`, apart
+# from the TES API's port: not through the Ingress, no auth, not in the
+# access log. Labels are bounded: no task, user or owner labels. See the
+# monitoring guide for the metrics, a dashboard and alert rules.
+metrics:
+  enabled: true
+  port: 9090
+  # prometheus.io/scrape, /port and /path annotations on the API and tctl
+  # Pods, for a Prometheus that discovers Pods by annotation.
+  scrapeAnnotations: false
+  service:
+    # Annotations of the two metrics Services (<release>-api-metrics and
+    # <release>-tctl-metrics).
+    annotations: {}
+  # A prometheus-operator ServiceMonitor for both Services. Needs the
+  # monitoring.coreos.com CRDs.
+  serviceMonitor:
+    enabled: false
+    # Labels your Prometheus selects ServiceMonitors by, e.g.
+    # {release: kube-prometheus-stack}.
+    labels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+  # A ConfigMap holding the Grafana dashboard (dashboards/poiesis.json),
+  # for the Grafana sidecar that loads ConfigMaps labelled as below.
+  dashboard:
+    enabled: false
+    labels:
+      grafana_dashboard: "1"
+    annotations: {}
+
+# -----------------------------------------------------------------------------
 # NetworkPolicy
 # -----------------------------------------------------------------------------
 
 # Policies for the API and tctl Pods (not the migration hook, not TaskPods).
 # Both may reach DNS, any address on TCP 443 and 6443 (Kubernetes API, S3,
 # issuers) and Postgres (databaseEgress). The API accepts traffic on 8000
-# from this release's Pods and from the peers listed below only.
+# from this release's Pods and from the peers listed below only; the API and
+# tctl accept metrics.port from metricsFrom.
 networkPolicy:
   enabled: false
   # Postgres. Empty `to` allows the port to any address, which is what
@@ -815,6 +851,12 @@ networkPolicy:
   ingressFrom: []
   # Labels of other Pods in the release namespace allowed to reach the API.
   ingressFromPodSelector: {}
+  # NetworkPolicy peers allowed to scrape metrics.port on the API and
+  # tctl, e.g. the Prometheus namespace:
+  #   - namespaceSelector:
+  #       matchLabels: {kubernetes.io/metadata.name: monitoring}
+  # Empty allows the port from any address.
+  metricsFrom: []
   # Extra NetworkPolicy egress rules for the API and tctl, e.g. an issuer
   # or S3 endpoint on a port other than 443:
   #   - to: [{ipBlock: {cidr: 192.0.2.10/32}}]

@@ -228,6 +228,12 @@ default TaskPod NetworkPolicy) is planned
   [audit log](../reference/audit-log.md) lines are on stdout, and Poiesis
   keeps nothing.
 - `logLevel: INFO` (`DEBUG` while setting up).
+- Scrape the API and TCtl metrics (`metrics.port`, `9090`, on by
+  default; `metrics.serviceMonitor.enabled` for the Prometheus
+  Operator) and add alerts for no TCtl leader, stalled reconcile passes,
+  API 5xx and tasks queued too long. With `networkPolicy.enabled`, set
+  `networkPolicy.metricsFrom` to your Prometheus. See
+  [Monitoring](./monitoring.md).
 
 ### Logs
 
