@@ -605,7 +605,17 @@ class IssuerSettings(BaseModel):
         ):
             if any(not value.strip() for value in values):
                 raise ValueError(f"{name} must not contain an empty value")
+        # Scopes are quoted in `403` challenges; spaces would split them.
+        if not all(_SCOPE_TOKEN.fullmatch(s) for s in self.required_scopes):
+            raise ValueError(
+                "requiredScopes must be scope tokens (RFC 6749 §3.3): no spaces,"
+                " quotes or backslashes"
+            )
         return self
+
+
+# RFC 6749 §3.3 scope-token: %x21 / %x23-5B / %x5D-7E.
+_SCOPE_TOKEN = re.compile(r"[\x21\x23-\x5b\x5d-\x7e]+")
 
 
 def _parse_issuers_env() -> tuple[IssuerSettings, ...]:

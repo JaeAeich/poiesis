@@ -2,10 +2,11 @@
 
 Clients that know only the URL of a Poiesis can find out how to
 authenticate to it: from the metadata document, or from the
-``WWW-Authenticate`` header of any ``401``, which points to it
-(RFC 9728 §5.1). The document lists the configured issuers that clients
-can get tokens from (``authorization_servers``) and is served when auth
-is on and ``auth.resource`` (the public URL) is set. Without it, a
+``WWW-Authenticate`` header of any ``401`` (and of a ``403`` for a
+missing scope), which points to it (RFC 9728 §5.1). The document lists
+the configured issuers that clients can get tokens from
+(``authorization_servers``) and is served when auth is on and
+``auth.resource`` (the public URL) is set. Without it, a
 ``401`` still carries the plain RFC 6750 ``Bearer`` challenge.
 """
 
@@ -17,15 +18,21 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from poiesis.api.exceptions import UnauthorizedError, handle_api_exception
+from poiesis.api.constants import get_poiesis_api_constants
+from poiesis.api.exceptions import (
+    InsufficientScopeError,
+    UnauthorizedError,
+    handle_api_exception,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from fastapi import Request
 
-    from poiesis.api.settings import AuthSettings
+    from poiesis.api.settings import AuthSettings, ServiceInfoSettings
 
 WELL_KNOWN = "/.well-known/oauth-protected-resource"
-_DOCUMENTATION = "https://poiesis.jaeaeich.com"
 
 
 def metadata_path(resource: str) -> str:
@@ -44,8 +51,11 @@ def metadata_url(resource: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, metadata_path(resource), "", ""))
 
 
-def metadata(auth: AuthSettings) -> dict[str, Any]:
+def metadata(auth: AuthSettings, info: ServiceInfoSettings) -> dict[str, Any]:
     """Return the metadata document for ``auth`` (``auth.resource`` set).
+
+    ``resource_name`` and ``resource_documentation`` are the service-info
+    ``name`` and ``documentationUrl``, with the same defaults.
 
     Issuers with a static ``jwksUri`` aren't listed: they publish only
     keys (e.g. a gateway signing its own JWTs), and clients can't get a
@@ -60,16 +70,19 @@ def metadata(auth: AuthSettings) -> dict[str, Any]:
     if scopes:
         document["scopes_supported"] = scopes
     document["bearer_methods_supported"] = ["header"]
-    document["resource_name"] = "Poiesis"
-    document["resource_documentation"] = _DOCUMENTATION
+    constants = get_poiesis_api_constants()
+    document["resource_name"] = info.name or constants.SERVICE_NAME
+    document["resource_documentation"] = (
+        info.documentation_url or constants.DOCUMENTATION_URL
+    )
     return document
 
 
-def router(auth: AuthSettings) -> APIRouter:
+def router(auth: AuthSettings, info: ServiceInfoSettings) -> APIRouter:
     """Return a router serving the metadata of ``auth`` (``auth.resource`` set)."""
     if auth.resource is None:
         raise ValueError("resource metadata needs auth.resource")
-    document = metadata(auth)
+    document = metadata(auth, info)
     api = APIRouter(tags=["auth"])
 
     @api.get(metadata_path(auth.resource), include_in_schema=False)
@@ -80,26 +93,38 @@ def router(auth: AuthSettings) -> APIRouter:
     return api
 
 
-def challenge(auth: AuthSettings, error: str | None) -> str:
-    """Return the ``WWW-Authenticate`` value of a ``401``.
+def challenge(auth: AuthSettings, error: str | None, scopes: Sequence[str] = ()) -> str:
+    """Return the ``WWW-Authenticate`` value of a ``401`` or ``403``.
 
-    ``error`` is the RFC 6750 error code (``invalid_token``), or none
-    when the request had no credential (RFC 6750 §3.1).
+    ``error`` is the RFC 6750 error code (``invalid_token``,
+    ``insufficient_scope``), or none when the request had no credential
+    (RFC 6750 §3.1). ``scopes`` are those the token needs; settings
+    refuse scopes that can't be quoted (RFC 6749 §3.3).
     """
     params = []
     if error:
         params.append(f'error="{error}"')
+    if scopes:
+        params.append(f'scope="{" ".join(scopes)}"')
     if auth.resource:
         # Settings refuse quotes and backslashes in the URL.
         params.append(f'resource_metadata="{metadata_url(auth.resource)}"')
     return f"Bearer {', '.join(params)}" if params else "Bearer"
 
 
-async def handle_unauthorized(request: Request, exc: Exception) -> JSONResponse:
-    """Answer a ``401`` as usual, plus its ``WWW-Authenticate`` challenge."""
+async def handle_challenge(request: Request, exc: Exception) -> JSONResponse:
+    """Answer a ``401`` or a missing scope as usual, plus the challenge.
+
+    Other ``403``s (claim rule, policy) get none: a new token with more
+    scopes wouldn't change their answer.
+    """
     response = await handle_api_exception(request, exc)
-    error = exc.bearer_error if isinstance(exc, UnauthorizedError) else None
+    error, scopes = None, ()
+    if isinstance(exc, UnauthorizedError):
+        error = exc.bearer_error
+    elif isinstance(exc, InsufficientScopeError):
+        error, scopes = exc.bearer_error, exc.scopes
     response.headers["WWW-Authenticate"] = challenge(
-        request.app.state.settings.auth, error
+        request.app.state.settings.auth, error, scopes
     )
     return response

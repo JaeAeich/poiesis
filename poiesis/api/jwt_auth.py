@@ -55,7 +55,7 @@ from joserfc.jwt import JWTClaimsRegistry
 
 from poiesis.api.auth import Actor, Principal, client_of, walk_claim_path
 from poiesis.api.exceptions import (
-    ForbiddenError,
+    InsufficientScopeError,
     ServiceUnavailableError,
     UnauthorizedError,
 )
@@ -346,7 +346,7 @@ class IssuerValidator:
 
         Raises :class:`UnauthorizedError` for any cryptographic or claim
         failure, a token type or client that isn't accepted,
-        :class:`ForbiddenError` when required scopes are
+        :class:`InsufficientScopeError` when required scopes are
         missing, and :class:`ServiceUnavailableError` while the issuer
         has no key set yet.
         """
@@ -372,8 +372,9 @@ class IssuerValidator:
         scopes = _scopes(claims)
         missing = [s for s in self.settings.required_scopes if s not in scopes]
         if missing:
-            raise ForbiddenError(
-                "token missing required scope(s): " + ", ".join(missing)
+            raise InsufficientScopeError(
+                "token missing required scope(s): " + ", ".join(missing),
+                self.settings.required_scopes,
             )
         # Resolve the owner first so a token without it never reaches userinfo.
         principal = self.principal_from(claims, scopes)

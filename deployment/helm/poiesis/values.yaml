@@ -185,7 +185,8 @@ auth:
   #                   same (a startup WARNING names issuers sharing one).
   #   principalClaim  Claim naming the subject (default `sub`). Dotted
   #                   paths walk nested objects (`ctx.group_id`).
-  #   requiredScopes  Scopes a token MUST carry (default none).
+  #   requiredScopes  Scopes a token MUST carry (default none); scope tokens,
+  #                   no spaces, quotes or backslashes (RFC 6749 §3.3).
   #   requiredClaim   Admission rule for this issuer's tokens (and keys
   #                   minted with them): {name, values, prefixes}. The
   #                   claim `name` (exact name first, then a dotted path;

@@ -67,7 +67,7 @@ async def service_info(request: Request) -> TesServiceInfo:
     )
     return TesServiceInfo(
         id=config.id,
-        name=config.name or "Poiesis",
+        name=config.name or _api_constants.SERVICE_NAME,
         description=(
             config.description or "GA4GH TES (Task Execution Service) on Kubernetes"
         ),
@@ -77,7 +77,7 @@ async def service_info(request: Request) -> TesServiceInfo:
         ),
         contactUrl=config.contact_url or "mailto:jh4official@gmail.com",
         documentationUrl=AnyUrl(
-            config.documentation_url or "https://poiesis.jaeaeich.com"
+            config.documentation_url or _api_constants.DOCUMENTATION_URL
         ),
         environment=config.environment,
         type=TesServiceType(

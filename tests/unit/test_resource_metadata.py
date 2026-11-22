@@ -56,6 +56,22 @@ def test_metadata(network: Network, monkeypatch: pytest.MonkeyPatch) -> None:
     }
 
 
+def test_metadata_names_from_service_info(
+    resource: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The name and documentation follow the service-info settings."""
+    monkeypatch.setenv("POIESIS_SERVICE_INFO_NAME", "Node 1")
+    monkeypatch.setenv(
+        "POIESIS_SERVICE_INFO_DOCUMENTATION_URL", "https://docs.example.org"
+    )
+    with started_app(monkeypatch) as client:
+        document = client.get(WELL_KNOWN).json()
+        info = client.get("/ga4gh/tes/v1/service-info").json()
+    assert document["resource_name"] == info["name"] == "Node 1"
+    assert document["resource_documentation"] == "https://docs.example.org"
+    assert info["documentationUrl"].rstrip("/") == "https://docs.example.org"
+
+
 def test_metadata_without_scopes(
     resource: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -146,6 +162,52 @@ def test_valid_token_gets_no_challenge(
     assert "www-authenticate" not in response.headers
 
 
+@pytest.mark.parametrize("public", [True, False], ids=["resource", "no-resource"])
+def test_missing_scope_challenges(
+    issuer: Issuer, monkeypatch: pytest.MonkeyPatch, public: bool
+) -> None:
+    """A missing scope is a 403 naming the scopes a new token needs."""
+    set_issuers(
+        monkeypatch,
+        {"issuer": ISSUER, "audience": AUDIENCE, "requiredScopes": ["tes", "x"]},
+    )
+    if public:
+        monkeypatch.setenv("POIESIS_AUTH_RESOURCE", RESOURCE)
+    with started_app(monkeypatch) as client:
+        response = client.get(
+            TASKS, headers={"Authorization": f"Bearer {issuer.token(scope='tes')}"}
+        )
+    expected = 'Bearer error="insufficient_scope", scope="tes x"'
+    if public:
+        expected += f', resource_metadata="{METADATA}"'
+    assert response.status_code == 403  # noqa: PLR2004
+    assert response.headers["www-authenticate"] == expected
+    assert response.json() == {
+        "error": "forbidden",
+        "message": "token missing required scope(s): x",
+    }
+
+
+def test_policy_403_gets_no_challenge(
+    resource: str, issuer: Issuer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 403 a new token can't fix (the claim rule) carries no challenge."""
+    set_issuers(
+        monkeypatch,
+        {
+            "issuer": ISSUER,
+            "audience": AUDIENCE,
+            "requiredClaim": {"name": "groups", "values": ["lab"]},
+        },
+    )
+    with started_app(monkeypatch) as client:
+        response = client.get(
+            TASKS, headers={"Authorization": f"Bearer {issuer.token()}"}
+        )
+    assert response.status_code == 403  # noqa: PLR2004
+    assert "www-authenticate" not in response.headers
+
+
 @pytest.mark.parametrize(
     "value",
     [
@@ -193,16 +255,28 @@ def test_metadata_url(resource: str, url: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("settings", "error", "expected"),
+    ("settings", "error", "scopes", "expected"),
     [
-        ({}, None, "Bearer"),
-        ({}, "invalid_token", 'Bearer error="invalid_token"'),
-        ({"resource": RESOURCE}, None, f'Bearer resource_metadata="{METADATA}"'),
+        ({}, None, (), "Bearer"),
+        ({}, "invalid_token", (), 'Bearer error="invalid_token"'),
+        ({"resource": RESOURCE}, None, (), f'Bearer resource_metadata="{METADATA}"'),
+        (
+            {},
+            "insufficient_scope",
+            ("a", "b"),
+            'Bearer error="insufficient_scope", scope="a b"',
+        ),
     ],
 )
-def test_challenge(settings: dict[str, Any], error: str | None, expected: str) -> None:
-    """The challenge has the error code only for a bad credential."""
-    assert challenge(AuthSettings(enabled=False, **settings), error) == expected
+def test_challenge(
+    settings: dict[str, Any],
+    error: str | None,
+    scopes: tuple[str, ...],
+    expected: str,
+) -> None:
+    """The challenge has the error code only for a bad credential or scope."""
+    challenged = challenge(AuthSettings(enabled=False, **settings), error, scopes)
+    assert challenged == expected
 
 
 def test_invalid_resource_env_refused(monkeypatch: pytest.MonkeyPatch) -> None:

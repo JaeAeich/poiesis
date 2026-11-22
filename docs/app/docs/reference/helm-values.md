@@ -160,7 +160,7 @@ Rendered as `POIESIS_AUTH_*` variables. See
 | `clients`               | any        | Accepted OAuth clients (`azp`, else `client_id`).                                                                     |
 | `namespace`             | the issuer | Prefix of owner ids, `<namespace>\|<subject>`. No `\|`.                                                               |
 | `principalClaim`        | `sub`      | Claim naming the subject; dotted paths walk nested objects.                                                           |
-| `requiredScopes`        | none       | Scopes a token must carry, else `403`.                                                                                |
+| `requiredScopes`        | none       | Scopes a token must carry, else `403` with an `insufficient_scope` challenge. Scope tokens: no spaces, quotes or backslashes. |
 | `requiredClaim`         | none       | Admission rule `{name, values, prefixes}`; see [Claim rule](../concepts/authorization.md#claim-rule).                 |
 | `admin`                 | none       | Built-in admin rule `{name, values, prefixes}`; ignored with a decision service.                                      |
 | `actors`                | none       | Actors (`act.sub`) whose delegated tokens the built-in policy accepts.                                                |
