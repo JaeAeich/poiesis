@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
     from kubernetes.client import V1EnvVar, V1ResourceRequirements
 
+    from poiesis.core.services.filer.object_stores import ObjectStoreSpec
+
 
 #: Floor for the per-task scratch PVC when neither the TES request nor the
 #: operator-configured default supplies a size. Kept conservative because a
@@ -204,18 +206,22 @@ class RuntimeConfig:
         drs_secret: Secret in the TaskPod namespace whose
             ``DRS_BEARER_TOKEN`` key TIF, and no other container, sends to
             DRS servers. Sourced from ``taskpods.drs.existingSecret``.
-        s3_configured: Whether the operator enabled S3 (``s3.enabled``,
-            a Secret with keys, or a role for workload identity). False
-            makes submit refuse `s3://` inputs and outputs, which would
-            fail in the Pod, and leaves `s3://` out of service-info.
+        s3_configured: Whether the default S3 store is on (``s3.enabled``,
+            ``s3.anonymous``, a Secret with keys, or a role for workload
+            identity). With no named S3 store either, submit refuses
+            `s3://` inputs and outputs, which would fail in the Pod.
         gcs_configured: The same for Google Cloud Storage (`gs://`).
         azure_configured: The same for Azure Blob Storage (`az://`).
+        object_stores: Named stores (``objectStores``); each serves the
+            buckets its patterns match, ahead of the default store. Passed
+            to TIF/TOF with references to their Secrets.
         filer_env: Env vars set on TIF and TOF only: object-store options
             and workload-identity settings. Not on trec, ack or executors.
-        filer_identity_audiences: Provider → audience of a ServiceAccount
-            token projected into TIF and TOF only, at
-            ``IDENTITY_TOKEN_DIR/<provider>/token``, which the provider's
-            SDK trades for cloud credentials (`volumes.identity_token_volume`).
+        filer_identity_audiences: Token name (``aws``, ``azure``, ``gcp``,
+            ``gcp-<hash>``) → audience of a ServiceAccount token projected
+            into TIF and TOF only, at ``IDENTITY_TOKEN_DIR/<name>/token``,
+            which the provider's SDK trades for cloud credentials
+            (`volumes.identity_token_volume`).
         log_format: Log format passed to trec/tif/tof (``json`` or
             ``text``). Sourced from ``logging.format``; None passes
             nothing, and they choose by whether stderr is a terminal.
@@ -260,12 +266,19 @@ class RuntimeConfig:
     log_format: str | None = None
     gcs_configured: bool = False
     azure_configured: bool = False
+    object_stores: tuple[ObjectStoreSpec, ...] = ()
     filer_env: list[V1EnvVar] = field(default_factory=list)
     filer_identity_audiences: Mapping[str, str] = field(default_factory=dict)
     scheduling: SchedulingConfig = field(default_factory=SchedulingConfig)
 
     def storage_enabled(self, scheme: str) -> bool:
-        """False for an object-store scheme whose provider is not enabled."""
+        """False for an object-store scheme with no store at all."""
+        return self.default_store_enabled(scheme) or any(
+            store.scheme == scheme for store in self.object_stores
+        )
+
+    def default_store_enabled(self, scheme: str) -> bool:
+        """False for an object-store scheme whose default store is off."""
         return {
             "s3": self.s3_configured,
             "gs": self.gcs_configured,

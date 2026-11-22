@@ -13,6 +13,12 @@ Workload Identity Federation, `GcsWorkloadIdentity` trades the mounted
 token for an access token. The API sets that environment on TIF and TOF
 only; see the "Storage" docs page.
 
+A bucket a named store serves (`object_stores`) gets that store's
+endpoint and credentials instead: the store is built with the provider's
+standard variables replaced by the named store's (`_named_env`), so
+nothing of the default store reaches it. ``anonymous`` stores send
+unsigned requests.
+
 Transfers stream: a download is written to the volume as it arrives, an
 upload is sent in parts read from the file. A DIRECTORY or glob moves up
 to `MAX_PARALLEL_TRANSFERS` files at once. obstore retries 5xx responses,
@@ -24,6 +30,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -34,13 +42,26 @@ from obstore.exceptions import BaseError
 from obstore.store import AzureStore, GCSStore, S3Store
 
 from poiesis.core.constants import (
+    AZURE_ANONYMOUS_ENV,
+    GCS_ANONYMOUS_ENV,
     GCS_IDENTITY_TOKEN_FILE_ENV,
     GCS_SERVICE_ACCOUNT_ENV,
     GCS_WORKLOAD_IDENTITY_PROVIDER_ENV,
+    IDENTITY_TOKEN_DIR,
+    OBJECT_STORE_DEFAULTS_ENV,
+    OBJECT_STORES_ENV,
+    S3_ANONYMOUS_ENV,
     S3_REQUESTER_PAYS_ENV,
     S3_SERVER_SIDE_ENCRYPTION_ENV,
     S3_SSE_KMS_KEY_ID_ENV,
     S3_VIRTUAL_HOSTED_STYLE_ENV,
+)
+from poiesis.core.services.filer.object_stores import (
+    ObjectStoreSpec,
+    find_store,
+    gcs_token_name,
+    parse_stores,
+    secret_env_name,
 )
 from poiesis.core.services.filer.strategy.filer_strategy import (
     InputFilerStrategy,
@@ -49,7 +70,7 @@ from poiesis.core.services.filer.strategy.filer_strategy import (
 from poiesis.core.services.filer.strategy.gcs_identity import GcsWorkloadIdentity
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Iterable
+    from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
 
     from obstore.store import ClientConfig, ObjectStore, RetryConfig
 
@@ -116,7 +137,15 @@ def parse_object_url(url: str) -> ObjectUrl:
 
 
 def make_store(location: ObjectUrl) -> ObjectStore:
-    """The obstore store for `location`'s bucket, configured from the env."""
+    """The obstore store for `location`'s bucket.
+
+    The named store that serves the bucket, else the provider's default
+    store, configured from the env. Raises `ObjectStoreError` when named
+    stores are set up, none serves the bucket and the default is off.
+    """
+    named = serving_store(location)
+    if named is not None:
+        return _make_named_store(named, location.bucket)
     if location.scheme == "s3":
         return S3Store(
             location.bucket,
@@ -125,17 +154,157 @@ def make_store(location: ObjectUrl) -> ObjectStore:
             retry_config=_RETRY,
         )
     if location.scheme == "gs":
+        anonymous = _flag(GCS_ANONYMOUS_ENV)
         return GCSStore(
             location.bucket,
+            config={"skip_signature": True} if anonymous else None,
             client_options=_client_for(os.environ.get("GOOGLE_BASE_URL", "")),
             retry_config=_RETRY,
-            credential_provider=gcs_credential_provider(),
+            credential_provider=None if anonymous else gcs_credential_provider(),
         )
     return AzureStore(
         container_name=location.bucket,
+        config={"skip_signature": True} if _flag(AZURE_ANONYMOUS_ENV) else None,
         client_options=_client_for(os.environ.get("AZURE_STORAGE_ENDPOINT", "")),
         retry_config=_RETRY,
     )
+
+
+def named_stores() -> tuple[ObjectStoreSpec, ...]:
+    """The named stores the API passed to TIF/TOF; none when unset."""
+    return parse_stores(os.environ.get(OBJECT_STORES_ENV))
+
+
+def serving_store(location: ObjectUrl) -> ObjectStoreSpec | None:
+    """The named store for `location`'s bucket; None for the default store.
+
+    Raises `ObjectStoreError` when there are named stores, none serves the
+    bucket, and the provider's default store is off.
+    """
+    stores = named_stores()
+    named = find_store(stores, location.scheme, location.bucket)
+    if named is None and stores and location.scheme not in _default_schemes():
+        raise ObjectStoreError(
+            f"No object store of this deployment serves "
+            f"{location.scheme}://{location.bucket}"
+        )
+    return named
+
+
+def is_served(url: str) -> bool:
+    """Whether some store of this deployment serves the object-store `url`."""
+    try:
+        serving_store(parse_object_url(url))
+    except (ValueError, ObjectStoreError):
+        return False
+    return True
+
+
+def _default_schemes() -> set[str]:
+    raw = os.environ.get(OBJECT_STORE_DEFAULTS_ENV, "")
+    return {s.strip() for s in raw.split(",") if s.strip()}
+
+
+#: Prefix of the standard variables each provider's SDK chain reads.
+_PROVIDER_ENV_PREFIX = {"s3": "AWS_", "gcs": "GOOGLE_", "azure": "AZURE_"}
+#: Held while the process env is swapped for a named store's.
+_ENV_LOCK = threading.Lock()
+
+
+def _make_named_store(spec: ObjectStoreSpec, bucket: str) -> ObjectStore:
+    """The obstore store for `bucket` on the named store `spec`."""
+    config: dict[str, Any] = {"skip_signature": True} if spec.anonymous else {}
+    client = _client_for(spec.endpoint or "")
+    with _provider_env(_PROVIDER_ENV_PREFIX[spec.provider], _named_env(spec)):
+        if spec.provider == "s3":
+            return S3Store(
+                bucket,
+                config={**_s3_spec_options(spec), **config},
+                client_options=client,
+                retry_config=_RETRY,
+            )
+        if spec.provider == "gcs":
+            return GCSStore(
+                bucket,
+                config=config or None,
+                client_options=client,
+                retry_config=_RETRY,
+                credential_provider=_named_gcs_identity(spec),
+            )
+        return AzureStore(
+            container_name=bucket,
+            config=config or None,
+            client_options=client,
+            retry_config=_RETRY,
+        )
+
+
+def _named_env(spec: ObjectStoreSpec) -> dict[str, str]:
+    """The standard SDK variables for `spec`, as obstore reads them.
+
+    Options from the spec; keys from the store's own variables
+    (`secret_env_name`), which the API sets from its Secret.
+    """
+    env: dict[str, str] = {}
+    for key in spec.secret_keys():
+        if value := os.environ.get(secret_env_name(spec.name, key)):
+            env[key] = value
+    options: dict[str, str | None] = {}
+    if spec.provider == "s3":
+        options = {"AWS_ENDPOINT_URL": spec.endpoint, "AWS_REGION": spec.region}
+        if spec.role_arn:
+            options["AWS_ROLE_ARN"] = spec.role_arn
+            options["AWS_WEB_IDENTITY_TOKEN_FILE"] = _token_file("aws")
+    elif spec.provider == "gcs":
+        options = {"GOOGLE_BASE_URL": spec.endpoint}
+    else:
+        options = {
+            "AZURE_STORAGE_ACCOUNT_NAME": spec.account_name,
+            "AZURE_STORAGE_ENDPOINT": spec.endpoint,
+        }
+        if spec.client_id:
+            options["AZURE_CLIENT_ID"] = spec.client_id
+            options["AZURE_TENANT_ID"] = spec.tenant_id
+            options["AZURE_FEDERATED_TOKEN_FILE"] = _token_file("azure")
+    env.update({name: value for name, value in options.items() if value})
+    return env
+
+
+def _token_file(name: str) -> str:
+    """Where TIF/TOF find the identity token `name` (`volumes.identity_token_path`)."""
+    return f"{IDENTITY_TOKEN_DIR}/{name}/token"
+
+
+def _named_gcs_identity(spec: ObjectStoreSpec) -> GcsWorkloadIdentity | None:
+    provider = spec.workload_identity_provider
+    if not provider:
+        return None
+    default = os.environ.get(GCS_WORKLOAD_IDENTITY_PROVIDER_ENV) or None
+    return GcsWorkloadIdentity(
+        provider,
+        _token_file(gcs_token_name(provider, default)),
+        spec.service_account,
+    )
+
+
+@contextmanager
+def _provider_env(prefix: str, values: Mapping[str, str]) -> Iterator[None]:
+    """Run with every variable starting with `prefix` replaced by `values`.
+
+    obstore reads the provider's variables when a store is built, so a
+    named store is built with the default store's taken out.
+    """
+    with _ENV_LOCK:
+        saved = {k: v for k, v in os.environ.items() if k.startswith(prefix)}
+        for name in saved:
+            del os.environ[name]
+        os.environ.update(values)
+        try:
+            yield
+        finally:
+            for name in values:
+                os.environ.pop(name, None)
+            os.environ.update(saved)
 
 
 def _client_for(endpoint: str) -> ClientConfig:
@@ -177,6 +346,22 @@ def s3_options() -> dict[str, Any]:
     if kms_key := os.environ.get(S3_SSE_KMS_KEY_ID_ENV):
         options["sse_kms_key_id"] = kms_key
     if _flag(S3_REQUESTER_PAYS_ENV):
+        options["request_payer"] = True
+    if _flag(S3_ANONYMOUS_ENV):
+        options["skip_signature"] = True
+    return options
+
+
+def _s3_spec_options(spec: ObjectStoreSpec) -> dict[str, Any]:
+    """`s3_options`, for a named store."""
+    options: dict[str, Any] = {}
+    if spec.virtual_hosted_style:
+        options["virtual_hosted_style_request"] = True
+    if spec.server_side_encryption:
+        options["server_side_encryption"] = spec.server_side_encryption
+    if spec.kms_key_id:
+        options["sse_kms_key_id"] = spec.kms_key_id
+    if spec.requester_pays:
         options["request_payer"] = True
     return options
 

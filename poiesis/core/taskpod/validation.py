@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from poiesis.api.tes.models import TesFileType
 from poiesis.core import executor_shell
 from poiesis.core.services.filer import filer_strategy_factory as _filer
+from poiesis.core.services.filer.object_stores import find_store
 from poiesis.core.taskpod.paths import is_within, normalised
 from poiesis.core.taskpod.pod import (
     backend_parameters,
@@ -110,14 +111,29 @@ _PROVIDERS = {
 def reject_unconfigured_storage(
     where: str, url: str | None, config: RuntimeConfig
 ) -> None:
-    """Reject an object-store URL whose provider the operator didn't enable."""
+    """Reject an object-store URL no store of this deployment serves.
+
+    Either the operator enabled no store of its provider, or named stores
+    are set up, none matches the bucket and the default store is off.
+    """
     scheme = _filer.scheme(url)
-    if scheme in _PROVIDERS and not config.storage_enabled(scheme):
-        article, provider, storage = _PROVIDERS[scheme]
+    if scheme not in _PROVIDERS:
+        return
+    article, provider, storage = _PROVIDERS[scheme]
+    if not config.storage_enabled(scheme):
         raise ValueError(
             f"{where} is {article} {scheme}:// URL, but this deployment has no "
             f"{provider} credentials; ask your administrator to configure "
             f"{storage}"
+        )
+    if config.default_store_enabled(scheme) or url is None:
+        return
+    bucket = url.partition("://")[2].partition("/")[0]
+    if find_store(config.object_stores, scheme, bucket) is None:
+        raise ValueError(
+            f"{where} names {provider} bucket {bucket!r}, which no store of "
+            "this deployment serves; ask your administrator to add it to a "
+            "store"
         )
 
 

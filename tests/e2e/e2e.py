@@ -17,6 +17,8 @@ URL = os.environ.get("POIESIS_E2E_URL", "")
 CONTEXT = os.environ.get("POIESIS_E2E_CONTEXT", "kind-poiesis-e2e")
 NAMESPACE = os.environ.get("POIESIS_E2E_NAMESPACE", "poiesis")
 BUCKET = "poiesis-e2e"
+#: Bucket of the named store "second" (values.yaml), with its own keys.
+SECOND_BUCKET = "poiesis-e2e-second"
 TERMINAL = {"COMPLETE", "EXECUTOR_ERROR", "SYSTEM_ERROR", "CANCELED", "PREEMPTED"}
 IMAGE = "busybox:1.36"
 #: Azurite's development account and its published key (not a secret).
@@ -88,24 +90,24 @@ def kubectl(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess
     )
 
 
-def s3_put(key: str, body: str) -> str:
-    """Write ``body`` to ``key`` in the test bucket; return its s3:// URL."""
+def s3_put(key: str, body: str, bucket: str = BUCKET) -> str:
+    """Write ``body`` to ``key`` in ``bucket``; return its s3:// URL."""
     done = kubectl(
         "exec", "-i", "deploy/s3", "--", "curl", "-sf", "-T", "-",
-        f"http://localhost:8888/buckets/{BUCKET}/{quote(key)}",
+        f"http://localhost:8888/buckets/{bucket}/{quote(key)}",
         stdin=body,
     )  # fmt: skip
     assert done.returncode == 0, done.stderr
-    return f"s3://{BUCKET}/{key}"
+    return f"s3://{bucket}/{key}"
 
 
-def s3_get(key: str) -> str:
-    """Body of ``key`` in the test bucket."""
+def s3_get(key: str, bucket: str = BUCKET) -> str:
+    """Body of ``key`` in ``bucket``."""
     done = kubectl(
         "exec", "deploy/s3", "--", "curl", "-sf",
-        f"http://localhost:8888/buckets/{BUCKET}/{quote(key)}",
+        f"http://localhost:8888/buckets/{bucket}/{quote(key)}",
     )  # fmt: skip
-    assert done.returncode == 0, f"s3://{BUCKET}/{key}: {done.stderr}"
+    assert done.returncode == 0, f"s3://{bucket}/{key}: {done.stderr}"
     return done.stdout
 
 

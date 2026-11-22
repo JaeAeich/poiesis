@@ -4,8 +4,9 @@
 #   2. build the API and migrations images from this checkout, load them,
 #   3. deploy Postgres, the S3, GCS and Azure emulators and their Secrets
 #      (deps.yaml),
-#   4. make the S3 test bucket, install the chart (values.yaml). The tests
-#      make the GCS bucket and the Azure container themselves.
+#   4. make the S3 test buckets (one per S3 store), install the chart
+#      (values.yaml). The tests make the GCS bucket and the Azure container
+#      themselves.
 # Then port-forward the API and run the tests:
 #   kubectl --context kind-poiesis-e2e -n poiesis port-forward svc/poiesis-api 8000:8000 &
 #   POIESIS_E2E_URL=http://localhost:8000 uv run pytest tests/e2e
@@ -43,11 +44,13 @@ kubectl --context "kind-$CLUSTER" create namespace "$NS" --dry-run=client -o yam
 "${kc[@]}" rollout status deploy/postgres deploy/s3 deploy/gcs deploy/azurite --timeout=180s
 
 # SeaweedFS doesn't create buckets on first write.
-for _ in $(seq 30); do
-  "${kc[@]}" exec deploy/s3 -- sh -c \
-    'echo "s3.bucket.create -name poiesis-e2e" | weed shell; echo s3.bucket.list | weed shell' \
-    2>/dev/null | grep -q "^ *poiesis-e2e" && break
-  sleep 2
+for bucket in poiesis-e2e poiesis-e2e-second; do
+  for _ in $(seq 30); do
+    "${kc[@]}" exec deploy/s3 -- sh -c \
+      "echo 's3.bucket.create -name $bucket' | weed shell; echo s3.bucket.list | weed shell" \
+      2>/dev/null | grep -q "^ *$bucket" && break
+    sleep 2
+  done
 done
 
 helm --kube-context "kind-$CLUSTER" upgrade --install poiesis "$root/deployment/helm/poiesis" \

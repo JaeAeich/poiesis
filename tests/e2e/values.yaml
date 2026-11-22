@@ -33,6 +33,16 @@ azure:
   endpoint: http://azurite:10000/devstoreaccount1
   existingSecret: poiesis-azure
 
+# A second S3 store on the same SeaweedFS, with keys that open only its
+# bucket (deps.yaml).
+objectStores:
+  - name: second
+    provider: s3
+    buckets: ["poiesis-e2e-second"]
+    endpoint: http://s3:9000
+    region: us-east-1
+    existingSecret: poiesis-s3-second
+
 auth:
   enabled: false
 

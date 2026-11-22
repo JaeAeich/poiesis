@@ -26,11 +26,19 @@ from poiesis.core.constants import (
     FILE_URL_ROOTS_ENV,
     FILER_PVC_PATH,
     FTP_ENABLED_ENV,
+    OBJECT_STORE_DEFAULTS_ENV,
+    OBJECT_STORES_ENV,
     OUTPUT_GLOB_FALLBACK_ENV,
 )
 from poiesis.core.executor_logs import Streams, encode_streams
 from poiesis.core.logging_config import LOG_FORMAT_ENV
 from poiesis.core.pod_status import ACK_NAME, TIF_NAME, TOF_NAME, TREC_NAME
+from poiesis.core.services.filer.object_stores import (
+    OPTIONAL_SECRET_KEYS,
+    PROVIDER_SCHEMES,
+    dump_stores,
+    secret_env_name,
+)
 from poiesis.core.taskpod.config import PodSecurityEnforce
 from poiesis.core.taskpod.paths import is_within, normalised
 from poiesis.core.taskpod.volumes import (
@@ -167,9 +175,9 @@ def filer_env(config: RuntimeConfig) -> list[V1EnvVar]:
     DB DSN + S3 creds, plus operator extras, come through ``poiesis_env``.
     The output-glob fallback flag and the `file://` roots are set only when on.
     Object-store options and workload-identity settings (`config.filer_env`)
-    go to TIF/TOF only.
+    and the named stores (`object_store_env`) go to TIF/TOF only.
     """
-    env = [*poiesis_env(config), *config.filer_env]
+    env = [*poiesis_env(config), *config.filer_env, *object_store_env(config)]
     if config.output_glob_fallback:
         env.append(V1EnvVar(name=OUTPUT_GLOB_FALLBACK_ENV, value="true"))
     if config.file_url_roots:
@@ -178,6 +186,37 @@ def filer_env(config: RuntimeConfig) -> list[V1EnvVar]:
         )
     if not config.ftp_enabled:
         env.append(V1EnvVar(name=FTP_ENABLED_ENV, value="false"))
+    return env
+
+
+def object_store_env(config: RuntimeConfig) -> list[V1EnvVar]:
+    """Env vars for the named object stores, for TIF/TOF; none without any.
+
+    The store table as one JSON value (no secret in it), the schemes whose
+    default store is on, then each store's keys as references to its
+    Secret (`object_stores.secret_env_name`).
+    """
+    if not config.object_stores:
+        return []
+    defaults = [s for s in PROVIDER_SCHEMES.values() if config.default_store_enabled(s)]
+    env = [
+        V1EnvVar(name=OBJECT_STORES_ENV, value=dump_stores(config.object_stores)),
+        V1EnvVar(name=OBJECT_STORE_DEFAULTS_ENV, value=",".join(defaults)),
+    ]
+    for store in config.object_stores:
+        env.extend(
+            V1EnvVar(
+                name=secret_env_name(store.name, key),
+                value_from=V1EnvVarSource(
+                    secret_key_ref=V1SecretKeySelector(
+                        name=store.existing_secret,
+                        key=key,
+                        optional=True if key in OPTIONAL_SECRET_KEYS else None,
+                    )
+                ),
+            )
+            for key in store.secret_keys()
+        )
     return env
 
 

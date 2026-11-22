@@ -37,15 +37,19 @@ from pydantic.alias_generators import to_camel
 
 from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.core.constants import (
+    AZURE_ANONYMOUS_ENV,
     DRS_ALLOWED_HOSTS_ENV,
     DRS_BEARER_TOKEN_ENV,
     DRS_ENABLED_ENV,
     FILE_URL_ROOTS_ENV,
     FTP_ENABLED_ENV,
+    GCS_ANONYMOUS_ENV,
     GCS_IDENTITY_TOKEN_FILE_ENV,
     GCS_SERVICE_ACCOUNT_ENV,
     GCS_WORKLOAD_IDENTITY_PROVIDER_ENV,
+    OBJECT_STORES_ENV,
     OUTPUT_GLOB_FALLBACK_ENV,
+    S3_ANONYMOUS_ENV,
     S3_REQUESTER_PAYS_ENV,
     S3_SERVER_SIDE_ENCRYPTION_ENV,
     S3_SSE_KMS_KEY_ID_ENV,
@@ -54,6 +58,12 @@ from poiesis.core.constants import (
 from poiesis.core.logging_config import LOG_FORMAT_ENV, LOG_FORMATS
 from poiesis.core.metrics import metrics_port_from_env
 from poiesis.core.services.filer.file_urls import parse_file_url_roots
+from poiesis.core.services.filer.object_stores import (
+    S3_SSE_MODES,
+    ObjectStoreSpec,
+    gcs_token_name,
+    parse_stores,
+)
 from poiesis.core.services.filer.strategy.gcs_identity import token_audience
 from poiesis.core.taskpod import PodSecurityEnforce, RuntimeConfig
 from poiesis.core.taskpod.config import (
@@ -1146,7 +1156,15 @@ _AWS_TOKEN_AUDIENCE = "sts.amazonaws.com"  # noqa: S105 - an audience
 _AZURE_TOKEN_AUDIENCE = "api://AzureADTokenExchange"  # noqa: S105 - an audience
 
 #: S3 server-side encryption modes; SSE-C needs a key per request.
-_S3_SSE_MODES = frozenset({"AES256", "aws:kms", "aws:kms:dsse"})
+_S3_SSE_MODES = S3_SSE_MODES
+
+
+def _parse_object_stores_env() -> tuple[ObjectStoreSpec, ...]:
+    """Named object stores from ``POIESIS_OBJECT_STORES``; refuse bad ones."""
+    try:
+        return parse_stores(os.environ.get(OBJECT_STORES_ENV))
+    except (ValueError, ValidationError) as exc:
+        raise ValueError(f"{OBJECT_STORES_ENV} is invalid: {exc}") from exc
 
 
 def _env_or_none(name: str) -> str | None:
@@ -1170,6 +1188,10 @@ class StorageSettings(BaseModel):
     gets a ServiceAccount token for the provider's audience, mounted into
     TIF and TOF only, and the variables TIF and TOF read to trade it for
     credentials.
+
+    Those settings make each provider's default store. Named stores
+    (``POIESIS_OBJECT_STORES``) serve the buckets their patterns match;
+    any store can be ``anonymous`` (unsigned requests, public buckets).
     """
 
     s3_enabled: bool = Field(
@@ -1195,6 +1217,23 @@ class StorageSettings(BaseModel):
         default_factory=lambda: _parse_strict_bool_env(
             S3_REQUESTER_PAYS_ENV, default=False
         ),
+    )
+    # Unsigned requests from the default store of each provider.
+    s3_anonymous: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(S3_ANONYMOUS_ENV, default=False),
+    )
+    gcs_anonymous: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            GCS_ANONYMOUS_ENV, default=False
+        ),
+    )
+    azure_anonymous: bool = Field(
+        default_factory=lambda: _parse_strict_bool_env(
+            AZURE_ANONYMOUS_ENV, default=False
+        ),
+    )
+    object_stores: tuple[ObjectStoreSpec, ...] = Field(
+        default_factory=_parse_object_stores_env,
     )
     gcs_enabled: bool = Field(
         default_factory=lambda: _parse_strict_bool_env(
@@ -1268,20 +1307,34 @@ class StorageSettings(BaseModel):
             raise ValueError(
                 "POIESIS_AZURE_CLIENT_ID and POIESIS_AZURE_TENANT_ID are set together"
             )
+        if self.azure_anonymous and (self.taskpod_azure_secret or self.azure_client_id):
+            raise ValueError(
+                f"{AZURE_ANONYMOUS_ENV} takes no POIESIS_TASKPOD_AZURE_SECRET or "
+                "POIESIS_AZURE_CLIENT_ID"
+            )
+        if self.s3_anonymous and self.s3_role_arn:
+            raise ValueError(f"{S3_ANONYMOUS_ENV} takes no POIESIS_S3_ROLE_ARN")
         return self
 
     def _check_gcs(self) -> None:
         """Refuse GCS credentials that are missing, doubled or malformed."""
         if self.gcs_enabled and not (
-            self.taskpod_gcs_secret or self.gcs_workload_identity_provider
+            self.taskpod_gcs_secret
+            or self.gcs_workload_identity_provider
+            or self.gcs_anonymous
         ):
             raise ValueError(
-                "POIESIS_GCS_ENABLED needs POIESIS_TASKPOD_GCS_SECRET or "
-                f"{GCS_WORKLOAD_IDENTITY_PROVIDER_ENV}: without either, TIF and "
-                "TOF would use the node's metadata server, which executors "
-                "reach too"
+                "POIESIS_GCS_ENABLED needs POIESIS_TASKPOD_GCS_SECRET, "
+                f"{GCS_WORKLOAD_IDENTITY_PROVIDER_ENV} or {GCS_ANONYMOUS_ENV}: "
+                "without any, TIF and TOF would use the node's metadata server, "
+                "which executors reach too"
             )
         provider = self.gcs_workload_identity_provider
+        if self.gcs_anonymous and (provider or self.taskpod_gcs_secret):
+            raise ValueError(
+                f"{GCS_ANONYMOUS_ENV} takes no POIESIS_TASKPOD_GCS_SECRET or "
+                f"{GCS_WORKLOAD_IDENTITY_PROVIDER_ENV}"
+            )
         if provider is not None and not provider.startswith("//"):
             raise ValueError(
                 f"{GCS_WORKLOAD_IDENTITY_PROVIDER_ENV} is the provider's full "
@@ -1310,11 +1363,13 @@ class StorageSettings(BaseModel):
         literal(S3_SERVER_SIDE_ENCRYPTION_ENV, self.s3_server_side_encryption)
         literal(S3_SSE_KMS_KEY_ID_ENV, self.s3_sse_kms_key_id)
         literal(S3_REQUESTER_PAYS_ENV, _on(self.s3_requester_pays))
+        literal(S3_ANONYMOUS_ENV, _on(self.s3_anonymous))
         if self.s3_role_arn:
             literal("AWS_ROLE_ARN", self.s3_role_arn)
             literal("AWS_WEB_IDENTITY_TOKEN_FILE", identity_token_path("aws"))
         if self.gcs_enabled:
             literal("GOOGLE_BASE_URL", self.gcs_endpoint)
+            literal(GCS_ANONYMOUS_ENV, _on(self.gcs_anonymous))
             if self.gcs_workload_identity_provider:
                 literal(
                     GCS_WORKLOAD_IDENTITY_PROVIDER_ENV,
@@ -1333,6 +1388,7 @@ class StorageSettings(BaseModel):
         if self.azure_enabled:
             literal("AZURE_STORAGE_ACCOUNT_NAME", self.azure_account_name)
             literal("AZURE_STORAGE_ENDPOINT", self.azure_endpoint)
+            literal(AZURE_ANONYMOUS_ENV, _on(self.azure_anonymous))
             if self.taskpod_azure_secret:
                 # One of the two keys, so each is optional.
                 env.extend(
@@ -1346,15 +1402,35 @@ class StorageSettings(BaseModel):
         return env
 
     def identity_audiences(self) -> dict[str, str]:
-        """Provider → audience of the token TIF/TOF trade for credentials."""
+        """Token name → audience of each token TIF/TOF trade for credentials.
+
+        One token per audience: stores of a provider that share an
+        audience (every AWS role, every Azure identity, one Google pool
+        provider) share a token.
+        """
         audiences: dict[str, str] = {}
+        default_gcs = self._default_gcs_provider()
         if self.s3_role_arn:
             audiences["aws"] = _AWS_TOKEN_AUDIENCE
         if self.azure_enabled and self.azure_client_id:
             audiences["azure"] = _AZURE_TOKEN_AUDIENCE
-        if self.gcs_enabled and self.gcs_workload_identity_provider:
-            audiences["gcp"] = token_audience(self.gcs_workload_identity_provider)
+        if default_gcs:
+            audiences["gcp"] = token_audience(default_gcs)
+        for store in self.object_stores:
+            if store.role_arn:
+                audiences["aws"] = _AWS_TOKEN_AUDIENCE
+            if store.client_id:
+                audiences["azure"] = _AZURE_TOKEN_AUDIENCE
+            if provider := store.workload_identity_provider:
+                name = gcs_token_name(provider, default_gcs)
+                audiences[name] = token_audience(provider)
         return audiences
+
+    def _default_gcs_provider(self) -> str | None:
+        """The default GCS store's pool provider, when it uses one."""
+        if self.gcs_enabled and self.gcs_workload_identity_provider:
+            return self.gcs_workload_identity_provider
+        return None
 
 
 #: TaskPod scheduling and executor resources, as JSON (see `SchedulingSettings`).
@@ -1690,6 +1766,26 @@ class Settings(BaseModel):
     storage: StorageSettings = Field(default_factory=StorageSettings)
     scheduling: SchedulingSettings = Field(default_factory=SchedulingSettings.from_env)
 
+    @model_validator(mode="after")
+    def _check_storage(self) -> Settings:
+        """Refuse keys for an anonymous S3 store, and volumes named like a token."""
+        if self.storage.s3_anonymous and self.taskpod_s3_secret:
+            raise ValueError(
+                f"{S3_ANONYMOUS_ENV} takes no POIESIS_TASKPOD_S3_SECRET; "
+                "unset one of them"
+            )
+        tokens = {
+            identity_token_volume_name(name)
+            for name in self.storage.identity_audiences()
+        }
+        for entry in self.taskpod_extra_volumes:
+            if entry.get("name") in tokens:
+                raise ValueError(
+                    f"POIESIS_TASKPOD_EXTRA_VOLUMES name {entry['name']!r} is the "
+                    "volume of an object store's identity token; pick another"
+                )
+        return self
+
     def runtime_config(self) -> RuntimeConfig:
         """Materialise the TaskPod RuntimeConfig used by the spec builder."""
         env = self._credential_env()
@@ -1731,9 +1827,10 @@ class Settings(BaseModel):
             recorder_resources=_resources(self.recorder_resources),
             filer_resources=_resources(self.filer_resources),
             ack_resources=_resources(self.ack_resources),
-            s3_configured=self.storage_enabled("s3"),
-            gcs_configured=self.storage_enabled("gs"),
-            azure_configured=self.storage_enabled("az"),
+            s3_configured=self.default_store_enabled("s3"),
+            gcs_configured=self.default_store_enabled("gs"),
+            azure_configured=self.default_store_enabled("az"),
+            object_stores=storage.object_stores,
             filer_env=storage.filer_env(),
             filer_identity_audiences=storage.identity_audiences(),
             scheduling=self.scheduling.config(),
@@ -1742,15 +1839,26 @@ class Settings(BaseModel):
     def storage_enabled(self, scheme: str) -> bool:
         """False for an object-store scheme whose provider is not enabled.
 
+        A provider is on when its default store is (`default_store_enabled`)
+        or a named store of it is set up.
+        """
+        return self.default_store_enabled(scheme) or any(
+            store.scheme == scheme for store in self.storage.object_stores
+        )
+
+    def default_store_enabled(self, scheme: str) -> bool:
+        """False for an object-store scheme whose default store is off.
+
         S3 is on when the operator says so (workload identity or instance
-        credentials need no key), or when an access key reaches TIF/TOF:
-        from the S3 Secret, the API's own values, or the operator's
-        extraEnv.
+        credentials need no key, anonymous needs none), or when an access
+        key reaches TIF/TOF: from the S3 Secret, the API's own values, or
+        the operator's extraEnv.
         """
         storage = self.storage
         if scheme == "s3":
             return (
                 storage.s3_enabled
+                or storage.s3_anonymous
                 or bool(storage.s3_role_arn)
                 or bool(self.taskpod_s3_secret or self.aws_access_key_id)
                 or any(

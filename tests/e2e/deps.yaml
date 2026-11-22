@@ -20,6 +20,17 @@ stringData:
   AWS_ACCESS_KEY_ID: admin
   AWS_SECRET_ACCESS_KEY: password
 ---
+# Keys of the named store "second" (values.yaml objectStores), which only
+# they open.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: poiesis-s3-second
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: second
+  AWS_SECRET_ACCESS_KEY: second-password
+---
 # fake-gcs-server takes no credentials. A key with disable_oauth makes
 # obstore send unsigned requests instead of asking the metadata server.
 apiVersion: v1
@@ -83,7 +94,9 @@ spec:
   ports:
     - port: 5432
 ---
-# Same server as deployment/dev.yaml, with one identity (admin/password).
+# Same server as deployment/dev.yaml, with two identities, one per bucket:
+# admin/password (the default S3 store) and second/second-password (the
+# named store "second"). Neither can read the other's bucket.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -96,7 +109,18 @@ stringData:
         {
           "name": "admin",
           "credentials": [{"accessKey": "admin", "secretKey": "password"}],
-          "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+          "actions": [
+            "Admin:poiesis-e2e", "Read:poiesis-e2e", "Write:poiesis-e2e",
+            "List:poiesis-e2e", "Tagging:poiesis-e2e"
+          ]
+        },
+        {
+          "name": "second",
+          "credentials": [{"accessKey": "second", "secretKey": "second-password"}],
+          "actions": [
+            "Read:poiesis-e2e-second", "Write:poiesis-e2e-second",
+            "List:poiesis-e2e-second", "Tagging:poiesis-e2e-second"
+          ]
         }
       ]
     }

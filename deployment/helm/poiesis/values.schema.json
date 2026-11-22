@@ -181,7 +181,8 @@
         "virtualHostedStyle":   { "type": "boolean" },
         "serverSideEncryption": { "enum": ["", "AES256", "aws:kms", "aws:kms:dsse"] },
         "kmsKeyId":             { "type": "string" },
-        "requesterPays":        { "type": "boolean" }
+        "requesterPays":        { "type": "boolean" },
+        "anonymous":            { "type": "boolean" }
       }
     },
 
@@ -193,7 +194,8 @@
         "existingSecret":           { "type": "string" },
         "workloadIdentityProvider": { "type": "string", "pattern": "^(//.+)?$" },
         "serviceAccount":           { "type": "string" },
-        "endpoint":                 { "type": "string", "pattern": "^(https?://.+)?$" }
+        "endpoint":                 { "type": "string", "pattern": "^(https?://.+)?$" },
+        "anonymous":                { "type": "boolean" }
       }
     },
 
@@ -206,7 +208,41 @@
         "existingSecret": { "type": "string" },
         "clientId":       { "type": "string" },
         "tenantId":       { "type": "string" },
-        "endpoint":       { "type": "string", "pattern": "^(https?://.+)?$" }
+        "endpoint":       { "type": "string", "pattern": "^(https?://.+)?$" },
+        "anonymous":      { "type": "boolean" }
+      }
+    },
+
+    "objectStores": {
+      "description": "Named object stores, each serving the buckets its patterns match. The API checks the options of each provider and refuses overlapping patterns.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "provider", "buckets"],
+        "properties": {
+          "name":                     { "type": "string", "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", "maxLength": 40 },
+          "provider":                 { "enum": ["s3", "gcs", "azure"] },
+          "buckets": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "pattern": "^([A-Za-z0-9][A-Za-z0-9._-]*)?\\*?$", "minLength": 1 }
+          },
+          "anonymous":                { "type": "boolean" },
+          "endpoint":                 { "type": "string", "pattern": "^(https?://.+)?$" },
+          "region":                   { "type": "string" },
+          "existingSecret":           { "type": "string" },
+          "roleArn":                  { "type": "string" },
+          "virtualHostedStyle":       { "type": "boolean" },
+          "serverSideEncryption":     { "enum": ["", "AES256", "aws:kms", "aws:kms:dsse"] },
+          "kmsKeyId":                 { "type": "string" },
+          "requesterPays":            { "type": "boolean" },
+          "accountName":              { "type": "string" },
+          "clientId":                 { "type": "string" },
+          "tenantId":                 { "type": "string" },
+          "workloadIdentityProvider": { "type": "string", "pattern": "^(//.+)?$" },
+          "serviceAccount":           { "type": "string" }
+        }
       }
     },
 
