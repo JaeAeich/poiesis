@@ -65,7 +65,8 @@ _DB_RETRY_AFTER = 5
 
 def _store_unavailable(exc: BaseException) -> ServiceUnavailableError:
     """The retryable ``503`` for a database error while managing keys."""
-    logger.warning("API key store unavailable: %s", type(exc).__name__)
+    # semgrep false positive: logs the exception type only, never a key.
+    logger.warning("API key store unavailable: %s", type(exc).__name__)  # nosemgrep
     return ServiceUnavailableError(
         "credential store unavailable", retry_after_seconds=_DB_RETRY_AFTER
     )
@@ -220,8 +221,11 @@ async def key_minter(
     refusal = mint_refusal(principal, issuer, time.time())
     if refusal is not None:
         # The reason may quote a claim (the client), so it stays out of
-        # the audit line.
-        logger.warning("API key minting refused for %s: %s", principal.owner, refusal)
+        # the audit line. semgrep false positive: logs the owner id and
+        # the refusal text, never a key or token.
+        logger.warning(  # nosemgrep
+            "API key minting refused for %s: %s", principal.owner, refusal
+        )
         audit.denied(request, principal)
         raise ForbiddenError(refusal)
     return principal
