@@ -137,15 +137,19 @@ auth:
 Without the trailing `:`, the prefix would also admit
 `…:group:example-vo2#…`.
 
-Every caller of the issuer needs the claim, including its service
-clients (client-credentials tokens), which usually carry no user
-entitlements and so get `403`. What a gateway such as proTES needs
+Every caller of the issuer needs the claim, including clients with
+client-credentials tokens, which usually carry no user entitlements
+and so get `403`, unless they are listed in the issuer's
+[`serviceClients`](./authentication.md#service-clients): the rule
+doesn't apply to those clients' own tokens (`sub` = client ID), which
+are admitted by identity instead, and what they may do is the owner
+rule's or the decision service's. What a gateway such as proTES needs
 depends on the token it sends:
 
 | Gateway sends | Poiesis sees | What to configure |
 | --- | --- | --- |
 | The user's token, forwarded | The user | Nothing: the claim rule applies as for a direct call. The token's `aud` must hold this instance's audience. |
-| Its own client-credentials token | The gateway, without entitlements | Leave the rule unset and express "entitled users or client X" in the decision service (e.g. by `subject.properties.client_id`), or give the gateway an issuer entry of its own. Every task is owned by the gateway. |
+| Its own client-credentials token | The gateway, without entitlements | List it in the issuer's [`serviceClients`](./authentication.md#service-clients) (if its `sub` is its client ID), or leave the rule unset and express "entitled users or client X" in the decision service (e.g. by `subject.properties.client_id`), or give the gateway an issuer entry of its own. Every task is owned by the gateway. |
 | An exchanged token (RFC 8693) | The user, with `act` naming the gateway | The claim rule applies to the user. Without a decision service, list the gateway in the issuer's [`actors`](./authentication.md#trusted-actors); with one, it decides on `subject.properties.actor`. |
 
 The global `authz.requiredClaim` of earlier versions matched the value
@@ -180,9 +184,10 @@ its issuer, so a token of another issuer with the same value is not an
 admin. An API key is an admin if the claims snapshot it was minted with
 matches its issuer's rule. A delegated token (with an `act` claim) is
 never an admin, whatever its claims and even with a listed actor: the
-actor would act with the subject's admin powers. The admin rule doesn't
-admit anyone either: with a `requiredClaim`, admins need to pass it
-too.
+actor would act with the subject's admin powers. Neither is a
+[service client](./authentication.md#service-clients)'s own token.
+The admin rule doesn't admit anyone either: with a `requiredClaim`,
+admins need to pass it too.
 
 What a built-in admin may do:
 

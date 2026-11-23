@@ -83,6 +83,7 @@ auth:
       timeout:         10      # seconds per call to the issuer
       keyMinting:              # optional, see API keys
         clients:       [poiesis-cli]
+      serviceClients: []       # optional, see "Service clients" below
     # A gateway (Envoy, Istio, oauth2-proxy) that signs its own JWTs
     # and publishes only its keys: no discovery, no userinfo.
     - issuer:          https://gateway.example.org
@@ -125,6 +126,7 @@ POIESIS_AUTH_ISSUERS='[
 | `clockSkew` | `30` | Seconds of leeway on `exp` / `nbf` / `iat`. |
 | `timeout` | `10` | Seconds per call to the issuer. |
 | `keyMinting` | none | Which tokens may mint API keys; see [API keys](./api-keys.md#configuration). |
+| `serviceClients` | none | Client-credentials clients with their own audience; see [Service clients](#service-clients). |
 
 Each entry needs `issuer` and `audience`; everything else has the
 defaults shown. Poiesis refuses to start (and the chart's JSON schema
@@ -133,8 +135,11 @@ refuses to install) when auth is enabled with no issuer, an entry lacks
 unknown key, an empty value in a list (`audience`, `tokenTypes`,
 `clients`, `actors`, `requiredScopes`), an empty `clients` list, a
 `namespace` that is empty or contains `|`, an incomplete
-`requiredClaim` or `admin`, or `userinfo` combined with `jwksUri`; an
-issuer listed twice refuses to start (the schema can't see that). The old
+`requiredClaim` or `admin`, a `serviceClients` entry without
+`clientId` or `audience` (or with an empty or blank one), or `userinfo`
+combined with `jwksUri`; an issuer listed twice, or a service client
+listed twice for one issuer, refuses to start (the schema can't see
+that). The old
 `auth.oidc.*` values and `POIESIS_AUTH_OIDC_*` variables are gone: any
 `POIESIS_AUTH_OIDC_*` variable left in the environment refuses to start,
 naming `POIESIS_AUTH_ISSUERS` as its replacement.
@@ -158,7 +163,8 @@ A token from any other issuer is a `401`. Keys are only ever fetched
 from the configured issuer's discovery document or `jwksUri`, never from
 a URL the token names. The token is then verified in full against that
 issuer: signature (RS, ES or PS algorithms), `iss`, `aud` (one of the
-issuer's `audience`), `exp` (required), `nbf` and `iat` (when present),
+issuer's `audience`, or of a [service client](#service-clients)'s own),
+`exp` (required), `nbf` and `iat` (when present),
 all three with `clockSkew` of leeway, the header
 `typ` (`tokenTypes`), the client (`clients`, if set) and the issuer's
 `requiredScopes`.
@@ -253,6 +259,56 @@ obtain tokens with your audience; leave it out to accept any client.
 
 It is independent of `keyMinting.clients`, which only says which of the
 accepted clients may [mint API keys](./api-keys.md#configuration).
+[Service clients](#service-clients) are listed on their own and need no
+entry here.
+
+## Service clients
+
+Some callers have no user behind them: a smoke test, a CI pipeline, a
+monitoring probe that gets its own short-lived tokens with the OAuth
+client credentials grant. Such tokens carry the client ID as `sub` (and
+as `azp` or `client_id`) and none of a user's claims, so an issuer whose
+users need [userinfo](#user-info) and a
+[`requiredClaim`](./authorization.md#claim-rule) would refuse them.
+`serviceClients` admits them without weakening the rules for the users:
+
+```yaml
+    - issuer: https://login.aai.lifescience-ri.eu/oidc/
+      audience: [<user-facing audience>]
+      userinfo: {enabled: true}
+      requiredClaim: {name: eduperson_entitlement, values: [...]}
+      serviceClients:
+        - clientId: <client ID>
+          audience: [<audience of the client's tokens>]  # or a string
+```
+
+A token is a service client's if, after the signature, `iss`, `exp`
+and `tokenTypes` checks, its client (`azp`, else `client_id`) **and**
+its `sub` both equal a listed `clientId`. Then:
+
+- its `aud` must hold one of that entry's `audience` values; the
+  issuer's `audience` doesn't count for it, and the entry's doesn't
+  count for user tokens;
+- it is never looked up at userinfo, and the issuer's `requiredClaim`
+  and `clients` don't apply to it; `tokenTypes`, `requiredScopes` and
+  the delegation (`act`) rules still do;
+- it is never a built-in [admin](./authorization.md#admin) and can't
+  [mint API keys](./api-keys.md#configuration), whatever `admin` and
+  `keyMinting` say;
+- its owner is `<namespace>|<subject>` as for anyone (with the default
+  `principalClaim: sub`, `<namespace>|<client ID>`), so without a
+  decision service it sees and cancels only its own tasks;
+- with a [decision service](./authorization.md#decision-service), every
+  request is asked as for any other caller (the client ID is in
+  `subject.properties.sub` and `client_id`), and its answer applies:
+  what a service client may do is policy.
+
+User tokens carry the user's `sub`, never the client's, so no user
+token can match, not even one obtained through the listed client: such
+a token is judged as a user's, with the issuer's `audience`, userinfo
+and `requiredClaim`. Without `serviceClients`, nothing changes. Check
+what the IdP puts in `aud` of the client's tokens before listing it:
+a token without `aud` is refused.
 
 ## Owner and namespace
 
@@ -384,7 +440,8 @@ issuer:
 Some IdPs release claims (e.g. group memberships such as
 `eduperson_entitlement`) at the OIDC userinfo endpoint but not in
 access tokens. With `userinfo.enabled: true` on an issuer, Poiesis
-calls that issuer's endpoint for every validated token and keeps the
+calls that issuer's endpoint for every validated token (except those of
+[service clients](#service-clients)) and keeps the
 answer on the principal, next to (not merged into) the token claims:
 
 - The endpoint comes from the issuer's discovery document; the issuer

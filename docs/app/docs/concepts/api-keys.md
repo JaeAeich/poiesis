@@ -80,6 +80,9 @@ auth:
   or CI clients: minting turns a short-lived token into a key that
   lives for weeks, so a token stolen from a pipeline mustn't be able
   to do that.
+- The own tokens of an issuer's
+  [service clients](./authentication.md#service-clients) never mint,
+  even if their client is listed here.
 - `maxAuthAge` also requires a recent login: the token's `auth_time`
   (when the user last authenticated) at most that many seconds ago,
   like the password prompt before creating a GitHub token. Tokens

@@ -171,6 +171,7 @@ Rendered as `POIESIS_AUTH_*` variables. See
 | `timeout`               | `10`       | Seconds per call to the issuer.                                                                                       |
 | `keyMinting.clients`    | none       | Clients whose tokens may mint API keys; without `keyMinting`, none may.                                               |
 | `keyMinting.maxAuthAge` | none       | Also require a login at most this many seconds ago (`auth_time`).                                                     |
+| `serviceClients`        | none       | Client-credentials clients `[{clientId, audience}]` matched by `azp`/`client_id` = `sub` = `clientId`; see [Service clients](../concepts/authentication.md#service-clients). |
 
 ## authz
 
