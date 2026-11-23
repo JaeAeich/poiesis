@@ -1941,7 +1941,7 @@ def test_rule_still_applies_to_users_of_the_client(env: Env) -> None:
 def test_service_client_delegation_rules(
     env: Env, actors: list[str], status: int
 ) -> None:
-    """A delegated service client token still needs a listed actor (or a PDP)."""
+    """Without a PDP, a delegated service client token needs a listed actor."""
     as_service_client(env)
     env.claims["act"] = {"sub": "gateway"}
     client = env.start(rule(values=[MEMBER]) | SERVICE_CLIENTS | {"actors": actors})

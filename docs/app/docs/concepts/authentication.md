@@ -314,8 +314,9 @@ and `requiredClaim`. Without `serviceClients`, nothing changes.
 Check the client's tokens before listing it. Not every IdP puts the
 client ID into `sub`: Keycloak, for one, puts the user ID of the
 client's service account there (unless a mapper sets it), so such
-tokens never match and are judged as user tokens (with the issuer's
-`audience`, usually a `401`). A token without `aud` is refused too.
+tokens never match and are judged as user tokens, under the issuer's
+rules (so usually refused where `requiredClaim` is set). A token
+without `aud` is refused too.
 
 ## Owner and namespace
 
