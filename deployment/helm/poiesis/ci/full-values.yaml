@@ -52,7 +52,8 @@ auth:
         maxAuthAge: 600
       # A client-credentials client for smoke tests: its own tokens
       # (sub = client ID) carry this audience and skip userinfo and
-      # requiredClaim.
+      # requiredClaim. Keycloak puts the service account's user ID in
+      # sub, so it needs a mapper that sets sub to the client ID.
       serviceClients:
         - clientId: smoke-tests
           audience: smoke-tests

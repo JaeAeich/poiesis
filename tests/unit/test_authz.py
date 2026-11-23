@@ -1937,6 +1937,17 @@ def test_rule_still_applies_to_users_of_the_client(env: Env) -> None:
     assert client.post(TASKS, json=TASK).status_code == 403  # noqa: PLR2004
 
 
+@pytest.mark.parametrize(("actors", "status"), [([], 403), (["gateway"], 200)])
+def test_service_client_delegation_rules(
+    env: Env, actors: list[str], status: int
+) -> None:
+    """A delegated service client token still needs a listed actor (or a PDP)."""
+    as_service_client(env)
+    env.claims["act"] = {"sub": "gateway"}
+    client = env.start(rule(values=[MEMBER]) | SERVICE_CLIENTS | {"actors": actors})
+    assert client.post(TASKS, json=TASK).status_code == status
+
+
 def test_service_client_never_admin(env: Env) -> None:
     """A service client whose token matches the admin rule is no admin."""
     as_service_client(env)

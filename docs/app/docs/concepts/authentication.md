@@ -135,11 +135,11 @@ refuses to install) when auth is enabled with no issuer, an entry lacks
 unknown key, an empty value in a list (`audience`, `tokenTypes`,
 `clients`, `actors`, `requiredScopes`), an empty `clients` list, a
 `namespace` that is empty or contains `|`, an incomplete
-`requiredClaim` or `admin`, a `serviceClients` entry without
-`clientId` or `audience` (or with an empty or blank one), or `userinfo`
-combined with `jwksUri`; an issuer listed twice, or a service client
-listed twice for one issuer, refuses to start (the schema can't see
-that). The old
+`requiredClaim` or `admin`, or `userinfo` combined with `jwksUri`; an
+issuer listed twice refuses to start (the schema can't see that). A
+[`serviceClients`](#service-clients) entry needs a non-blank `clientId`
+and `audience`, and a client listed twice for one issuer refuses to
+start. The old
 `auth.oidc.*` values and `POIESIS_AUTH_OIDC_*` variables are gone: any
 `POIESIS_AUTH_OIDC_*` variable left in the environment refuses to start,
 naming `POIESIS_AUTH_ISSUERS` as its replacement.
@@ -301,14 +301,21 @@ its `sub` both equal a listed `clientId`. Then:
 - with a [decision service](./authorization.md#decision-service), every
   request is asked as for any other caller (the client ID is in
   `subject.properties.sub` and `client_id`), and its answer applies:
-  what a service client may do is policy.
+  what a service client may do is policy. The request doesn't say that
+  `requiredClaim` was skipped, so a policy that relies on Poiesis
+  having checked the claim must handle service clients itself (e.g.
+  allow listed client IDs only where `sub` equals `client_id`).
 
 User tokens carry the user's `sub`, never the client's, so no user
 token can match, not even one obtained through the listed client: such
 a token is judged as a user's, with the issuer's `audience`, userinfo
-and `requiredClaim`. Without `serviceClients`, nothing changes. Check
-what the IdP puts in `aud` of the client's tokens before listing it:
-a token without `aud` is refused.
+and `requiredClaim`. Without `serviceClients`, nothing changes.
+
+Check the client's tokens before listing it. Not every IdP puts the
+client ID into `sub`: Keycloak, for one, puts the user ID of the
+client's service account there (unless a mapper sets it), so such
+tokens never match and are judged as user tokens (with the issuer's
+`audience`, usually a `401`). A token without `aud` is refused too.
 
 ## Owner and namespace
 

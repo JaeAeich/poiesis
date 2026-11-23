@@ -498,6 +498,11 @@ def _refuse_removed_env(prefix: str, replacement: str) -> None:
         )
 
 
+def _one_or_many(value: Any) -> Any:
+    """Take a plain string as a one-value list (``audience`` keys)."""
+    return (value,) if isinstance(value, str) else value
+
+
 def _is_http_url(value: str) -> bool:
     """Whether ``value`` is an absolute http(s) URL with a host."""
     try:
@@ -589,11 +594,7 @@ class ServiceClientSettings(BaseModel):
     # Accepted `aud` values of its tokens, instead of the issuer's.
     audience: tuple[str, ...] = Field(min_length=1)
 
-    @field_validator("audience", mode="before")
-    @classmethod
-    def _audience_list(cls, value: Any) -> Any:
-        """Take a plain string as a one-value list."""
-        return (value,) if isinstance(value, str) else value
+    _audience_list = field_validator("audience", mode="before")(_one_or_many)
 
     @model_validator(mode="after")
     def _check_values(self) -> ServiceClientSettings:
@@ -665,11 +666,7 @@ class IssuerSettings(BaseModel):
     # and skip userinfo and `requiredClaim`; see `ServiceClientSettings`.
     service_clients: tuple[ServiceClientSettings, ...] = ()
 
-    @field_validator("audience", mode="before")
-    @classmethod
-    def _audience_list(cls, value: Any) -> Any:
-        """Take a plain string as a one-value list."""
-        return (value,) if isinstance(value, str) else value
+    _audience_list = field_validator("audience", mode="before")(_one_or_many)
 
     def service_client(self, client_id: Any) -> ServiceClientSettings | None:
         """Return the service client ``client_id``, or ``None`` if not listed."""

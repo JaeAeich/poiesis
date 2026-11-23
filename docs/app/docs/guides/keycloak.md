@@ -116,6 +116,12 @@ and makes `poiesis-admins` the built-in admins. Tokens carry
 `aud: poiesis` (`poiesis-cli` tokens also a `groups` claim of plain
 names) and live five minutes.
 
+`poiesis-ci` is accepted as an ordinary client, not as one of the
+issuer's [service clients](../concepts/authentication.md#service-clients):
+Keycloak puts its service account's user ID into `sub`, not the client
+ID, so its tokens wouldn't match a `serviceClients` entry without a
+mapper that sets `sub`.
+
 Keycloak pins the issuer to the in-cluster URL,
 `http://keycloak.deps.svc:8080/realms/poiesis`, so tokens fetched through
 the port-forward validate in the API too.

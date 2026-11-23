@@ -183,27 +183,27 @@ def mint_refusal(
         return "service clients can't mint API keys"
     if issuer is None or issuer.key_minting is None:
         return "tokens of this issuer can't mint API keys"
+    minting = issuer.key_minting
     client = principal.client
-    if client not in issuer.key_minting.clients:
+    if client not in minting.clients:
         return f"tokens of client {str(client)[:100]!r} can't mint API keys"
-    return _login_age_refusal(principal, issuer, now)
+    if minting.max_auth_age is None:
+        return None
+    return _login_age_refusal(principal, minting.max_auth_age, issuer.clock_skew, now)
 
 
 def _login_age_refusal(
-    principal: Principal, issuer: IssuerSettings, now: float
+    principal: Principal, max_age: int, clock_skew: int, now: float
 ) -> str | None:
     """Why the login behind ``principal`` is too old to mint, or ``None``.
 
-    Only with ``keyMinting.maxAuthAge``: the token's ``auth_time`` must
-    be at most that many seconds ago (and not in the future).
+    The token's ``auth_time`` must be at most ``max_age`` seconds ago
+    (``keyMinting.maxAuthAge``) and not in the future.
     """
-    max_age = issuer.key_minting.max_auth_age if issuer.key_minting else None
-    if max_age is None:
-        return None
     auth_time = principal.claims.get("auth_time")
     if not isinstance(auth_time, int | float) or isinstance(auth_time, bool):
         return "the token has no auth_time; log in again to mint a key"
-    if auth_time > now + issuer.clock_skew:
+    if auth_time > now + clock_skew:
         return "the token's auth_time is in the future"
     if now - auth_time > max_age:
         return "the last login is too old to mint a key; log in again"
