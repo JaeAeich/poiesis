@@ -223,6 +223,18 @@ auth:
   #                   the interactive login client, not service accounts.
   #                   maxAuthAge (seconds) also requires a recent login
   #                   (`auth_time` in the access token).
+  #   serviceClients  Clients that get their own tokens with the client
+  #                   credentials grant (no user behind them, e.g. smoke
+  #                   tests): [{clientId, audience}]. A token whose client
+  #                   (`azp`, else `client_id`) AND `sub` both equal a
+  #                   listed clientId must carry one of that entry's
+  #                   `audience` (a string or a list; the issuer's
+  #                   `audience` doesn't count for it), skips userinfo,
+  #                   requiredClaim and `clients`, is never an admin and
+  #                   can't mint API keys. tokenTypes, requiredScopes and
+  #                   the decision service still apply; without one, it
+  #                   sees its own tasks only. User tokens carry the
+  #                   user's `sub`, so they never match. IDs unique.
   # Example:
   #   issuers:
   #     - issuer: https://keycloak.example.org/realms/poiesis

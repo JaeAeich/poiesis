@@ -50,6 +50,12 @@ auth:
       keyMinting:
         clients: [poiesis-cli]
         maxAuthAge: 600
+      # A client-credentials client for smoke tests: its own tokens
+      # (sub = client ID) carry this audience and skip userinfo and
+      # requiredClaim.
+      serviceClients:
+        - clientId: smoke-tests
+          audience: smoke-tests
     # The same Keycloak under its new URL: sharing the old URL as
     # namespace keeps its owners' tasks and keys.
     - issuer: https://login.example.org/realms/poiesis

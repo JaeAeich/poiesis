@@ -339,6 +339,33 @@ def test_database_pool_values_reach_the_settings(
     assert database.command_timeout_seconds == 60  # noqa: PLR2004
 
 
+def test_service_clients_reach_the_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """full-values: `auth.issuers[].serviceClients` parse in AuthSettings."""
+    configmap = next(d for d in render(FULL) if d["kind"] == "ConfigMap")["data"]
+    monkeypatch.setenv("POIESIS_AUTH_ISSUERS", configmap["POIESIS_AUTH_ISSUERS"])
+    first = AuthSettings(swagger_ui=None).issuers[0]
+    (client,) = first.service_clients
+    assert (client.client_id, client.audience) == ("smoke-tests", ("smoke-tests",))
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        "auth.issuers[0].serviceClients[0].clientId=",
+        "auth.issuers[0].serviceClients[0].audience=",
+        "auth.issuers[0].serviceClients[0].admin=true",
+    ],
+    ids=["empty-client-id", "empty-audience", "unknown-key"],
+)
+def test_schema_refuses_bad_service_clients(override: str) -> None:
+    """An empty `clientId` or `audience`, or an unknown key, fails `helm lint`."""
+    result = helm("lint", str(CHART), "-f", FULL, "--set", override)
+    assert result.returncode != 0
+    assert "serviceClients" in result.stdout + result.stderr
+
+
 def storage_config(
     monkeypatch: pytest.MonkeyPatch, *sets: str
 ) -> tuple[dict[str, str], Any]:
