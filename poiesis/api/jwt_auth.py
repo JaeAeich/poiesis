@@ -65,7 +65,7 @@ if TYPE_CHECKING:
 
     from fastapi import Request
 
-    from poiesis.api.settings import IssuerSettings
+    from poiesis.api.settings import IssuerSettings, ServiceClientSettings
 
 logger = logging.getLogger(__name__)
 
@@ -354,9 +354,13 @@ class IssuerValidator:
         try:
             decoded = jwt.decode(token, key=keys, algorithms=self._algorithms)
             claims = dict(decoded.claims)
+            # Signed by the issuer: a service client's own token gets that
+            # client's audience instead of the issuer's (users').
+            service = self._service_client(claims)
+            audience = self.settings.audience if service is None else service.audience
             JWTClaimsRegistry(
                 iss={"essential": True, "value": self.settings.issuer},
-                aud={"essential": True, "values": list(self.settings.audience)},
+                aud={"essential": True, "values": list(audience)},
                 exp={"essential": True},
                 leeway=self.settings.clock_skew,
             ).validate(claims)
@@ -367,7 +371,10 @@ class IssuerValidator:
             raise UnauthorizedError("invalid token") from exc
         # After the signature: only the issuer's own header and claims count.
         self._check_token_type(decoded.header.get("typ"))
-        self._check_client(claims)
+        if service is None:
+            # `clients` lists the user-facing clients; service clients
+            # are listed on their own.
+            self._check_client(claims)
 
         scopes = _scopes(claims)
         missing = [s for s in self.settings.required_scopes if s not in scopes]
@@ -378,10 +385,26 @@ class IssuerValidator:
             )
         # Resolve the owner first so a token without it never reaches userinfo.
         principal = self.principal_from(claims, scopes)
+        if service is not None:
+            # No user behind the token: nothing to look up at userinfo.
+            return dataclasses.replace(principal, service_client=True)
         if self._userinfo_uri is not None:
             userinfo = await self.userinfo(token, claims)
             principal = dataclasses.replace(principal, userinfo=userinfo)
         return principal
+
+    def _service_client(self, claims: dict[str, Any]) -> ServiceClientSettings | None:
+        """Return the service client whose own token ``claims`` are, if any.
+
+        The token's client (``azp``, else ``client_id``) must be listed
+        in ``serviceClients`` and ``sub`` must equal it, as in tokens of
+        the client credentials grant; a user token through that client
+        carries the user's ``sub`` and so never matches.
+        """
+        client = client_of(claims)
+        if not isinstance(client, str) or claims.get("sub") != client:
+            return None
+        return self.settings.service_client(client)
 
     def _check_token_type(self, typ: Any) -> None:
         """Raise ``401`` unless the header ``typ`` is one of ``tokenTypes``.

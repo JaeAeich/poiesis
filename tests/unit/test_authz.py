@@ -1889,3 +1889,88 @@ def test_audit_disabled(env: Env, capsys: pytest.CaptureFixture[str]) -> None:
     client.get(TASKS)
     assert capsys.readouterr().out == ""
     assert response.headers["x-request-id"]
+
+
+# -- service clients -----------------------------------------------------------------
+
+#: A client-credentials client (`client_id` = `sub`, no entitlements).
+SMOKE = "smoke-client"
+SMOKE_AUD = "smoke-aud"
+SMOKE_OWNER = f"{ISSUER}|{SMOKE}"
+SERVICE_CLIENTS = {"serviceClients": [{"clientId": SMOKE, "audience": [SMOKE_AUD]}]}
+
+
+def as_service_client(env: Env) -> None:
+    """Make the env's token the service client's own (no user, no claims)."""
+    env.claims = {"sub": SMOKE, "client_id": SMOKE, "aud": SMOKE_AUD, "scope": "openid"}
+
+
+def test_service_client_skips_rule_and_userinfo(env: Env) -> None:
+    """With userinfo on and a `requiredClaim`, a service client is admitted.
+
+    Userinfo is never asked, and its tasks are its own.
+    """
+    as_service_client(env)
+    client = env.start(rule(values=[MEMBER]) | SERVICE_CLIENTS)
+    response = client.post(TASKS, json=TASK)
+    assert response.status_code == 200  # noqa: PLR2004
+    task_id = response.json()["id"]
+    assert env.store.tasks[task_id][0] == SMOKE_OWNER
+    assert env.issuer.userinfo_calls == 0
+
+
+def test_service_client_owner_only(env: Env) -> None:
+    """Without a decision service, a service client sees its own tasks only."""
+    as_service_client(env)
+    client = env.start(rule(values=[MEMBER]) | SERVICE_CLIENTS)
+    own = env.store.add(SMOKE_OWNER, ALICE_TASK)
+    env.store.add(BOB, BOB_TASK)
+    assert tasks_of(client) == [own]
+    assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
+    assert client.post(f"{TASKS}/{BOB_TASK}:cancel").status_code == 404  # noqa: PLR2004
+
+
+def test_rule_still_applies_to_users_of_the_client(env: Env) -> None:
+    """A user token through the listed client still needs the claim."""
+    env.claims = {"azp": SMOKE}
+    client = env.start(rule(values=[MEMBER]) | SERVICE_CLIENTS)
+    assert client.post(TASKS, json=TASK).status_code == 403  # noqa: PLR2004
+
+
+def test_service_client_never_admin(env: Env) -> None:
+    """A service client whose token matches the admin rule is no admin."""
+    as_service_client(env)
+    env.claims["groups"] = [ADMINS]
+    client = env.start(ADMIN_RULE | SERVICE_CLIENTS, admin_read=True)
+    env.store.add(BOB, BOB_TASK)
+    assert tasks_of(client) == []
+    assert client.get(f"{TASKS}/{BOB_TASK}").status_code == 404  # noqa: PLR2004
+
+
+def test_service_client_principal_never_admin() -> None:
+    """`is_admin` is false for a service client, whatever its claims."""
+    authz = admins({"issuer": ISSUER} | ADMIN_RULE)
+    claims = {"groups": [ADMINS]}
+    service = Principal(
+        issuer=ISSUER, subject=SMOKE, via="oidc", claims=claims, service_client=True
+    )
+    assert authz.is_admin(principal(groups=[ADMINS]))
+    assert not authz.is_admin(service)
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+def test_service_client_asks_decision_service(env: Env, *, allowed: bool) -> None:
+    """The decision service gets the client ID as subject; its answer applies."""
+    as_service_client(env)
+    env.pdp.decide = per_action(CreateTask=allowed)
+    client = env.pdp_on(rule(values=[MEMBER]) | SERVICE_CLIENTS)
+    response = client.post(TASKS, json=TASK)
+    assert response.status_code == (200 if allowed else 403)
+    (body,) = env.pdp.bodies
+    assert body["action"]["name"] == "CreateTask"
+    assert body["subject"]["id"] == SMOKE_OWNER
+    properties = body["subject"]["properties"]
+    assert properties["iss"] == ISSUER
+    assert properties["sub"] == properties["client_id"] == SMOKE
+    assert properties["claims"] == {}
+    assert env.issuer.userinfo_calls == 0

@@ -176,22 +176,37 @@ def mint_refusal(
 
     Its issuer must have ``keyMinting``, the token must come from one of
     the listed clients, and, with ``maxAuthAge``, the user must have
-    logged in recently (``auth_time``).
+    logged in recently (``auth_time``). A service client's own token
+    (``serviceClients``) never mints, whatever ``keyMinting`` lists.
     """
+    if principal.service_client:
+        return "service clients can't mint API keys"
     if issuer is None or issuer.key_minting is None:
         return "tokens of this issuer can't mint API keys"
-    minting = issuer.key_minting
     client = principal.client
-    if client not in minting.clients:
+    if client not in issuer.key_minting.clients:
         return f"tokens of client {str(client)[:100]!r} can't mint API keys"
-    if minting.max_auth_age is not None:
-        auth_time = principal.claims.get("auth_time")
-        if not isinstance(auth_time, int | float) or isinstance(auth_time, bool):
-            return "the token has no auth_time; log in again to mint a key"
-        if auth_time > now + issuer.clock_skew:
-            return "the token's auth_time is in the future"
-        if now - auth_time > minting.max_auth_age:
-            return "the last login is too old to mint a key; log in again"
+    return _login_age_refusal(principal, issuer, now)
+
+
+def _login_age_refusal(
+    principal: Principal, issuer: IssuerSettings, now: float
+) -> str | None:
+    """Why the login behind ``principal`` is too old to mint, or ``None``.
+
+    Only with ``keyMinting.maxAuthAge``: the token's ``auth_time`` must
+    be at most that many seconds ago (and not in the future).
+    """
+    max_age = issuer.key_minting.max_auth_age if issuer.key_minting else None
+    if max_age is None:
+        return None
+    auth_time = principal.claims.get("auth_time")
+    if not isinstance(auth_time, int | float) or isinstance(auth_time, bool):
+        return "the token has no auth_time; log in again to mint a key"
+    if auth_time > now + issuer.clock_skew:
+        return "the token's auth_time is in the future"
+    if now - auth_time > max_age:
+        return "the last login is too old to mint a key; log in again"
     return None
 
 

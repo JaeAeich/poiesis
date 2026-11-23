@@ -605,6 +605,42 @@ def test_mint_without_issuer_settings() -> None:
     assert mint_refusal(principal, _minting(clients=[LOGIN]), now=0) is None
 
 
+def test_service_client_never_mints() -> None:
+    """A service client's token can't mint, even if its client is listed."""
+    principal = Principal(
+        issuer=ISSUER,
+        subject=LOGIN,
+        via="oidc",
+        claims={"azp": LOGIN, "sub": LOGIN},
+        service_client=True,
+    )
+    refusal = mint_refusal(principal, _minting(clients=[LOGIN]), now=0)
+    assert refusal is not None
+    assert "service client" in refusal
+
+
+def test_service_client_mint_refused_by_app(
+    app_env: pytest.MonkeyPatch, issuer: Issuer, table: KeyTable
+) -> None:
+    """Through the app: the service client's own token gets 403, its users mint."""
+    set_issuers(
+        app_env,
+        {
+            "issuer": ISSUER,
+            "audience": AUDIENCE,
+            "keyMinting": {"clients": [LOGIN]},
+            "serviceClients": [{"clientId": LOGIN, "audience": "smoke-aud"}],
+        },
+    )
+    with TestClient(app_module.create_app()) as client:
+        service = issuer.token(sub=LOGIN, aud="smoke-aud")
+        response = mint(client, service)
+        assert response.status_code == HTTPStatus.FORBIDDEN
+        assert "service client" in response.json()["message"]
+        assert table.rows == {}
+        assert mint(client, issuer.token()).status_code == HTTPStatus.CREATED
+
+
 @pytest.mark.parametrize(
     "minting",
     [

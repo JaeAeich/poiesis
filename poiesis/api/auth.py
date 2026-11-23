@@ -59,6 +59,9 @@ class Principal:
     acting for the subject (delegation). ``claims`` carries the
     validated token payload, ``userinfo`` the issuer's userinfo answer
     when that lookup is on (empty otherwise), kept apart from the claims.
+    ``service_client`` marks a token of one of its issuer's
+    ``serviceClients`` (client credentials, no user): it skips the
+    issuer's ``requiredClaim``, is never an admin and can't mint keys.
     """
 
     issuer: str
@@ -74,6 +77,7 @@ class Principal:
     scopes: frozenset[str] = frozenset()
     claims: dict[str, Any] = field(default_factory=dict)
     userinfo: dict[str, Any] = field(default_factory=dict)
+    service_client: bool = False
 
     def __post_init__(self) -> None:
         """Default the namespace to the issuer."""

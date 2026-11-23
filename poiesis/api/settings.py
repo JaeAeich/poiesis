@@ -570,6 +570,43 @@ class ClaimRuleSettings(BaseModel):
         return self
 
 
+class ServiceClientSettings(BaseModel):
+    """A service client of an issuer, an entry of ``serviceClients``.
+
+    A client that gets its own tokens with the client credentials grant:
+    no user behind them, so ``sub`` is the client ID. A token of the
+    issuer whose client (``azp``, else ``client_id``) and ``sub`` both
+    equal ``clientId`` is that client's: it must carry one of
+    ``audience``, is never looked up at userinfo, skips the issuer's
+    ``requiredClaim`` and ``clients``, is never an admin and can't mint
+    API keys. User tokens carry the user's ``sub``, so none can match.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, extra="forbid", frozen=True)
+
+    # The client ID: its tokens' `azp` (else `client_id`) and `sub`.
+    client_id: str = Field(min_length=1)
+    # Accepted `aud` values of its tokens, instead of the issuer's.
+    audience: tuple[str, ...] = Field(min_length=1)
+
+    @field_validator("audience", mode="before")
+    @classmethod
+    def _audience_list(cls, value: Any) -> Any:
+        """Take a plain string as a one-value list."""
+        return (value,) if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _check_values(self) -> ServiceClientSettings:
+        """Refuse a blank client ID or audience."""
+        if not self.client_id.strip():
+            raise ValueError("serviceClients[].clientId must not be empty")
+        if any(not value.strip() for value in self.audience):
+            raise ValueError(
+                "serviceClients[].audience must not contain an empty value"
+            )
+        return self
+
+
 class IssuerSettings(BaseModel):
     """One trusted token issuer, an entry of ``POIESIS_AUTH_ISSUERS``.
 
@@ -624,12 +661,22 @@ class IssuerSettings(BaseModel):
     timeout: float = Field(default=10.0, gt=0, allow_inf_nan=False)
     # Which of its tokens may mint API keys; none when unset.
     key_minting: KeyMintingSettings | None = None
+    # Clients whose own tokens (client credentials) get their own audience
+    # and skip userinfo and `requiredClaim`; see `ServiceClientSettings`.
+    service_clients: tuple[ServiceClientSettings, ...] = ()
 
     @field_validator("audience", mode="before")
     @classmethod
     def _audience_list(cls, value: Any) -> Any:
         """Take a plain string as a one-value list."""
         return (value,) if isinstance(value, str) else value
+
+    def service_client(self, client_id: Any) -> ServiceClientSettings | None:
+        """Return the service client ``client_id``, or ``None`` if not listed."""
+        for client in self.service_clients:
+            if client.client_id == client_id:
+                return client
+        return None
 
     @property
     def owner_namespace(self) -> str:
@@ -670,6 +717,17 @@ class IssuerSettings(BaseModel):
             raise ValueError(
                 "requiredScopes must be scope tokens (RFC 6749 §3.3): no spaces,"
                 " quotes or backslashes"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_service_clients(self) -> IssuerSettings:
+        """Refuse a service client listed twice."""
+        ids = [client.client_id for client in self.service_clients]
+        twice = sorted({i for i in ids if ids.count(i) > 1})
+        if twice:
+            raise ValueError(
+                f"serviceClients lists {', '.join(map(repr, twice))} twice"
             )
         return self
 

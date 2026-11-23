@@ -963,3 +963,230 @@ def test_malformed_act_is_401(issuer: Issuer, act: Any) -> None:
     """A malformed `act` claim is a 401."""
     (result,) = authenticate(authenticator(), issuer.token(act=act))
     assert isinstance(result, UnauthorizedError)
+
+
+# -- service clients -----------------------------------------------------------------
+
+#: A client-credentials client (`client_id` = `sub`) and its tokens' audience.
+SMOKE = "smoke-client"
+SMOKE_AUD = "smoke-aud"
+
+
+def service_entry(**settings: Any) -> dict[str, Any]:
+    """Return an issuer entry with userinfo on and `SMOKE` as service client."""
+    return (
+        entry(
+            userinfo={"enabled": True},
+            serviceClients=[{"clientId": SMOKE, "audience": [SMOKE_AUD]}],
+        )
+        | settings
+    )
+
+
+def service_token(issuer: Issuer, **claims: Any) -> str:
+    """Mint a client-credentials token of `SMOKE` (no user), plus `claims`."""
+    return issuer.token(**{"sub": SMOKE, "client_id": SMOKE, "aud": SMOKE_AUD} | claims)
+
+
+def test_service_clients_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`serviceClients` is a list of camelCase objects; `audience` may be a string."""
+    set_issuers(
+        monkeypatch,
+        entry(
+            serviceClients=[
+                {"clientId": SMOKE, "audience": SMOKE_AUD},
+                {"clientId": "other", "audience": ["a", "b"]},
+            ]
+        ),
+    )
+    (issuer,) = AuthSettings().issuers
+    first, second = issuer.service_clients
+    assert (first.client_id, first.audience) == (SMOKE, (SMOKE_AUD,))
+    assert (second.client_id, second.audience) == ("other", ("a", "b"))
+    assert issuer.service_client(SMOKE) is first
+    assert issuer.service_client("unlisted") is None
+
+
+def test_no_service_clients_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without `serviceClients`, an issuer has none."""
+    set_issuers(monkeypatch, entry())
+    (issuer,) = AuthSettings().issuers
+    assert issuer.service_clients == ()
+
+
+@pytest.mark.parametrize(
+    ("clients", "message"),
+    [
+        ([{"clientId": "", "audience": "a"}], "clientId"),
+        ([{"clientId": " ", "audience": "a"}], "clientId"),
+        ([{"audience": "a"}], "clientId"),
+        ([{"clientId": SMOKE}], "audience"),
+        ([{"clientId": SMOKE, "audience": ""}], "audience"),
+        ([{"clientId": SMOKE, "audience": []}], "audience"),
+        ([{"clientId": SMOKE, "audience": ["a", " "]}], "audience"),
+        ([{"clientId": SMOKE, "audience": "a", "admin": True}], "admin"),
+        ([{"client_id": SMOKE, "audience": "a"}], "client_id"),
+        (
+            [
+                {"clientId": SMOKE, "audience": "a"},
+                {"clientId": SMOKE, "audience": "b"},
+            ],
+            "twice",
+        ),
+        ({"clientId": SMOKE, "audience": "a"}, "serviceClients"),
+    ],
+    ids=[
+        "empty-client-id",
+        "blank-client-id",
+        "no-client-id",
+        "no-audience",
+        "empty-audience",
+        "no-audiences",
+        "blank-audience",
+        "unknown-key",
+        "snake-case-key",
+        "duplicate",
+        "not-a-list",
+    ],
+)
+def test_invalid_service_clients_refused(
+    monkeypatch: pytest.MonkeyPatch, clients: Any, message: str
+) -> None:
+    """Startup refuses unusable `serviceClients` entries."""
+    monkeypatch.setenv(
+        "POIESIS_AUTH_ISSUERS", json.dumps([entry(serviceClients=clients)])
+    )
+    with pytest.raises(ValueError, match=f"(?s){message}"):
+        AuthSettings()
+
+
+def test_service_client_accepted(issuer: Issuer) -> None:
+    """A listed client's own token passes with its audience, without userinfo.
+
+    The owner is `<namespace>|<client ID>`, as for any subject.
+    """
+    (principal,) = authenticate(authenticator(service_entry()), service_token(issuer))
+    assert isinstance(principal, Principal)
+    assert principal.service_client
+    assert principal.owner == f"{ISSUER}|{SMOKE}"
+    assert principal.client == SMOKE
+    assert principal.userinfo == {}
+    assert issuer.userinfo_calls == 0
+
+
+@pytest.mark.parametrize(
+    "claims",
+    [
+        {"azp": SMOKE, "client_id": None},
+        {"azp": SMOKE, "client_id": "ignored"},
+        {"aud": [SMOKE_AUD, "else"]},
+    ],
+    ids=["azp", "azp-first", "audience-list"],
+)
+def test_service_client_claim_variants(issuer: Issuer, claims: dict[str, Any]) -> None:
+    """The client is `azp`, else `client_id`; `aud` needs one of the audiences."""
+    (principal,) = authenticate(
+        authenticator(service_entry()), service_token(issuer, **claims)
+    )
+    assert isinstance(principal, Principal)
+    assert principal.service_client
+
+
+@pytest.mark.parametrize(
+    ("claims", "typ"),
+    [
+        ({"sub": "alice"}, "at+jwt"),
+        ({"aud": AUDIENCE}, "at+jwt"),
+        ({"aud": "else"}, "at+jwt"),
+        ({}, "JWT"),
+        ({}, None),
+        ({"sub": "other", "client_id": "other"}, "at+jwt"),
+        ({"sub": SMOKE, "client_id": "other"}, "at+jwt"),
+        ({"sub": SMOKE, "client_id": None}, "at+jwt"),
+        ({"iss": "https://evil.example.org"}, "at+jwt"),
+    ],
+    ids=[
+        "user-via-the-client",
+        "user-audience-only",
+        "other-audience",
+        "wrong-typ",
+        "no-typ",
+        "unlisted-client",
+        "sub-is-a-listed-id-of-another-client",
+        "no-client",
+        "other-issuer",
+    ],
+)
+def test_service_client_refused(
+    issuer: Issuer, claims: dict[str, Any], typ: str | None
+) -> None:
+    """Anything but a listed client's own token with its audience is a 401.
+
+    A user token through the listed client (`sub` != `client_id`) is
+    judged as a user token: here, with the client's audience, it fails
+    the issuer's.
+    """
+    (result,) = authenticate(
+        authenticator(service_entry()), service_token(issuer, typ=typ, **claims)
+    )
+    assert isinstance(result, UnauthorizedError)
+    assert issuer.userinfo_calls == 0
+
+
+def test_user_token_through_service_client_is_a_user(issuer: Issuer) -> None:
+    """A user token of the listed client, with the user audience, is a user's."""
+    (principal,) = authenticate(authenticator(service_entry()), issuer.token(azp=SMOKE))
+    assert isinstance(principal, Principal)
+    assert not principal.service_client
+    assert principal.owner == f"{ISSUER}|alice"
+    assert issuer.userinfo_calls == 1
+
+
+def test_service_client_needs_no_listing_in_clients(issuer: Issuer) -> None:
+    """`clients` lists the user-facing clients; service clients count on their own."""
+    oidc = authenticator(service_entry(clients=["portal"]))
+    service, user = authenticate(oidc, service_token(issuer), issuer.token(azp=SMOKE))
+    assert isinstance(service, Principal)
+    assert isinstance(user, UnauthorizedError)
+
+
+def test_service_client_required_scopes(issuer: Issuer) -> None:
+    """The issuer's `requiredScopes` still apply to service clients."""
+    oidc = authenticator(service_entry(requiredScopes=["tes"]))
+    missing, ok = authenticate(
+        oidc, service_token(issuer, scope="openid"), service_token(issuer, scope="tes")
+    )
+    assert isinstance(missing, ForbiddenError)
+    assert isinstance(ok, Principal)
+
+
+def test_service_clients_per_issuer(network: Network) -> None:
+    """A service client is matched for its own issuer only."""
+    first, second = network.add(Issuer()), network.add(Issuer(OTHER_ISSUER))
+    oidc = authenticator(service_entry(), entry(OTHER_ISSUER))
+    own, other = authenticate(oidc, service_token(first), service_token(second))
+    assert isinstance(own, Principal)
+    assert isinstance(other, UnauthorizedError)
+
+
+def test_human_tokens_unchanged_by_service_clients(issuer: Issuer) -> None:
+    """With `serviceClients` set, user tokens get the same results as without."""
+    tokens = [
+        issuer.token(),
+        issuer.token(aud=SMOKE_AUD),
+        issuer.token(azp="portal"),
+        issuer.token(typ="JWT"),
+    ]
+    issuer.userinfo_calls = 0
+    plain = [
+        type(r)
+        for r in authenticate(authenticator(entry(userinfo={"enabled": True})), *tokens)
+    ]
+    with_clients = [
+        type(r) for r in authenticate(authenticator(service_entry()), *tokens)
+    ]
+    assert (
+        plain
+        == with_clients
+        == [Principal, UnauthorizedError, Principal, UnauthorizedError]
+    )

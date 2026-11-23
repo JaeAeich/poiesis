@@ -271,11 +271,16 @@ class Authz:
         rule or it admits, and for a delegated token (one with an actor)
         when there is no decision service, unless the actor is listed in
         the issuer's ``actors``: the built-in owner rule can't tell what
-        any other actor may do.
+        any other actor may do. The claim rule doesn't apply to the
+        issuer's service clients (``serviceClients``): their tokens carry
+        no user's claims, and what they may do is the owner rule's or the
+        decision service's.
         """
         actor = principal.actor
         if self._client is None and actor is not None and not actor.listed:
             raise ForbiddenError("delegated tokens (act claim) need a decision service")
+        if principal.service_client:
+            return
         rule = self._rules.get(principal.issuer)
         if rule is not None and not _matches(rule, principal):
             raise ForbiddenError("forbidden")
@@ -283,11 +288,15 @@ class Authz:
     def is_admin(self, principal: Principal) -> bool:
         """Whether the built-in admin rule of the principal's issuer names it.
 
-        Never with a decision service (admin is policy there) and never
-        for a delegated token: the actor would act with the subject's
-        admin powers.
+        Never with a decision service (admin is policy there), never for
+        a delegated token (the actor would act with the subject's admin
+        powers) and never for a service client.
         """
-        if self._client is not None or principal.actor is not None:
+        if (
+            self._client is not None
+            or principal.actor is not None
+            or principal.service_client
+        ):
             return False
         rule = self._admins.get(principal.issuer)
         return rule is not None and _matches(rule, principal)
