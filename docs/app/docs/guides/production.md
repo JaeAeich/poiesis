@@ -368,6 +368,9 @@ Without the chart, set the same as `POIESIS_SERVICE_INFO_ID`, `_NAME`,
 
 ## Upgrading
 
+- TES version without `v`: `type.version` in the service info, the
+  OpenAPI version and the CLI's `TES version` are `1.1.0` (was `v1.1.0`);
+  update registrations and checks that match `v1.1.0`.
 - From `auth.oidc`: see
   [Migrating an existing deployment](../concepts/authentication.md#migrating-an-existing-deployment).
 - Issuer hardening (token type, per-issuer claim rules): see

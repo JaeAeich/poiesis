@@ -75,7 +75,6 @@ def test_version_is_poiesis(monkeypatch: pytest.MonkeyPatch) -> None:
     """`version` is the Poiesis version; the TES version is `type.version`."""
     info = service_info(monkeypatch)
     assert info["version"] == version("poiesis")
-    assert info["type"]["version"] == "1.1.0"
 
 
 def test_tes_version_matches_spec(monkeypatch: pytest.MonkeyPatch) -> None:
