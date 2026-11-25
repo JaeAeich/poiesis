@@ -13,7 +13,9 @@ class PoiesisApiConstants:
             the API is derived from. The shipped spec file is named
             `<SPEC_GIT_HASH>.openapi.yaml` and may differ from upstream by
             implementor-specific but compliant edits.
-        TES_VERSION: TES API version implemented.
+        TES_VERSION: TES API version implemented, as a bare semantic
+            version (no ``v`` prefix), like the GA4GH service type version
+            and the spec's ``info.version``.
         BASE_PATH: URL prefix the FastAPI router is mounted under.
         SERVICE_ID: The default service-info ``id``, also sent to the
             decision service as ``context.tes.service_id``; a deployment
@@ -25,7 +27,7 @@ class PoiesisApiConstants:
     """
 
     SPEC_GIT_HASH = "c4c17c9"
-    TES_VERSION = "v1.1.0"
+    TES_VERSION = "1.1.0"
     BASE_PATH = "ga4gh/tes/v1"
     SERVICE_ID = "org.ga4gh.poiesis"
     SERVICE_NAME = "Poiesis"

@@ -1,5 +1,5 @@
 ---
-description: The TES v1.1.0 endpoints under /ga4gh/tes/v1, Poiesis's own API key endpoints under /poiesis/v1, and the full OpenAPI document.
+description: The TES 1.1.0 endpoints under /ga4gh/tes/v1, Poiesis's own API key endpoints under /poiesis/v1, and the full OpenAPI document.
 aside: false
 outline: false
 editLink: false
@@ -7,7 +7,7 @@ editLink: false
 
 # TES API
 
-Poiesis serves the GA4GH TES `v1.1.0` REST API under `/ga4gh/tes/v1`.
+Poiesis serves the GA4GH TES `1.1.0` REST API under `/ga4gh/tes/v1`.
 
 | Method | Path | Operation |
 | --- | --- | --- |

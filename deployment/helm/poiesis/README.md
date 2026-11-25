@@ -332,7 +332,8 @@ built-in value; invalid values stop the API from starting.
 | `environment`       | `POIESIS_SERVICE_INFO_ENVIRONMENT`       | E.g. `prod`, `test`. Left out when empty. |
 | `createdAt`         | `POIESIS_SERVICE_INFO_CREATED_AT`        | ISO 8601 with a UTC offset. Empty: the time of the request. |
 
-`version` is the Poiesis version; the TES version is `type.version`.
+`version` is the Poiesis version; the TES version is `type.version`,
+a bare semantic version (`1.1.0`, no `v`) as GA4GH registries expect.
 
 ### Security
 

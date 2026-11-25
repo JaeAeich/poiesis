@@ -4,7 +4,7 @@ description: Poiesis is a GA4GH TES v1.1 server for Kubernetes. Every task runs 
 
 # What is Poiesis
 
-Poiesis is a [GA4GH Task Execution Service](./tes.md) (TES `v1.1.0`) for
+Poiesis is a [GA4GH Task Execution Service](./tes.md) (TES `1.1.0`) for
 Kubernetes. Workflow engines send it tasks over a REST API; it runs each
 task as **one Pod with its own volume**. One container image (plus one
 for migrations), one PostgreSQL schema, no broker.

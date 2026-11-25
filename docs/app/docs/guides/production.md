@@ -363,7 +363,8 @@ Without the chart, set the same as `POIESIS_SERVICE_INFO_ID`, `_NAME`,
   starting.
 - `id` is also sent to a decision service as `context.tes.service_id`
   ([Authorization](../concepts/authorization.md#request)).
-- `version` is the Poiesis version; the TES version is `type.version`.
+- `version` is the Poiesis version; the TES version is `type.version`,
+  a bare semantic version (`1.1.0`, no `v`) as GA4GH registries expect.
 
 ## Upgrading
 
