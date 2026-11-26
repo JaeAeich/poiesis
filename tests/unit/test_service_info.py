@@ -2,17 +2,20 @@
 
 import json
 from datetime import UTC, datetime
+from importlib import resources
 from importlib.metadata import version
 from typing import Any
 
 import httpx
 import pytest
+import yaml
 from fake_issuer import Issuer, Network
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from test_authn import TASKS, started_app
 
 from poiesis.api.app import create_app
+from poiesis.api.constants import get_poiesis_api_constants
 from poiesis.api.settings import ServiceInfoSettings
 
 SERVICE_INFO = "/ga4gh/tes/v1/service-info"
@@ -64,7 +67,7 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert info["type"] == {
         "group": "org.ga4gh",
         "artifact": "tes",
-        "version": "v1.1.0",
+        "version": "1.1.0",
     }
 
 
@@ -72,7 +75,22 @@ def test_version_is_poiesis(monkeypatch: pytest.MonkeyPatch) -> None:
     """`version` is the Poiesis version; the TES version is `type.version`."""
     info = service_info(monkeypatch)
     assert info["version"] == version("poiesis")
-    assert info["type"]["version"] == "v1.1.0"
+
+
+def test_tes_version_matches_spec(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`type.version` and the OpenAPI version are the shipped spec's version.
+
+    GA4GH service-info types use bare semantic versions (`1.1.0`, no `v`);
+    registries match `type.version` against them.
+    """
+    spec_file = f"{get_poiesis_api_constants().SPEC_GIT_HASH}.openapi.yaml"
+    spec = yaml.safe_load(
+        (resources.files("poiesis.api.tes") / "spec" / spec_file).read_text()
+    )
+    info = service_info(monkeypatch)
+    assert info["type"]["version"] == spec["info"]["version"]
+    openapi = TestClient(create_app()).get("/openapi.json").json()
+    assert openapi["info"]["version"] == spec["info"]["version"]
 
 
 def test_configured(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -363,10 +363,14 @@ Without the chart, set the same as `POIESIS_SERVICE_INFO_ID`, `_NAME`,
   starting.
 - `id` is also sent to a decision service as `context.tes.service_id`
   ([Authorization](../concepts/authorization.md#request)).
-- `version` is the Poiesis version; the TES version is `type.version`.
+- `version` is the Poiesis version; the TES version is `type.version`,
+  a bare semantic version (`1.1.0`, no `v`) as GA4GH registries expect.
 
 ## Upgrading
 
+- TES version without `v`: `type.version` in the service info, the
+  OpenAPI version and the CLI's `TES version` are `1.1.0` (was `v1.1.0`);
+  update registrations and checks that match `v1.1.0`.
 - From `auth.oidc`: see
   [Migrating an existing deployment](../concepts/authentication.md#migrating-an-existing-deployment).
 - Issuer hardening (token type, per-issuer claim rules): see

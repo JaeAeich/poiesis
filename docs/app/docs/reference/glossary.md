@@ -89,7 +89,7 @@ do, in the `tes-authzen/2` profile. See
 ### Task Execution Service (TES)
 
 [GA4GH](https://www.ga4gh.org/) standard for a REST task-submission API.
-Poiesis implements TES `v1.1.0`. See [TES in 5 minutes](../start/tes.md).
+Poiesis implements TES `1.1.0`. See [TES in 5 minutes](../start/tes.md).
 
 ### Task
 
